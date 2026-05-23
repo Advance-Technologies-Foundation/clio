@@ -54,14 +54,13 @@ public sealed class SysSettingUpsertTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "upsert-sys-setting";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Creates a Creatio system setting if it does not exist; otherwise updates its All-Users default value. " +
+		[Description("Creates a Creatio system setting if it does not exist; otherwise updates its All-Users default value. " +
 		"value-type-name is required when the setting must be created and is used as a fallback when the setting type cannot be resolved on the environment. " +
 		"For Lookup type, reference-schema-name is required.")]
 	public object Upsert(
 		[Description("Parameters: environment-name, code (required); value-type-name (required when creating); value, name, description, is-cacheable, is-personal (optional).")]
 		[Required]
-		UpsertSysSettingArgs args) {
+		UpsertSysSettingRunArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return new SysSettingUpdateResult(false, args.Code ?? string.Empty, null,
 				"environment-name is required.");
@@ -212,7 +211,7 @@ public sealed record SysSettingArgs(
 /// <summary>
 /// Arguments for the consolidated <c>upsert-sys-setting</c> write tool.
 /// </summary>
-public sealed record UpsertSysSettingArgs(
+public sealed record UpsertSysSettingRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
@@ -252,4 +251,4 @@ public sealed record UpsertSysSettingArgs(
 	[property: JsonPropertyName("reference-schema-name")]
 	[property: Description("Required when value-type-name=Lookup. Reference entity schema for lookup-typed settings.")]
 	string? ReferenceSchemaName = null
-);
+) : ClioRunArgs;

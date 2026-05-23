@@ -26,9 +26,7 @@ public sealed class PageSyncTool(
 
 	internal const string ToolName = "sync-pages";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Updates multiple Freedom UI page schemas in a single call. " +
+		[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
@@ -42,7 +40,7 @@ public sealed class PageSyncTool(
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
-		[Required] PageSyncArgs args,
+		[Required] PageSyncRunArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
@@ -351,7 +349,7 @@ public sealed class PageSyncTool(
 /// <summary>
 /// Top-level arguments for the <c>sync-pages</c> MCP tool.
 /// </summary>
-public sealed record PageSyncArgs(
+public sealed record PageSyncRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]
@@ -373,7 +371,7 @@ public sealed record PageSyncArgs(
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("If true, skip AI semantic review before saving. Default: false")]
 	bool? SkipSampling = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// A single page input for the <c>sync-pages</c> tool.

@@ -33,6 +33,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks sync-pages as destructive and not read-only")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void PageSyncTool_Should_Advertise_Safety_Metadata() {
 		// Arrange
 		var method = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!;
@@ -64,7 +65,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
@@ -96,7 +97,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody),
@@ -131,7 +132,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrBroken_FormPage", ValidPageBody),
@@ -163,7 +164,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
 			Validate: true,
@@ -197,7 +198,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
 			Validate: false,
@@ -227,7 +228,7 @@ public sealed class PageSyncToolTests {
 		string bodyWithHandler = ValidPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithHandler)],
 			Validate: true,
@@ -263,7 +264,7 @@ public sealed class PageSyncToolTests {
 			.Replace(
 				"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 				"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithConverterAndValidator)],
 			Validate: true);
@@ -299,7 +300,7 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentAttributeBinding)],
 			Validate: true,
@@ -330,7 +331,7 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
 			Validate: true,
@@ -391,7 +392,7 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
 			Validate: false,
@@ -412,7 +413,7 @@ public sealed class PageSyncToolTests {
 	[Description("Serializes sync-pages request and response resource fields using the documented MCP names.")]
 	public void PageSync_Should_Serialize_Resource_Fields() {
 		// Arrange
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody, "{\"UsrTitle\":\"Title\"}")],
 			Validate: true,
@@ -467,7 +468,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
@@ -515,7 +516,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
@@ -693,7 +694,7 @@ public sealed class PageSyncToolTests {
 			  "modelConfigDiff": []
 			}
 			""";
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", mobileBody)],
 			Validate: true,
@@ -727,7 +728,7 @@ public sealed class PageSyncToolTests {
 			  "converters": {}
 			}
 			""";
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", mobileBodyWithConverters)],
 			Validate: true,

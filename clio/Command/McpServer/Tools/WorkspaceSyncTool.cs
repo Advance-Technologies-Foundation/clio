@@ -88,11 +88,9 @@ public sealed class PushWorkspaceTool(
 	/// <summary>
 	/// Pushes the current local workspace to the specified Creatio environment.
 	/// </summary>
-	[McpServerTool(Name = PushWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment")]
+		[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment")]
 	public CommandExecutionResult PushWorkspace(
-		[Description("Push-workspace parameters")] [Required] PushWorkspaceArgs args
+		[Description("Push-workspace parameters")] [Required] PushWorkspaceRunArgs args
 	) {
 		PushWorkspaceCommandOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -118,11 +116,9 @@ public sealed class RestoreWorkspaceTool(
 	/// <summary>
 	/// Restores the local workspace from the specified Creatio environment.
 	/// </summary>
-	[McpServerTool(Name = RestoreWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Restores the local workspace at `workspace-path` from the specified Creatio environment")]
+		[Description("Restores the local workspace at `workspace-path` from the specified Creatio environment")]
 	public CommandExecutionResult RestoreWorkspace(
-		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args
+		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceRunArgs args
 	) {
 		RestoreWorkspaceOptions options = new() {
 			Environment = args.EnvironmentName
@@ -134,7 +130,7 @@ public sealed class RestoreWorkspaceTool(
 /// <summary>
 /// MCP arguments for the <c>push-workspace</c> tool.
 /// </summary>
-public sealed record PushWorkspaceArgs(
+public sealed record PushWorkspaceRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name")]
 	[property: Required]
@@ -148,12 +144,12 @@ public sealed record PushWorkspaceArgs(
 	[property: JsonPropertyName("skip-backup")]
 	[property: Description("When true, skips package backup before workspace install")]
 	bool? SkipBackup = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// MCP arguments for the <c>restore-workspace</c> tool.
 /// </summary>
-public sealed record RestoreWorkspaceArgs(
+public sealed record RestoreWorkspaceRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name")]
 	[property: Required]
@@ -163,4 +159,4 @@ public sealed record RestoreWorkspaceArgs(
 	[property: Description("Absolute path to the local workspace to restore")]
 	[property: Required]
 	string WorkspacePath
-);
+) : ClioRunArgs;

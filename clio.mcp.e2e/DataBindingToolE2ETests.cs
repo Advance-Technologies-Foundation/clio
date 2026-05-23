@@ -268,10 +268,10 @@ public sealed class DataBindingToolE2ETests {
 			because: "the requested data-binding MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> {
-				["args"] = args
-			},
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?>((args as IDictionary<string, object?>) ?? new Dictionary<string, object?>()) { ["command"] = toolName }
+		},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new CommandExecutionActResult(callResult, execution);

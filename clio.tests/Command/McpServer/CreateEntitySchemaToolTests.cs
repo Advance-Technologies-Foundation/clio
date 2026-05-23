@@ -87,6 +87,7 @@ public class CreateEntitySchemaToolTests {
 	[Test]
 	[Description("Marks the consolidated create-schema MCP entrypoint as destructive because every dispatch (including entity/lookup) mutates remote state.")]
 	[Category("Unit")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void CreateSchema_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(SchemaCreateTool)

@@ -19,13 +19,11 @@ public class CreateDataBindingTool(
 	: BaseTool<CreateDataBindingOptions>(command, logger, commandResolver) {
 	internal const string CreateDataBindingToolName = "create-data-binding";
 
-	[McpServerTool(Name = CreateDataBindingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema.")]
+		[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema.")]
 	public CommandExecutionResult CreateDataBinding(
 		[Description("create-data-binding parameters")]
 		[Required]
-		CreateDataBindingArgs args) {
+		CreateDataBindingRunArgs args) {
 		CreateDataBindingOptions options = new() {
 			Environment = args.EnvironmentName,
 			PackageName = args.PackageName,
@@ -118,7 +116,7 @@ internal static class DataBindingToolPathValidator {
 /// <summary>
 /// Arguments for the <c>create-data-binding</c> MCP tool.
 /// </summary>
-public sealed record CreateDataBindingArgs(
+public sealed record CreateDataBindingRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
 	string? EnvironmentName,
@@ -153,7 +151,7 @@ public sealed record CreateDataBindingArgs(
 	[property: JsonPropertyName("localizations")]
 	[property: Description("Optional JSON object keyed by culture then column name")]
 	string? LocalizationsJson = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Arguments for the <c>add-data-binding-row</c> MCP tool.

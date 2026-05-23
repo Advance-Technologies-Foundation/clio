@@ -66,10 +66,10 @@ public sealed class DeployCreatioToolE2ETests
 
 		// Act
 		var callResult = await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?>
-			{
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["siteName"] = $"e2e-{Guid.NewGuid():N}",
 					["zipFile"] = missingZipFile,
 					["sitePort"] = 5001

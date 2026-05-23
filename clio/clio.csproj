@@ -24,6 +24,8 @@
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
 		<LangVersion>12</LangVersion>
 		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
+		<!-- ENG-90312 Phase 2: ensure non-exhaustive switches over the ClioRunArgs sealed hierarchy fail the build instead of warning silently. -->
+		<WarningsAsErrors>CS8509</WarningsAsErrors>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

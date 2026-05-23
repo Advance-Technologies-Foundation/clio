@@ -28,10 +28,9 @@ public class LoadPackagesTool(
 	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation.</summary>
 	internal const string LegacyPkgToDbToolName = "pkg-to-db";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Synchronizes Creatio package storage between the database and the file system. target='file-system' loads packages from the database into the file system; target='db' loads packages from the file system into the database.")]
+		[Description("Synchronizes Creatio package storage between the database and the file system. target='file-system' loads packages from the database into the file system; target='db' loads packages from the file system into the database.")]
 	public CommandExecutionResult Apply(
-		[Description("pkg-mode parameters")] [Required] PkgModeArgs args) {
+		[Description("pkg-mode parameters")] [Required] PkgModeRunArgs args) {
 		CommandExecutionResult targetError = CommandExecutionResult.ValidateExactlyOneMode(
 			"target", args.Target, TargetFileSystem, TargetDb);
 		if (targetError != null) {
@@ -55,7 +54,7 @@ public class LoadPackagesTool(
 /// <summary>
 /// Arguments for the consolidated <c>pkg-mode</c> MCP tool.
 /// </summary>
-public sealed record PkgModeArgs(
+public sealed record PkgModeRunArgs(
 	[property: JsonPropertyName("target")]
 	[property: Description("Discriminator: 'file-system' or 'db'. Selects the direction of the package storage sync.")]
 	[property: Required]
@@ -65,4 +64,4 @@ public sealed record PkgModeArgs(
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
 	string EnvironmentName
-);
+) : ClioRunArgs;

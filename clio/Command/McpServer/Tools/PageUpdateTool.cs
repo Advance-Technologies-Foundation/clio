@@ -24,8 +24,7 @@ public sealed class PageUpdateTool(
 
 	internal const string ToolName = "update-page";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 		"For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 		"Section authoring rules for the body payload: " +
@@ -37,7 +36,7 @@ public sealed class PageUpdateTool(
 		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.")]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
-		[Required] PageUpdateArgs args,
+		[Required] PageUpdateRunArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
@@ -93,7 +92,7 @@ public sealed class PageUpdateTool(
 	}
 
 	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
-		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
+		PageUpdateOptions options, PageUpdateRunArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
 		if (options.DryRun || args.SkipSampling == true) {
 			return (null, null);
 		}
@@ -109,7 +108,7 @@ public sealed class PageUpdateTool(
 		return (null, samplingReview);
 	}
 
-	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+	private static PageUpdateOptions BuildOptions(PageUpdateRunArgs args) =>
 		new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
@@ -149,7 +148,7 @@ public sealed class PageUpdateTool(
 		if (!result.IsValid) errors.AddRange(result.Errors);
 	}
 
-	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {
+	private void TryVerifyPage(PageUpdateRunArgs args, PageUpdateResponse response) {
 		try {
 			PageGetOptions getOptions = new() {
 				SchemaName = args.SchemaName,
@@ -168,7 +167,7 @@ public sealed class PageUpdateTool(
 
 }
 
-public sealed record PageUpdateArgs(
+public sealed record PageUpdateRunArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Freedom UI page schema name, e.g. 'UsrMyApp_FormPage'")]
 	[property: Required]
@@ -220,4 +219,4 @@ public sealed record PageUpdateArgs(
 	[property: JsonPropertyName("target-schema-uid")]
 	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
 	string? TargetSchemaUId = null
-);
+) : ClioRunArgs;

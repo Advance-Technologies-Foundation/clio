@@ -27,7 +27,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeByEnv,
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev",
@@ -57,7 +57,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeByPkgPath,
 			RepoPath: @"C:\Repo",
 			EnvPkgPath: @"C:\Creatio\Terrasoft.Configuration\Pkg",
@@ -87,7 +87,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeUnlocked,
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev"));
@@ -116,7 +116,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeUnlocked,
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev",
@@ -140,7 +140,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeByEnv,
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev",
@@ -168,7 +168,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeByPkgPath,
 			RepoPath: @"C:\Repo",
 			EnvPkgPath: @"C:\Creatio\Pkg",
@@ -194,7 +194,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: LinkFromRepositoryTool.ModeByEnv,
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev",
@@ -218,7 +218,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryArgs(
+		CommandExecutionResult result = tool.LinkFromRepository(new LinkFromRepositoryRunArgs(
 			Mode: "bogus",
 			RepoPath: @"C:\Repo",
 			EnvironmentName: "dev",
@@ -235,6 +235,7 @@ public class LinkFromRepositoryToolTests {
 	[Test]
 	[Description("Marks the link-from-repository MCP tool as destructive so MCP clients can apply confirmation and safety policies.")]
 	[Category("Unit")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void LinkFromRepository_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(LinkFromRepositoryTool)

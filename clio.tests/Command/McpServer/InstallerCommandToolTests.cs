@@ -40,6 +40,7 @@ public sealed class InstallerCommandToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Marks deploy-creatio as destructive and embeds the required preflight guidance in the MCP description.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void DeployCreatio_Should_Expose_Destructive_Metadata_And_Preflight_Guidance()
 	{
 		// Arrange
@@ -73,7 +74,7 @@ public sealed class InstallerCommandToolTests
 			new DbOperationLogSessionFactory(logger, dbOperationLogContextAccessor);
 		FakeInstallerCommand command = new(logger, exitCode: 7, dbOperationLogSessionFactory);
 		InstallerCommandTool tool = new(command, logger, dbOperationLogContextAccessor);
-		DeployCreatioArgs args = new(
+		DeployCreatioRunArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 8080,
@@ -135,7 +136,7 @@ public sealed class InstallerCommandToolTests
 		TestLogger logger = new();
 		FakeInstallerCommand command = new(logger, exitCode: 0);
 		InstallerCommandTool tool = new(command, logger);
-		DeployCreatioArgs args = new(
+		DeployCreatioRunArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 5000,
@@ -152,7 +153,7 @@ public sealed class InstallerCommandToolTests
 			because: "db-server-name must remain optional so Kubernetes can stay the default deployment path");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
-		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
+		typeof(DeployCreatioRunArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
 			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName"],
 			because: "the MCP deploy-creatio argument type should expose only the five approved arguments");
 	}

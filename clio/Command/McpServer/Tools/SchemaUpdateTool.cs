@@ -36,15 +36,14 @@ public sealed class SchemaUpdateTool {
 		_entity = entity;
 	}
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description(
+		[Description(
 		"Update a schema on a remote Creatio environment. Dispatches by schema-type: " +
 		"'source-code' / 'client-unit' / 'sql' replace the schema body (provide body inline or body-file for large payloads); " +
 		"'entity' applies a batch of add/modify/remove column operations via update-entity-schema. " +
 		"Prefer environment-name; uri/login/password are emergency fallbacks only.")]
 	public async Task<object> Update(
 		[Description("Update-schema parameters. Required fields depend on schema-type.")] [Required]
-		SchemaUpdateArgs args) {
+		SchemaUpdateRunArgs args) {
 		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
 			"schema-type", args.SchemaType,
 			SchemaCreateTool.SchemaTypeSourceCode,
@@ -101,7 +100,7 @@ public sealed class SchemaUpdateTool {
 			: base(command, logger, commandResolver) {
 		}
 
-		public SourceCodeSchemaUpdateResponse Update(SchemaUpdateArgs args) {
+		public SourceCodeSchemaUpdateResponse Update(SchemaUpdateRunArgs args) {
 			SourceCodeSchemaUpdateOptions options = new() {
 				SchemaName = args.SchemaName,
 				Body = args.Body,
@@ -132,7 +131,7 @@ public sealed class SchemaUpdateTool {
 /// (body/body-file/dry-run/operations) are interleaved with shared schema selectors so the wire shape
 /// stays flat for clients while keeping per-tool definitions discoverable.
 /// </summary>
-public sealed record SchemaUpdateArgs(
+public sealed record SchemaUpdateRunArgs(
 	[property: JsonPropertyName("schema-type"), Description("Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'. Selects the update flavor and required fields."), Required]
 	string SchemaType,
 
@@ -165,4 +164,4 @@ public sealed record SchemaUpdateArgs(
 
 	[property: JsonPropertyName("password"), Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password = null
-);
+) : ClioRunArgs;

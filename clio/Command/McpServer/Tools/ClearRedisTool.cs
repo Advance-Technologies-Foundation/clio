@@ -21,10 +21,9 @@ public class ClearRedisTool(
 	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>clear-redis-db</c> with <c>mode=credentials</c>.</summary>
 	internal const string ClearRedisByCredentialsToolName = "clear-redis-db-by-credentials";
 
-	[McpServerTool(Name = ClearRedisToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Empties the Redis database used by a Creatio instance. Use mode='environment' with environment-name to target a registered environment; use mode='credentials' with url+login+password.")]
+		[Description("Empties the Redis database used by a Creatio instance. Use mode='environment' with environment-name to target a registered environment; use mode='credentials' with url+login+password.")]
 	public CommandExecutionResult ClearRedis(
-		[Description("Clear-redis parameters")] [Required] ClearRedisDbArgs args
+		[Description("Clear-redis parameters")] [Required] ClearRedisDbRunArgs args
 	) {
 		CommandExecutionResult validationError = CommandExecutionResult.ValidateEnvOrCredentialsMode(
 			args.Mode, args.EnvironmentName, args.Url, args.Login, args.Password,
@@ -54,7 +53,7 @@ public class ClearRedisTool(
 /// <c>environment</c> requires <c>environment-name</c>; <c>credentials</c> requires <c>url</c>, <c>login</c>,
 /// and <c>password</c>.
 /// </summary>
-public sealed record ClearRedisDbArgs(
+public sealed record ClearRedisDbRunArgs(
 	[property: JsonPropertyName("mode")]
 	[property: Description("Discriminator: 'environment' uses a registered clio environment name; 'credentials' uses explicit url+login+password.")]
 	[property: Required]
@@ -79,4 +78,4 @@ public sealed record ClearRedisDbArgs(
 	[property: JsonPropertyName("is-net-core")]
 	[property: Description("Optional. Set true for NET8 runtime; default false for NET472.")]
 	bool IsNetCore = false
-);
+) : ClioRunArgs;

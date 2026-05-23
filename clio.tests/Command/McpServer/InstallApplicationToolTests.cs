@@ -33,6 +33,7 @@ public sealed class InstallApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks install-application as destructive because it installs application packages into a Creatio environment.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void InstallApplication_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(InstallApplicationTool)
@@ -61,7 +62,7 @@ public sealed class InstallApplicationToolTests {
 		InstallApplicationTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationArgs(
+		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationRunArgs(
 			Name: @"C:\Packages\app.gz",
 			ReportPath: @"C:\Logs\install.log",
 			CheckCompilationErrors: true,
@@ -95,7 +96,7 @@ public sealed class InstallApplicationToolTests {
 		InstallApplicationTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationArgs(
+		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationRunArgs(
 			Name: @"C:\Packages\app.gz",
 			ReportPath: null,
 			CheckCompilationErrors: null,
@@ -126,7 +127,7 @@ public sealed class InstallApplicationToolTests {
 			commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationArgs(
+		CommandExecutionResult result = tool.InstallApplication(new InstallApplicationRunArgs(
 			Name: @"C:\Packages\app.gz",
 			ReportPath: null,
 			CheckCompilationErrors: null,

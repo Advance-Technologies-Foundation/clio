@@ -50,7 +50,7 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 				Source: DownloadConfigurationTool.SourceEnvironment,
 				WorkspacePath: workspacePath,
 				EnvironmentName: "dev"));
@@ -94,7 +94,7 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 				Source: DownloadConfigurationTool.SourceBuild,
 				WorkspacePath: workspacePath,
 				BuildPath: buildPath));
@@ -130,7 +130,7 @@ public sealed class DownloadConfigurationToolTests {
 		DownloadConfigurationTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 			Source: DownloadConfigurationTool.SourceBuild,
 			WorkspacePath: @"relative\workspace",
 			BuildPath: Path.Combine(Path.GetTempPath(), "creatio.zip")));
@@ -159,7 +159,7 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 				Source: DownloadConfigurationTool.SourceBuild,
 				WorkspacePath: workspacePath,
 				BuildPath: Path.Combine("relative", "creatio.zip")));
@@ -193,7 +193,7 @@ public sealed class DownloadConfigurationToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+			CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 				Source: DownloadConfigurationTool.SourceBuild,
 				WorkspacePath: workspacePath,
 				BuildPath: "   "));
@@ -225,7 +225,7 @@ public sealed class DownloadConfigurationToolTests {
 		DownloadConfigurationTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationArgs(
+		CommandExecutionResult result = tool.DownloadConfiguration(new DownloadConfigurationRunArgs(
 			Source: DownloadConfigurationTool.SourceBuild,
 			WorkspacePath: @"C:workspace",
 			BuildPath: Path.Combine(Path.GetTempPath(), "creatio.zip")));

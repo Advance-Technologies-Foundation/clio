@@ -143,9 +143,10 @@ public sealed class ClearRedisToolE2ETests {
 		ClearRedisArrangeContext arrangeContext,
 		string environmentName) {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["mode"] = ClearRedisTool.ModeEnvironment,
 					["environment-name"] = environmentName
 				}
@@ -177,10 +178,10 @@ public sealed class ClearRedisToolE2ETests {
 		}
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = argsObject
-			},
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?>((argsObject as IDictionary<string, object?>) ?? new Dictionary<string, object?>()) { ["command"] = ToolName }
+		},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new ClearRedisActResult(callResult, execution);

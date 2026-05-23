@@ -34,6 +34,7 @@ public sealed class SchemaSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks sync-schemas as destructive and not read-only")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public async Task SchemaSyncTool_Should_Advertise_Safety_Metadata() {
 		// Arrange
 		var method = typeof(SchemaSyncTool).GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
@@ -66,7 +67,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
 
@@ -103,7 +104,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation(
@@ -143,7 +144,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
 				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
@@ -168,7 +169,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
 				UpdateOperations: [
@@ -212,7 +213,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
 				TitleLocalizations: Localizations("Todo Status"),
@@ -258,7 +259,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(_ => resolveCount++ == 0 ? failingCommand : secondCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First")),
@@ -295,7 +296,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(failingCommand);
 		SchemaSyncTool tool = new(commandResolver, logger);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
 
@@ -329,7 +330,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
 			.Returns(fakeFindCommand);
 		SchemaSyncTool tool = new(commandResolver, logger);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
 
@@ -362,7 +363,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
 			.Returns(fakeFindCommand);
 		SchemaSyncTool tool = new(commandResolver, logger);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrFirst", TitleLocalizations: Localizations("First"))]);
 
@@ -381,7 +382,7 @@ public sealed class SchemaSyncToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("delete-schema", "UsrOops")]);
 
@@ -407,7 +408,7 @@ public sealed class SchemaSyncToolTests {
 	public async Task SchemaSync_Should_Reject_Legacy_Operation_Field_Name() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev",
 			"UsrPkg",
 			[
@@ -442,7 +443,7 @@ public sealed class SchemaSyncToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
 
@@ -466,7 +467,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev",
 			"UsrPkg",
 			[
@@ -502,7 +503,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
 			.Returns(fakeSeedCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrBroken",
 				TitleLocalizations: Localizations("Broken"),
@@ -532,7 +533,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"missing-env", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
@@ -566,7 +567,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"missing-env", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
@@ -608,7 +609,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Status")),
@@ -663,7 +664,7 @@ public sealed class SchemaSyncToolTests {
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
 		SchemaSyncTool tool = new(commandResolver, logger);
-		SchemaSyncArgs args = new(
+		SchemaSyncRunArgs args = new(
 			"dev", "UsrPkg",
 			[
 				new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
@@ -730,7 +731,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs(
+		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncRunArgs(
 			"dev",
 			"UsrPkg",
 			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]));

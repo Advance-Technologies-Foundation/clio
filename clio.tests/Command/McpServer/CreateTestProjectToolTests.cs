@@ -26,7 +26,7 @@ public class CreateTestProjectToolTests {
 		CreateTestProjectTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateTestProject(new CreateTestProjectArgs(
+		CommandExecutionResult result = tool.CreateTestProject(new CreateTestProjectRunArgs(
 			"MyPackage",
 			@"C:\Projects\clio-with-core-and-ui\workspace",
 			"docker_fix2"));
@@ -48,7 +48,7 @@ public class CreateTestProjectToolTests {
 	[Category("Unit")]
 	public void CreateTestProject_Should_Expose_Required_Environment_Argument() {
 		// Arrange
-		System.Reflection.PropertyInfo property = typeof(CreateTestProjectArgs).GetProperty(nameof(CreateTestProjectArgs.EnvironmentName))!;
+		System.Reflection.PropertyInfo property = typeof(CreateTestProjectRunArgs).GetProperty(nameof(CreateTestProjectRunArgs.EnvironmentName))!;
 
 		// Act
 		object[] requiredAttributes = property.GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false);

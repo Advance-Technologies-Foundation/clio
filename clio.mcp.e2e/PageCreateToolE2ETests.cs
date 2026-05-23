@@ -54,9 +54,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrMissing_BlankPage",
 					["template"] = "BlankPageTemplate",
 					["package-name"] = "Custom",
@@ -84,9 +85,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "1BadName",
 					["template"] = "BlankPageTemplate",
 					["package-name"] = "Custom",
@@ -148,9 +150,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Act
 		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
 					["package-name"] = packageName,
@@ -171,9 +174,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Act read-back
 		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
-			PageGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = PageGetTool.ToolName,
 					["schema-name"] = schemaName,
 					["environment-name"] = environmentName
 				}
@@ -205,9 +209,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Create the page first
 		CallToolResult first = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
 					["package-name"] = packageName,
@@ -220,9 +225,10 @@ public sealed class PageCreateToolE2ETests {
 
 		// Act duplicate
 		CallToolResult duplicateResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
 					["package-name"] = packageName,

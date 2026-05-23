@@ -228,9 +228,7 @@ public sealed class DataForgeTool(
 		}
 	}
 
-	[McpServerTool(Name = DataForgeInitializeToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + PlatformRequirementDescription)]
+		[Description("Schedules a full Data Forge initialization when the index is missing, stale, or not ready. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Initialize(
 		[Description("Parameters: environment-name (required).")]
 		[Required]
@@ -252,9 +250,7 @@ public sealed class DataForgeTool(
 		}
 	}
 
-	[McpServerTool(Name = DataForgeUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + PlatformRequirementDescription)]
+		[Description("Schedules a Data Forge index refresh after schema changes or when discovery results appear stale. " + PlatformRequirementDescription)]
 	public DataForgeMaintenanceResponse Update(
 		[Description("Parameters: environment-name (required).")]
 		[Required]

@@ -27,6 +27,7 @@ public sealed class GenerateSourceCodeToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("The tool must not be marked destructive since source code generation does not delete or overwrite persistent data.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void GenerateSourceCode_Should_Not_Be_Marked_As_Destructive() {
 		McpServerToolAttribute attribute = GetToolAttribute();
 		attribute.Destructive.Should().BeFalse(
@@ -36,6 +37,7 @@ public sealed class GenerateSourceCodeToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("The tool must be marked idempotent because running generate-source-code multiple times yields the same result.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void GenerateSourceCode_Should_Be_Marked_As_Idempotent() {
 		McpServerToolAttribute attribute = GetToolAttribute();
 		attribute.Idempotent.Should().BeTrue(
@@ -51,7 +53,7 @@ public sealed class GenerateSourceCodeToolTests
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.GenerateSourceCode(new GenerateSourceCodeArgs(
+		CommandExecutionResult result = tool.GenerateSourceCode(new GenerateSourceCodeRunArgs(
 			"dev", Modified: false, Required: false, Background: false));
 
 		result.ExitCode.Should().Be(0,
@@ -73,7 +75,7 @@ public sealed class GenerateSourceCodeToolTests
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", Modified: true, Required: false, Background: false));
+		tool.GenerateSourceCode(new GenerateSourceCodeRunArgs("dev", Modified: true, Required: false, Background: false));
 
 		resolvedCommand.CapturedOptions!.Modified.Should().BeTrue(
 			because: "the modified flag must be forwarded from MCP args to command options");
@@ -88,7 +90,7 @@ public sealed class GenerateSourceCodeToolTests
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", Modified: false, Required: true, Background: false));
+		tool.GenerateSourceCode(new GenerateSourceCodeRunArgs("dev", Modified: false, Required: true, Background: false));
 
 		resolvedCommand.CapturedOptions!.Required.Should().BeTrue(
 			because: "the required flag must be forwarded from MCP args to command options");
@@ -103,7 +105,7 @@ public sealed class GenerateSourceCodeToolTests
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", Modified: false, Required: false, Background: true));
+		tool.GenerateSourceCode(new GenerateSourceCodeRunArgs("dev", Modified: false, Required: false, Background: true));
 
 		resolvedCommand.CapturedOptions!.Background.Should().BeTrue(
 			because: "the background flag must be forwarded from MCP args to command options");
@@ -118,7 +120,7 @@ public sealed class GenerateSourceCodeToolTests
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
 		GenerateSourceCodeTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.GenerateSourceCode(new GenerateSourceCodeArgs("dev", null, null, null));
+		tool.GenerateSourceCode(new GenerateSourceCodeRunArgs("dev", null, null, null));
 
 		resolvedCommand.CapturedOptions!.Modified.Should().BeFalse(
 			because: "omitting modified should default to false (generate all)");
@@ -138,7 +140,7 @@ public sealed class GenerateSourceCodeToolTests
 		GenerateSourceCodeTool tool = new(new FakeGenerateSourceCodeCommand(), ConsoleLogger.Instance, commandResolver);
 
 		CommandExecutionResult result = tool.GenerateSourceCode(
-			new GenerateSourceCodeArgs("missing-env", null, null, null));
+			new GenerateSourceCodeRunArgs("missing-env", null, null, null));
 
 		result.ExitCode.Should().Be(-1,
 			because: "resolver failures should be returned as structured error envelopes");

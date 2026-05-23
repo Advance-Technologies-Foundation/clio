@@ -46,8 +46,7 @@ public sealed class SchemaCreateTool {
 		_lookup = lookup;
 	}
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description(
+		[Description(
 		"Create a schema on a remote Creatio environment. Dispatches by schema-type: " +
 		"'source-code' creates a C# source-code schema; 'client-unit' creates a JavaScript client unit schema; " +
 		"'sql' creates a SQL script schema; 'entity' creates an entity schema (requires title-localizations and " +
@@ -55,7 +54,7 @@ public sealed class SchemaCreateTool {
 		"Prefer environment-name; uri/login/password are emergency fallbacks only.")]
 	public async Task<object> Create(
 		[Description("Create-schema parameters. Required fields depend on schema-type.")] [Required]
-		SchemaCreateArgs args) {
+		SchemaCreateRunArgs args) {
 		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
 			"schema-type", args.SchemaType,
 			SchemaTypeSourceCode, SchemaTypeEntity, SchemaTypeLookup, SchemaTypeClientUnit, SchemaTypeSql);
@@ -121,7 +120,7 @@ public sealed class SchemaCreateTool {
 			: base(command, logger, commandResolver) {
 		}
 
-		public SourceCodeSchemaCreateResponse Create(SchemaCreateArgs args) {
+		public SourceCodeSchemaCreateResponse Create(SchemaCreateRunArgs args) {
 			SourceCodeSchemaCreateOptions options = new() {
 				SchemaName = args.SchemaName,
 				PackageName = args.PackageName,
@@ -150,7 +149,7 @@ public sealed class SchemaCreateTool {
 /// Consolidated arguments for the <c>create-schema</c> MCP tool. The required and meaningful
 /// fields depend on <c>schema-type</c>.
 /// </summary>
-public sealed record SchemaCreateArgs(
+public sealed record SchemaCreateRunArgs(
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Discriminator: 'source-code' | 'entity' | 'lookup' | 'client-unit' | 'sql'. " +
 		"Selects the create flavor and required fields.")]
@@ -207,4 +206,4 @@ public sealed record SchemaCreateArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password = null
-);
+) : ClioRunArgs;

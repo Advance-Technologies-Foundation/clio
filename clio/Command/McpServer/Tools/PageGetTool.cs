@@ -18,8 +18,7 @@ public sealed class PageGetTool(
 
 	internal const string ToolName = "get-page";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description(
+		[Description(
 		"Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. " +
 		"body.js contains the EDITABLE own-body of the replacing schema in the design package (empty template when no replacing schema exists yet) — this is what update-page should receive. " +
 		"bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. " +
@@ -36,7 +35,7 @@ public sealed class PageGetTool(
 		"if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public PageGetResponse GetPage(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
-		[Required] PageGetArgs args) {
+		[Required] PageGetRunArgs args) {
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
@@ -116,7 +115,7 @@ public sealed class PageGetTool(
 /// <summary>
 /// Arguments for the <c>get-page</c> MCP tool.
 /// </summary>
-public sealed record PageGetArgs(
+public sealed record PageGetRunArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Freedom UI page schema name, e.g. 'UsrMyApp_FormPage'")]
 	[property: Required]
@@ -135,4 +134,4 @@ public sealed record PageGetArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password
-);
+) : ClioRunArgs;

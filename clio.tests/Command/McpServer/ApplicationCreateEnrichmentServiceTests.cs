@@ -35,7 +35,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 
 		// Act
 		ApplicationDataForgeResult result = sut.Enrich(
-			new ApplicationCreateArgs(
+			new ApplicationCreateRunArgs(
 				EnvironmentName: "sandbox",
 				Name: "Task App",
 				Code: "UsrTaskApp",
@@ -90,7 +90,7 @@ public sealed class ApplicationCreateEnrichmentServiceTests {
 
 		// Act
 		_ = sut.Enrich(
-			new ApplicationCreateArgs(
+			new ApplicationCreateRunArgs(
 				EnvironmentName: "sandbox",
 				Name: "Task App",
 				Code: "UsrTaskApp",

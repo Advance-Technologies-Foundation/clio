@@ -24,9 +24,7 @@ public class InstallerCommandTool(
 	/// <summary>
 	/// Deploys Creatio from a zip archive using the same execution path as the CLI command.
 	/// </summary>
-	[McpServerTool(Name = DeployCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Deploys Creatio from a zip archive using the real deploy-creatio command path.
 
 				 Before calling this tool, first run `assert-infrastructure` for full infrastructure visibility,
@@ -36,7 +34,7 @@ public class InstallerCommandTool(
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
 				 """)]
 	public CommandExecutionResult DeployCreatio(
-		[Description("Deployment parameters")] [Required] DeployCreatioArgs args)
+		[Description("Deployment parameters")] [Required] DeployCreatioRunArgs args)
 	{
 		PfInstallerOptions options = new()
 		{
@@ -59,7 +57,7 @@ public class InstallerCommandTool(
 /// <summary>
 /// Minimal MCP arguments for the <c>deploy-creatio</c> tool.
 /// </summary>
-public sealed record DeployCreatioArgs(
+public sealed record DeployCreatioRunArgs(
 	[property: JsonPropertyName("site-name")]
 	[property: Description("Creatio instance name")]
 	[property: Required]
@@ -82,4 +80,4 @@ public sealed record DeployCreatioArgs(
 	[property: JsonPropertyName("redis-server-name")]
 	[property: Description("Optional local Redis server configuration name")]
 	string? RedisServerName
-);
+) : ClioRunArgs;

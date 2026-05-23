@@ -55,9 +55,10 @@ public sealed class RestoreDbToolE2ETests {
 
 		// Act
 		var callResult = await session.CallToolAsync(
-			RestoreDbTool.RestoreDbToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = RestoreDbTool.RestoreDbToolName,
 					["mode"] = RestoreDbTool.ModeLocalServer,
 					["db-server-name"] = $"missing-{Guid.NewGuid():N}",
 					["backup-path"] = missingBackupPath,

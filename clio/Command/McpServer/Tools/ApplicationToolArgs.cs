@@ -36,7 +36,7 @@ public sealed record ApplicationGetInfoArgs(
 /// <summary>
 /// MCP arguments for the <c>create-app</c> tool.
 /// </summary>
-public sealed record ApplicationCreateArgs(
+public sealed record ApplicationCreateRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'")]
 	[property: Required]
@@ -102,7 +102,7 @@ public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("name-localizations")]
 	[property: Description("Rejected. create-app is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? NameLocalizations = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Optional CreateApp template data for the <c>create-app</c> tool.

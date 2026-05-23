@@ -19,16 +19,14 @@ public class CreateWorkspaceTool(
 	/// <summary>
 	/// Creates a new empty workspace under an explicit directory or the configured global workspaces root.
 	/// </summary>
-	[McpServerTool(Name = CreateWorkspaceToolName, ReadOnly = false, Destructive = false, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Creates a new empty clio workspace in a local directory.
 				 
 				 To create a workspace in C:\Projects\Workspaces\son directory, use:
 				 workspaceName: son, directory: C:\Projects\Workspaces
 				 """)]
 	public CommandExecutionResult CreateWorkspace(
-		[Description("Workspace creation parameters")] [Required] CreateWorkspaceArgs args
+		[Description("Workspace creation parameters")] [Required] CreateWorkspaceRunArgs args
 	) {
 		if (args is null) {
 			return new CommandExecutionResult(1, [new ErrorMessage("Workspace creation parameters are required.")], null);
@@ -45,7 +43,7 @@ public class CreateWorkspaceTool(
 /// <summary>
 /// MCP arguments for the <c>create-workspace</c> tool.
 /// </summary>
-public sealed record CreateWorkspaceArgs(
+public sealed record CreateWorkspaceRunArgs(
 	[property: JsonPropertyName("workspaceName")]
 	[property: Description("Relative workspace folder name to create")]
 	[property: Required]
@@ -54,4 +52,4 @@ public sealed record CreateWorkspaceArgs(
 	[property: JsonPropertyName("directory")]
 	[property: Description("Optional absolute directory where the new workspace folder should be created")]
 	string Directory = null
-);
+) : ClioRunArgs;

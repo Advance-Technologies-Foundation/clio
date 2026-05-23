@@ -157,9 +157,10 @@ public sealed class InstallApplicationToolE2ETests {
 			because: "the install-application MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["name"] = applicationPackagePath,
 					["report-path"] = reportPath,
 					["environment-name"] = environmentName

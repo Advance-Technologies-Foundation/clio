@@ -61,9 +61,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrMissing_FormPage",
 					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
@@ -97,9 +98,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrValidationOnly_FormPage",
 					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
@@ -138,9 +140,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrProxyBinding_FormPage",
 					["body"] = proxyBody,
 					["dry-run"] = true,
@@ -181,9 +184,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrHandlerDrivenBinding_FormPage",
 					["body"] = handlerDrivenBody,
 					["dry-run"] = true,
@@ -224,9 +228,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrInvalidHandlers_FormPage",
 					["body"] = invalidHandlersBody,
 					["dry-run"] = true,
@@ -268,9 +273,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrValidatorAlias_FormPage",
 					["body"] = bodyWithValidateAlias,
 					["dry-run"] = true,
@@ -313,9 +319,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrConverterShape_FormPage",
 					["body"] = bodyWithObjectConverter,
 					["dry-run"] = true,
@@ -355,9 +362,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrInvalidHandlerApi_FormPage",
 					["body"] = invalidHandlerApiBody,
 					["dry-run"] = true,
@@ -397,9 +405,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrBadConverter_FormPage",
 					["body"] = bodyWithBadConverter,
 					["dry-run"] = true,
@@ -437,9 +446,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrBadHandler_FormPage",
 					["body"] = bodyWithBadHandler,
 					["dry-run"] = true,
@@ -477,9 +487,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrBadValidator_FormPage",
 					["body"] = bodyWithBadValidator,
 					["dry-run"] = true,
@@ -514,9 +525,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrOptionalProps_FormPage",
 					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
@@ -552,9 +564,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrBadOptionalProps_FormPage",
 					["body"] = MinimalMarkerPageBody,
 					["dry-run"] = true,
@@ -616,9 +629,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrMobile_FormPage",
 					["body"] = mobileBodyWithValidators
 				}
@@ -656,9 +670,10 @@ public sealed class PageUpdateToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrMobile_FormPage",
 					["body"] = mobileBody,
 					["dry-run"] = true,

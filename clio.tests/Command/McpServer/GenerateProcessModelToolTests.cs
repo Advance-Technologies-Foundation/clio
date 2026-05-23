@@ -33,6 +33,7 @@ public sealed class GenerateProcessModelToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the generate-process-model MCP method as destructive because it writes and can overwrite the generated process model file.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void GenerateProcessModel_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(GenerateProcessModelTool)
@@ -61,7 +62,7 @@ public sealed class GenerateProcessModelToolTests {
 		GenerateProcessModelTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
+		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelRunArgs(
 			"UsrProcess",
 			@"src\generated",
 			"Contoso.ProcessModels",
@@ -98,7 +99,7 @@ public sealed class GenerateProcessModelToolTests {
 		GenerateProcessModelTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
+		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelRunArgs(
 			"UsrProcess",
 			null,
 			null,
@@ -132,7 +133,7 @@ public sealed class GenerateProcessModelToolTests {
 			commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
+		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelRunArgs(
 			"UsrProcess",
 			null,
 			null,

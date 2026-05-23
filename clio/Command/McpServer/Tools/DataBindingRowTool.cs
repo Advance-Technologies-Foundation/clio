@@ -20,10 +20,9 @@ public sealed class DataBindingRowTool(
 	internal const string ActionAdd = "add";
 	internal const string ActionRemove = "remove";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Adds, replaces, or removes a row in an existing local package data binding. action='add' uses `values` (+ optional `localizations`); action='remove' uses `key-value`.")]
+		[Description("Adds, replaces, or removes a row in an existing local package data binding. action='add' uses `values` (+ optional `localizations`); action='remove' uses `key-value`.")]
 	public CommandExecutionResult Apply(
-		[Description("data-binding-row parameters")] [Required] DataBindingRowArgs args) {
+		[Description("data-binding-row parameters")] [Required] DataBindingRowRunArgs args) {
 		CommandExecutionResult actionError = CommandExecutionResult.ValidateExactlyOneMode(
 			"action", args.Action, ActionAdd, ActionRemove);
 		if (actionError != null) {
@@ -60,7 +59,7 @@ public sealed class DataBindingRowTool(
 /// <summary>
 /// Arguments for the consolidated <c>data-binding-row</c> MCP tool.
 /// </summary>
-public sealed record DataBindingRowArgs(
+public sealed record DataBindingRowRunArgs(
 	[property: JsonPropertyName("action")]
 	[property: Description("Discriminator: 'add' adds or replaces a row; 'remove' removes a row by primary key.")]
 	[property: Required]
@@ -92,4 +91,4 @@ public sealed record DataBindingRowArgs(
 	[property: JsonPropertyName("key-value")]
 	[property: Description("Required when action='remove'. Primary-key value of the row to remove.")]
 	string? KeyValue = null
-);
+) : ClioRunArgs;

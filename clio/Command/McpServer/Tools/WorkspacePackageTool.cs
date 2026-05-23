@@ -18,8 +18,7 @@ public class WorkspacePackageTool(
 	/// <summary>
 	/// Adds a package to the specified workspace and optionally bootstraps follow-up configuration download.
 	/// </summary>
-	[McpServerTool(Name = "add-package", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Adds a package to a specified local workspace.
 				 
 				 The workspace path is required because the command updates local workspace state and may
@@ -27,7 +26,7 @@ public class WorkspacePackageTool(
 				 follow-up flow may need the requested environment to download configuration from Creatio.
 				 """)]
 	public CommandExecutionResult AddPackage(
-		[Description("add-package parameters")] [Required] AddPackageArgs args
+		[Description("add-package parameters")] [Required] AddPackageRunArgs args
 	) {
 		AddPackageOptions options = new() {
 			Name = args.Name,
@@ -52,16 +51,14 @@ public class CreateTestProjectTool(
 	/// <summary>
 	/// Creates a new test project for a package in the specified workspace.
 	/// </summary>
-	[McpServerTool(Name = "new-test-project", ReadOnly = false, Destructive = false, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Creates a new unit test project for a package in the specified local workspace.
 				 
 				 The workspace path is required because the command generates files under that workspace and
 				 updates the workspace solution structure.
 				 """)]
 	public CommandExecutionResult CreateTestProject(
-		[Description("new-test-project parameters")] [Required] CreateTestProjectArgs args
+		[Description("new-test-project parameters")] [Required] CreateTestProjectRunArgs args
 	) {
 		CreateTestProjectOptions options = new() {
 			PackageName = args.PackageName,
@@ -75,7 +72,7 @@ public class CreateTestProjectTool(
 /// <summary>
 /// Arguments for the <c>add-package</c> MCP tool.
 /// </summary>
-public record AddPackageArgs(
+public record AddPackageRunArgs(
 	[property:JsonPropertyName("name")]
 	[Description("Package name")]
 	[Required]
@@ -97,12 +94,12 @@ public record AddPackageArgs(
 	[property:JsonPropertyName("build-zip-path")]
 	[Description("Path to a Creatio zip file or extracted directory to get configuration from")]
 	string BuildZipPath = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Arguments for the <c>new-test-project</c> MCP tool.
 /// </summary>
-public record CreateTestProjectArgs(
+public record CreateTestProjectRunArgs(
 	[property:JsonPropertyName("package-name")]
 	[Description("Workspace package name")]
 	[Required]
@@ -117,4 +114,4 @@ public record CreateTestProjectArgs(
 	[Description("Creatio environment name")]
 	[property:Required]
 	string EnvironmentName
-);
+) : ClioRunArgs;

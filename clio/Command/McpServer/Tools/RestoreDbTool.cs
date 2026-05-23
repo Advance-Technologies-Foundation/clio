@@ -37,10 +37,9 @@ public class RestoreDbTool(
 	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>restore-db</c> with <c>mode=local-server</c>.</summary>
 	internal const string RestoreDbToLocalServerToolName = "restore-db-to-local-server";
 
-	[McpServerTool(Name = RestoreDbToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Restores a database. mode='environment' restores via a configured clio environment; mode='db-credentials' restores using explicit database server URI + credentials; mode='local-server' restores to a configured local DB server. Returns the temp database-operation log path.")]
+		[Description("Restores a database. mode='environment' restores via a configured clio environment; mode='db-credentials' restores using explicit database server URI + credentials; mode='local-server' restores to a configured local DB server. Returns the temp database-operation log path.")]
 	public CommandExecutionResult Restore(
-		[Description("Restore parameters")] [Required] RestoreDbArgs args
+		[Description("Restore parameters")] [Required] RestoreDbRunArgs args
 	) {
 		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
 			"mode", args.Mode, ModeEnvironment, ModeDbCredentials, ModeLocalServer);
@@ -57,7 +56,7 @@ public class RestoreDbTool(
 		return RestoreToLocalServer(args);
 	}
 
-	private CommandExecutionResult RestoreByEnvironment(RestoreDbArgs args) {
+	private CommandExecutionResult RestoreByEnvironment(RestoreDbRunArgs args) {
 		CommandExecutionResult missing = CommandExecutionResult.ValidateRequiredForMode(
 			"environment-name", args.EnvironmentName, ModeEnvironment);
 		if (missing != null) {
@@ -74,7 +73,7 @@ public class RestoreDbTool(
 		return InternalExecute<RestoreDbCommand>(options);
 	}
 
-	private CommandExecutionResult RestoreByDbCredentials(RestoreDbArgs args) {
+	private CommandExecutionResult RestoreByDbCredentials(RestoreDbRunArgs args) {
 		CommandExecutionResult missingServer = CommandExecutionResult.ValidateRequiredForMode(
 			"db-server-uri", args.DbServerUri, ModeDbCredentials);
 		if (missingServer != null) {
@@ -104,7 +103,7 @@ public class RestoreDbTool(
 		return InternalExecute(options);
 	}
 
-	private CommandExecutionResult RestoreToLocalServer(RestoreDbArgs args) {
+	private CommandExecutionResult RestoreToLocalServer(RestoreDbRunArgs args) {
 		CommandExecutionResult missingServer = CommandExecutionResult.ValidateRequiredForMode(
 			"db-server-name", args.DbServerName, ModeLocalServer);
 		if (missingServer != null) {
@@ -135,7 +134,7 @@ public class RestoreDbTool(
 /// <summary>
 /// MCP arguments for the consolidated <c>restore-db</c> tool. Exactly one mode is active per call.
 /// </summary>
-public sealed record RestoreDbArgs(
+public sealed record RestoreDbRunArgs(
 	[property: JsonPropertyName("mode")]
 	[property: Description("Discriminator: 'environment' restores via a configured clio environment; 'db-credentials' uses explicit database server URI + credentials; 'local-server' targets a configured local DB server.")]
 	[property: Required]
@@ -192,4 +191,4 @@ public sealed record RestoreDbArgs(
 	[property: JsonPropertyName("disable-reset-password")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when version and environment checks allow it.")]
 	bool DisableResetPassword = true
-);
+) : ClioRunArgs;

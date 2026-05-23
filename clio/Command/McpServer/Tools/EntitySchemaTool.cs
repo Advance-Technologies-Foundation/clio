@@ -416,11 +416,9 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	/// <summary>
 	/// Adds, updates, or removes a remote entity schema column.
 	/// </summary>
-	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema.")]
+		[Description("Adds, modifies, or removes a column in a remote Creatio entity schema.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
-		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
+		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnRunArgs args) {
 		try {
 			string context = $"Column '{args.ColumnName}' action '{args.Action}'";
 			IReadOnlyDictionary<string, string>? titleLocalizations =
@@ -749,7 +747,7 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("do-not-control-integrity")]
 	[property: Description("Set the do-not-control-integrity flag")]
 	bool? DoNotControlIntegrity = null
-) {
+) : ClioRunArgs {
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }
@@ -823,7 +821,7 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 /// <summary>
 /// Arguments for the <c>modify-entity-schema-column</c> MCP tool.
 /// </summary>
-public sealed record ModifyEntitySchemaColumnArgs(
+public sealed record ModifyEntitySchemaColumnRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]

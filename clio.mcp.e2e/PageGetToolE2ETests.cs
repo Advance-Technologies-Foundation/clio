@@ -69,9 +69,10 @@ public sealed class PageGetToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = candidate.Page.SchemaName,
 					["environment-name"] = arrangeContext.EnvironmentName
 				}
@@ -128,9 +129,10 @@ public sealed class PageGetToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-name"] = "UsrMissing_FormPage",
 					["environment-name"] = invalidEnvironmentName
 				}

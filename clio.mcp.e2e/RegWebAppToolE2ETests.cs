@@ -76,9 +76,10 @@ public sealed class RegWebAppToolE2ETests {
 			because: "the real MCP server must advertise reg-web-app before the test can invoke it");
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["uri"] = context.StubServer.BaseUrl,
 					["login"] = "Supervisor",

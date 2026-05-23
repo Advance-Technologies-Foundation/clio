@@ -24,13 +24,11 @@ public sealed class InstallApplicationTool(
 	/// <summary>
 	/// Installs an application package into the requested Creatio environment.
 	/// </summary>
-	[McpServerTool(Name = InstallApplicationToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Installs an application package into the specified Creatio environment.")]
+		[Description("Installs an application package into the specified Creatio environment.")]
 	public CommandExecutionResult InstallApplication(
 		[Description("install-application parameters")]
 		[Required]
-		InstallApplicationArgs args) {
+		InstallApplicationRunArgs args) {
 		InstallApplicationOptions options = new() {
 			Name = args.Name,
 			ReportPath = args.ReportPath,
@@ -44,7 +42,7 @@ public sealed class InstallApplicationTool(
 /// <summary>
 /// MCP arguments for the <c>install-application</c> tool.
 /// </summary>
-public sealed record InstallApplicationArgs(
+public sealed record InstallApplicationRunArgs(
 	[property: JsonPropertyName("name")]
 	[property: Description("Absolute path to the package to install as application")]
 	[property: Required]
@@ -62,4 +60,4 @@ public sealed record InstallApplicationArgs(
 	[property: Description("Registered clio environment name")]
 	[property: Required]
 	string EnvironmentName
-);
+) : ClioRunArgs;

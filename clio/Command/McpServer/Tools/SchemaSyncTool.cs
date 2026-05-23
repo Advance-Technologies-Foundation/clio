@@ -31,15 +31,13 @@ public sealed class SchemaSyncTool(
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
-		Idempotent = false, OpenWorld = false)]
-	[Description("Executes a batch of schema operations in a single call: " +
+		[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones.")]
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
-		[Required] SchemaSyncArgs args) {
+		[Required] SchemaSyncRunArgs args) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
 				args.EnvironmentName,
@@ -83,7 +81,7 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
-	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
+	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncRunArgs args) {
 		return args.Operations
 			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
@@ -95,7 +93,7 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
+	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncRunArgs args) {
 		return args.Operations
 			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
 				&& !string.IsNullOrWhiteSpace(op.SchemaName))
@@ -109,7 +107,7 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
+	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncRunArgs args, int operationIndex) {
 		return op.Type switch {
 			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
 			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName),
@@ -146,7 +144,7 @@ public sealed class SchemaSyncTool(
 	}
 
 	private SchemaSyncOperationResult ExecuteCreateSchema(
-		SchemaSyncOperation op, SchemaSyncArgs args,
+		SchemaSyncOperation op, SchemaSyncRunArgs args,
 		string parentSchemaName, bool extendParent, string operationName) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
@@ -198,7 +196,7 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncCollisionInfo? TryGetCollisionInfo(string schemaName, SchemaSyncArgs args) {
+	private SchemaSyncCollisionInfo? TryGetCollisionInfo(string schemaName, SchemaSyncRunArgs args) {
 		try {
 			FindEntitySchemaOptions findOptions = new() {
 				Environment = args.EnvironmentName,
@@ -219,7 +217,7 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncRunArgs args) {
 		try {
 				if (op.UpdateOperations?.Any() != true) {
 					return new SchemaSyncOperationResult {
@@ -255,7 +253,7 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncRunArgs args) {
 		try {
 			string rowsJson = JsonSerializer.Serialize(op.SeedRows);
 			CreateDataBindingDbOptions options = new() {
@@ -333,7 +331,7 @@ public sealed class SchemaSyncTool(
 /// <summary>
 /// Top-level arguments for the <c>sync-schemas</c> MCP tool.
 /// </summary>
-public sealed record SchemaSyncArgs(
+public sealed record SchemaSyncRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]
@@ -348,7 +346,7 @@ public sealed record SchemaSyncArgs(
 	[property: Description("Ordered list of schema operations to execute")]
 	[property: Required]
 	IEnumerable<SchemaSyncOperation> Operations
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// A single schema operation within a <c>sync-schemas</c> batch.

@@ -46,7 +46,7 @@ public sealed class CompileCreatioToolTests
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioRunArgs("sandbox", null));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -82,7 +82,7 @@ public sealed class CompileCreatioToolTests
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", "MyPackage"));
+			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioRunArgs("sandbox", "MyPackage"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -115,7 +115,7 @@ public sealed class CompileCreatioToolTests
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", "PkgA,PkgB"));
+			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioRunArgs("sandbox", "PkgA,PkgB"));
 
 			// Assert
 			result.ExitCode.Should().Be(1,
@@ -136,6 +136,7 @@ public sealed class CompileCreatioToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes destructive MCP metadata for compilation so hosts can prompt for confirmation before the long-running runtime reload.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void CompileCreatio_Should_Expose_Expected_Mcp_Metadata()
 	{
 		// Arrange

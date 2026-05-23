@@ -8,8 +8,7 @@ namespace Clio.Command.McpServer.Tools;
 
 public class UninstallCreatioTool(UninstallCreatioCommand command, ILogger logger) : BaseTool<UninstallCreatioCommandOptions>(command, logger) {
 	
-	[McpServerTool(Name = "uninstall-creatio", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
-	[Description("""
+		[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
 				 the machine, including the IIS site and application pool, database (both
 				 local and containerized), application files, and application pool user
@@ -21,7 +20,7 @@ public class UninstallCreatioTool(UninstallCreatioCommand command, ILogger logge
 				 containerized databases (Kubernetes/Rancher).
 				 """)]
 	public CommandExecutionResult UninstallCreatio(
-		[Description("Uninstall parameters")] [Required] UninstallCreatioArgs args
+		[Description("Uninstall parameters")] [Required] UninstallCreatioRunArgs args
 	) {
 		
 		UninstallCreatioCommandOptions options = new() {
@@ -31,6 +30,6 @@ public class UninstallCreatioTool(UninstallCreatioCommand command, ILogger logge
 	}
 }
 
-public record UninstallCreatioArgs(
+public record UninstallCreatioRunArgs(
 	[property:JsonPropertyName("environment-name")][Description("Creatio environment name to uninstall")] [Required] string EnvironmentName
-);
+) : ClioRunArgs;

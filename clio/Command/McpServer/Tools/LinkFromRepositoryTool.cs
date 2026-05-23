@@ -28,10 +28,9 @@ public class LinkFromRepositoryTool(
 	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>link-from-repository</c> with <c>mode=unlocked</c>.</summary>
 	internal const string LinkFromRepositoryUnlockedToolName = "link-from-repository-unlocked";
 
-	[McpServerTool(Name = LinkFromRepositoryToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Links repository package content into a Creatio environment. mode='by-env' resolves the target via a registered environment name; mode='by-pkg-path' uses an explicit environment package directory; mode='unlocked' queries the site for unlocked packages and links only those.")]
+		[Description("Links repository package content into a Creatio environment. mode='by-env' resolves the target via a registered environment name; mode='by-pkg-path' uses an explicit environment package directory; mode='unlocked' queries the site for unlocked packages and links only those.")]
 	public CommandExecutionResult LinkFromRepository(
-		[Description("Link-from-repository parameters")] [Required] LinkFromRepositoryArgs args
+		[Description("Link-from-repository parameters")] [Required] LinkFromRepositoryRunArgs args
 	) {
 		CommandExecutionResult modeError = CommandExecutionResult.ValidateExactlyOneMode(
 			"mode", args.Mode, ModeByEnv, ModeByPkgPath, ModeUnlocked);
@@ -54,7 +53,7 @@ public class LinkFromRepositoryTool(
 		return LinkUnlocked(args);
 	}
 
-	private CommandExecutionResult LinkByEnvironment(LinkFromRepositoryArgs args) {
+	private CommandExecutionResult LinkByEnvironment(LinkFromRepositoryRunArgs args) {
 		CommandExecutionResult missingEnv = CommandExecutionResult.ValidateRequiredForMode(
 			"environment-name", args.EnvironmentName, ModeByEnv);
 		if (missingEnv != null) {
@@ -75,7 +74,7 @@ public class LinkFromRepositoryTool(
 		return InternalExecute(options);
 	}
 
-	private CommandExecutionResult LinkByPackagePath(LinkFromRepositoryArgs args) {
+	private CommandExecutionResult LinkByPackagePath(LinkFromRepositoryRunArgs args) {
 		CommandExecutionResult missingPath = CommandExecutionResult.ValidateRequiredForMode(
 			"env-pkg-path", args.EnvPkgPath, ModeByPkgPath);
 		if (missingPath != null) {
@@ -96,7 +95,7 @@ public class LinkFromRepositoryTool(
 		return InternalExecute(options);
 	}
 
-	private CommandExecutionResult LinkUnlocked(LinkFromRepositoryArgs args) {
+	private CommandExecutionResult LinkUnlocked(LinkFromRepositoryRunArgs args) {
 		CommandExecutionResult missingEnv = CommandExecutionResult.ValidateRequiredForMode(
 			"environment-name", args.EnvironmentName, ModeUnlocked);
 		if (missingEnv != null) {
@@ -115,7 +114,7 @@ public class LinkFromRepositoryTool(
 /// <summary>
 /// MCP arguments for the consolidated <c>link-from-repository</c> tool.
 /// </summary>
-public sealed record LinkFromRepositoryArgs(
+public sealed record LinkFromRepositoryRunArgs(
 	[property: JsonPropertyName("mode")]
 	[property: Description("Discriminator: 'by-env' resolves the target Creatio package directory via a registered environment; 'by-pkg-path' takes the package directory explicitly; 'unlocked' queries the site for unlocked packages and links only those.")]
 	[property: Required]
@@ -145,4 +144,4 @@ public sealed record LinkFromRepositoryArgs(
 	[property: JsonPropertyName("skip-preparation")]
 	[property: Description("Skip the automatic preparation step (Maintainer check, unlock, 2fs). Honored in mode='by-env' and mode='by-pkg-path'.")]
 	bool? SkipPreparation = null
-);
+) : ClioRunArgs;

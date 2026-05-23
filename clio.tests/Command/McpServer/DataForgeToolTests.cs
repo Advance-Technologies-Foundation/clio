@@ -220,6 +220,7 @@ public sealed class DataForgeToolTests {
 	[TestCase(nameof(DataForgeTool.GetContext), true, false)]
 	[TestCase(nameof(DataForgeTool.Initialize), false, true)]
 	[TestCase(nameof(DataForgeTool.Update), false, true)]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void DataForgeTools_Should_Advertise_Safety_Metadata(string methodName, bool readOnly, bool destructive) {
 		System.Reflection.MethodInfo method = typeof(DataForgeTool).GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method

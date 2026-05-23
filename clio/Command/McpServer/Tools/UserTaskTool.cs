@@ -20,15 +20,14 @@ public class CreateUserTaskTool(
 	/// <summary>
 	/// Creates a workspace-owned user task and optionally adds initial parameters.
 	/// </summary>
-	[McpServerTool(Name = "create-user-task", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Creates a new user task in a package from the specified local workspace and builds that package.
 				 
 				 The tool can create an empty task or create it with initial parameters in one operation.
 				 The workspace path is required because the package must exist in the local workspace.
 				 """)]
 	public CommandExecutionResult CreateUserTask(
-		[Description("create-user-task parameters")] [Required] CreateUserTaskArgs args
+		[Description("create-user-task parameters")] [Required] CreateUserTaskRunArgs args
 	) {
 		CreateUserTaskOptions options = new() {
 			Code = args.Code,
@@ -57,16 +56,14 @@ public class ModifyUserTaskParametersTool(
 	/// <summary>
 	/// Adds and/or removes parameters on an existing workspace-owned user task.
 	/// </summary>
-	[McpServerTool(Name = "modify-user-task-parameters", ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Modifies parameters on an existing workspace-owned user task in Creatio.
 				 
 				 This tool can add parameters, remove parameters, or do both in one call.
 				 Because it can remove parameters from an existing schema, treat it as destructive.
 				 """)]
 	public CommandExecutionResult ModifyUserTaskParameters(
-		[Description("modify-user-task-parameters parameters")] [Required] ModifyUserTaskParametersArgs args
+		[Description("modify-user-task-parameters parameters")] [Required] ModifyUserTaskParametersRunArgs args
 	) {
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = args.UserTaskName,
@@ -341,7 +338,7 @@ public record UserTaskParameterDirectionArgs(
 /// <summary>
 /// Arguments for the <c>create-user-task</c> MCP tool.
 /// </summary>
-public record CreateUserTaskArgs(
+public record CreateUserTaskRunArgs(
 	[property:JsonPropertyName("code")]
 	[Description("User task schema code")]
 	[Required]
@@ -378,12 +375,12 @@ public record CreateUserTaskArgs(
 	[property:JsonPropertyName("parameters")]
 	[Description("Optional initial parameters to create with the user task.")]
 	IEnumerable<UserTaskParameterArgs> Parameters = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Arguments for the <c>modify-user-task-parameters</c> MCP tool.
 /// </summary>
-public record ModifyUserTaskParametersArgs(
+public record ModifyUserTaskParametersRunArgs(
 	[property:JsonPropertyName("user-task-name")]
 	[Description("Existing user task schema name")]
 	[Required]
@@ -418,4 +415,4 @@ public record ModifyUserTaskParametersArgs(
 	[property:JsonPropertyName("set-parameter-directions")]
 	[Description("Direction updates for existing parameters on the user task.")]
 	IEnumerable<UserTaskParameterDirectionArgs> SetParameterDirections = null
-);
+) : ClioRunArgs;

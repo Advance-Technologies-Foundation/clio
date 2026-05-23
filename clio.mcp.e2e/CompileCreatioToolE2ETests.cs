@@ -61,9 +61,10 @@ public sealed class CompileCreatioToolE2ETests
 			because: "the compile-creatio MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName
 				}
 			},

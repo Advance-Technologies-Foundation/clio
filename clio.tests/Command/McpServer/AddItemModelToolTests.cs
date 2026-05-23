@@ -41,6 +41,7 @@ public sealed class AddItemModelToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the add-item-model MCP method as destructive because it writes and can overwrite generated model files.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void AddItemModel_Should_Be_Marked_As_Destructive() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(AddItemModelTool).GetMethod(nameof(AddItemModelTool.AddItemModel))!;
@@ -72,7 +73,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			modelsPath,
 			"dev"));
@@ -112,7 +113,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			"",
 			"dev"));
@@ -137,7 +138,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			@"relative\models",
 			"dev"));
@@ -162,7 +163,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(ConsoleLogger.Instance, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			@"\\server\share\models",
 			"dev"));
@@ -191,7 +192,7 @@ public sealed class AddItemModelToolTests {
 		string missingFolder = GetRootedPath("Missing", "Models");
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			missingFolder,
 			"dev"));
@@ -233,7 +234,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			modelsPath,
 			"dev"));
@@ -283,7 +284,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			modelsPath,
 			"dev"));
@@ -320,7 +321,7 @@ public sealed class AddItemModelToolTests {
 		AddItemModelTool tool = new(logger, commandResolver, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.AddItemModel(new AddItemModelArgs(
+		CommandExecutionResult result = tool.AddItemModel(new AddItemModelRunArgs(
 			"Contoso.Models",
 			modelsPath,
 			"dev"));

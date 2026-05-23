@@ -23,7 +23,7 @@ public class DeleteSchemaToolTests {
 			.Returns(resolvedCommand);
 		DeleteSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.DeleteSchema(new DeleteSchemaArgs(
+		CommandExecutionResult result = tool.DeleteSchema(new DeleteSchemaRunArgs(
 			"UsrMyTask",
 			"docker_fix2",
 			@"C:\Projects\clio-with-core-and-ui\workspace",
@@ -55,7 +55,7 @@ public class DeleteSchemaToolTests {
 			.Returns(resolvedCommand);
 		DeleteSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.DeleteSchema(new DeleteSchemaArgs(
+		CommandExecutionResult result = tool.DeleteSchema(new DeleteSchemaRunArgs(
 			"UsrLegacyHelper",
 			"docker_fix2",
 			null,

@@ -26,10 +26,9 @@ public sealed class AppSectionTool(
 	internal const string ActionDelete = "delete";
 	internal const string ActionList = "list";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Creates, updates, deletes, or lists sections of a Creatio application. Required fields depend on action. action='create' requires caption; action='update' requires section-code plus at least one mutable field; action='delete' requires section-code; action='list' lists every section in the application.")]
+		[Description("Creates, updates, deletes, or lists sections of a Creatio application. Required fields depend on action. action='create' requires caption; action='update' requires section-code plus at least one mutable field; action='delete' requires section-code; action='list' lists every section in the application.")]
 	public async Task<object> Apply(
-		[Description("app-section parameters")] [Required] AppSectionArgs args,
+		[Description("app-section parameters")] [Required] AppSectionRunArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
 		CancellationToken cancellationToken = default) {
 		switch ((args.Action ?? string.Empty).ToLowerInvariant()) {
@@ -79,7 +78,7 @@ public sealed class AppSectionTool(
 /// <summary>
 /// Arguments for the consolidated <c>app-section</c> MCP tool.
 /// </summary>
-public sealed record AppSectionArgs(
+public sealed record AppSectionRunArgs(
 	[property: JsonPropertyName("action")]
 	[property: Description("Discriminator: 'create' | 'update' | 'delete' | 'list'. Required fields depend on action.")]
 	[property: Required]
@@ -126,4 +125,4 @@ public sealed record AppSectionArgs(
 	[property: JsonPropertyName("delete-entity-schema")]
 	[property: Description("Optional flag (action='delete' only) to also remove the backing entity schema.")]
 	bool? DeleteEntitySchema = null
-);
+) : ClioRunArgs;

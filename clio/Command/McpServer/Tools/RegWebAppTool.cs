@@ -17,15 +17,14 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 	/// </summary>
 	/// <param name="args">Tool arguments that map to <see cref="RegAppOptions"/>.</param>
 	/// <returns>Execution result with the captured command log output.</returns>
-	[McpServerTool(Name = "reg-web-app", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Registers or updates a local clio web application configuration.
 				 
 				 This command updates clio's local environment settings. It does not modify Creatio metadata.
 				 The tool also supports setting the active environment and importing environments from IIS.
 				 """)]
 	public CommandExecutionResult RegisterWebApp(
-		[Description("reg-web-app parameters")] [Required] RegWebAppArgs args
+		[Description("reg-web-app parameters")] [Required] RegWebAppRunArgs args
 	) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)
 			&& string.IsNullOrWhiteSpace(args.ActiveEnvironment)
@@ -61,7 +60,7 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 /// <summary>
 /// Arguments for the <c>reg-web-app</c> MCP tool.
 /// </summary>
-public record RegWebAppArgs(
+public record RegWebAppRunArgs(
 	[property:JsonPropertyName("environment-name")]
 	[Description("Environment name to register or update. Not required when `active-environment` or `add-from-iis` is used.")]
 	string EnvironmentName = null,
@@ -125,4 +124,4 @@ public record RegWebAppArgs(
 	[property:JsonPropertyName("environment-path")]
 	[Description("Path to the Creatio application root folder.")]
 	string EnvironmentPath = null
-);
+) : ClioRunArgs;

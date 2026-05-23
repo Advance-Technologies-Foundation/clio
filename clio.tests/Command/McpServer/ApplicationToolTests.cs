@@ -138,6 +138,7 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for create-app so callers and tests share the same production identifier.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void ApplicationCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationCreateTool)
@@ -640,7 +641,7 @@ public sealed class ApplicationToolTests {
 				ApplicationName: "Codex App",
 				ApplicationCode: "UsrCodexApp",
 				ApplicationVersion: "1.0.0"));
-		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateRunArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
 				Used: true,
 				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
@@ -655,7 +656,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -685,7 +686,7 @@ public sealed class ApplicationToolTests {
 				request.OptionalTemplateData.UseAiContentGeneration == false &&
 				request.OptionalTemplateData.AppSectionDescription == "Section description"));
 		enrichmentService.Received(1).Enrich(
-			Arg.Is<ApplicationCreateArgs>(request =>
+			Arg.Is<ApplicationCreateRunArgs>(request =>
 				request.EnvironmentName == "sandbox" &&
 				request.Name == "Codex App" &&
 				request.Code == "UsrCodexApp"),
@@ -838,19 +839,19 @@ public sealed class ApplicationToolTests {
 	[Description("Declares the core-aligned required attributes for the create-app fields while keeping description optional.")]
 	public void ApplicationCreateArgs_Should_Mark_Core_Required_Fields_As_Required() {
 		// Arrange
-		Type argsType = typeof(ApplicationCreateArgs);
+		Type argsType = typeof(ApplicationCreateRunArgs);
 		string[] requiredProperties = [
-			nameof(ApplicationCreateArgs.EnvironmentName),
-			nameof(ApplicationCreateArgs.Name),
-			nameof(ApplicationCreateArgs.Code)
+			nameof(ApplicationCreateRunArgs.EnvironmentName),
+			nameof(ApplicationCreateRunArgs.Name),
+			nameof(ApplicationCreateRunArgs.Code)
 		];
 		string[] optionalProperties = [
-			nameof(ApplicationCreateArgs.TemplateCode),
-			nameof(ApplicationCreateArgs.IconBackground),
-			nameof(ApplicationCreateArgs.IconId),
-			nameof(ApplicationCreateArgs.ClientTypeId),
-			nameof(ApplicationCreateArgs.Description),
-			nameof(ApplicationCreateArgs.OptionalTemplateDataJson)
+			nameof(ApplicationCreateRunArgs.TemplateCode),
+			nameof(ApplicationCreateRunArgs.IconBackground),
+			nameof(ApplicationCreateRunArgs.IconId),
+			nameof(ApplicationCreateRunArgs.ClientTypeId),
+			nameof(ApplicationCreateRunArgs.Description),
+			nameof(ApplicationCreateRunArgs.OptionalTemplateDataJson)
 		];
 
 		// Act
@@ -882,7 +883,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -912,7 +913,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -945,7 +946,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -977,7 +978,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Customer Base",
 			Code: "UsrCustomerBase",
@@ -1009,7 +1010,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Customer Base",
 			Code: "UsrCustomerBase",
@@ -1040,7 +1041,7 @@ public sealed class ApplicationToolTests {
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication("sandbox", Arg.Any<ApplicationCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
-		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateRunArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
 				Used: true,
 				Health: null,
@@ -1051,7 +1052,7 @@ public sealed class ApplicationToolTests {
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -1067,7 +1068,7 @@ public sealed class ApplicationToolTests {
 			because: "backend failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*Template dependency failed*",
 			because: "the create error envelope should preserve the backend diagnostics");
-		enrichmentService.Received(1).Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
+		enrichmentService.Received(1).Enrich(Arg.Any<ApplicationCreateRunArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
 	}
 
 	[Test]
@@ -1221,6 +1222,7 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises the stable MCP tool name for delete-app so callers and tests share the same production identifier.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void ApplicationDelete_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationDeleteTool)
@@ -1256,7 +1258,7 @@ public sealed class ApplicationToolTests {
 		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
 
 		// Act
-		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteRunArgs(
 			EnvironmentName: "sandbox",
 			AppName: " ",
 			Uri: null,
@@ -1299,7 +1301,7 @@ public sealed class ApplicationToolTests {
 		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
 
 		// Act
-		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteRunArgs(
 			EnvironmentName: null,
 			AppName: "11111111-1111-1111-1111-111111111111",
 			Uri: "https://sandbox",
@@ -1343,7 +1345,7 @@ public sealed class ApplicationToolTests {
 		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
 
 		// Act
-		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteArgs(
+		ApplicationDeleteResponse response = tool.DeleteApplication(new ApplicationDeleteRunArgs(
 			EnvironmentName: null,
 			AppName: "11111111-1111-1111-1111-111111111111",
 			Uri: null,
@@ -1364,15 +1366,15 @@ public sealed class ApplicationToolTests {
 	[Description("Marks app-name as the only required MCP field for delete-app while keeping environment and credentials optional.")]
 	public void ApplicationDeleteArgs_Should_Require_Only_AppName() {
 		// Arrange
-		Type argsType = typeof(ApplicationDeleteArgs);
+		Type argsType = typeof(ApplicationDeleteRunArgs);
 		string[] requiredProperties = [
-			nameof(ApplicationDeleteArgs.AppName)
+			nameof(ApplicationDeleteRunArgs.AppName)
 		];
 		string[] optionalProperties = [
-			nameof(ApplicationDeleteArgs.EnvironmentName),
-			nameof(ApplicationDeleteArgs.Uri),
-			nameof(ApplicationDeleteArgs.Login),
-			nameof(ApplicationDeleteArgs.Password)
+			nameof(ApplicationDeleteRunArgs.EnvironmentName),
+			nameof(ApplicationDeleteRunArgs.Uri),
+			nameof(ApplicationDeleteRunArgs.Login),
+			nameof(ApplicationDeleteRunArgs.Password)
 		];
 
 		// Act
@@ -1551,13 +1553,13 @@ public sealed class ApplicationToolTests {
 				PackageName: "UsrCodexApp",
 				Entities: Array.Empty<ApplicationEntityInfoResult>(),
 				ApplicationId: Guid.NewGuid().ToString()));
-		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateRunArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(
 				Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
@@ -1585,13 +1587,13 @@ public sealed class ApplicationToolTests {
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
-		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateRunArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
 		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateRunArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",

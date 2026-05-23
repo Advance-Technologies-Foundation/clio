@@ -86,13 +86,11 @@ public sealed class ApplicationCreateTool(
 	/// <summary>
 	/// Creates a Creatio application and returns the same structured payload as get-app-info.
 	/// </summary>
-	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
+		[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
 		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id (optional)")]
 		[Required]
-		ApplicationCreateArgs args) {
+		ApplicationCreateRunArgs args) {
 		try {
 			ValidateCreateArgs(args);
 			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
@@ -124,7 +122,7 @@ public sealed class ApplicationCreateTool(
 		"AppFreedomUI", "AppFreedomUIv2", "AppWithHomePage", "EmptyApp"
 	];
 
-	private static void ValidateCreateArgs(ApplicationCreateArgs args) {
+	private static void ValidateCreateArgs(ApplicationCreateRunArgs args) {
 		if (string.IsNullOrWhiteSpace(args.Name)) {
 			throw new ArgumentException("name is required.");
 		}

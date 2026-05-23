@@ -31,13 +31,11 @@ public sealed class AddItemModelTool(
 	/// <summary>
 	/// Generates all Creatio entity models into the requested local folder.
 	/// </summary>
-	[McpServerTool(Name = AddItemModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Generates all C# entity models from the specified Creatio environment into the provided local folder.")]
+		[Description("Generates all C# entity models from the specified Creatio environment into the provided local folder.")]
 	public CommandExecutionResult AddItemModel(
 		[Description("add-item model parameters")]
 		[Required]
-		AddItemModelArgs args) {
+		AddItemModelRunArgs args) {
 		string? folderValidationError = AddItemModelToolPathValidator.ValidateFolder(fileSystem, args.Folder);
 		if (folderValidationError is not null) {
 			return new CommandExecutionResult(1, [new ErrorMessage(folderValidationError)]);
@@ -177,7 +175,7 @@ internal static partial class AddItemModelToolOutputCompactor {
 /// <summary>
 /// MCP arguments for the <c>add-item-model</c> tool.
 /// </summary>
-public sealed record AddItemModelArgs(
+public sealed record AddItemModelRunArgs(
 	[property: JsonPropertyName("namespace")]
 	[property: Description("C# namespace for the generated model classes")]
 	[property: Required]
@@ -192,4 +190,4 @@ public sealed record AddItemModelArgs(
 	[property: Description("Registered clio environment name used to read Creatio schemas")]
 	[property: Required]
 	string EnvironmentName
-);
+) : ClioRunArgs;

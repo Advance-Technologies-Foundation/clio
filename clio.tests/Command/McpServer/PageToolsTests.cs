@@ -53,7 +53,7 @@ public class PageToolsTests
 	[Test]
 	[Description("Serializes create-page MCP request arguments using kebab-case field names")]
 	public void PageCreateToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
-		PageCreateArgs args = new(
+		PageCreateRunArgs args = new(
 			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
 			"Demo page", "Demo description", "UsrDemoEntity",
 			"sandbox", null, null, null);
@@ -87,10 +87,10 @@ public class PageToolsTests
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
-		PageGetArgs getArgs = new("UsrTodo_FormPage", "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageGetRunArgs getArgs = new("UsrTodo_FormPage", "sandbox", "https://sandbox", "Supervisor", "Supervisor");
 		PageListArgs listArgs = new("UsrTodo", null, "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
 		PageListArgs listArgsByApp = new(null, "UsrTodo", "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
-		PageUpdateArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageUpdateRunArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
 
 		// Act
 		string getJson = System.Text.Json.JsonSerializer.Serialize(getArgs);
@@ -449,7 +449,7 @@ public class PageToolsTests
 		PageGetTool tool = new(command, logger, commandResolver, mockFs);
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -1675,7 +1675,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
-		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1705,7 +1705,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1740,7 +1740,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1765,7 +1765,7 @@ public class PageToolsTests
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
-		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1796,7 +1796,7 @@ public class PageToolsTests
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
-		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1827,7 +1827,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1860,7 +1860,7 @@ public class PageToolsTests
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
 			validators: """{"usr.MaxLengthFromSysSettingValidator":{"validator":function(config){return async function(control){return null;};},"params":[{"name":"settingCode"},{"name":"message"}],"async":true}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -1926,7 +1926,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"local",
 			[
 				new PageSyncPageInput(
@@ -1972,7 +1972,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"local",
 			[
 				new PageSyncPageInput(
@@ -2017,7 +2017,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"local",
 			[
 				new PageSyncPageInput(
@@ -2066,7 +2066,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
-		PageSyncArgs args = new(
+		PageSyncRunArgs args = new(
 			"local",
 			[
 				new PageSyncPageInput(
@@ -2227,7 +2227,7 @@ public class PageToolsTests
 		MockFileSystem mockFs = new();
 		PageGetTool tool = new(command, logger, commandResolver, mockFs);
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeTrue(because: "page read and file write should both succeed");
 		response.Bundle.Should().BeNull(because: "bundle must be omitted from MCP response when written to disk");
@@ -2273,7 +2273,7 @@ public class PageToolsTests
 		MockFileSystem mockFs = new();
 		PageGetTool tool = new(command, logger, commandResolver, mockFs);
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Files.BodyFile.Should().Contain(".clio-pages",
 			because: "files must be written under .clio-pages directory");
@@ -2370,7 +2370,7 @@ public class PageToolsTests
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(proxyBody);
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy view-model attribute bindings");
@@ -2392,7 +2392,7 @@ public class PageToolsTests
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(canonicalBody);
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "get-page should succeed for a body with canonical bindings");
@@ -2413,7 +2413,7 @@ public class PageToolsTests
 		string oldBodyPath = System.IO.Path.Combine(schemaDir, "body.js");
 		mockFs.File.WriteAllText(oldBodyPath, "previous session body");
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeTrue();
 		mockFs.File.Exists(stalePath).Should().BeFalse(
@@ -2430,7 +2430,7 @@ public class PageToolsTests
 	public void PageGetTool_WhenWriting_AddsGitIgnoreEntry() {
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeTrue();
 		string gitignorePath = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", ".gitignore");
@@ -2474,7 +2474,7 @@ public class PageToolsTests
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
 		PageGetTool tool = new(command, logger, commandResolver, failingFs);
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetRunArgs("UsrMcp_FormPage", null, null, null, null));
 
 		response.Success.Should().BeFalse(because: "directory creation failure should produce a failed response");
 		response.Error.Should().Contain("Failed to prepare output directory",
@@ -3601,7 +3601,7 @@ public class PageToolsTests
 			  "modelConfigDiff": []
 			}
 			""";
-		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBody, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrMobile_FormPage", mobileBody, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3627,7 +3627,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
-		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3658,7 +3658,7 @@ public class PageToolsTests
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, bodyWithBadJson);
 		try {
-			PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: tempFile);
+			PageUpdateRunArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: tempFile);
 
 			// Act
 			PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3693,7 +3693,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
-		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
+		PageUpdateRunArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;

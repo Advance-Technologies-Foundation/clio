@@ -16,15 +16,14 @@ public sealed class SqlSchemaInstallTool(
 
 	internal const string ToolName = "install-sql-schema";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description(
+		[Description(
 		"Execute a SQL script schema on a remote Creatio environment. " +
 		"WARNING: executes raw SQL directly on the database. Irreversible. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SqlSchemaInstallResponse InstallSchema(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
-		SqlSchemaInstallArgs args) {
+		SqlSchemaInstallRunArgs args) {
 		SqlSchemaInstallOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,
@@ -46,7 +45,7 @@ public sealed class SqlSchemaInstallTool(
 	}
 }
 
-public sealed record SqlSchemaInstallArgs(
+public sealed record SqlSchemaInstallRunArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("SQL script schema name to execute, e.g. 'UsrMySqlScript'")]
 	[property: Required]
@@ -67,4 +66,4 @@ public sealed record SqlSchemaInstallArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password
-);
+) : ClioRunArgs;

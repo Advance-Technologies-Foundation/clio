@@ -43,9 +43,10 @@ public sealed class SchemaCreateToolE2ETests {
 		string invalidEnvironmentName = $"missing-create-schema-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = "UsrMissingHelper",
 					["package-name"] = "Custom",
@@ -71,9 +72,10 @@ public sealed class SchemaCreateToolE2ETests {
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = "1BadName",
 					["package-name"] = "Custom",
@@ -102,9 +104,10 @@ public sealed class SchemaCreateToolE2ETests {
 		string schemaName = $"UsrE2EHelper{Guid.NewGuid():N}".Substring(0, 35);
 
 		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,
@@ -138,9 +141,10 @@ public sealed class SchemaCreateToolE2ETests {
 		string schemaName = $"UsrE2EDupHelper{Guid.NewGuid():N}".Substring(0, 35);
 
 		CallToolResult first = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,
@@ -152,9 +156,10 @@ public sealed class SchemaCreateToolE2ETests {
 			.Success.Should().BeTrue(because: "arrange-step create-schema must succeed before the duplicate-name assertion");
 
 		CallToolResult duplicateResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["schema-type"] = SchemaCreateTool.SchemaTypeSourceCode,
 					["schema-name"] = schemaName,
 					["package-name"] = packageName,

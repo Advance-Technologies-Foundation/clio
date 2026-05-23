@@ -15,9 +15,7 @@ public class StopTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
-	[McpServerTool(Name = "stop-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Stops Creatio instance by environment name")]
-	public CommandExecutionResult StopCreatioByName(
+		public CommandExecutionResult StopCreatioByName(
 		RequestContext<CallToolRequestParams> requestContext,
 		[Description("Target Environment name")] [Required] string environmentName
 	) {
@@ -31,9 +29,7 @@ public class StopTool(
 		});
 	}
 
-	[McpServerTool(Name = "stop-all-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Stops all Creatio instances")]
-	public CommandExecutionResult StopAllCreatio(
+		public CommandExecutionResult StopAllCreatio(
 		RequestContext<CallToolRequestParams> requestContext
 	) {
 		_requestContext = requestContext;

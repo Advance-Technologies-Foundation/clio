@@ -141,7 +141,58 @@ EOF
 
 ## Breaking changes — MCP tool consolidation (ENG-90312)
 
-This release consolidates 30 legacy MCP tool names behind 11 mode-discriminated tools. The CLI verbs are unaffected; only the MCP `tools/list` surface changed. Every legacy tool name disappears from the registry — clients must migrate to the new names and payload shapes.
+This release consolidates the MCP tool registry from **105 to 24 tools** in a single hop. Every non-read-only tool is now invoked through a single dispatcher (`clio-run`) keyed by an `args.command` discriminator. The 23 read-only tools (`list-environments`, `get-schema`, `apps`, `sys-setting`, `dataforge-find`, …) remain registered flat so hosts can continue to auto-approve them. CLI verbs (`clio restart`, `clio clear-redis-db`, …) are unaffected.
+
+### Wire shape
+
+```jsonc
+// Before — direct top-level tool call
+{ "tool": "restart-creatio",
+  "args": { "mode": "environment", "environment-name": "dev" } }
+
+// After — clio-run envelope; command discriminator selects the operation
+{ "tool": "clio-run",
+  "args": { "command": "restart-creatio", "mode": "environment", "environment-name": "dev" } }
+```
+
+The MCP SDK publishes `clio-run.args` as a JSON Schema `anyOf` over the 52 non-read-only commands; AI clients see the per-command field schema during `tools/list` without a separate discovery round trip.
+
+### Three before/after examples
+
+```jsonc
+// 1. restart-creatio
+// Before:
+{ "tool": "restart-creatio", "args": { "mode": "environment", "environment-name": "dev" } }
+// After:
+{ "tool": "clio-run", "args": { "command": "restart-creatio", "mode": "environment", "environment-name": "dev" } }
+
+// 2. create-schema (entity)
+// Before:
+{ "tool": "create-schema", "args": { "schema-type": "entity", "schema-name": "UsrVehicle", "package-name": "UsrPkg", "environment-name": "dev", "title-localizations": { "en-US": "Vehicle" } } }
+// After:
+{ "tool": "clio-run", "args": { "command": "create-schema", "schema-type": "entity", "schema-name": "UsrVehicle", "package-name": "UsrPkg", "environment-name": "dev", "title-localizations": { "en-US": "Vehicle" } } }
+
+// 3. app-section (action=create)
+// Before:
+{ "tool": "app-section", "args": { "action": "create", "environment-name": "dev", "application-code": "UsrApp", "caption": "Orders" } }
+// After:
+{ "tool": "clio-run", "args": { "command": "app-section", "action": "create", "environment-name": "dev", "application-code": "UsrApp", "caption": "Orders" } }
+```
+
+### Migration
+
+For every legacy MCP tool name listed in the migration table below, the new wire shape is:
+
+```
+old: { "tool": "<legacy-name>", "args": { ...fields... } }
+new: { "tool": "clio-run",      "args": { "command": "<legacy-name>", ...same fields... } }
+```
+
+The 105 → 24 hop combines two consolidation passes:
+1. Phase 1 collapsed env/creds pairs, schema CRUD, and per-resource action sets into 11 discriminator-bearing tools (105 → 75 surface).
+2. Phase 2 folded every non-read-only tool — including those Phase-1 consolidations — behind `clio-run`, leaving 23 read-only tools flat (75 → 24 surface).
+
+AI clients that integrated against the intermediate Phase-1 tool names (`restart-creatio`, `clear-redis-db`, `restore-db`, `create-schema`, `app-section`, …) hit a single break in this release: those names disappear from `tools/list` and must move under `clio-run`. The CLI verbs they back are still available via shell.
 
 ### Migration table
 
@@ -195,9 +246,20 @@ This release consolidates 30 legacy MCP tool names behind 11 mode-discriminated 
 | `pkg-to-file-system` | `pkg-mode` | `target=file-system` | `{"target":"file-system","environment-name":"dev"}` |
 | `pkg-to-db` | `pkg-mode` | `target=db` | `{"target":"db","environment-name":"dev"}` |
 
+### Phase 2 — full list of commands now under `clio-run`
+
+The 52 non-read-only commands routed by `clio-run`:
+
+`add-item-model`, `add-package`, `app-section`, `clear-redis-db`, `compile-creatio`, `create-app`, `create-data-binding`, `create-data-binding-db`, `create-entity-business-rule`, `create-page`, `create-page-business-rule`, `create-schema`, `create-user-task`, `create-workspace`, `data-binding-row`, `data-binding-row-db`, `dataforge-initialize`, `dataforge-update`, `delete-app`, `delete-schema`, `delete-skill`, `deploy-creatio`, `download-configuration`, `finish-hotfix`, `generate-process-model`, `generate-source-code`, `get-page`, `install-application`, `install-skills`, `install-sql-schema`, `link-from-repository`, `modify-entity-schema-column`, `modify-user-task-parameters`, `new-test-project`, `pkg-mode`, `push-workspace`, `reg-web-app`, `restart-creatio`, `restore-db`, `restore-workspace`, `set-fsm-mode`, `start-creatio`, `stop-all-creatio`, `stop-creatio`, `sync-pages`, `sync-schemas`, `uninstall-creatio`, `unlock-for-hotfix`, `update-page`, `update-schema`, `update-skill`, `upsert-sys-setting`.
+
+The 23 read-only tools that remain registered flat:
+
+`apps`, `assert-infrastructure`, `check-settings-health`, `dataforge-context`, `dataforge-find`, `dataforge-get-relations`, `dataforge-get-table-columns`, `dataforge-status`, `find-empty-iis-port`, `get-component-info`, `get-fsm-mode`, `get-guidance`, `get-schema`, `get-schema-name-prefix`, `get-tool-contract`, `list-environments`, `list-packages`, `list-page-templates`, `list-pages`, `list-schemas`, `show-passing-infrastructure`, `sys-setting`, `validate-page`.
+
 ### Notes
 
 - CLI verbs (`clio restart`, `clio clear-redis-db`, `clio restore-db`, etc.) are unchanged. The consolidation only affects the MCP `tools/list` surface served by `clio mcp-server`.
-- The new consolidated tools validate the discriminator argument and the per-mode required fields before invoking the underlying command, so AI agents get explicit "mode='X' requires field Y" errors instead of silent fallback paths.
-- Final MCP tool count after consolidation: **75** (down from 105). The budget ratchet is enforced by `clio.tests/Command/McpServer/McpToolBudgetTests.cs`.
-- Hotfix tools (`unlock-for-hotfix`, `finish-hotfix`) and skills tools (`install-skills`, `update-skill`, `delete-skill`) were deferred — they are listed as out-of-scope in ENG-90312's spec.
+- The 23 read-only tools keep their `ReadOnly = true` safety flag so hosts (Claude Desktop, Cursor, Claude Code) can auto-approve them. The `clio-run` tool is marked `Destructive = true` because its union includes destructive commands — every call through `clio-run` will go through the host's destructive-call confirmation path.
+- Final MCP tool count after consolidation: **24** (down from 105). The budget ratchet is enforced by `clio.tests/Command/McpServer/McpToolBudgetTests.cs`.
+- The dispatcher's argument validation lives on each per-command `*RunArgs` record. AI agents receive explicit "mode='X' requires field Y" / "schema-type=entity requires title-localizations" errors instead of silent fallback paths.
+- Hotfix (`unlock-for-hotfix`, `finish-hotfix`) and skills (`install-skills`, `update-skill`, `delete-skill`) families are routed through `clio-run` as of this release.

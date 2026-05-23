@@ -231,7 +231,7 @@ public sealed class FsmModeToolTests
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.SetFsmMode(new SetFsmModeArgs("sandbox", "on"));
+			CommandExecutionResult result = tool.SetFsmMode(new SetFsmModeRunArgs("sandbox", "on"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -269,7 +269,7 @@ public sealed class FsmModeToolTests
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.SetFsmMode(new SetFsmModeArgs("sandbox", "off"));
+			CommandExecutionResult result = tool.SetFsmMode(new SetFsmModeRunArgs("sandbox", "off"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -291,6 +291,7 @@ public sealed class FsmModeToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Marks get-fsm-mode as read-only and set-fsm-mode as destructive in MCP metadata.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void FsmModeTools_Should_Expose_Expected_Mcp_Metadata()
 	{
 		// Arrange

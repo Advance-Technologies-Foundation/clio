@@ -67,9 +67,10 @@ public sealed class PageSyncToolE2ETests {
 		string invalidEnvironmentName = $"missing-sync-pages-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = invalidEnvironmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -108,9 +109,10 @@ public sealed class PageSyncToolE2ETests {
 
 		await using ArrangeContext context = await ArrangeAsync();
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -159,9 +161,10 @@ public sealed class PageSyncToolE2ETests {
 				"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 				"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -217,9 +220,10 @@ public sealed class PageSyncToolE2ETests {
 				"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 				"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -269,9 +273,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -322,9 +327,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -396,9 +402,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -445,9 +452,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
 			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -495,9 +503,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"/**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -545,9 +554,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
 			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -594,9 +604,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -654,9 +665,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{\"usr.NameMaxLength\":{\"validator\":function(config){return function(control){if (control.value && control.value.length >= 5) { return {\"usr.NameMaxLength\": { message: config.message }}; } return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -713,9 +725,10 @@ public sealed class PageSyncToolE2ETests {
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -798,9 +811,10 @@ public sealed class PageSyncToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = "dev",
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
@@ -845,9 +859,10 @@ public sealed class PageSyncToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = "dev",
 					["pages"] = new[] {
 						new Dictionary<string, object?> {

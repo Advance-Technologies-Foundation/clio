@@ -443,7 +443,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -514,7 +514,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -551,7 +551,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -592,7 +592,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -627,7 +627,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -661,7 +661,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -694,7 +694,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -723,7 +723,7 @@ public sealed class EntitySchemaToolTests {
 		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnRunArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -744,6 +744,7 @@ public sealed class EntitySchemaToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the modify-entity-schema-column tool (the only entity-specific MCP entry point that survived consolidation) as destructive.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void ModifyEntitySchemaColumn_Should_Advertise_Destructive_Metadata() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(ModifyEntitySchemaColumnTool)

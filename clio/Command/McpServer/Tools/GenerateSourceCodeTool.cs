@@ -26,9 +26,7 @@ public sealed class GenerateSourceCodeTool(
 	/// <summary>
 	/// Triggers source code generation for schemas in a registered Creatio environment.
 	/// </summary>
-	[McpServerTool(Name = GenerateSourceCodeToolName, ReadOnly = false, Destructive = false, Idempotent = true,
-		OpenWorld = false)]
-	[Description(
+		[Description(
 		"Generates source code for schemas in the specified Creatio environment. " +
 		"Equivalent to the 'Generate source code' button in the Creatio Configuration section. " +
 		"By default generates source code for all schemas (synchronous). " +
@@ -37,7 +35,7 @@ public sealed class GenerateSourceCodeTool(
 	public CommandExecutionResult GenerateSourceCode(
 		[Description("generate-source-code parameters")]
 		[Required]
-		GenerateSourceCodeArgs args) {
+		GenerateSourceCodeRunArgs args) {
 		GenerateSourceCodeOptions options = new() {
 			Environment = args.EnvironmentName,
 			Modified = args.Modified ?? false,
@@ -57,7 +55,7 @@ public sealed class GenerateSourceCodeTool(
 /// <summary>
 /// MCP arguments for the <c>generate-source-code</c> tool.
 /// </summary>
-public sealed record GenerateSourceCodeArgs(
+public sealed record GenerateSourceCodeRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name")]
 	[property: Required]
@@ -74,4 +72,4 @@ public sealed record GenerateSourceCodeArgs(
 	[property: JsonPropertyName("background")]
 	[property: Description("When true, runs generation in background and returns immediately — matches the UI 'Generate all' behaviour (GenerateAllSchemasSourcesInBackground)")]
 	bool? Background
-);
+) : ClioRunArgs;

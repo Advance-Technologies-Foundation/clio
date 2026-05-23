@@ -201,9 +201,10 @@ public sealed class PageBusinessRuleToolE2ETests {
 		string environmentName) {
 		const string contactPageSchemaName = "Contact_FormPage";
 		CallToolResult callResult = await session.CallToolAsync(
-			PageGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = PageGetTool.ToolName,
 					["schema-name"] = contactPageSchemaName,
 					["environment-name"] = environmentName
 				}

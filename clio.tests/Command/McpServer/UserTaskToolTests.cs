@@ -27,7 +27,7 @@ public class UserTaskToolTests {
 		CreateUserTaskTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateUserTask(new CreateUserTaskArgs(
+		CommandExecutionResult result = tool.CreateUserTask(new CreateUserTaskRunArgs(
 			"UsrSendInvoice",
 			"MyPackage",
 			"Send invoice",
@@ -81,7 +81,7 @@ public class UserTaskToolTests {
 		ModifyUserTaskParametersTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyUserTaskParameters(new ModifyUserTaskParametersArgs(
+		CommandExecutionResult result = tool.ModifyUserTaskParameters(new ModifyUserTaskParametersRunArgs(
 			"UsrSendInvoice",
 			"docker_fix2",
 			@"C:\Projects\clio-with-core-and-ui\workspace",

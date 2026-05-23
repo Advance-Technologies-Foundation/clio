@@ -146,6 +146,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	[Description("Marks the surviving data-binding MCP entry points as destructive; add/remove are folded into the consolidated data-binding-row tool.")]
 	[TestCase(typeof(CreateDataBindingTool), nameof(CreateDataBindingTool.CreateDataBinding))]
 	[TestCase(typeof(DataBindingRowTool), nameof(DataBindingRowTool.Apply))]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void DataBinding_Methods_Should_Be_Marked_As_Destructive(Type toolType, string methodName) {
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method
@@ -184,7 +185,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			Container.GetRequiredService<IDataBindingTemplateCatalog>());
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingRunArgs(
 			null,
 			_packageName,
 			"SysSettings",
@@ -224,7 +225,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			Container.GetRequiredService<IDataBindingTemplateCatalog>());
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingRunArgs(
 			"dev",
 			_packageName,
 			"UsrImageBinding",
@@ -256,7 +257,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			Container.GetRequiredService<IDataBindingTemplateCatalog>());
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingRunArgs(
 			"dev",
 			_packageName,
 			"UsrLookupBinding",
@@ -286,7 +287,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			Container.GetRequiredService<IDataBindingTemplateCatalog>());
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingRunArgs(
 			"dev",
 			_packageName,
 			"UsrOfflineOnly",

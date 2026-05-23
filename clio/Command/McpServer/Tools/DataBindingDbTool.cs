@@ -16,13 +16,11 @@ public class CreateDataBindingDbTool(
 	: BaseTool<CreateDataBindingDbOptions>(command, logger, commandResolver) {
 	internal const string CreateDataBindingDbToolName = "create-data-binding-db";
 
-	[McpServerTool(Name = CreateDataBindingDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
+		[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
 	public CommandExecutionResult CreateDataBindingDb(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); binding-name, rows (optional)")]
 		[Required]
-		CreateDataBindingDbArgs args) {
+		CreateDataBindingDbRunArgs args) {
 		CreateDataBindingDbOptions options = new() {
 			Environment = args.EnvironmentName,
 			PackageName = args.PackageName,
@@ -87,7 +85,7 @@ public class RemoveDataBindingRowDbTool(
 /// <summary>
 /// Arguments for the <c>create-data-binding-db</c> MCP tool.
 /// </summary>
-public sealed record CreateDataBindingDbArgs(
+public sealed record CreateDataBindingDbRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
 	[property: Required]
@@ -110,7 +108,7 @@ public sealed record CreateDataBindingDbArgs(
 	[property: JsonPropertyName("rows")]
 	[property: Description("Optional JSON array of row objects, each with a 'values' key containing column name-value pairs")]
 	string? RowsJson = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Arguments for the <c>upsert-data-binding-row-db</c> MCP tool.

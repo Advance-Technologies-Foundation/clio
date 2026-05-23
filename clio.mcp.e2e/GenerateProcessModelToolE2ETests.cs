@@ -165,9 +165,10 @@ public sealed class GenerateProcessModelToolE2ETests {
 			because: "the generate-process-model MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["code"] = code,
 					["destination-path"] = destinationPath,
 					["namespace"] = "Contoso.ProcessModels",

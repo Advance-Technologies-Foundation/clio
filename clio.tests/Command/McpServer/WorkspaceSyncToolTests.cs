@@ -54,7 +54,7 @@ public sealed class WorkspaceSyncToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", workspacePath));
+			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceRunArgs("dev", workspacePath));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -97,7 +97,7 @@ public sealed class WorkspaceSyncToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", workspacePath, true));
+			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceRunArgs("dev", workspacePath, true));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -131,7 +131,7 @@ public sealed class WorkspaceSyncToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.RestoreWorkspace(new RestoreWorkspaceArgs("dev", workspacePath));
+			CommandExecutionResult result = tool.RestoreWorkspace(new RestoreWorkspaceRunArgs("dev", workspacePath));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -168,7 +168,7 @@ public sealed class WorkspaceSyncToolTests {
 		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", @"relative\workspace"));
+		CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceRunArgs("dev", @"relative\workspace"));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -193,7 +193,7 @@ public sealed class WorkspaceSyncToolTests {
 		RestoreWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.RestoreWorkspace(new RestoreWorkspaceArgs("dev", workspacePath));
+		CommandExecutionResult result = tool.RestoreWorkspace(new RestoreWorkspaceRunArgs("dev", workspacePath));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -217,7 +217,7 @@ public sealed class WorkspaceSyncToolTests {
 		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		// Act
-		CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", @"\\server\share\workspace"));
+		CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceRunArgs("dev", @"\\server\share\workspace"));
 
 		// Assert
 		result.ExitCode.Should().Be(1,
@@ -235,6 +235,7 @@ public sealed class WorkspaceSyncToolTests {
 	[Description("Marks both workspace-sync MCP methods as destructive so MCP clients can apply safety policies before mutating local or remote state.")]
 	[TestCase(nameof(PushWorkspaceTool.PushWorkspace), typeof(PushWorkspaceTool))]
 	[TestCase(nameof(RestoreWorkspaceTool.RestoreWorkspace), typeof(RestoreWorkspaceTool))]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void WorkspaceSync_Methods_Should_Be_Marked_As_Destructive(string methodName, Type toolType) {
 		// Arrange
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;

@@ -19,7 +19,7 @@ public sealed class RegWebAppToolAutoDetectionTests {
 		FakeRegAppCommand command = new();
 		RegWebAppTool tool = new(command, ConsoleLogger.Instance);
 
-		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppArgs(
+		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppRunArgs(
 			EnvironmentName: "sandbox",
 			Uri: "http://example.invalid",
 			Login: "Supervisor",

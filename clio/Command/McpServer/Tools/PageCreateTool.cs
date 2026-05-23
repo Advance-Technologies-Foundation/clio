@@ -16,12 +16,11 @@ public sealed class PageCreateTool(
 
 	internal const string ToolName = "create-page";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
 		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name (optional); environment-name preferred; uri/login/password emergency fallback only.")]
-		[Required] PageCreateArgs args) {
+		[Required] PageCreateRunArgs args) {
 		PageCreateOptions options = new() {
 			SchemaName = args.SchemaName,
 			Template = args.Template,
@@ -47,7 +46,7 @@ public sealed class PageCreateTool(
 	}
 }
 
-public sealed record PageCreateArgs(
+public sealed record PageCreateRunArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("New page schema name, e.g. 'UsrMyApp_BlankPage'. Must start with a letter; letters, digits and underscores only. " +
 		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha_FormPage' when prefix is 'Usr', 'MyPrefixAlpha_FormPage' when prefix is 'MyPrefix'). " +
@@ -94,4 +93,4 @@ public sealed record PageCreateArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password
-);
+) : ClioRunArgs;

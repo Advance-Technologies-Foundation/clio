@@ -12,8 +12,7 @@ public class DeleteSchemaTool(
 	IToolCommandResolver commandResolver) : BaseTool<DeleteSchemaOptions>(command, logger, commandResolver) {
 
 	internal const string DeleteSchemaToolName = "delete-schema";
-	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("""
+		[Description("""
 				 Deletes a schema from a Creatio environment.
 
 				 Two modes:
@@ -29,7 +28,7 @@ public class DeleteSchemaTool(
 				 This operation is destructive and cannot be undone.
 				 """)]
 	public CommandExecutionResult DeleteSchema(
-		[Description("Delete schema parameters")] [Required] DeleteSchemaArgs args
+		[Description("Delete schema parameters")] [Required] DeleteSchemaRunArgs args
 	) {
 		DeleteSchemaOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -41,7 +40,7 @@ public class DeleteSchemaTool(
 	}
 }
 
-public record DeleteSchemaArgs(
+public record DeleteSchemaRunArgs(
 	[property:JsonPropertyName("schema-name")]
 	[Description("Schema name to delete")]
 	[Required]
@@ -59,4 +58,4 @@ public record DeleteSchemaArgs(
 	[property:JsonPropertyName("remote")]
 	[Description("If true, delete the schema directly from the remote environment by name, no workspace required. Default: false")]
 	bool? Remote
-);
+) : ClioRunArgs;

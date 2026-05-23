@@ -41,10 +41,9 @@ public sealed class FsmModeTool(
 	/// <summary>
 	/// Turns FSM mode on or off for a registered environment.
 	/// </summary>
-	[McpServerTool(Name = SetFsmModeToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
+		[Description("Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
 	public CommandExecutionResult SetFsmMode(
-		[Description("FSM mode parameters")] [Required] SetFsmModeArgs args)
+		[Description("FSM mode parameters")] [Required] SetFsmModeRunArgs args)
 	{
 		TurnFsmCommandOptions options = new()
 		{
@@ -58,7 +57,7 @@ public sealed class FsmModeTool(
 /// <summary>
 /// MCP arguments for turning FSM mode on or off.
 /// </summary>
-public sealed record SetFsmModeArgs(
+public sealed record SetFsmModeRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[Description("Registered clio environment name")]
 	[Required]
@@ -67,4 +66,4 @@ public sealed record SetFsmModeArgs(
 	[property: JsonPropertyName("mode")]
 	[Description("Target FSM mode value: on or off")]
 	[Required]
-	string Mode);
+	string Mode) : ClioRunArgs;

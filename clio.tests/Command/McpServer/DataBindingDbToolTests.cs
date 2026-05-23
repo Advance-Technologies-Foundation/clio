@@ -97,6 +97,7 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	[Description("Marks the surviving DB-first data-binding MCP entry points as destructive; upsert/remove are folded into the consolidated data-binding-row-db tool.")]
 	[TestCase(typeof(CreateDataBindingDbTool), nameof(CreateDataBindingDbTool.CreateDataBindingDb))]
 	[TestCase(typeof(DataBindingRowDbTool), nameof(DataBindingRowDbTool.Apply))]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void DataBindingDbTools_Should_Be_Marked_As_Destructive(Type toolType, string methodName) {
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
 		McpServerToolAttribute attribute = method
@@ -120,7 +121,7 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBindingDb(new CreateDataBindingDbArgs(
+		CommandExecutionResult result = tool.CreateDataBindingDb(new CreateDataBindingDbRunArgs(
 			EnvironmentName: string.Empty,
 			PackageName: PackageName,
 			SchemaName: "SysSettings"));
@@ -143,7 +144,7 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateDataBindingDb(new CreateDataBindingDbArgs(
+		CommandExecutionResult result = tool.CreateDataBindingDb(new CreateDataBindingDbRunArgs(
 			EnvironmentName: "dev",
 			PackageName: PackageName,
 			SchemaName: "SysSettings",

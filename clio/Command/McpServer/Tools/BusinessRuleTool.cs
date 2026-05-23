@@ -17,13 +17,11 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	internal const string BusinessRuleCreateToolName = "create-entity-business-rule";
 	
-	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates an entity-level Freedom UI business rule.")]
+		[Description("Creates an entity-level Freedom UI business rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
-		CreateEntityBusinessRuleArgs args) {
+		CreateEntityBusinessRuleRunArgs args) {
 		CreateEntityBusinessRuleOptions options = new () {
 			EnvironmentName = args.EnvironmentName,
 			PackageName = args.PackageName,
@@ -37,7 +35,7 @@ public sealed class CreateEntityBusinessRuleTool(
 /// <summary>
 /// MCP argument wrapper for entity-level business-rule creation.
 /// </summary>
-public sealed record CreateEntityBusinessRuleArgs
+public sealed record CreateEntityBusinessRuleRunArgs : ClioRunArgs
 {
 	/// <summary>
 	/// Gets the registered Creatio environment name.
@@ -523,13 +521,11 @@ public sealed class CreatePageBusinessRuleTool(
 
 	internal const string BusinessRuleCreateToolName = "create-page-business-rule";
 
-	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
+		[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rule (all required).")]
 		[Required]
-		CreatePageBusinessRuleArgs args) {
+		CreatePageBusinessRuleRunArgs args) {
 		CreatePageBusinessRuleOptions options = new () {
 			EnvironmentName = args.EnvironmentName,
 			PackageName = args.PackageName,
@@ -543,7 +539,7 @@ public sealed class CreatePageBusinessRuleTool(
 /// <summary>
 /// MCP argument wrapper for page-level business-rule creation.
 /// </summary>
-public sealed record CreatePageBusinessRuleArgs
+public sealed record CreatePageBusinessRuleRunArgs : ClioRunArgs
 {
 	/// <summary>
 	/// Gets the registered Creatio environment name.

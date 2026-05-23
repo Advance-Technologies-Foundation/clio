@@ -27,7 +27,7 @@ public class CreateWorkspaceToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateWorkspace(
-			new CreateWorkspaceArgs("my-workspace", @"C:\Workspaces"));
+			new CreateWorkspaceRunArgs("my-workspace", @"C:\Workspaces"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should forward a valid create-workspace payload");
@@ -61,7 +61,7 @@ public class CreateWorkspaceToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateWorkspace(
-			new CreateWorkspaceArgs("my-workspace"));
+			new CreateWorkspaceRunArgs("my-workspace"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should support the global workspaces-root fallback path");
@@ -95,7 +95,7 @@ public class CreateWorkspaceToolTests {
 		// Assert
 		requiredAttributes.Should().ContainSingle(
 			because: "the create-workspace MCP tool should require its structured args payload");
-		typeof(CreateWorkspaceArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
+		typeof(CreateWorkspaceRunArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
 			["WorkspaceName", "Directory"],
 			because: "the create-workspace MCP payload should only expose the supported workspace arguments");
 	}

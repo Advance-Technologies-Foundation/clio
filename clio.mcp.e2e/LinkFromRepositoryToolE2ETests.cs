@@ -196,9 +196,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 			because: "the consolidated link-from-repository MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["mode"] = LinkFromRepositoryTool.ModeByPkgPath,
 					["env-pkg-path"] = arrangeContext.EnvironmentPackagesPath,
 					["repo-path"] = arrangeContext.RepositoryRootPath,
@@ -222,9 +223,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 			because: "the consolidated link-from-repository MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["mode"] = LinkFromRepositoryTool.ModeByEnv,
 					["environment-name"] = environmentName,
 					["repo-path"] = arrangeContext.RepositoryRootPath,

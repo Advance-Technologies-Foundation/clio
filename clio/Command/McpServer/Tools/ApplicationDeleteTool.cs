@@ -26,12 +26,11 @@ public sealed class ApplicationDeleteTool(
 	/// </summary>
 	/// <param name="args">MCP arguments describing the target application and connection.</param>
 	/// <returns>A structured response that reports whether the uninstall completed successfully.</returns>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+		[Description("Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ApplicationDeleteResponse DeleteApplication(
 		[Description("Parameters: app-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
-		ApplicationDeleteArgs args) {
+		ApplicationDeleteRunArgs args) {
 		try {
 			if (string.IsNullOrWhiteSpace(args.AppName)) {
 				return new ApplicationDeleteResponse {
@@ -79,7 +78,7 @@ public sealed class ApplicationDeleteTool(
 /// <summary>
 /// Arguments for the <c>delete-app</c> MCP tool.
 /// </summary>
-public sealed record ApplicationDeleteArgs(
+public sealed record ApplicationDeleteRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
 	string? EnvironmentName,
@@ -98,7 +97,7 @@ public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// Structured response from the <c>delete-app</c> MCP tool.

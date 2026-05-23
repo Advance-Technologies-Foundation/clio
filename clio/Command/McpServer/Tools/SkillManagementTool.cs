@@ -103,10 +103,9 @@ public sealed class InstallSkillsTool(
 	/// <summary>
 	/// Installs new managed skills into the selected scope from the selected repository.
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Installs one or more new managed skills into workspace or user scope from a local repository path or git URL")]
+		[Description("Installs one or more new managed skills into workspace or user scope from a local repository path or git URL")]
 	public CommandExecutionResult InstallSkills(
-		[Description("Install-skills parameters")] [Required] InstallSkillsArgs args) {
+		[Description("Install-skills parameters")] [Required] InstallSkillsRunArgs args) {
 		InstallSkillsOptions options = new() {
 			Skill = args.SkillName,
 			Repo = args.Repo,
@@ -130,10 +129,9 @@ public sealed class UpdateSkillTool(
 	/// <summary>
 	/// Updates managed skills in the selected scope when the source commit hash has changed.
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Updates one or more managed skills in workspace or user scope from a local repository path or git URL")]
+		[Description("Updates one or more managed skills in workspace or user scope from a local repository path or git URL")]
 	public CommandExecutionResult UpdateSkill(
-		[Description("Update-skill parameters")] [Required] UpdateSkillArgs args) {
+		[Description("Update-skill parameters")] [Required] UpdateSkillRunArgs args) {
 		UpdateSkillOptions options = new() {
 			Skill = args.SkillName,
 			Repo = args.Repo,
@@ -157,10 +155,9 @@ public sealed class DeleteSkillTool(
 	/// <summary>
 	/// Deletes a managed skill from the selected scope.
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Deletes a managed skill from workspace or user scope")]
+		[Description("Deletes a managed skill from workspace or user scope")]
 	public CommandExecutionResult DeleteSkill(
-		[Description("Delete-skill parameters")] [Required] DeleteSkillArgs args) {
+		[Description("Delete-skill parameters")] [Required] DeleteSkillRunArgs args) {
 		DeleteSkillOptions options = new() {
 			Skill = args.SkillName,
 			Scope = args.Scope
@@ -172,7 +169,7 @@ public sealed class DeleteSkillTool(
 /// <summary>
 /// MCP arguments for the <c>install-skills</c> tool.
 /// </summary>
-public sealed record InstallSkillsArgs(
+public sealed record InstallSkillsRunArgs(
 	[property: JsonPropertyName("workspacePath")]
 	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
 	string WorkspacePath = null,
@@ -188,12 +185,12 @@ public sealed record InstallSkillsArgs(
 	[property: JsonPropertyName("repo")]
 	[property: Description("Optional local repository path or git URL. Defaults to the bootstrap skills repository")]
 	string Repo = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// MCP arguments for the <c>update-skill</c> tool.
 /// </summary>
-public sealed record UpdateSkillArgs(
+public sealed record UpdateSkillRunArgs(
 	[property: JsonPropertyName("workspacePath")]
 	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
 	string WorkspacePath = null,
@@ -209,12 +206,12 @@ public sealed record UpdateSkillArgs(
 	[property: JsonPropertyName("repo")]
 	[property: Description("Optional local repository path or git URL. Defaults to the bootstrap skills repository")]
 	string Repo = null
-);
+) : ClioRunArgs;
 
 /// <summary>
 /// MCP arguments for the <c>delete-skill</c> tool.
 /// </summary>
-public sealed record DeleteSkillArgs(
+public sealed record DeleteSkillRunArgs(
 	[property: JsonPropertyName("skillName")]
 	[property: Description("Managed skill name to delete")]
 	[property: Required]
@@ -227,4 +224,4 @@ public sealed record DeleteSkillArgs(
 	[property: JsonPropertyName("workspacePath")]
 	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
 	string WorkspacePath = null
-);
+) : ClioRunArgs;

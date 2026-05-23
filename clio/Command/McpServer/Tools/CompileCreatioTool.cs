@@ -28,10 +28,9 @@ public sealed class CompileCreatioTool(
 	/// <summary>
 	/// Compiles Creatio fully or rebuilds a single package for a registered environment.
 	/// </summary>
-	[McpServerTool(Name = CompileCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`.")]
+		[Description("Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`.")]
 	public CommandExecutionResult CompileCreatio(
-		[Description("Compilation parameters")] [Required] CompileCreatioArgs args)
+		[Description("Compilation parameters")] [Required] CompileCreatioRunArgs args)
 	{
 		if (!string.IsNullOrWhiteSpace(args.PackageName) && args.PackageName.Contains(',', StringComparison.Ordinal))
 		{
@@ -94,7 +93,7 @@ public sealed class CompileCreatioTool(
 /// <summary>
 /// MCP arguments for Creatio compilation operations.
 /// </summary>
-public sealed record CompileCreatioArgs(
+public sealed record CompileCreatioRunArgs(
 	[property: JsonPropertyName("environment-name")]
 	[Description("Registered clio environment name")]
 	[Required]
@@ -102,4 +101,4 @@ public sealed record CompileCreatioArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[Description("Optional package name. When omitted, the tool performs a full compilation.")]
-	string? PackageName);
+	string? PackageName) : ClioRunArgs;

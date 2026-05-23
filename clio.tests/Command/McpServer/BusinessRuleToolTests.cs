@@ -67,7 +67,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -125,7 +125,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -159,7 +159,7 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		parameter.Name.Should().Be("args",
 			because: "the runtime MCP schema should require the standard args wrapper instead of flat top-level fields");
-		parameter.ParameterType.Should().Be(typeof(CreateEntityBusinessRuleArgs),
+		parameter.ParameterType.Should().Be(typeof(CreateEntityBusinessRuleRunArgs),
 			because: "the wrapper type should own the business-rule input fields and their JSON names");
 		requiredAttributes.Should().ContainSingle(
 			because: "the MCP tool should require the args wrapper");
@@ -168,15 +168,15 @@ public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes kebab-case required fields inside the create-entity-business-rule args wrapper.")]
-	[TestCase(nameof(CreateEntityBusinessRuleArgs.EnvironmentName), "environment-name")]
-	[TestCase(nameof(CreateEntityBusinessRuleArgs.PackageName), "package-name")]
-	[TestCase(nameof(CreateEntityBusinessRuleArgs.EntitySchemaName), "entity-schema-name")]
-	[TestCase(nameof(CreateEntityBusinessRuleArgs.Rule), "rule")]
+	[TestCase(nameof(CreateEntityBusinessRuleRunArgs.EnvironmentName), "environment-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleRunArgs.PackageName), "package-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleRunArgs.EntitySchemaName), "entity-schema-name")]
+	[TestCase(nameof(CreateEntityBusinessRuleRunArgs.Rule), "rule")]
 	public void BusinessRuleCreateArgs_Should_Expose_Required_Kebab_Case_Fields(
 		string propertyName,
 		string jsonName) {
 		// Arrange
-		PropertyInfo property = typeof(CreateEntityBusinessRuleArgs).GetProperty(propertyName)!;
+		PropertyInfo property = typeof(CreateEntityBusinessRuleRunArgs).GetProperty(propertyName)!;
 
 		// Act
 		string actualJsonName = property.GetCustomAttributes(typeof(JsonPropertyNameAttribute), inherit: false)
@@ -230,7 +230,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -326,7 +326,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -394,7 +394,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -454,7 +454,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -500,7 +500,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -557,7 +557,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+		CreateEntityBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -623,7 +623,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreateEntityBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -687,7 +687,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",
@@ -740,7 +740,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",
@@ -787,7 +787,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",
@@ -819,7 +819,7 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		parameter.Name.Should().Be("args",
 			because: "the runtime MCP schema should require the standard args wrapper instead of flat top-level fields");
-		parameter.ParameterType.Should().Be(typeof(CreatePageBusinessRuleArgs),
+		parameter.ParameterType.Should().Be(typeof(CreatePageBusinessRuleRunArgs),
 			because: "the wrapper type should own the page business-rule input fields and their JSON names");
 		requiredAttributes.Should().ContainSingle(
 			because: "the MCP tool should require the args wrapper");
@@ -828,15 +828,15 @@ public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes kebab-case required fields inside the create-page-business-rule args wrapper.")]
-	[TestCase(nameof(CreatePageBusinessRuleArgs.EnvironmentName), "environment-name")]
-	[TestCase(nameof(CreatePageBusinessRuleArgs.PackageName), "package-name")]
-	[TestCase(nameof(CreatePageBusinessRuleArgs.PageSchemaName), "page-schema-name")]
-	[TestCase(nameof(CreatePageBusinessRuleArgs.Rule), "rule")]
+	[TestCase(nameof(CreatePageBusinessRuleRunArgs.EnvironmentName), "environment-name")]
+	[TestCase(nameof(CreatePageBusinessRuleRunArgs.PackageName), "package-name")]
+	[TestCase(nameof(CreatePageBusinessRuleRunArgs.PageSchemaName), "page-schema-name")]
+	[TestCase(nameof(CreatePageBusinessRuleRunArgs.Rule), "rule")]
 	public void PageBusinessRuleCreateArgs_Should_Expose_Required_Kebab_Case_Fields(
 		string propertyName,
 		string jsonName) {
 		// Arrange
-		PropertyInfo property = typeof(CreatePageBusinessRuleArgs).GetProperty(propertyName)!;
+		PropertyInfo property = typeof(CreatePageBusinessRuleRunArgs).GetProperty(propertyName)!;
 
 		// Act
 		string actualJsonName = property.GetCustomAttributes(typeof(JsonPropertyNameAttribute), inherit: false)
@@ -906,7 +906,7 @@ public sealed class BusinessRuleToolTests {
 		""";
 
 		// Act
-		CreatePageBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreatePageBusinessRuleArgs>(payload);
+		CreatePageBusinessRuleRunArgs? payloadArgs = JsonSerializer.Deserialize<CreatePageBusinessRuleRunArgs>(payload);
 
 		// Assert
 		payloadArgs.Should().NotBeNull(
@@ -1028,7 +1028,7 @@ public sealed class BusinessRuleToolTests {
 		CreatePageBusinessRuleTool tool = new(command, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleArgs {
+		CommandExecutionResult result = tool.BusinessRuleCreate(new CreatePageBusinessRuleRunArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",

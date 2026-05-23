@@ -99,9 +99,10 @@ public sealed class DownloadConfigurationToolE2ETests {
 			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["source"] = DownloadConfigurationTool.SourceBuild,
 					["build-path"] = arrangeContext.BuildPath,
 					["workspace-path"] = arrangeContext.WorkspacePath
@@ -120,9 +121,10 @@ public sealed class DownloadConfigurationToolE2ETests {
 			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["source"] = DownloadConfigurationTool.SourceEnvironment,
 					["environment-name"] = arrangeContext.EnvironmentName,
 					["workspace-path"] = arrangeContext.WorkspacePath

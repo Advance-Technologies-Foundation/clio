@@ -24,7 +24,7 @@ public class ClearRedisToolTests {
 		ClearRedisTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbArgs(
+		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbRunArgs(
 			Mode: ClearRedisTool.ModeEnvironment,
 			EnvironmentName: "docker_fix2"));
 
@@ -55,7 +55,7 @@ public class ClearRedisToolTests {
 		ClearRedisTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbArgs(
+		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbRunArgs(
 			Mode: ClearRedisTool.ModeCredentials,
 			Url: "http://localhost:5000",
 			Login: "Supervisor",
@@ -91,7 +91,7 @@ public class ClearRedisToolTests {
 		ClearRedisTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbArgs(
+		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbRunArgs(
 			Mode: ClearRedisTool.ModeCredentials,
 			Url: "http://localhost:5000",
 			Login: "Supervisor",
@@ -126,7 +126,7 @@ public class ClearRedisToolTests {
 		ClearRedisTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbArgs(
+		CommandExecutionResult result = tool.ClearRedis(new ClearRedisDbRunArgs(
 			Mode: "bogus",
 			EnvironmentName: "dev"));
 

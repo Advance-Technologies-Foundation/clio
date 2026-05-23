@@ -231,9 +231,10 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = toolName,
 					["environment-name"] = arrangeContext.EnvironmentName,
 					["workspace-path"] = workspacePath
 				}

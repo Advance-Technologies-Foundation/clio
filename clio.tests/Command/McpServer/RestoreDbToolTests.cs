@@ -43,6 +43,7 @@ public sealed class RestoreDbToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the consolidated restore-db MCP entrypoint as destructive because every mode mutates a target database.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void RestoreDb_Should_Expose_Destructive_Metadata() {
 		// Arrange
 		McpServerToolAttribute attribute = GetToolAttribute(nameof(RestoreDbTool.Restore));
@@ -68,7 +69,7 @@ public sealed class RestoreDbToolTests {
 		RestoreDbTool tool = new(defaultCommand, logger, commandResolver, dbOperationLogContextAccessor);
 
 		// Act
-		CommandExecutionResult result = tool.Restore(new RestoreDbArgs(
+		CommandExecutionResult result = tool.Restore(new RestoreDbRunArgs(
 			Mode: RestoreDbTool.ModeEnvironment,
 			EnvironmentName: "sandbox",
 			BackupPath: @"C:\backups\db.backup",
@@ -120,7 +121,7 @@ public sealed class RestoreDbToolTests {
 		RestoreDbTool tool = new(command, logger, Substitute.For<IToolCommandResolver>(), dbOperationLogContextAccessor);
 
 		// Act
-		CommandExecutionResult result = tool.Restore(new RestoreDbArgs(
+		CommandExecutionResult result = tool.Restore(new RestoreDbRunArgs(
 			Mode: RestoreDbTool.ModeDbCredentials,
 			DbServerUri: "mssql://localhost:1433",
 			DbUser: "sa",
@@ -170,7 +171,7 @@ public sealed class RestoreDbToolTests {
 		RestoreDbTool tool = new(command, logger, Substitute.For<IToolCommandResolver>(), dbOperationLogContextAccessor);
 
 		// Act
-		CommandExecutionResult result = tool.Restore(new RestoreDbArgs(
+		CommandExecutionResult result = tool.Restore(new RestoreDbRunArgs(
 			Mode: RestoreDbTool.ModeLocalServer,
 			DbServerName: "local-sql",
 			BackupPath: @"C:\backups\db.bak",
@@ -211,7 +212,7 @@ public sealed class RestoreDbToolTests {
 		RestoreDbTool tool = new(command, logger, Substitute.For<IToolCommandResolver>(), dbOperationLogContextAccessor);
 
 		// Act
-		CommandExecutionResult result = tool.Restore(new RestoreDbArgs(Mode: "bogus"));
+		CommandExecutionResult result = tool.Restore(new RestoreDbRunArgs(Mode: "bogus"));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,

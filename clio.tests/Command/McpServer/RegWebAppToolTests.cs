@@ -23,7 +23,7 @@ public class RegWebAppToolTests {
 		FakeRegAppCommand command = new();
 		RegWebAppTool tool = new(command, ConsoleLogger.Instance);
 
-		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppArgs(
+		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppRunArgs(
 			EnvironmentName: "docker_fix2",
 			Uri: "http://k-krylov-nb.tscrm.com:40071",
 			Login: "Supervisor",
@@ -67,7 +67,7 @@ public class RegWebAppToolTests {
 		FakeRegAppCommand command = new();
 		RegWebAppTool tool = new(command, ConsoleLogger.Instance);
 
-		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppArgs());
+		CommandExecutionResult result = tool.RegisterWebApp(new RegWebAppRunArgs());
 
 		result.ExitCode.Should().Be(1);
 		command.CapturedOptions.Should().BeNull();

@@ -24,7 +24,7 @@ public class AddPackageToolTests {
 		WorkspacePackageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.AddPackage(new AddPackageArgs(
+		CommandExecutionResult result = tool.AddPackage(new AddPackageRunArgs(
 			"MyPackage",
 			@"C:\Projects\clio-with-core-and-ui\workspace",
 			"docker_fix2",
@@ -58,7 +58,7 @@ public class AddPackageToolTests {
 		WorkspacePackageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.AddPackage(new AddPackageArgs(
+		CommandExecutionResult result = tool.AddPackage(new AddPackageRunArgs(
 			"MyPackage", @"C:\Projects\clio-with-core-and-ui\workspace")
 		);
 

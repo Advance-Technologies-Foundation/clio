@@ -209,9 +209,10 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["operations"] = new object?[] {
@@ -452,9 +453,10 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "sync-schemas must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["operations"] = new object?[] {
@@ -519,9 +521,10 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "sync-schemas must be advertised before the structured default-value scenario can be executed");
 
 		return await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["operations"] = new object?[] {
@@ -741,9 +744,10 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)
 		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["environment-name"] = missingEnv,
 					["package-name"] = "UsrPkg",
 					["operations"] = new object?[] {

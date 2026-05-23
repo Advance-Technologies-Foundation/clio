@@ -20,10 +20,9 @@ public sealed class DataBindingRowDbTool(
 	internal const string ActionUpsert = "upsert";
 	internal const string ActionRemove = "remove";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Upserts or removes a single row in a remote DB-first data binding. action='upsert' uses `values`; action='remove' uses `key-value` and also deletes the package schema data record when no bound rows remain.")]
+		[Description("Upserts or removes a single row in a remote DB-first data binding. action='upsert' uses `values`; action='remove' uses `key-value` and also deletes the package schema data record when no bound rows remain.")]
 	public CommandExecutionResult Apply(
-		[Description("data-binding-row-db parameters")] [Required] DataBindingRowDbArgs args) {
+		[Description("data-binding-row-db parameters")] [Required] DataBindingRowDbRunArgs args) {
 		CommandExecutionResult actionError = CommandExecutionResult.ValidateExactlyOneMode(
 			"action", args.Action, ActionUpsert, ActionRemove);
 		if (actionError != null) {
@@ -59,7 +58,7 @@ public sealed class DataBindingRowDbTool(
 /// <summary>
 /// Arguments for the consolidated <c>data-binding-row-db</c> MCP tool.
 /// </summary>
-public sealed record DataBindingRowDbArgs(
+public sealed record DataBindingRowDbRunArgs(
 	[property: JsonPropertyName("action")]
 	[property: Description("Discriminator: 'upsert' or 'remove'.")]
 	[property: Required]
@@ -87,4 +86,4 @@ public sealed record DataBindingRowDbArgs(
 	[property: JsonPropertyName("key-value")]
 	[property: Description("Required when action='remove'. Primary-key value of the row to remove.")]
 	string? KeyValue = null
-);
+) : ClioRunArgs;

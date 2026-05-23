@@ -24,7 +24,7 @@ public class LoadPackagesToolTests {
 			.Returns(resolvedCommand);
 		LoadPackagesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.Apply(new PkgModeArgs(LoadPackagesTool.TargetFileSystem, "docker_fix2"));
+		CommandExecutionResult result = tool.Apply(new PkgModeRunArgs(LoadPackagesTool.TargetFileSystem, "docker_fix2"));
 
 		result.ExitCode.Should().Be(0);
 		commandResolver.Received(1).Resolve<LoadPackagesToFileSystemCommand>(Arg.Is<EnvironmentOptions>(options =>
@@ -47,7 +47,7 @@ public class LoadPackagesToolTests {
 			.Returns(resolvedCommand);
 		LoadPackagesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.Apply(new PkgModeArgs(LoadPackagesTool.TargetDb, "docker_fix2"));
+		CommandExecutionResult result = tool.Apply(new PkgModeRunArgs(LoadPackagesTool.TargetDb, "docker_fix2"));
 
 		result.ExitCode.Should().Be(0);
 		commandResolver.Received(1).Resolve<LoadPackagesToDbCommand>(Arg.Is<EnvironmentOptions>(options =>
@@ -67,7 +67,7 @@ public class LoadPackagesToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		LoadPackagesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.Apply(new PkgModeArgs("bogus", "docker_fix2"));
+		CommandExecutionResult result = tool.Apply(new PkgModeRunArgs("bogus", "docker_fix2"));
 
 		result.ExitCode.Should().Be(-1);
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<LoadPackagesToFileSystemCommand>(default!);

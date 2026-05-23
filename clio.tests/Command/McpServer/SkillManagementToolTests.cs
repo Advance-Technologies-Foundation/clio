@@ -50,7 +50,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
+			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "the install-skills MCP tool should forward a valid command payload");
@@ -85,7 +85,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
+			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "the update-skill MCP tool should forward a valid command payload");
@@ -120,7 +120,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillArgs("alpha", SkillScopeParser.Workspace, GetWorkspacePath()));
+			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillRunArgs("alpha", SkillScopeParser.Workspace, GetWorkspacePath()));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "the delete-skill MCP tool should forward a valid command payload");
@@ -151,7 +151,7 @@ public sealed class SkillManagementToolTests {
 		InstallSkillsTool tool = new(command, ConsoleLogger.Instance, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.InstallSkills(new InstallSkillsArgs(GetWorkspacePath()));
+		CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(GetWorkspacePath()));
 
 		// Assert
 		result.ExitCode.Should().Be(1, because: "install-skills should fail fast when the requested workspace directory is not a clio workspace");
@@ -176,7 +176,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
+			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "user-scope install should bypass workspace validation");
@@ -206,7 +206,7 @@ public sealed class SkillManagementToolTests {
 		UpdateSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
 
 		// Act
-		CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillArgs(@"\\server\share\workspace"));
+		CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(@"\\server\share\workspace"));
 
 		// Assert
 		result.ExitCode.Should().Be(1, because: "update-skill should reject network shares to keep execution local and portable");
@@ -231,7 +231,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
+			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "user-scope update should bypass workspace validation");
@@ -263,7 +263,7 @@ public sealed class SkillManagementToolTests {
 
 		try {
 			// Act
-			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillArgs(Scope: SkillScopeParser.User, SkillName: "alpha"));
+			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha"));
 
 			// Assert
 			result.ExitCode.Should().Be(0, because: "user-scope delete should bypass workspace validation");
@@ -285,6 +285,7 @@ public sealed class SkillManagementToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks update-skill and delete-skill as destructive while install-skills remains non-destructive for MCP safety policies.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void SkillManagementTools_ShouldAdvertiseExpectedDestructiveFlags() {
 		// Arrange
 		McpServerToolAttribute installAttribute = GetToolAttribute(typeof(InstallSkillsTool), nameof(InstallSkillsTool.InstallSkills));

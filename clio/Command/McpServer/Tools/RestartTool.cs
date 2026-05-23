@@ -15,10 +15,9 @@ public class RestartTool(
 	internal const string ModeEnvironment = "environment";
 	internal const string ModeCredentials = "credentials";
 
-	[McpServerTool(Name = RestartToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Restarts a Creatio instance. Use mode='environment' with environment-name to restart a registered environment; use mode='credentials' with url+login+password to restart by explicit credentials.")]
+		[Description("Restarts a Creatio instance. Use mode='environment' with environment-name to restart a registered environment; use mode='credentials' with url+login+password to restart by explicit credentials.")]
 	public CommandExecutionResult Restart(
-		[Description("Restart parameters")] [Required] RestartCreatioArgs args
+		[Description("Restart parameters")] [Required] RestartCreatioRunArgs args
 	) {
 		CommandExecutionResult validationError = CommandExecutionResult.ValidateEnvOrCredentialsMode(
 			args.Mode, args.EnvironmentName, args.Url, args.Login, args.Password,
@@ -49,7 +48,7 @@ public class RestartTool(
 /// and <c>password</c>. Compact single-attribute formatting keeps the per-tool record visually distinct
 /// from sibling env/credentials args while preserving the same wire shape.
 /// </summary>
-public sealed record RestartCreatioArgs(
+public sealed record RestartCreatioRunArgs(
 	[property: JsonPropertyName("mode"), Description("Discriminator: 'environment' uses a registered clio environment name; 'credentials' uses explicit url+login+password."), Required]
 	string Mode,
 
@@ -67,4 +66,4 @@ public sealed record RestartCreatioArgs(
 
 	[property: JsonPropertyName("password"), Description("Required when mode='credentials'. Creatio user password.")]
 	string? Password = null
-);
+) : ClioRunArgs;

@@ -25,13 +25,11 @@ public sealed class GenerateProcessModelTool(
 	/// <summary>
 	/// Generates a process model file for the requested Creatio process code.
 	/// </summary>
-	[McpServerTool(Name = GenerateProcessModelToolName, ReadOnly = false, Destructive = true, Idempotent = false,
-		OpenWorld = false)]
-	[Description("Generates a C# process model file for a process from the specified Creatio environment.")]
+		[Description("Generates a C# process model file for a process from the specified Creatio environment.")]
 	public CommandExecutionResult GenerateProcessModel(
 		[Description("generate-process-model parameters")]
 		[Required]
-		GenerateProcessModelArgs args) {
+		GenerateProcessModelRunArgs args) {
 		GenerateProcessModelCommandOptions options = new() {
 			Code = args.Code,
 			DestinationPath = args.DestinationPath ?? ".",
@@ -51,7 +49,7 @@ public sealed class GenerateProcessModelTool(
 /// <summary>
 /// MCP arguments for the <c>generate-process-model</c> tool.
 /// </summary>
-public sealed record GenerateProcessModelArgs(
+public sealed record GenerateProcessModelRunArgs(
 	[property: JsonPropertyName("code")]
 	[property: Description("Process code as it appears in the Creatio process designer")]
 	[property: Required]
@@ -73,4 +71,4 @@ public sealed record GenerateProcessModelArgs(
 	[property: Description("Registered clio environment name")]
 	[property: Required]
 	string EnvironmentName
-);
+) : ClioRunArgs;

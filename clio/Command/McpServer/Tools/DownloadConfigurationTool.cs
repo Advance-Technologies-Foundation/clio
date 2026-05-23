@@ -29,10 +29,9 @@ public class DownloadConfigurationTool(
 	/// <summary>Legacy MCP tool name retained for prompt and e2e documentation surfaces. The capability now lives on <c>download-configuration</c> with <c>source=build</c>.</summary>
 	internal const string DownloadConfigurationByBuildToolName = "download-configuration-by-build";
 
-	[McpServerTool(Name = DownloadConfigurationToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Downloads Creatio configuration into the workspace `.application` folder. source='environment' uses a registered environment name; source='build' uses a Creatio zip file or extracted directory.")]
+		[Description("Downloads Creatio configuration into the workspace `.application` folder. source='environment' uses a registered environment name; source='build' uses a Creatio zip file or extracted directory.")]
 	public CommandExecutionResult DownloadConfiguration(
-		[Description("Download-configuration parameters")] [Required] DownloadConfigurationArgs args
+		[Description("Download-configuration parameters")] [Required] DownloadConfigurationRunArgs args
 	) {
 		CommandExecutionResult sourceError = CommandExecutionResult.ValidateExactlyOneMode(
 			"source", args.Source, SourceEnvironment, SourceBuild);
@@ -111,7 +110,7 @@ public class DownloadConfigurationTool(
 /// MCP arguments for the consolidated <c>download-configuration</c> tool.
 /// Exactly one source is active per call: <c>environment</c> or <c>build</c>.
 /// </summary>
-public sealed record DownloadConfigurationArgs(
+public sealed record DownloadConfigurationRunArgs(
 	[property: JsonPropertyName("source")]
 	[property: Description("Discriminator: 'environment' uses a registered clio environment name; 'build' uses a local Creatio zip file or extracted directory.")]
 	[property: Required]
@@ -129,4 +128,4 @@ public sealed record DownloadConfigurationArgs(
 	[property: JsonPropertyName("build-path")]
 	[property: Description("Required when source='build'. Absolute path to the Creatio zip file or extracted directory.")]
 	string? BuildPath = null
-);
+) : ClioRunArgs;

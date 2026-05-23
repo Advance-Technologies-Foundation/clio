@@ -143,9 +143,10 @@ public sealed class CreateWorkspaceToolE2ETests {
 			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["workspaceName"] = arrangeContext.WorkspaceName,
 					["directory"] = arrangeContext.RootDirectory
 				}
@@ -164,9 +165,10 @@ public sealed class CreateWorkspaceToolE2ETests {
 			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["command"] = ToolName,
 					["workspaceName"] = arrangeContext.WorkspaceName
 				}
 			},

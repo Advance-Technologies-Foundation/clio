@@ -17,7 +17,7 @@ public interface IApplicationCreateEnrichmentService {
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>Structured Data Forge diagnostics and compact context summary.</returns>
 	ApplicationDataForgeResult Enrich(
-		ApplicationCreateArgs args,
+		ApplicationCreateRunArgs args,
 		ApplicationOptionalTemplateData? optionalTemplateData,
 		CancellationToken cancellationToken = default);
 }
@@ -29,7 +29,7 @@ public sealed class ApplicationCreateEnrichmentService(IDataForgeEnrichmentBuild
 	: IApplicationCreateEnrichmentService {
 	/// <inheritdoc />
 	public ApplicationDataForgeResult Enrich(
-		ApplicationCreateArgs args,
+		ApplicationCreateRunArgs args,
 		ApplicationOptionalTemplateData? optionalTemplateData,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(args);
