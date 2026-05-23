@@ -48,14 +48,17 @@ public static class EntitySchemaPrompt {
 		 `EmailAddress` can be used as an alias for `Email`. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
-		 For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
+		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
 		 `default-value-config`, legacy shorthand `default-value-source` / `default-value`, and frontend-style
 		 type aliases such as `ShortText` or `Date`. Prefer `default-value-config` with `source` set to
 		 `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Keep legacy `default-value-source` and
 		 `default-value` only for shorthand `Const` and `None`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` columns, and use
-		 `default-value-config` source `Sequence` only for text columns.
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 """;
@@ -91,7 +94,7 @@ public static class EntitySchemaPrompt {
 		 caption. Include `columns` only when the request explicitly
 		 describes initial fields. After creation, verify the result with
 		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` as the canonical post-create read
-		 path. For broader app-modeling guardrails, read `docs://mcp/guides/app-modeling`.
+		 path. For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 """;
 
 	/// <summary>
@@ -124,11 +127,14 @@ public static class EntitySchemaPrompt {
 		 `EmailAddress` can be used as an alias for `Email`. Prefer `default-value-config`
 		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
-		 `default-value-config` source `Sequence` only for text columns. For create + seed + update workflows,
-		 prefer `schema-sync`. Seed rows create data only; model default requirements separately as
-		 `schema default` or `ui default`. For existing-app maintenance guidance, read
-		 `docs://mcp/guides/existing-app-maintenance`.
-		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`.
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save. For create + seed + update workflows,
+		 prefer `sync-schemas`. Seed rows create data only; model default requirements separately as
+		 `schema default` or `ui default`. For existing-app maintenance guidance, call
+		 `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
+		 Inspect current schema metadata with `get-entity-schema-properties` first. For one-column changes, prefer `modify-entity-schema-column`. `update-entity-schema` performs internal DataForge enrichment and returns an optional `dataforge` section — inspect `similar-tables` before proceeding with the batch. When adding a Lookup column (`type = Lookup`) via `modify-entity-schema-column` (which does not enrich internally) and the correct `reference-schema-name` is not certain, call `dataforge-find-tables` (Layer 3 pre-flight) first. For the full DataForge orchestration protocol, call `{GuidanceGetTool.ToolName}` with `name` set to `dataforge-orchestration`.
 		 """;
 
 	/// <summary>
@@ -152,8 +158,8 @@ public static class EntitySchemaPrompt {
 		 `{environmentName}`. The result is a schema summary object with a nested `columns` list for
 		 machine-readable column inspection.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
-		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
-		 Use this read step before `modify-entity-schema-column` or `schema-sync`, and read the schema again after mutation when explicit verification is needed.
+		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
+		 Use this read step before `modify-entity-schema-column` or `sync-schemas`, and read the schema again after mutation when explicit verification is needed.
 		 """;
 
 	/// <summary>
@@ -179,7 +185,7 @@ public static class EntitySchemaPrompt {
 		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
 		 `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
-		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.
 		 """;
 
@@ -220,8 +226,11 @@ public static class EntitySchemaPrompt {
 		 used as an alias for `Binary`, `Encrypted` / `Password` can be used as aliases for `SecureText`, and
 		 `EmailAddress` can be used as an alias for `Email`. Do not
 		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
-		 `default-value-config` source `Sequence` only for text columns.
-		 For the canonical discover -> inspect -> mutate flow, read `docs://mcp/guides/existing-app-maintenance`.
+		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
+		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
+		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
+		 normalizes it to GUID before save.
+		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;
 }

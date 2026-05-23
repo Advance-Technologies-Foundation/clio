@@ -15,9 +15,10 @@ public class BuildDockerImageOptions {
 	public string SourcePath { get; set; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets the bundled template name or custom template directory path.
+	/// Gets or sets the bundled template name list or custom template directory path.
 	/// </summary>
-	[Option("template", Required = true, HelpText = "Bundled template name (base, dev, prod, db) or template directory path")]
+	[Option("template", Required = true,
+		HelpText = "Bundled template name or comma-separated template list (base, dev, prod, db) or template directory path")]
 	public string Template { get; set; } = string.Empty;
 
 	/// <summary>
@@ -37,7 +38,8 @@ public class BuildDockerImageOptions {
 	/// <summary>
 	/// Gets or sets the optional output tar path used by <c>docker save</c>.
 	/// </summary>
-	[Option("output-path", Required = false, HelpText = "Optional tar file path where the built image should be saved")]
+	[Option("output-path", Required = false,
+		HelpText = "Optional tar file path for a single template, or output directory when multiple templates are requested")]
 	public string OutputPath { get; set; } = string.Empty;
 
 	/// <summary>

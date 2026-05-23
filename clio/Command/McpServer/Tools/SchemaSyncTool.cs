@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -18,9 +19,10 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class SchemaSyncTool(
 	IToolCommandResolver commandResolver,
-	ILogger logger) {
+	ILogger logger,
+	ISchemaEnrichmentService? enrichmentService = null) {
 
-	internal const string ToolName = "schema-sync";
+	internal const string ToolName = "sync-schemas";
 	private const string CreateLookupOperationName = "create-lookup";
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
@@ -35,9 +37,15 @@ public sealed class SchemaSyncTool(
 		"create lookups, create entities, seed data, update entities. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones.")]
-	public SchemaSyncResponse SchemaSync(
+	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
+		ApplicationDataForgeResult? dataForge = enrichmentService is not null
+			? enrichmentService.Enrich(
+				args.EnvironmentName,
+				CollectCandidateTerms(args),
+				CollectLookupHints(args))
+			: null;
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -70,8 +78,35 @@ public sealed class SchemaSyncTool(
 		}
 		return new SchemaSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
-			Results = results
+			Results = results,
+			DataForge = dataForge
 		};
+	}
+
+	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
+		return args.Operations
+			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
+			.Select(op => op.SchemaName.Trim())
+			.Concat(args.Operations
+				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
+				.Where(title => !string.IsNullOrWhiteSpace(title))
+				.Select(title => title.Trim()))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
+		return args.Operations
+			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
+				&& !string.IsNullOrWhiteSpace(op.SchemaName))
+			.Select(op => op.SchemaName.Trim())
+			.Concat(args.Operations
+				.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal))
+				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
+				.Where(title => !string.IsNullOrWhiteSpace(title))
+				.Select(title => title.Trim()))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 	}
 
 	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
@@ -102,7 +137,7 @@ public sealed class SchemaSyncTool(
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = $"schema-sync operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
+				Error = $"sync-schemas operations[{operationIndex}] seed-rows validation failed: each row must contain a non-null 'values' object."
 			};
 			return true;
 		}
@@ -139,21 +174,48 @@ public sealed class SchemaSyncTool(
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
 			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
+				? TryGetCollisionInfo(op.SchemaName, args)
+				: null;
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
 				Messages = messages,
-				Error = BuildOperationError(operationName, exitCode, messages)
+				Error = BuildOperationError(operationName, exitCode, messages),
+				CollisionInfo = collisionInfo
 			};
 		} catch (Exception ex) {
+			SchemaSyncCollisionInfo? collisionInfo = TryGetCollisionInfo(op.SchemaName, args);
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = ex.Message,
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
+				CollisionInfo = collisionInfo
 			};
+		}
+	}
+
+	private SchemaSyncCollisionInfo? TryGetCollisionInfo(string schemaName, SchemaSyncArgs args) {
+		try {
+			FindEntitySchemaOptions findOptions = new() {
+				Environment = args.EnvironmentName,
+				SchemaName = schemaName
+			};
+			FindEntitySchemaCommand findCommand = commandResolver.Resolve<FindEntitySchemaCommand>(findOptions);
+			IReadOnlyList<EntitySchemaSearchResult> results = findCommand.FindSchemas(findOptions);
+			EntitySchemaSearchResult? existing = results.FirstOrDefault();
+			if (existing is null) {
+				return null;
+			}
+			string hint = string.Equals(existing.PackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)
+				? "Schema already exists in the target package. Use update-entity to add columns or proceed to seed-data without recreating."
+				: $"Schema already exists in package '{existing.PackageName}'. Reuse it by referencing it without creation, or call delete-schema first to remove the stale version before recreating.";
+			return new SchemaSyncCollisionInfo(existing.PackageName, hint);
+		} catch {
+			return null;
 		}
 	}
 
@@ -239,13 +301,13 @@ public sealed class SchemaSyncTool(
 			if (op.ExtensionData?.TryGetValue("operation", out JsonElement legacyOperation) == true &&
 				legacyOperation.ValueKind == JsonValueKind.String) {
 				string legacyOperationName = legacyOperation.GetString() ?? string.Empty;
-				return $"schema-sync operations[{operationIndex}] uses unsupported request field 'operation'. Send 'type': '{legacyOperationName}' instead.";
+				return $"sync-schemas operations[{operationIndex}] uses unsupported request field 'operation'. Send 'type': '{legacyOperationName}' instead.";
 			}
-			return $"schema-sync operations[{operationIndex}] is missing required field 'type'.";
+			return $"sync-schemas operations[{operationIndex}] is missing required field 'type'.";
 		}
 
 		string supportedTypes = string.Join(", ", CreateLookupOperationName, CreateEntityOperationName, UpdateEntityOperationName);
-		return $"schema-sync operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
+		return $"sync-schemas operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
 	}
 
 	private static string? BuildOperationError(string operationName, int exitCode, IReadOnlyList<LogMessage> messages) {
@@ -269,7 +331,7 @@ public sealed class SchemaSyncTool(
 }
 
 /// <summary>
-/// Top-level arguments for the <c>schema-sync</c> MCP tool.
+/// Top-level arguments for the <c>sync-schemas</c> MCP tool.
 /// </summary>
 public sealed record SchemaSyncArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -289,7 +351,7 @@ public sealed record SchemaSyncArgs(
 );
 
 /// <summary>
-/// A single schema operation within a <c>schema-sync</c> batch.
+/// A single schema operation within a <c>sync-schemas</c> batch.
 /// </summary>
 public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("type")]
@@ -298,7 +360,12 @@ public sealed record SchemaSyncOperation(
 	string Type,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Target entity schema name")]
+	[property: Description("Target entity schema name. " +
+		"For create-entity and create-lookup operations, must use the active SchemaNamePrefix as prefix " +
+		"(e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
+		"When `schema-name-prefix` is empty, use plain PascalCase with no prefix. " +
+		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +
+		"or call `get-schema-name-prefix` if you have not called `get-app-info` yet.")]
 	[property: Required]
 	string SchemaName,
 
@@ -315,7 +382,10 @@ public sealed record SchemaSyncOperation(
 	bool ExtendParent = false,
 
 	[property: JsonPropertyName("columns")]
-	[property: Description("Initial columns for create-lookup or create-entity operations")]
+	[property: Description("Initial columns for create-lookup or create-entity operations. " +
+		"Column codes must also use the active SchemaNamePrefix (e.g. 'UsrEmail' when prefix is 'Usr'). " +
+		"When `schema-name-prefix` is empty, use plain column names with no prefix. " +
+		"Use the same prefix value from `schema-name-prefix`.")]
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null,
 
 	[property: JsonPropertyName("update-operations")]
@@ -335,7 +405,7 @@ public sealed record SchemaSyncOperation(
 }
 
 /// <summary>
-/// A seed row for the <c>schema-sync</c> tool.
+/// A seed row for the <c>sync-schemas</c> tool.
 /// </summary>
 public sealed record SchemaSyncSeedRow(
 	[property: JsonPropertyName("values")]
@@ -345,7 +415,7 @@ public sealed record SchemaSyncSeedRow(
 );
 
 /// <summary>
-/// Response from the <c>schema-sync</c> MCP tool.
+/// Response from the <c>sync-schemas</c> MCP tool.
 /// </summary>
 public sealed class SchemaSyncResponse {
 
@@ -354,10 +424,14 @@ public sealed class SchemaSyncResponse {
 
 	[JsonPropertyName("results")]
 	public IReadOnlyList<SchemaSyncOperationResult> Results { get; init; } = [];
+
+	[JsonPropertyName("dataforge")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ApplicationDataForgeResult? DataForge { get; init; }
 }
 
 /// <summary>
-/// Result of a single operation within a <c>schema-sync</c> batch.
+/// Result of a single operation within a <c>sync-schemas</c> batch.
 /// </summary>
 public sealed class SchemaSyncOperationResult {
 
@@ -377,4 +451,16 @@ public sealed class SchemaSyncOperationResult {
 	[JsonPropertyName("messages")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<LogMessage>? Messages { get; init; }
+
+	[JsonPropertyName("collision-info")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SchemaSyncCollisionInfo? CollisionInfo { get; init; }
 }
+
+/// <summary>
+/// Schema collision details included in a failed create operation when the schema already exists on the server.
+/// </summary>
+public sealed record SchemaSyncCollisionInfo(
+	[property: JsonPropertyName("existing-package-name")] string ExistingPackageName,
+	[property: JsonPropertyName("hint")] string Hint
+);

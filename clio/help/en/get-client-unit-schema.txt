@@ -1,0 +1,55 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-client-unit-schema - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment
+
+ALIASES
+    client-unit-schema-get
+
+SYNOPSIS
+    clio get-client-unit-schema [OPTIONS]
+
+DESCRIPTION
+    Reads the body and metadata of an existing client unit (JavaScript) schema
+    on a remote Creatio environment via ClientUnitSchemaDesignerService. The
+    schema is resolved by name (ManagerName=ClientUnitSchemaManager) and the
+    full schema descriptor (UId, name, caption, package, body, etc.) is returned.
+    No local workspace files are created or modified.
+
+    When --output-file is set, the schema body is written to the specified file
+    and the body field is omitted from the response JSON printed to stdout.
+
+OPTIONS
+    --schema-name                      Client unit schema name (required)
+
+    --output-file                      Optional absolute path. When set, the schema
+                                       body is written to this file and the body field
+                                       is omitted from the response JSON
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+    --Maintainer             -m       Maintainer name
+
+EXAMPLES
+    clio get-client-unit-schema --schema-name UsrMySection -e dev
+        Print body and metadata of UsrMySection from the dev environment
+
+    clio get-client-unit-schema --schema-name UsrMySection --output-file /tmp/UsrMySection.js -e dev
+        Save the body to /tmp/UsrMySection.js; response JSON omits the body
+
+    clio client-unit-schema-get --schema-name UsrMySection -e dev
+        Same as the first example using the alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    update-client-unit-schema - Update the body of a JavaScript schema
+    get-schema - Read body and metadata of a C# source-code schema

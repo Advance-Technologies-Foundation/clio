@@ -26,6 +26,11 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private readonly object _messageBufferLock = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
 	private readonly Dictionary<Guid, SharedAppendFileSinkLease> _scopedFileSinks = new();
+	private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+	private volatile bool _spinnerActive;
+	private string _spinnerMessage = string.Empty;
+	private Thread? _spinnerThread;
+	private CancellationTokenSource? _spinnerCts;
 	public List<LogMessage> LogMessages { get; private set; } = [];
 	public bool PreserveMessages { get; set; }
 
@@ -84,7 +89,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void PrintInternal(){
 		while (!CancellationToken.IsCancellationRequested) {
-			FlushQueue();
+			if (!_spinnerActive) {
+				FlushQueue();
+			}
 			Thread.Sleep(100);
 		}
 		FlushQueue();
@@ -363,6 +370,57 @@ public class ConsoleLogger : ILogger, IDisposable{
 			return;
 		}
 		_logQueue.Enqueue(new DebugMessage(value));
+	}
+
+	public void BeginSpinner(string message) {
+		if (Program.IsMcpServerMode || Console.IsOutputRedirected) {
+			WriteInfo(message);
+			return;
+		}
+		lock (_messageBufferLock) {
+			FlushQueueCore();
+		}
+		_spinnerMessage = message;
+		_spinnerCts = new CancellationTokenSource();
+		_spinnerActive = true;
+		string prefix = GetLinePrefix("[INF]");
+		CancellationToken token = _spinnerCts.Token;
+		_spinnerThread = new Thread(() => {
+			int i = 0;
+			while (!token.IsCancellationRequested) {
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Out.Write($"\r{prefix}");
+				Console.ForegroundColor = _defaultConsoleColor;
+				Console.Out.Write($"{_spinnerMessage} {SpinnerFrames[i % SpinnerFrames.Length]}");
+				Thread.Sleep(80);
+				i++;
+			}
+		}) { IsBackground = true };
+		_spinnerThread.Start();
+	}
+
+	public void EndSpinner(bool success = true) {
+		if (_spinnerCts is null) {
+			return;
+		}
+		_spinnerCts.Cancel();
+		_spinnerThread?.Join();
+		_spinnerActive = false;
+		if (!Program.IsMcpServerMode && !Console.IsOutputRedirected) {
+			string prefix = GetLinePrefix("[INF]");
+			ConsoleColor iconColor = success ? ConsoleColor.Green : ConsoleColor.Red;
+			string icon = success ? "✓" : "✗";
+			Console.ForegroundColor = ConsoleColor.Green;
+			Console.Out.Write($"\r{prefix}");
+			Console.ForegroundColor = _defaultConsoleColor;
+			Console.Out.Write($"{_spinnerMessage} ");
+			Console.ForegroundColor = iconColor;
+			Console.Out.WriteLine(icon);
+			Console.ForegroundColor = _defaultConsoleColor;
+		}
+		_spinnerCts.Dispose();
+		_spinnerCts = null;
+		_spinnerThread = null;
 	}
 
 	/// <summary>

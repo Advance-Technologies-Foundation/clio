@@ -15,6 +15,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests;
 
+[Property("Module", "Core")]
 internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 	#region Fields: Private
 

@@ -18,6 +18,7 @@ using YamlDotNet.Serialization;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class ShowDiffEnvironmentsCommandTests : BaseCommandTests<ShowDiffEnvironmentsOptions>
 {
 	protected override MockFileSystem CreateFs() {

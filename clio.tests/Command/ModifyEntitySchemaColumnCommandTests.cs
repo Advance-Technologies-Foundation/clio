@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEntitySchemaColumnOptions>
 {
 	private ModifyEntitySchemaColumnCommand _command;

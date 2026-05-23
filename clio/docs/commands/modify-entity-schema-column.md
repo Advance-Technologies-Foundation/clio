@@ -111,7 +111,7 @@ OAuth client secret
 OAuth app URI
 --silent
 Use default behavior without user interaction
---restartEnvironment
+--restart-environment
 Restart environment after execute command
 --db-server-uri <VALUE>
 Db server uri
@@ -136,6 +136,13 @@ Path to the application root folder
 ## Requirements
 
 cliogate must be installed on the target Creatio environment.
+
+## Notes
+
+- CLI flags `--default-value-source/--default-value` remain shorthand for `Const` and `None`.
+- MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
+- For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
+- For `Settings`, clio resolves code/name/id to canonical setting code before save.
 
 ## See also
 

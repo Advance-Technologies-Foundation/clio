@@ -7,6 +7,8 @@ using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class UploadLicensesCommandTestCase
 {
 	private UploadLicensesCommandTestable _command;
@@ -70,7 +72,7 @@ public class UploadLicensesCommandTestCase
 public class UploadLicensesCommandTestable : UploadLicensesCommand
 {
 	public UploadLicensesCommandTestable(IApplicationClient applicationClient, EnvironmentSettings settings)
-		: base(applicationClient, settings) {
+		: base(applicationClient, settings, Substitute.For<System.IO.Abstractions.IFileSystem>()) {
 	}
 
 	public void TestProceedResponse(string response, UploadLicensesOptions options) {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using System.Net.Http;
 using Clio.Common;
 using CommandLine;
 
@@ -8,11 +9,23 @@ namespace Clio.Command
 	[Verb("healthcheck", Aliases = new [] { "hc" }, HelpText = "Healthcheck monitoring")]
 	public class HealthCheckOptions : RemoteCommandOptions
 	{
-		[Option('h', "WebHost", Required = false, HelpText = "Check web-host", Separator= ' ')]
+		[Option('h', "web-host", Required = false, HelpText = "Check web-host", Separator= ' ')]
 		public string WebHost { get; set; }
-		
-		[Option('a', "WebApp", Required = false, HelpText = "Check web-app")]
+
+		[Option("WebHost", Required = false, Hidden = true, HelpText = "Alias for --web-host")]
+		public string WebHostAlias {
+			get => WebHost;
+			set { if (!string.IsNullOrEmpty(value)) WebHost = value; }
+		}
+
+		[Option('a', "web-app", Required = false, HelpText = "Check web-app")]
 		public string WebApp { get; set; }
+
+		[Option("WebApp", Required = false, Hidden = true, HelpText = "Alias for --web-app")]
+		public string WebAppAlias {
+			get => WebApp;
+			set { if (!string.IsNullOrEmpty(value)) WebApp = value; }
+		}
 	}
 
 	public class HealthCheckCommand : RemoteCommand<HealthCheckOptions>
@@ -43,12 +56,44 @@ namespace Clio.Command
 				Logger.WriteError($"\tError: {ex.Message}");
 				return 1;
 			}
+			catch (InvalidCastException)
+			{
+				// creatio.client <= 1.0.33 casts WebRequest.Create() to HttpWebRequest, which fails
+				// on macOS/Linux when the runtime returns FileWebRequest for some localhost URLs.
+				return ProbeWithHttpClient(checkName, requestUri);
+			}
 			catch(Exception ex)
 			{
 				Logger.WriteError($"\tUnknown Error: {ex.Message}");
 				return 1;
 			}
 			return 0;
+		}
+
+		private int ProbeWithHttpClient(string checkName, string requestUri) {
+			Logger.WriteWarning(
+				$"\t{checkName} - creatio.client returned a non-HTTP request type; retrying via HttpClient.");
+			try {
+				using HttpClientHandler handler = new() {
+					ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+				};
+				using HttpClient client = new(handler) {
+					Timeout = RequestTimeout > 0
+						? TimeSpan.FromMilliseconds(RequestTimeout)
+						: TimeSpan.FromSeconds(100)
+				};
+				using HttpResponseMessage response = client.GetAsync(requestUri).GetAwaiter().GetResult();
+				if (!response.IsSuccessStatusCode) {
+					Logger.WriteError($"\tError: {(int)response.StatusCode} {response.ReasonPhrase}");
+					return 1;
+				}
+				Logger.WriteInfo($"\t{checkName} - OK");
+				return 0;
+			}
+			catch (Exception ex) {
+				Logger.WriteError($"\tError: {ex.Message}");
+				return 1;
+			}
 		}
 
 		public override int Execute(HealthCheckOptions options) {

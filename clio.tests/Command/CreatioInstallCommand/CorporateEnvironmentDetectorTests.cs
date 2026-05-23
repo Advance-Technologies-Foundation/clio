@@ -8,6 +8,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.CreatioInstallCommand;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "CreatioInstallCommand")]
 public class CorporateEnvironmentDetectorTests{
 	[Test]
 	[Description("Should return true when current Windows identity belongs to tscrm domain.")]

@@ -9,13 +9,15 @@ using NUnit.Framework;
 namespace Clio.Tests.Requests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Requests")]
 public class UnregisterEnvironmentHandlerTests {
 	[Test]
 	[Description("Maps the UnregisterEnvironment deep-link query parameter into UnregAppOptions and forwards it to UnregAppCommand.")]
 	public async Task Handle_ShouldForwardEnvironmentNameToUnregAppCommand() {
 		// Arrange
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		UnregAppCommand unregCommand = new(settingsRepository);
+		UnregAppCommand unregCommand = new(settingsRepository, Substitute.For<Clio.Common.ILogger>());
 		UnregisterEnvironmentHandler sut = new(unregCommand);
 		UnregisterEnvironment request = new() {
 			Content = "clio://UnregisterEnvironment?name=studio-dev"

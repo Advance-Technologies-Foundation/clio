@@ -23,9 +23,15 @@ public class AddPackageOptions : EnvironmentOptions{
 	/// <summary>
 	/// Creates an application descriptor for the package when requested.
 	/// </summary>
-	[Option('a', "asApp", Required = false,
-		HelpText = "Create application in package", Default = false)]
+	[Option('a', "as-app", Required = false,
+		HelpText = "Create application in package")]
 	public bool AsApp { get; set; }
+
+	[Option("asApp", Required = false, Hidden = true, HelpText = "Alias for --as-app")]
+	public bool AsAppAlias {
+		get => AsApp;
+		set { if (value) AsApp = value; }
+	}
 	
 	/// <summary>
 	/// Path to a Creatio build archive or extracted directory used by the follow-up download flow.
@@ -38,6 +44,8 @@ public class AddPackageOptions : EnvironmentOptions{
 	/// Explicit workspace root path supplied by MCP callers.
 	/// </summary>
 	internal string WorkspacePath { get; set; }
+
+	internal override bool RequiredEnvironment => false;
 }
 
 #endregion

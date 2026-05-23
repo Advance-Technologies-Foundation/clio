@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("show-web-app-list")]
+[AllureFeature("list-environments")]
 public sealed class ShowWebAppListToolE2ETests
 {
 	private const string ToolName = ShowWebAppListTool.ShowWebAppListToolName;

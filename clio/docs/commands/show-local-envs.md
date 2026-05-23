@@ -29,7 +29,7 @@ List local environments and their status
 
 ## See Also
 
-show-web-app-list - List registered remote environments
+list-environments - List registered remote environments
 clear-local-env - Remove deleted local environment registrations
 
 ## Reporting Bugs

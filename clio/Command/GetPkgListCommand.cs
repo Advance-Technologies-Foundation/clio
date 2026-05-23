@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -10,18 +11,30 @@ namespace Clio.Command
 
 	#region Class: PkgListOptions
 
-	[Verb("get-pkg-list", Aliases = ["packages"], HelpText = "Get environments packages")]
+	[Verb("list-packages", Aliases = ["get-pkg-list", "packages"], HelpText = "Get environments packages")]
 	public class PkgListOptions : EnvironmentNameOptions
 	{
 
 		#region Properties: Public
 
-		[Option('f', "Filter", Required = false, HelpText = "Contains name filter",
+		[Option('f', "filter", Required = false, HelpText = "Contains name filter",
 		Default = null)]
 		public string SearchPattern { get; set; } = string.Empty;
 
-		[Option('j', "Json", Required = false, Default = false, HelpText = "Returns response in json format")]
+		[Option("Filter", Required = false, Hidden = true, HelpText = "Alias for --filter")]
+		public string SearchPatternAlias {
+			get => SearchPattern;
+			set { if (!string.IsNullOrEmpty(value)) SearchPattern = value; }
+		}
+
+		[Option('j', "json", Required = false, HelpText = "Returns response in json format")]
 		public bool? Json { get; set; }
+
+		[Option("Json", Required = false, Hidden = true, HelpText = "Alias for --json")]
+		public bool? JsonAlias {
+			get => Json;
+			set { Json = value; }
+		}
 
 
 		#endregion
@@ -34,7 +47,6 @@ namespace Clio.Command
 
 	public class GetPkgListCommand : Command<PkgListOptions>
 	{
-		private const string MinClioGateVersion = "2.0.0.0";
 
 		#region Fields: Private
 
@@ -42,16 +54,15 @@ namespace Clio.Command
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 		private readonly IJsonResponseFormater _jsonResponseFormater;
 		private readonly ILogger _logger;
-		private readonly IClioGateway _clioGateway;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public GetPkgListCommand(EnvironmentSettings environmentSettings, 
+		public GetPkgListCommand(EnvironmentSettings environmentSettings,
 				IApplicationPackageListProvider applicationPackageListProvider,
 				IJsonResponseFormater jsonResponseFormater,
-				ILogger logger, IClioGateway clioGateway) {
+				ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 			jsonResponseFormater.CheckArgumentNull(nameof(jsonResponseFormater));
@@ -59,7 +70,6 @@ namespace Clio.Command
 			_applicationPackageListProvider = applicationPackageListProvider;
 			_jsonResponseFormater= jsonResponseFormater;
 			_logger = logger;
-			_clioGateway = clioGateway;
 		}
 
 		#endregion
@@ -86,7 +96,7 @@ namespace Clio.Command
 			_logger.WriteLine();
 		}
 
-		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages, 
+		private static IEnumerable<PackageInfo> FilterPackages(IEnumerable<PackageInfo> packages,
 				string searchPattern) {
 			return packages
 				.Where(p => p.Descriptor.Name.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
@@ -109,22 +119,12 @@ namespace Clio.Command
 			if (options.Json.HasValue && options.Json.Value) {
 				_logger.WriteInfo(_jsonResponseFormater.Format(e));
 			} else {
-				_logger.WriteInfo(e.ToString());
+				_logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			}
 		}
 
 		internal bool TryGetFilteredPackages(PkgListOptions options, out IReadOnlyList<PackageInfo> packages,
 			out string errorMessage, out string remediationMessage) {
-			if (!_clioGateway.IsCompatibleWith(MinClioGateVersion)) {
-				packages = Array.Empty<PackageInfo>();
-				errorMessage =
-					$"To view packages feature requires cliogate package version {MinClioGateVersion} or higher installed in Creatio.";
-				remediationMessage = string.IsNullOrWhiteSpace(options.Environment)
-					? "To install cliogate use the following command: clio install-gate"
-					: $"To install cliogate use the following command: clio install-gate -e {options.Environment}";
-				return false;
-			}
-
 			packages = FilterPackages(_applicationPackageListProvider.GetPackages(), options.SearchPattern).ToList();
 			errorMessage = string.Empty;
 			remediationMessage = string.Empty;

@@ -10,7 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Validators
 {
     [TestFixture]
-    [Category("UnitTests")]
+    [Category("Unit")]
+    [Property("Module", "Validators")]
     public class TurnFarmModeOptionsValidatorTests : BaseClioModuleTests
     {
         private TurnFarmModeOptionsValidator _validator;

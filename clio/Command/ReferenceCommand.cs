@@ -1,8 +1,10 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using Clio.Common;
 using Clio.Project;
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command
 {
@@ -26,13 +28,21 @@ namespace Clio.Command
 	public class ReferenceCommand : Command<ReferenceOptions>
 	{
 		private readonly ICreatioPkgProjectCreator _projectCreator;
+		private readonly ILogger _logger;
+		private readonly IAbstractionsFileSystem _fileSystem;
 
-		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator) {
-			_projectCreator = projectCreator;
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger)
+			: this(projectCreator, logger, new System.IO.Abstractions.FileSystem()) {
 		}
 
-		private static string CurrentProj =>
-			new DirectoryInfo(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
+		public ReferenceCommand(ICreatioPkgProjectCreator projectCreator, ILogger logger, IAbstractionsFileSystem fileSystem) {
+			_projectCreator = projectCreator;
+			_logger = logger;
+			_fileSystem = fileSystem;
+		}
+
+		private string CurrentProj =>
+			_fileSystem.DirectoryInfo.New(Environment.CurrentDirectory).GetFiles("*.csproj").FirstOrDefault()?.FullName;
 
 		public override int Execute(ReferenceOptions options) {
 			options.Path = options.Path ?? CurrentProj;
@@ -64,10 +74,10 @@ namespace Clio.Command
 						throw new NotSupportedException($"You use not supported option type {options.ReferenceType}");
 				}
 				project.SaveChanges();
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

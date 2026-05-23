@@ -11,20 +11,20 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the component-info MCP tool.
+/// End-to-end tests for the get-component-info MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("component-info")]
+[AllureFeature("get-component-info")]
 [NonParallelizable]
 public sealed class ComponentInfoToolE2ETests {
 	private const string ToolName = ComponentInfoTool.ToolName;
 
 	[Test]
-	[Description("Advertises component-info in the MCP tool list so callers can discover the component catalog.")]
+	[Description("Advertises get-component-info in the MCP tool list so callers can discover the component catalog.")]
 	[AllureTag(ToolName)]
-	[AllureName("component-info tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that component-info appears in the MCP server tool manifest.")]
+	[AllureName("get-component-info tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that get-component-info appears in the MCP server tool manifest.")]
 	public async Task ComponentInfoTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -37,13 +37,13 @@ public sealed class ComponentInfoToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "component-info must be discoverable through the MCP tool manifest");
+			because: "get-component-info must be discoverable through the MCP tool manifest");
 	}
 
 	[Test]
 	[Description("Returns legacy list results and new frontend-derived metadata using the real MCP server process.")]
 	[AllureTag(ToolName)]
-	[AllureName("component-info returns legacy and frontend-derived metadata")]
+	[AllureName("get-component-info returns legacy and frontend-derived metadata")]
 	[AllureDescription("Starts the real clio MCP server, verifies a legacy tab search, verifies property-metadata search for bulkActions, then requests full metadata for crt.MenuItem.")]
 	public async Task ComponentInfoTool_Should_Return_List_Search_And_Detail_Metadata() {
 		// Arrange
@@ -69,7 +69,7 @@ public sealed class ComponentInfoToolE2ETests {
 		tabListResponse.Success.Should().BeTrue(
 			because: "list mode should succeed with the shipped component registry");
 		tabListResponse.Mode.Should().Be("list",
-			because: "search-only queries should keep component-info in list mode");
+			because: "search-only queries should keep get-component-info in list mode");
 		tabListResponse.Count.Should().BeGreaterThan(0,
 			because: "the shipped registry should contain tab-related component metadata");
 		tabListResponse.Groups.Should().NotBeNullOrEmpty(
@@ -99,9 +99,45 @@ public sealed class ComponentInfoToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns a readable not-found response when component-info receives an unknown component type.")]
+	[Description("Returns mobile-specific component catalog when schema-type is 'mobile', including crt.Toggle and excluding web-only types like crt.DataGrid.")]
 	[AllureTag(ToolName)]
-	[AllureName("component-info reports unknown component types")]
+	[AllureName("get-component-info returns mobile catalog when schema-type is mobile")]
+	[AllureDescription("Starts the real clio MCP server, calls get-component-info with schema-type=mobile, and verifies the response contains mobile-specific components and excludes web-only types.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
+
+		// Assert
+		mobileListResponse.Success.Should().BeTrue(
+			because: "the mobile catalog is shipped with the registry and must be discoverable");
+		mobileListResponse.Mode.Should().Be("list",
+			because: "schema-type=mobile without a search term should return the full mobile catalog in list mode");
+		mobileListResponse.Count.Should().BeGreaterThan(0,
+			because: "the shipped mobile registry should contain at least one component entry");
+		mobileListResponse.Groups.Should().NotBeNullOrEmpty(
+			because: "the mobile catalog response should be organized into groups like the web catalog");
+		IEnumerable<string> mobileTypes = mobileListResponse.Groups!
+			.SelectMany(group => group.Items)
+			.Select(item => item.ComponentType)
+			.ToList();
+		mobileTypes.Should().Contain("crt.Toggle",
+			because: "crt.Toggle is a mobile-specific Boolean control present in the mobile registry");
+		mobileTypes.Should().NotContain("crt.DataGrid",
+			because: "crt.DataGrid is a web-only component that must not appear in the mobile catalog");
+	}
+
+	[Test]
+	[Description("Returns a readable not-found response when get-component-info receives an unknown component type.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info reports unknown component types")]
 	[AllureDescription("Starts the real clio MCP server, requests an unknown component type, and verifies that the failure stays structured and readable.")]
 	public async Task ComponentInfoTool_Should_Report_Unknown_Component_Types() {
 		// Arrange
@@ -139,7 +175,7 @@ public sealed class ComponentInfoToolE2ETests {
 			new Dictionary<string, object?> { ["args"] = arguments },
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
-			because: "component-info should return structured responses instead of top-level MCP failures");
+			because: "get-component-info should return structured responses instead of top-level MCP failures");
 		return EntitySchemaStructuredResultParser.Extract<ComponentInfoResponse>(callResult);
 	}
 

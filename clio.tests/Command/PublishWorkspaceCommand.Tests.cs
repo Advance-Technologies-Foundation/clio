@@ -10,8 +10,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Vladimir Nikonov", "v.nikonov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Command")]
 public class PublishWorkspaceCommandTests : BaseCommandTests<PublishWorkspaceCommandOptions>
 {
 	private IWorkspace _mockWorkspace;

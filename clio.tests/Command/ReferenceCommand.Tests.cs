@@ -9,13 +9,15 @@ namespace Clio.Tests.Command;
 
 [Ignore("Not passing in github runner")]
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class ReferenceCommandTestCase
 {
 	[Test, Category("Unit")]
 	public void Execute_Throws_WhenProjectPathIsNotDefined() {
 		ICreatioPkgProjectCreator creator = Substitute.For<ICreatioPkgProjectCreator>();
 		ReferenceOptions options = new ReferenceOptions();
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		var actual = command.Execute(options);
 		actual.Should().Be(1);
 	}
@@ -29,7 +31,7 @@ public class ReferenceCommandTestCase
 			Path = "Testpath",
 			ReferenceType = "src"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToCoreSrc();
 	}
@@ -43,7 +45,7 @@ public class ReferenceCommandTestCase
 			Path = "Testpath",
 			ReferenceType = "bin"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToBin();
 	}
@@ -57,7 +59,7 @@ public class ReferenceCommandTestCase
 			Path = "Testpath",
 			ReferenceType = "unit-bin"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToUnitBin();
 	}
@@ -71,7 +73,7 @@ public class ReferenceCommandTestCase
 			Path = "Testpath",
 			ReferenceType = "unit-src"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToUnitCoreSrc();
 	}
@@ -86,7 +88,7 @@ public class ReferenceCommandTestCase
 			ReferenceType = "custom",
 			RefPattern = "TestPattern"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToCustomPath(options.RefPattern);
 	}
@@ -100,7 +102,7 @@ public class ReferenceCommandTestCase
 			Path = "Testpath",
 			RefPattern = "TestPattern"
 		};
-		ReferenceCommand command = new ReferenceCommand(creator);
+		ReferenceCommand command = new ReferenceCommand(creator, Substitute.For<Clio.Common.ILogger>());
 		command.Execute(options);
 		project.Received(1).RefToCustomPath(options.RefPattern);
 	}

@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class ShowAppListCommandTestCase : BaseCommandTests<AppListOptions>{
 	#region Fields: Private
 

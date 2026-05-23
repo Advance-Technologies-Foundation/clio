@@ -14,6 +14,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class TurnFsmCommandLoginRetryTests {
 
 	[Test]
@@ -32,7 +34,10 @@ public class TurnFsmCommandLoginRetryTests {
 			validator,
 			settingsRepository,
 			new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
-			logger);
+			logger,
+			Substitute.For<Clio.Requests.IIisScanner>(),
+			Substitute.For<IFsmModeStatusService>(),
+			Substitute.For<Clio.Package.IFileDesignModePackages>());
 		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
 
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
@@ -56,7 +61,7 @@ public class TurnFsmCommandLoginRetryTests {
 		RestartCommand restartCommand = Substitute.ForPartsOf<RestartCommand>(applicationClient, envSettings);
 		restartCommand.Execute(Arg.Any<RestartOptions>()).Returns(0);
 
-		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand);
+		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand, Substitute.For<Clio.Common.ILogger>());
 		TurnFsmCommandOptions options = new() {
 			IsFsm = "on",
 			Uri = envSettings.Uri,

@@ -17,6 +17,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class CreatioInstallerServiceLocalRestoreTests : BaseClioModuleTests
 {
 	private static readonly string UnzippedDirectory = OperatingSystem.IsWindows() ? @"C:\unzipped" : "/unzipped";

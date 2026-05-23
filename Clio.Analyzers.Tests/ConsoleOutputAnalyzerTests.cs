@@ -169,6 +169,46 @@ public sealed class ConsoleOutputAnalyzerTests {
 	}
 
 	[Test]
+	[Description("Does not report CLIO002 inside Clio.Command.Quiz namespace (TUI renderer).")]
+	public async Task RunAnalyzerAsync_WhenSourceIsInQuizNamespace_ReturnsNoClio002Diagnostic() {
+		const string source = """
+		                    namespace Clio.Command.Quiz {
+		                    	public sealed class Renderer {
+		                    		public void Draw() {
+		                    			System.Console.WriteLine("frame");
+		                    		}
+		                    	}
+		                    }
+		                    """;
+		ConsoleOutputAnalyzer analyzer = new();
+
+		var diagnostics = await AnalyzerTestRunner.RunAnalyzerAsync(source, analyzer);
+
+		diagnostics.Should().NotContain(d => d.Id == "CLIO002",
+			because: "Quiz namespace is an exempt TUI renderer that needs direct Console access");
+	}
+
+	[Test]
+	[Description("Does not report CLIO002 inside Clio.Program (bootstrap).")]
+	public async Task RunAnalyzerAsync_WhenSourceIsClioProgram_ReturnsNoClio002Diagnostic() {
+		const string source = """
+		                    namespace Clio {
+		                    	public static class Program {
+		                    		public static void Main() {
+		                    			System.Console.WriteLine("bootstrap");
+		                    		}
+		                    	}
+		                    }
+		                    """;
+		ConsoleOutputAnalyzer analyzer = new();
+
+		var diagnostics = await AnalyzerTestRunner.RunAnalyzerAsync(source, analyzer);
+
+		diagnostics.Should().NotContain(d => d.Id == "CLIO002",
+			because: "Program.cs is the bootstrap entry point where DI is not yet wired");
+	}
+
+	[Test]
 	[Description("Reports CLIO002 when Console.OutputEncoding is assigned.")]
 	public async Task RunAnalyzerAsync_WhenSourceSetsConsoleOutputEncoding_ReturnsClio002Diagnostic() {
 		// Arrange

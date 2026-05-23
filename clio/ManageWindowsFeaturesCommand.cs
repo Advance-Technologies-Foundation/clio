@@ -74,7 +74,7 @@ internal class ManageWindowsFeaturesCommand : Command<ManageWindowsFeaturesOptio
 		foreach (WindowsFeature item in requiredComponentStates) {
 			_logger.WriteInfo($"{item}");
 		}
-		Console.WriteLine();
+		_logger.WriteLine();
 		if (missedComponents.Count > 0) {
 			_logger.WriteError("Windows has missed components:");
 			foreach (WindowsFeature item in missedComponents) {

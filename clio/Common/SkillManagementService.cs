@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common;
 
@@ -87,14 +88,15 @@ public interface IAgentHomePathProvider {
 /// <summary>
 /// Default provider for the user-level agent home path.
 /// </summary>
-public sealed class AgentHomePathProvider(Clio.Common.IFileSystem fileSystem) : IAgentHomePathProvider {
+public sealed class AgentHomePathProvider(Clio.Common.IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem) : IAgentHomePathProvider {
 	private readonly Clio.Common.IFileSystem _fileSystem = fileSystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem = abstractionsFileSystem;
 
 	/// <inheritdoc />
 	public string GetAgentHomePath() {
 		string configuredAgentHome = Environment.GetEnvironmentVariable("CODEX_HOME")?.Trim();
 		string agentHomePath = string.IsNullOrWhiteSpace(configuredAgentHome)
-			? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
+			? _abstractionsFileSystem.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
 			: configuredAgentHome;
 		return _fileSystem.GetFullPath(agentHomePath);
 	}
@@ -213,11 +215,13 @@ public sealed class ResolvedSkillRepository : IDisposable {
 public class SkillRepositoryResolver(
 	Clio.Common.IFileSystem fileSystem,
 	IWorkingDirectoriesProvider workingDirectoriesProvider,
-	IGitCommandRunner gitCommandRunner)
+	IGitCommandRunner gitCommandRunner,
+	IAbstractionsFileSystem abstractionsFileSystem)
 	: ISkillRepositoryResolver {
 	private readonly Clio.Common.IFileSystem _fileSystem = fileSystem;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider = workingDirectoriesProvider;
 	private readonly IGitCommandRunner _gitCommandRunner = gitCommandRunner;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem = abstractionsFileSystem;
 
 	/// <inheritdoc />
 	public ResolvedSkillRepository Resolve(string repositoryLocator) {
@@ -274,7 +278,7 @@ public class SkillRepositoryResolver(
 			repositoryName = repositoryName[..^4];
 		}
 
-		char[] invalidCharacters = Path.GetInvalidFileNameChars();
+		char[] invalidCharacters = _abstractionsFileSystem.Path.GetInvalidFileNameChars();
 		return string.Concat(repositoryName.Select(ch => invalidCharacters.Contains(ch) ? '-' : ch)).Trim();
 	}
 

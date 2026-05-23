@@ -11,6 +11,8 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Core")]
 [Description("Tests for external package dependency resolution functionality")]
 public class ExternalPackageDependencyResolverTests
 {

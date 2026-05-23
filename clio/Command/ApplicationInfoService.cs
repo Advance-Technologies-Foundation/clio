@@ -23,6 +23,14 @@ public interface IApplicationInfoService
 	/// <param name="code">Optional installed application code.</param>
 	/// <returns>Structured application package and entity information.</returns>
 	ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code);
+
+	/// <summary>
+	/// Resolves the minimal application identity (Id, Code, Name, Version) without loading entities or pages.
+	/// </summary>
+	/// <param name="environmentName">Registered clio environment name.</param>
+	/// <param name="code">Installed application code.</param>
+	/// <returns>Lightweight application identity record.</returns>
+	InstalledAppSummary FindApplicationId(string environmentName, string code);
 }
 
 /// <summary>
@@ -30,10 +38,13 @@ public interface IApplicationInfoService
 /// </summary>
 public sealed class ApplicationInfoService(
 	ISettingsRepository settingsRepository,
-	IApplicationClientFactory applicationClientFactory)
+	IApplicationClientFactory applicationClientFactory,
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
+	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory)
 	: IApplicationInfoService
 {
 	private const string BaseObjectCaption = "Base object";
+
 	private static readonly JsonSerializerOptions JsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true
@@ -120,7 +131,7 @@ public sealed class ApplicationInfoService(
 			?? throw new InvalidOperationException(
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
+		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, id, code);
 		ApplicationPackageDto primaryPackage = GetPrimaryPackage(client, serviceUrlBuilder, application.Id);
@@ -128,11 +139,19 @@ public sealed class ApplicationInfoService(
 			GetApplicationEntities(client, serviceUrlBuilder, application.Id, primaryPackage.UId);
 		IReadOnlyList<ApplicationEntityInfoResult> entities = entityRows
 			.GroupBy(entity => entity.UId, StringComparer.OrdinalIgnoreCase)
-			.Select(group => LoadEntityInfo(client, serviceUrlBuilder, primaryPackage.UId, primaryPackage.Name, group.First()))
+			.Select(group => LoadEntityInfo(
+				client,
+				serviceUrlBuilder,
+				primaryPackage.UId,
+				primaryPackage.Name,
+				application.Name,
+				group.First()))
 			.OrderBy(entity => entity.Caption, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 		IReadOnlyList<PageListItem> pages = GetApplicationPages(client, serviceUrlBuilder, primaryPackage.Name);
+		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
+		string schemaNamePrefix = ReadSchemaNamePrefix(sysSettingsManager);
 
 		return new ApplicationInfoResult(
 			primaryPackage.UId,
@@ -142,12 +161,38 @@ public sealed class ApplicationInfoService(
 			application.Id,
 			application.Name,
 			application.Code,
-			application.Version);
+			application.Version,
+			schemaNamePrefix);
+	}
+
+	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager) =>
+		SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
+
+	/// <inheritdoc />
+	public InstalledAppSummary FindApplicationId(string environmentName, string code)
+	{
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			throw new ArgumentException("Environment name is required.", nameof(environmentName));
+		}
+		if (string.IsNullOrWhiteSpace(code)) {
+			throw new ArgumentException("Application code is required.", nameof(code));
+		}
+		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
+			?? throw new InvalidOperationException(
+				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
+		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, null, code);
+		return new InstalledAppSummary(
+			application.Id,
+			application.Code,
+			application.Name,
+			string.IsNullOrWhiteSpace(application.Version) ? null : application.Version);
 	}
 
 	private static InstalledApplicationDto ResolveApplication(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string? id,
 		string? code)
 	{
@@ -167,7 +212,7 @@ public sealed class ApplicationInfoService(
 
 	private static ApplicationPackageDto GetPrimaryPackage(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string applicationId)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -194,7 +239,7 @@ public sealed class ApplicationInfoService(
 
 	private static IReadOnlyList<ApplicationEntityRecordDto> GetApplicationEntities(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string appId,
 		string packageUId)
 	{
@@ -207,7 +252,7 @@ public sealed class ApplicationInfoService(
 
 	private static IReadOnlyList<PageListItem> GetApplicationPages(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageName)
 	{
 		ApplicationPageSelectQueryResponseDto response = ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
@@ -228,9 +273,10 @@ public sealed class ApplicationInfoService(
 
 	private static ApplicationEntityInfoResult LoadEntityInfo(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
 		string canonicalMainEntityName,
+		string? canonicalMainEntityCaptionFallback,
 		ApplicationEntityRecordDto entityRow)
 	{
 		string responseJson = client.ExecutePostRequest(
@@ -264,6 +310,7 @@ public sealed class ApplicationInfoService(
 				string.Equals(entityName, canonicalMainEntityName, StringComparison.OrdinalIgnoreCase),
 				response.Schema.Caption,
 				designSchema?.Caption,
+				canonicalMainEntityCaptionFallback,
 				entityRow.Caption,
 				entityName),
 			columns);
@@ -358,6 +405,11 @@ public sealed class ApplicationInfoService(
 			return designCaption!;
 		}
 
+		if (ShouldPreferFallbackCaptionForCanonicalMainEntity(isCanonicalMainEntity, runtimeCaption, designCaption, fallbacks))
+		{
+			return fallbacks[0]!.Trim();
+		}
+
 		return runtimeCaption
 			?? designCaption
 			?? GetFallbackText(fallbacks)
@@ -373,6 +425,20 @@ public sealed class ApplicationInfoService(
 			string.Equals(runtimeCaption, BaseObjectCaption, StringComparison.OrdinalIgnoreCase) &&
 			!string.IsNullOrWhiteSpace(designCaption) &&
 			!string.Equals(runtimeCaption, designCaption, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool ShouldPreferFallbackCaptionForCanonicalMainEntity(
+		bool isCanonicalMainEntity,
+		string? runtimeCaption,
+		string? designCaption,
+		IReadOnlyList<string?> fallbacks)
+	{
+		return isCanonicalMainEntity &&
+			string.Equals(runtimeCaption, BaseObjectCaption, StringComparison.OrdinalIgnoreCase) &&
+			string.IsNullOrWhiteSpace(designCaption) &&
+			fallbacks.Count > 0 &&
+			!string.IsNullOrWhiteSpace(fallbacks[0]) &&
+			!string.Equals(fallbacks[0]?.Trim(), BaseObjectCaption, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string? GetFallbackText(IEnumerable<string?> fallbacks)
@@ -438,7 +504,7 @@ public sealed class ApplicationInfoService(
 
 	private static DesignSchemaDto? TryLoadDesignSchema(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		string packageUId,
 		string entityName)
 	{
@@ -479,7 +545,7 @@ public sealed class ApplicationInfoService(
 
 	private static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
-		ServiceUrlBuilder serviceUrlBuilder,
+		IServiceUrlBuilder serviceUrlBuilder,
 		object query)
 		where T : SelectQueryResponseBaseDto
 	{
@@ -792,6 +858,15 @@ public sealed class ApplicationInfoService(
 }
 
 /// <summary>
+/// Lightweight application identity resolved by a single select query (no entities or pages loaded).
+/// </summary>
+/// <param name="Id">Installed application GUID.</param>
+/// <param name="Code">Installed application code.</param>
+/// <param name="Name">Installed application display name.</param>
+/// <param name="Version">Installed application version, or null if not set.</param>
+public sealed record InstalledAppSummary(string Id, string Code, string Name, string? Version);
+
+/// <summary>
 /// Structured application package and entity information returned by application MCP tools.
 /// </summary>
 /// <param name="PackageUId">Primary package identifier.</param>
@@ -809,7 +884,8 @@ public sealed record ApplicationInfoResult(
 	string? ApplicationId = null,
 	string? ApplicationName = null,
 	string? ApplicationCode = null,
-	string? ApplicationVersion = null);
+	string? ApplicationVersion = null,
+	string? SchemaNamePrefix = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.

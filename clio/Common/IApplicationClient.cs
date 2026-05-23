@@ -19,45 +19,16 @@ public interface IApplicationClient{
 
 	void DownloadFile(string url, string filePath, string requestData);
 
-	/// <summary>
-	///     Executes DELETE Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestData">Request body (optional)</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
 	string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1);
 
-	/// <summary>
-	///     Executes GET Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
 	string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
 
-	/// <summary>
-	///     Executes POST Request with retry
-	/// </summary>
-	/// <param name="url">Request URL</param>
-	/// <param name="requestData">Request Data</param>
-	/// <param name="requestTimeout">Request Timeout</param>
-	/// <param name="retryCount">retry count</param>
-	/// <param name="delaySec">delay between retries in seconds</param>
-	/// <returns>Response</returns>
-	/// <exception cref="Exception">Throws when request fails after attempts made exceed <paramref name="retryCount" /> count</exception>
-	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite, int retryCount = 1,
-		int delaySec = 1);
+	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1);
 
-
-	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
+	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new();
 
 	void Listen(CancellationToken cancellationToken);
@@ -73,16 +44,20 @@ public interface IApplicationClient{
 public class CreatioClientAdapter : IApplicationClient{
 	#region Fields: Private
 
-	private readonly CreatioClient _creatioClient;
+	private readonly Lazy<CreatioClient> _lazyClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
+	private readonly JsonConverter _jsonConverter;
+
+	private CreatioClient Client => _lazyClient.Value;
 
 	#endregion
 
 	#region Constructors: Private
 
-	private CreatioClientAdapter(CreatioClient creatioClient, IServiceUrlBuilder serviceUrlBuilder = null) {
-		_creatioClient = creatioClient;
+	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder, JsonConverter jsonConverter) {
+		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
+		_jsonConverter = jsonConverter ?? new JsonConverter();
 	}
 
 	#endregion
@@ -91,14 +66,20 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false,
 		IServiceUrlBuilder serviceUrlBuilder = null)
-		: this(new CreatioClient(appUrl, userName, userPassword, true, isNetCore), serviceUrlBuilder) { }
+		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword, true, isNetCore)),
+			serviceUrlBuilder, null) { }
 
 	public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
 		bool isNetCore = false, IServiceUrlBuilder serviceUrlBuilder = null)
-		: this(CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore),
-			serviceUrlBuilder) { }
+		: this(new Lazy<CreatioClient>(() =>
+			CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore)),
+			serviceUrlBuilder, null) { }
 
-	public CreatioClientAdapter(CreatioClient creatioClient) : this(creatioClient, null) { }
+	public CreatioClientAdapter(CreatioClient creatioClient)
+		: this(new Lazy<CreatioClient>(() => creatioClient), null, null) { }
+
+	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
+		: this(lazyClient, null, null) { }
 
 	#endregion
 
@@ -108,17 +89,13 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Methods: Protected
 
-	// internal T As<T>() {
-	// 	throw new NotImplementedException();
-	// }
-
 	#endregion
 
 	#region Methods: Public
 
 	public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
 		int requestTimeout = Timeout.Infinite) {
-		return _creatioClient.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
+		return Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
 	}
 
 	public void DownloadFile(string url, string filePath, string requestData) {
@@ -127,61 +104,53 @@ public class CreatioClientAdapter : IApplicationClient{
 			absoluteUrl = _serviceUrlBuilder.Build(url);
 		}
 
-		_creatioClient.DownloadFile(absoluteUrl, filePath, requestData);
+		Client.DownloadFile(absoluteUrl, filePath, requestData);
 	}
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return _creatioClient.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
 	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1,
 		int delaySec = 1) {
-		return _creatioClient.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
+		return Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
 	}
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return _creatioClient.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
-	/// <summary>
-	///     Performs post request and returns deserialized response.
-	/// </summary>
-	/// <param name="url">Request url.</param>
-	/// <param name="requestData">Request data.</param>
-	/// <param name="requestTimeout">Request timeout. Default: infinity period.</param>
-	/// <typeparam name="T">Return value type.</typeparam>
-	/// <returns>Response.<see cref="T" /></returns>
-	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite)
+	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
-		JsonConverter converter = new();
-		string response = _creatioClient.ExecutePostRequest(url, requestData, requestTimeout);
-		return converter.DeserializeObject<T>(response);
+		string response = Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
-		_creatioClient.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
+		Client.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
 
-		_creatioClient.MessageReceived += (sender, message) => { MessageReceived?.Invoke(sender, message); };
+		Client.MessageReceived += (sender, message) => { MessageReceived?.Invoke(sender, message); };
 
-		_creatioClient.StartListening(cancellationToken);
+		Client.StartListening(cancellationToken);
 	}
 
 	public void Login() {
-		_creatioClient.Login();
+		Client.Login();
 	}
 
 	public string UploadAlmFile(string url, string filePath) {
-		return _creatioClient.UploadAlmFile(url, filePath);
+		return Client.UploadAlmFile(url, filePath);
 	}
 
 	public string UploadAlmFileByChunk(string url, string filePath) {
-		return _creatioClient.UploadAlmFileByChunk(url, filePath);
+		return Client.UploadAlmFileByChunk(url, filePath);
 	}
 
 	public string UploadFile(string url, string filePath) {
-		return _creatioClient.UploadFile(url, filePath);
+		return Client.UploadFile(url, filePath);
 	}
 
 	#endregion

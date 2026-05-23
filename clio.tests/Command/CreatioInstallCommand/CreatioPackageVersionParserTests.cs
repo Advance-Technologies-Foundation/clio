@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.CreatioInstallCommand;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "CreatioInstallCommand")]
 public class CreatioPackageVersionParserTests{
 	[Test]
 	[Description("Should parse full version from Creatio zip filename that starts with version token.")]

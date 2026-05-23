@@ -6,6 +6,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class PageSchemaBodyParserTests {
 
 	[Test]
@@ -155,4 +157,91 @@ public sealed class PageSchemaBodyParserTests {
 		result.ViewConfigDiff[0]!["values"]!["type"]!.ToString().Should().Be("crt.FlexContainer",
 			because: "nested JSON5 objects should be preserved in the parsed result");
 	}
+
+        [Test]
+        [Description("Parses a plain JSON mobile body (schemaType=10) and returns viewConfigDiff/viewModelConfigDiff/modelConfigDiff as JArrays with AMD defaults for the AMD-only sections.")]
+        public void Parse_WhenBodyIsPlainJsonMobileBody_ReturnsMobileParsedSections() {
+                // Arrange
+                IPageSchemaBodyParser parser = new PageSchemaBodyParser();
+                string body = """
+                        {
+                          "viewConfigDiff": [
+                            { "operation": "insert", "name": "TestComponent" }
+                          ],
+                          "viewModelConfigDiff": [
+                            { "operation": "insert", "name": "TestAttr" }
+                          ],
+                          "modelConfigDiff": [
+                            { "operation": "insert", "name": "TestModel" }
+                          ]
+                        }
+                        """;
+
+                // Act
+                PageParsedSchemaBody result = parser.Parse(body);
+
+                // Assert
+                (result.ViewConfigDiff as JArray)!.Should().ContainSingle(
+                        because: "viewConfigDiff from a mobile JSON body should be parsed as a JArray with one entry");
+                result.ViewConfigDiff[0]!["operation"]!.ToString().Should().Be("insert",
+                        because: "mobile viewConfigDiff operations should be preserved exactly");
+                (result.ViewModelConfigDiff as JArray)!.Should().ContainSingle(
+                        because: "viewModelConfigDiff from a mobile JSON body should be parsed as a JArray");
+                (result.ModelConfigDiff as JArray)!.Should().ContainSingle(
+                        because: "modelConfigDiff from a mobile JSON body should be parsed as a JArray");
+                result.Deps.Should().Be("[]",
+                        because: "mobile pages have no AMD deps section — should fall back to empty array");
+                result.Args.Should().Be("()",
+                        because: "mobile pages have no AMD args section — should fall back to empty args");
+                result.Handlers.Should().Be("[]",
+                        because: "mobile pages have no handlers section — should fall back to empty array");
+                result.Converters.Should().Be("{}",
+                        because: "mobile pages have no converters section — should fall back to empty object");
+                result.Validators.Should().Be("{}",
+                        because: "mobile pages have no validators section — should fall back to empty object");
+        }
+
+        [Test]
+        [Description("Parses a mobile body with empty diff arrays and returns empty JArrays without throwing.")]
+        public void Parse_WhenMobileBodyHasEmptyDiffArrays_ReturnsEmptyArrays() {
+                // Arrange
+                IPageSchemaBodyParser parser = new PageSchemaBodyParser();
+                string body = """
+                        {
+                          "viewConfigDiff": [],
+                          "viewModelConfigDiff": [],
+                          "modelConfigDiff": []
+                        }
+                        """;
+
+                // Act
+                PageParsedSchemaBody result = parser.Parse(body);
+
+                // Assert
+                (result.ViewConfigDiff as JArray)!.Should().BeEmpty(
+                        because: "empty viewConfigDiff in a mobile body should parse to an empty JArray");
+                (result.ViewModelConfigDiff as JArray)!.Should().BeEmpty(
+                        because: "empty viewModelConfigDiff in a mobile body should parse to an empty JArray");
+                (result.ModelConfigDiff as JArray)!.Should().BeEmpty(
+                        because: "empty modelConfigDiff in a mobile body should parse to an empty JArray");
+        }
+
+        [Test]
+        [Description("Parses a mobile body that omits optional diff sections without throwing.")]
+        public void Parse_WhenMobileBodyOmitsSomeSections_ReturnsEmptyFallbacksForMissingSections() {
+                // Arrange
+                IPageSchemaBodyParser parser = new PageSchemaBodyParser();
+                string body = "{ \"viewConfigDiff\": [ { \"operation\": \"merge\", \"name\": \"Scaffold\" } ] }";
+
+                // Act
+                PageParsedSchemaBody result = parser.Parse(body);
+
+                // Assert
+                (result.ViewConfigDiff as JArray)!.Should().ContainSingle(
+                        because: "the present section should be parsed correctly");
+                (result.ViewModelConfigDiff as JArray)!.Should().BeEmpty(
+                        because: "omitted viewModelConfigDiff should fall back to an empty JArray");
+                (result.ModelConfigDiff as JArray)!.Should().BeEmpty(
+                        because: "omitted modelConfigDiff should fall back to an empty JArray");
+        }
 }

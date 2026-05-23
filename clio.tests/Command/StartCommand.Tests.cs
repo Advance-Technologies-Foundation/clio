@@ -10,10 +10,12 @@ using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
 using IFileSystem = Clio.Common.IFileSystem;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class StartCommandTestCase : BaseCommandTests<StartOptions>
 {
 	private ISettingsRepository _settingsRepository;
@@ -46,7 +48,8 @@ public class StartCommandTestCase : BaseCommandTests<StartOptions>
 			_creatioHostService,
 			_iisAppPoolManager,
 			_iisSiteDetector,
-			_applicationClient);
+			_applicationClient,
+			new System.IO.Abstractions.FileSystem());
 	}
 
 	[Test]

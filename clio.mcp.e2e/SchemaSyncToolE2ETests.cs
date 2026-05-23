@@ -21,23 +21,24 @@ using NUnit.Framework;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the schema-sync composite MCP tool.
+/// End-to-end tests for the sync-schemas composite MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("schema-sync")]
+[AllureFeature("sync-schemas")]
 [NonParallelizable]
 public sealed class SchemaSyncToolE2ETests {
 
 	private const string ToolName = SchemaSyncTool.ToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
+	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
 	[Test]
-	[Description("Advertises schema-sync MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
-	[AllureName("schema-sync tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that schema-sync appears in the MCP server tool manifest.")]
+	[AllureName("sync-schemas tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that sync-schemas appears in the MCP server tool manifest.")]
 	public async Task SchemaSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -48,16 +49,60 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "schema-sync must be advertised so MCP clients can discover the composite tool");
+			because: "sync-schemas must be advertised so MCP clients can discover the composite tool");
 	}
 
 	[Test]
-	[Description("Executes schema-sync on a real sandbox environment and keeps each result message list aligned with its own operation.")]
+	[Description("Returns a top-level MCP invocation error when sync-schemas is called without the required args wrapper.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args wrapper is missing")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
+	}
+
+	[Test]
+	[Description("Returns a top-level MCP invocation error when sync-schemas args has the wrong type.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas returns invocation error when args has invalid type")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = "invalid"
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AssertInvocationFailure(
+			callResult,
+			because: "wrong-type args should fail during MCP binding before sync-schemas can produce a structured tool response");
+	}
+
+	[Test]
+	[Description("Executes sync-schemas on a real sandbox environment and keeps each result message list aligned with its own operation.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadSchemaToolName)]
 	[AllureTag(ReadColumnToolName)]
-	[AllureName("schema-sync keeps operation messages aligned on real environment")]
-	[AllureDescription("Creates a temporary package in a reachable sandbox environment, runs schema-sync with create-entity, create-lookup with seed rows, and update-entity, then verifies both the remote side effects and that each result message list contains only its own operation evidence.")]
+	[AllureName("sync-schemas keeps operation messages aligned on real environment")]
+	[AllureDescription("Creates a temporary package in a reachable sandbox environment, runs sync-schemas with create-entity, create-lookup with seed rows, and update-entity, then verifies both the remote side effects and that each result message list contains only its own operation evidence.")]
 	public async Task SchemaSyncTool_Should_Keep_Messages_On_The_Correct_Operation() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
@@ -99,14 +144,14 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "schema-sync should return a structured success payload for a valid sandbox package");
+			because: "sync-schemas should return a structured success payload for a valid sandbox package");
 		response.GetProperty("success").GetBoolean().Should().BeTrue(
 			because: "the composite batch should succeed on the reachable sandbox environment");
 		results.Should().HaveCount(4,
 			because: "create-entity, create-lookup, seed-data, and update-entity should each produce one result");
 		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
 				!string.IsNullOrWhiteSpace(type),
-			because: "schema-sync should expose the canonical type field on every result");
+			because: "sync-schemas should expose the canonical type field on every result");
 		createLookupMessages.Should().Contain(message => message.Contains(context.LookupSchemaName!, StringComparison.Ordinal),
 			because: "create-lookup should keep its schema creation message on its own result");
 		createLookupMessages.Should().NotContain(message => message.Contains("Created row:", StringComparison.Ordinal),
@@ -130,13 +175,13 @@ public sealed class SchemaSyncToolE2ETests {
 		updateMessages.Should().NotContain(message => message.Contains("Entity schema", StringComparison.Ordinal),
 			because: "schema creation messages must not leak into the update-entity result");
 		lookupProperties.ParentSchemaName.Should().Be("BaseLookup",
-			because: "schema-sync should create the lookup with BaseLookup inheritance");
+			because: "sync-schemas should create the lookup with BaseLookup inheritance");
 		registrationSnapshot.LookupRowCount.Should().Be(1,
-			because: "schema-sync should register the created lookup exactly once in the Lookup entity");
+			because: "sync-schemas should register the created lookup exactly once in the Lookup entity");
 		registrationSnapshot.LookupRowTitle.Should().Be("Schema Sync Lookup",
-			because: "schema-sync should reuse the create-lookup title for the Lookup registration caption");
+			because: "sync-schemas should reuse the create-lookup title for the Lookup registration caption");
 		registrationSnapshot.BindingCount.Should().Be(1,
-			because: "schema-sync should create exactly one canonical package schema data binding for the lookup");
+			because: "sync-schemas should create exactly one canonical package schema data binding for the lookup");
 		registrationSnapshot.BindingEntitySchemaName.Should().Be("Lookup",
 			because: "the lookup registration binding should target the Lookup entity");
 		registrationSnapshot.BoundRecordIds.Should().Equal([registrationSnapshot.LookupRowId!],
@@ -144,23 +189,23 @@ public sealed class SchemaSyncToolE2ETests {
 		columnProperties.SchemaName.Should().Be(context.EntitySchemaName,
 			because: "the added lookup column should be readable from the updated entity schema");
 		columnProperties.ColumnName.Should().Be(context.LookupColumnName,
-			because: "the updated entity should expose the lookup column that schema-sync added");
+			because: "the updated entity should expose the lookup column that sync-schemas added");
 		columnProperties.ReferenceSchemaName.Should().Be(context.LookupSchemaName,
-			because: "the added column should reference the lookup created in the same schema-sync batch");
+			because: "the added column should reference the lookup created in the same sync-schemas batch");
 	}
 
 	[Test]
 	[Description("Rejects inherited BaseLookup columns in create-lookup operations before environment resolution.")]
 	[AllureTag(ToolName)]
-	[AllureName("schema-sync rejects inherited BaseLookup columns before environment resolution")]
-	[AllureDescription("Starts the real MCP server without requiring a reachable environment, invokes schema-sync with a create-lookup operation that tries to redefine Name, and verifies the tool returns a structured validation failure.")]
+	[AllureName("sync-schemas rejects inherited BaseLookup columns before environment resolution")]
+	[AllureDescription("Starts the real MCP server without requiring a reachable environment, invokes sync-schemas with a create-lookup operation that tries to redefine Name, and verifies the tool returns a structured validation failure.")]
 	public async Task SchemaSyncTool_Should_Reject_Inherited_BaseLookup_Columns_Before_Environment_Resolution() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
-		string invalidEnvironmentName = $"missing-schema-sync-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "schema-sync must be advertised before the validation scenario can be invoked");
+			because: "sync-schemas must be advertised before the validation scenario can be invoked");
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -193,7 +238,7 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "schema-sync should return a structured failure payload for inherited-column validation");
+			because: "sync-schemas should return a structured failure payload for inherited-column validation");
 		response.GetProperty("success").GetBoolean().Should().BeFalse(
 			because: "the batch should fail when create-lookup tries to redefine inherited BaseLookup columns");
 		results.Should().HaveCount(1,
@@ -209,11 +254,11 @@ public sealed class SchemaSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Applies structured default-value-config through schema-sync update-entity and verifies the resulting DateTime column readback.")]
+	[Description("Applies structured default-value-config through sync-schemas update-entity and verifies the resulting DateTime column readback.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadColumnToolName)]
-	[AllureName("schema-sync applies structured system-value defaults on update-entity")]
-	[AllureDescription("Creates a sandbox entity through schema-sync on a real environment, adds a DateTime column with default-value-config source SystemValue, and verifies the remote side effect plus structured readback metadata.")]
+	[AllureName("sync-schemas applies structured system-value defaults on update-entity")]
+	[AllureDescription("Creates a sandbox entity through sync-schemas on a real environment, adds a DateTime column with default-value-config source SystemValue, and verifies the remote side effect plus structured readback metadata.")]
 	public async Task SchemaSyncTool_Should_Apply_Structured_DefaultValueConfig_On_UpdateEntity() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
@@ -243,9 +288,9 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "schema-sync should return a structured success payload when update-entity applies a valid system-value default");
+			because: "sync-schemas should return a structured success payload when update-entity applies a valid system-value default");
 		response.GetProperty("success").GetBoolean().Should().BeTrue(
-			because: "the schema-sync batch should succeed when adding a DateTime column with a structured system-value default");
+			because: "the sync-schemas batch should succeed when adding a DateTime column with a structured system-value default");
 		results.Should().HaveCount(2,
 			because: "the focused batch should produce one result for create-entity and one for update-entity");
 		createEntityMessages.Should().Contain(message => message.Contains(context.EntitySchemaName!, StringComparison.Ordinal),
@@ -253,32 +298,34 @@ public sealed class SchemaSyncToolE2ETests {
 		updateMessages.Should().Contain(message => message.Contains(startDateColumnName, StringComparison.Ordinal),
 			because: "the update-entity result should report the DateTime column mutated by the structured default flow");
 		columnProperties.ColumnName.Should().Be(startDateColumnName,
-			because: "the structured column readback should identify the DateTime column created by schema-sync");
+			because: "the structured column readback should identify the DateTime column created by sync-schemas");
 		columnProperties.Type.Should().Be("DateTime",
-			because: "the structured column readback should preserve the DateTime type created by schema-sync");
+			because: "the structured column readback should preserve the DateTime type created by sync-schemas");
 		columnProperties.DefaultValueSource.Should().Be("SystemValue",
-			because: "legacy summary fields should expose the resolved system-value source for schema-sync updates");
-		columnProperties.DefaultValue.Should().Be("CurrentDateTime",
-			because: "legacy summary fields should expose the resolved system value name for schema-sync updates");
+			because: "legacy summary fields should expose the resolved system-value source for sync-schemas updates");
+		columnProperties.DefaultValue.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "legacy summary fields should expose the canonical resolved system value guid for sync-schemas updates");
 		columnProperties.DefaultValueConfig.Should().NotBeNull(
-			because: "structured column readback should expose default-value-config metadata for schema-sync updates");
+			because: "structured column readback should expose default-value-config metadata for sync-schemas updates");
 		columnProperties.DefaultValueConfig!.Source.Should().Be("SystemValue",
 			because: "the structured default value config should preserve the resolved system-value source");
-		columnProperties.DefaultValueConfig.ValueSource.Should().Be("CurrentDateTime",
-			because: "the structured default value config should preserve the system value name");
+		columnProperties.DefaultValueConfig.ValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "the structured default value config should preserve the canonical system value guid");
+		columnProperties.DefaultValueConfig.ResolvedValueSource.Should().Be(CurrentDateTimeSystemValueUId,
+			because: "structured default value readback should include the resolved system value guid");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		if (requireEnvironment && !settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive schema-sync MCP end-to-end tests.");
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive sync-schemas MCP end-to-end tests.");
 		}
 
 		string? environmentName = requireEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: null;
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-schema-sync-e2e-{Guid.NewGuid():N}");
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
@@ -298,14 +345,19 @@ public sealed class SchemaSyncToolE2ETests {
 			}
 			catch (Exception ex) {
 				Assert.Ignore(
-					$"Skipping destructive schema-sync MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
+					$"Skipping destructive sync-schemas MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
 			}
 
 			packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			entitySchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
-			lookupSchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
+			entitySchemaName = $"Usr{Guid.NewGuid():N}";
+			lookupSchemaName = $"Usr{Guid.NewGuid():N}";
 			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(settings, workspacePath, environmentName!, cancellationTokenSource.Token);
+			await PushWorkspaceAsync(
+				settings,
+				workspacePath,
+				environmentName!,
+				packageName,
+				cancellationTokenSource.Token);
 		}
 
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -334,7 +386,7 @@ public sealed class SchemaSyncToolE2ETests {
 		}
 
 		Assert.Ignore(
-			$"schema-sync MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+			$"sync-schemas MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 		return string.Empty;
 	}
 
@@ -373,10 +425,16 @@ public sealed class SchemaSyncToolE2ETests {
 		McpE2ESettings settings,
 		string workspacePath,
 		string environmentName,
+		string packageName,
 		CancellationToken cancellationToken) {
 		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
 			settings,
 			["push-workspace", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["pkg-hotfix", packageName, "true", "-e", environmentName],
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationToken);
 	}
@@ -391,7 +449,7 @@ public sealed class SchemaSyncToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "schema-sync must be advertised before the end-to-end call can be executed");
+			because: "sync-schemas must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -458,7 +516,7 @@ public sealed class SchemaSyncToolE2ETests {
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "schema-sync must be advertised before the structured default-value scenario can be executed");
+			because: "sync-schemas must be advertised before the structured default-value scenario can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -654,18 +712,30 @@ public sealed class SchemaSyncToolE2ETests {
 		];
 	}
 
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
+		callResult.IsError.Should().BeTrue(
+			because: because);
+		callResult.StructuredContent.Should().BeNull(
+			because: "binding-layer failures should not return a structured sync-schemas payload");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "invocation failures should still expose human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains("An error occurred invoking 'sync-schemas'.", StringComparison.Ordinal),
+			because: "the transport-level failure should surface as the generic invocation error for the tool");
+	}
+
 	[Test]
 	[Description("Rejects flat seed-rows (missing 'values' wrapper) without requiring a reachable environment.")]
 	[AllureTag(ToolName)]
-	[AllureName("schema-sync rejects flat seed-rows format before environment resolution")]
-	[AllureDescription("Starts the real MCP server without a reachable environment, invokes schema-sync with create-lookup using flat seed-rows (missing 'values' wrapper), and verifies the tool returns a structured failure on the seed-data step with a clear error about the missing 'values' map.")]
+	[AllureName("sync-schemas rejects flat seed-rows format before environment resolution")]
+	[AllureDescription("Starts the real MCP server without a reachable environment, invokes sync-schemas with create-lookup using flat seed-rows (missing 'values' wrapper), and verifies the tool returns a structured failure on the seed-data step with a clear error about the missing 'values' map.")]
 	public async Task SchemaSyncTool_Should_Reject_Flat_SeedRows_Before_Environment_Resolution() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
-		string missingEnv = $"missing-schema-sync-env-{Guid.NewGuid():N}";
+		string missingEnv = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "schema-sync must be advertised before the flat seed-rows validation scenario can be invoked");
+			because: "sync-schemas must be advertised before the flat seed-rows validation scenario can be invoked");
 
 		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -693,7 +763,7 @@ public sealed class SchemaSyncToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "schema-sync should return a structured failure payload, not an MCP error envelope");
+			because: "sync-schemas should return a structured failure payload, not an MCP error envelope");
 		response.GetProperty("success").GetBoolean().Should().BeFalse(
 			because: "flat seed-rows without the 'values' wrapper must cause the batch to fail");
 		JsonElement seedResult = results.Single(r =>

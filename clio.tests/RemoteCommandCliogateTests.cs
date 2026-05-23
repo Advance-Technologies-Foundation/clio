@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests
 {
     [TestFixture]
+    [Category("Unit")]
+    [Property("Module", "Core")]
     [Description("Unit tests for cliogate presence and version check logic in RemoteCommand.")]
     public class RemoteCommandCliogateTests
     {
@@ -118,6 +120,8 @@ namespace Clio.Tests
     }
 
     [TestFixture]
+    [Category("Unit")]
+    [Property("Module", "Core")]
     [Description("Unit tests for ServiceUri property in RemoteCommand.")]
     public class RemoteCommandServiceUriTests
     {

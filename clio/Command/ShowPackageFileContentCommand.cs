@@ -24,11 +24,12 @@ namespace Clio.Command
 
 		private object _packageName;
 		private string _filePath;
+		private readonly ILogger _logger;
 
 		protected override string ServicePath {
 			get {
-				return IsReadFile ? 
-					$"/rest/CreatioApiGateway/GetPackageFileContent?packageName={_packageName}&filePath={Uri.EscapeDataString(_filePath)}" 
+				return IsReadFile ?
+					$"/rest/CreatioApiGateway/GetPackageFileContent?packageName={_packageName}&filePath={Uri.EscapeDataString(_filePath)}"
 					: $"/rest/CreatioApiGateway/GetPackageFilesDirectoryContent?packageName={_packageName}";
 			}
 		}
@@ -39,7 +40,8 @@ namespace Clio.Command
 			}
 		}
 
-		public ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings) : base(applicationClient, environmentSettings) {
+		public ShowPackageFileContentCommand(IApplicationClient applicationClient, EnvironmentSettings environmentSettings, ILogger logger) : base(applicationClient, environmentSettings) {
+			_logger = logger;
 		}
 
 		public override int Execute(ShowPackageFileContentOptions options) {
@@ -57,23 +59,23 @@ namespace Clio.Command
 			}
 		}
 
-		private static void PrintFolderContent(string response) {
-			Console.WriteLine();
+		private void PrintFolderContent(string response) {
+			_logger.WriteLine();
 			string trimmedResponse = response.Trim('[', ']');
 			var files = trimmedResponse.Split(new char[] { ',' });
 			foreach (var item in files) {
 				var prettyFilePath = item.Trim('"').Replace("\\\\", "\\").Replace("//", "/").Trim('\\');
-				Console.WriteLine(prettyFilePath);
+				_logger.WriteLine(prettyFilePath);
 			}
-			Console.WriteLine();
+			_logger.WriteLine();
 		}
 
-		private static void PrintFileContent(string response) {
-			Console.WriteLine();
+		private void PrintFileContent(string response) {
+			_logger.WriteLine();
 			string prettyFormat = response.Replace("\\r", "\r").
 				Replace("\\t", "\t").Replace("\\n", "\n").Trim('"').Replace("\\\"", "\"").Replace("\\/", "/");
-			Console.WriteLine(prettyFormat);
-			Console.WriteLine();
+			_logger.WriteLine(prettyFormat);
+			_logger.WriteLine();
 		}
 	}
 

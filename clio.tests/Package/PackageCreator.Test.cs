@@ -17,6 +17,7 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 namespace Clio.Tests.Package;
 
 [TestFixture]
+[Property("Module", "Package")]
 internal class PackageCreatorTest : BaseClioModuleTests
 {
 

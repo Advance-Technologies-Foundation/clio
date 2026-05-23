@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using Clio.Common;
 using Clio.Common.Responses;
+using Clio.Package;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
@@ -14,9 +16,14 @@ internal interface IRemoteEntitySchemaDesignerClient
 		RemoteCommandOptions options);
 	BoolResponse CheckUniqueSchemaName(string managerName, string schemaName, Guid excludeUId, RemoteCommandOptions options);
 	DesignerResponse<EntityDesignSchemaDto> GetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
+	DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
+	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
+	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
+		string valueTypeName,
+		RemoteCommandOptions options);
 }
 
 internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesignerClient
@@ -73,6 +80,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			request, options);
 	}
 
+	public DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request,
+		RemoteCommandOptions options) {
+		string url = BuildDesignerMethodUrl("GetSchemaDesignItem");
+		return TryPostToUrl<GetSchemaDesignItemRequestDto, DesignerResponse<EntityDesignSchemaDto>>(url, request,
+			options, "GetSchemaDesignItem");
+	}
+
 	public SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options) {
 		return Post<EntityDesignSchemaDto, SaveDesignItemDesignerResponse>("SaveSchema", schema, options);
 	}
@@ -97,6 +111,41 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			"GetRuntimeEntitySchema");
 	}
 
+	public IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options) {
+		SystemValuesResponse response = Post<object, SystemValuesResponse>(
+			"GetSystemValues",
+			new {
+				dataValueTypeUId
+			},
+			options);
+		return response.Items ?? [];
+	}
+
+	public IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
+		string valueTypeName,
+		RemoteCommandOptions options) {
+		object query = SelectQueryHelper.BuildSelectQuery(
+			"SysSettings",
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("ValueTypeName", "ValueTypeName")
+			],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition(
+					"ValueTypeName",
+					valueTypeName,
+					SelectQueryHelper.TextDataValueType)
+			]);
+		SysSettingsSelectQueryResponse response = PostToUrl<object, SysSettingsSelectQueryResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+			query,
+			options,
+			"SelectQuery(SysSettings)");
+		return response.Rows ?? [];
+	}
+
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)
 		where TRequest : class
 		where TResponse : BaseResponse {
@@ -112,7 +161,20 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
 			options.RetryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
+		return EnsureSuccess(response, methodName);
+	}
 
+	private TResponse? TryPostToUrl<TRequest, TResponse>(string url, TRequest request, RemoteCommandOptions options,
+		string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
+		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
+			options.RetryDelay);
+		if (IsHtmlResponse(rawResponse)) {
+			return null;
+		}
+		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
 
@@ -121,6 +183,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		try {
 			return _jsonConverter.DeserializeObject<TResponse>(rawResponse);
 		} catch (Exception rawException) {
+			if (IsHtmlResponse(rawResponse)) {
+				throw new InvalidOperationException(
+					$"{methodName} returned an HTML error page instead of JSON. " +
+					$"The Creatio server encountered an unhandled error, possibly due to a stale database table from a previously deleted package. " +
+					$"Use find-entity-schema to check whether the schema was partially created before retrying.",
+					rawException);
+			}
 			string correctedJson = _jsonConverter.CorrectJson(rawResponse);
 			try {
 				return _jsonConverter.DeserializeObject<TResponse>(correctedJson);
@@ -131,6 +200,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 					correctedException);
 			}
 		}
+	}
+
+	private static bool IsHtmlResponse(string rawResponse) {
+		if (string.IsNullOrEmpty(rawResponse)) {
+			return false;
+		}
+		string trimmed = rawResponse.TrimStart();
+		return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+			|| trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private string BuildDesignerMethodUrl(string methodName) {

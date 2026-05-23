@@ -103,7 +103,37 @@
 dotnet pack .\clio\clio.csproj -c Release --output ./output /p:AssemblyVersion=8.0.1.43 /p:FileVersion=8.0.1.43 /p:Version=8.0.1.43
 ```
 
-### 6. Примечания
+### 6. Обязательные Release Notes (What's new)
+
+> **ВАЖНО:** Каждый релиз **обязан** содержать описание изменений (What's new) в GitHub Release.
+> Эти заметки отображаются пользователям при выполнении команды `clio update`.
+
+При разработке через кодинг-агенты (GitHub Copilot, Claude Code и др.) агент **обязан**:
+
+1. **Вести список изменений** в процессе разработки — каждый значимый коммит должен содержать понятное описание
+2. **Формировать What's new** при создании релиза — краткий, понятный список изменений на английском языке
+3. **Включать What's new в GitHub Release** — через параметр `--notes` в `gh release create`
+
+**Формат What's new:**
+```markdown
+- Add feature X for better Y
+- Fix issue with Z when doing W
+- Improve performance of operation Q
+```
+
+**Пример создания релиза с What's new:**
+```bash
+gh release create 8.0.2.65 --title "Release 8.0.2.65" --notes "$(cat <<'EOF'
+- Fix player name display in environment list
+- Add interactive quiz easter egg
+- Improve update command UX with spinner and release notes
+EOF
+)"
+```
+
+**Без What's new** пользователи команды `clio update` не увидят описание изменений, что снижает доверие к обновлениям.
+
+### 7. Примечания
 
 - **cliogate проект** остается без изменений версионирования
 - **Только clio пакет** получает версию из тега релиза

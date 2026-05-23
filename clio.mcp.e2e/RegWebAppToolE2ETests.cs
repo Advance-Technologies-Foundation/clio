@@ -24,7 +24,7 @@ public sealed class RegWebAppToolE2ETests {
 	[Test]
 	[AllureTag(ToolName)]
 	[AllureName("reg-web-app auto-detects .NET Framework when only the /0 SelectQuery route is valid")]
-	[AllureDescription("Starts the real clio MCP server with isolated settings, invokes reg-web-app without is-net-core, and verifies that the stored environment keeps IsNetCore=false when only the framework DataService route succeeds.")]
+	[AllureDescription("Starts the real clio MCP server with isolated settings, invokes reg-web-app and verifies that the stored environment has IsNetCore=false when only the framework DataService route succeeds.")]
 	[Description("Auto-detects the .NET Framework runtime through MCP registration and persists IsNetCore=false in the clio settings file.")]
 	public async Task RegisterWebApp_Should_Persist_Framework_Runtime_When_AutoDetection_Finds_Framework_Route() {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-reg-web-app-e2e-{Guid.NewGuid():N}");

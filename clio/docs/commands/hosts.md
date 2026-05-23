@@ -136,7 +136,7 @@ Use 'clio reg-web-app' to register environments with paths.
 
     No hosts found:
         Ensure environments are registered with EnvironmentPath:
-        clio show-web-app-list
+        clio list-environments
 
         Register environment with path:
         clio reg-web-app -e myenv --EnvironmentPath "C:\Path\To\Creatio"
@@ -196,7 +196,7 @@ Use 'clio reg-web-app' to register environments with paths.
 
     reg-web-app         Register Creatio environment with EnvironmentPath
     unreg-web-app       Unregister Creatio environment
-    show-web-app-list   List all registered environments
+    list-environments   List all registered environments
     restart-web-app     Restart a Creatio environment
     healthcheck         Check Creatio application health
 

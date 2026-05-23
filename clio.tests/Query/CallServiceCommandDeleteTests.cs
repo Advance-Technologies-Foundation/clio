@@ -10,6 +10,7 @@ using IFileSystem = Clio.Common.IFileSystem;
 namespace Clio.Tests.Query;
 
 [TestFixture]
+[Property("Module", "Query")]
 public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommandOptions>{
 	#region Methods: Public
 

@@ -11,18 +11,18 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ShowWebAppListTool(ShowAppListCommand command)
 {
 	/// <summary>
-	/// Stable MCP tool name for listing registered web applications.
+	/// Stable MCP tool name for listing registered clio environments.
 	/// </summary>
-	internal const string ShowWebAppListToolName = "show-webApp-list";
+	internal const string ShowWebAppListToolName = "list-environments";
 
 	/// <summary>
-	/// Returns all registered web application settings as structured MCP JSON without masking sensitive fields.
+	/// Returns all registered web application settings as structured MCP JSON with sensitive fields masked.
 	/// </summary>
 	[McpServerTool(Name = ShowWebAppListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Shows the list of registered web applications and their settings as structured JSON without masking sensitive values.")]
+	[Description("Shows the list of registered web applications and their settings as structured JSON. Sensitive values such as passwords are masked.")]
 	public IReadOnlyList<ShowWebAppSettingsResult> ShowWebAppList()
 	{
-		return command.GetAllWebAppSettings(maskSensitiveData: false);
+		return command.GetAllWebAppSettings(maskSensitiveData: true);
 	}
 }

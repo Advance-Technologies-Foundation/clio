@@ -10,6 +10,7 @@ using System.IO.Abstractions.TestingHelpers;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class RegisterCommandTests : BaseCommandTests<RegisterOptions>{
 	#region Fields: Private
 

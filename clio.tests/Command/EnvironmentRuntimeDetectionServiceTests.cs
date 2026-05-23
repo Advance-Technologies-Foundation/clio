@@ -14,6 +14,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class EnvironmentRuntimeDetectionServiceTests {
 	private const string BaseUri = "http://localhost:5007";
 
@@ -34,7 +36,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceSuccess(netCoreClient, true);
 		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		bool result = sut.Detect(CreateEnvironment());
 
@@ -59,7 +61,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
 		ConfigureServiceSuccess(netFrameworkClient, false);
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		bool result = sut.Detect(CreateEnvironment());
 
@@ -84,7 +86,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
 		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		Action act = () => sut.Detect(CreateEnvironment());
 
@@ -115,7 +117,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceSuccess(netCoreClient, true);
 		ConfigureServiceSuccess(netFrameworkClient, false);
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		bool result = sut.Detect(CreateEnvironment());
 
@@ -140,7 +142,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceSuccess(netCoreClient, true);
 		ConfigureServiceSuccess(netFrameworkClient, false);
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		bool result = sut.Detect(CreateEnvironment());
 
@@ -165,7 +167,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		ConfigureClientWarmup(netFrameworkClient, false);
 		ConfigureServiceSuccess(netCoreClient, true);
 		ConfigureServiceSuccess(netFrameworkClient, false);
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		Action act = () => sut.Detect(CreateEnvironment());
 
@@ -185,7 +187,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
 			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
 		});
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		bool result = sut.Detect(new EnvironmentSettings {
 			Uri = BaseUri
@@ -202,7 +204,7 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		IHttpClientFactory httpClientFactory = CreateFailingHttpClientFactory(
 			new HttpRequestException("nodename nor servname provided, or not known"));
-		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
 
 		Action act = () => sut.Detect(new EnvironmentSettings {
 			Uri = "http://ts1-infr-web01:88/studioenu_14771250_0401"

@@ -1,3 +1,122 @@
+# ClioGate integration
+
+ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
+It exposes WCF/REST endpoints that bypass DataService ESQ permission checks by using
+`Terrasoft.Core.DB.Select` / `Update` directly against the database engine.
+
+## When to use ClioGate instead of DataService
+
+Use ClioGate endpoints whenever:
+- The operation touches schema objects with restricted NUI security (`SysPackage`, `SysSchema`, etc.).
+- The existing DataService ESQ path fails with `SecurityException: Current user does not have permissions for the "X" object`.
+- The operation needs to run with elevated permissions that can't be granted at the schema level.
+
+## ClioGate URL pattern
+
+All ClioGate methods are served at:
+```
+/rest/CreatioApiGateway/<MethodName>
+```
+**Never** use `/rest/CreatioApiGatewayService/…` — that path does not exist and will return an HTML error page.
+
+Existing examples in `ServiceUrlBuilder.KnownRoutes`:
+```csharp
+{KnownRoute.DownloadPackageDllFile, "/rest/CreatioApiGateway/DownloadFile"},
+{KnownRoute.SendEventToUi,          "/rest/CreatioApiGateway/SendEventToUI"},
+{KnownRoute.UnlockPackages,         "/rest/CreatioApiGateway/UnlockPackages"},
+{KnownRoute.LockPackages,           "/rest/CreatioApiGateway/LockPackages"},
+```
+
+`ServiceUrlBuilder.Build(KnownRoute)` automatically prepends `0/` for `.NET Framework` environments
+(`IsNetCore = false`), so always register the raw `/rest/…` path in `KnownRoutes`.
+
+## Adding a new ClioGate endpoint
+
+1. Add a method to `cliogate/Files/cs/CreatioApiGateway.cs` with `[WebInvoke]` and `CheckCanManageSolution()` as the first call.
+2. Add a new enum value to `ServiceUrlBuilder.KnownRoute` (continue the numeric sequence — do not reuse gaps or existing IDs).
+3. Add the route to `ServiceUrlBuilder.KnownRoutes` using the `/rest/CreatioApiGateway/<MethodName>` pattern.
+4. Call via `IApplicationClient.ExecutePostRequest(url, jsonBody)` — check the returned bool/string for success.
+
+## Security: CheckCanManageSolution
+
+Every public endpoint in `CreatioApiGateway.cs` must call `CheckCanManageSolution()` as its first line.
+Before implementing a new security check, grep for `CheckCanManageSolution()` near the target method — it may already be present.
+
+## Building ClioGate on macOS (without PowerShell)
+
+`build.ps1` is the canonical build script but requires `pwsh`. On macOS without `pwsh`:
+
+```bash
+# 1. Build net472 assembly (for .NET Framework / IsNetCore=false environments)
+dotnet build cliogate/cliogate.csproj -c Release -f net472 \
+  -p:TargetFrameworks=net472 --no-incremental -p:AssemblyName=cliogate \
+  --source ~/.nuget/packages
+# Output: cliogate/Files/Bin/cliogate.dll
+
+# 2. Copy ATF.Repository.dll (check version in cliogate/obj/project.assets.json)
+cp ~/.nuget/packages/atf.repository/<version>/lib/netstandard2.0/ATF.Repository.dll \
+  cliogate/Files/Bin/
+
+# 3. Bump version
+dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --PackageVersion X.Y.Z.W
+
+# 4. Compress
+dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate -d ./clio/cliogate/cliogate.gz
+
+# 5. Clean up build artifacts from Files/Bin (build.ps1 does this too)
+rm -f cliogate/Files/Bin/cliogate.dll cliogate/Files/Bin/cliogate.pdb \
+      cliogate/Files/Bin/ATF.Repository.dll
+```
+
+Note: The netstandard2.0 target requires the private Nexus feed (may fail with 403 on macOS without VPN).
+For `.NET Framework` environments this is not needed — only the net472 assembly is loaded.
+
+## Deploying and verifying ClioGate on an environment
+
+```bash
+# Deploy
+dotnet run --project clio/clio.csproj --framework net8.0 -- push-pkg ./clio/cliogate/cliogate.gz -e <env>
+
+# Verify version installed
+dotnet run --project clio/clio.csproj --framework net8.0 -- list-packages -e <env> | grep cliogate
+
+# Quick connectivity check
+dotnet run --project clio/clio.csproj --framework net8.0 -- get-info -e <env>
+```
+
+The install command is `push-pkg`, **not** `push-package` (that verb does not exist).
+
+## Common clio command names (easily confused)
+
+| Intent | Correct verb |
+|---|---|
+| Push a package .gz to environment | `push-pkg` |
+| List registered environments | `list-environments` |
+| Show system info / test connection | `get-info` |
+| Lock a package | `lock-package` |
+| Unlock a package | `unlock-package` |
+
+# CLI parameter naming convention
+
+All CLI option long names defined with `[Option("...", ...)]` **must use kebab-case** (e.g. `--restart-environment`, `--db-server-uri`).
+
+**Never use camelCase or PascalCase** (e.g. `--restartEnvironment`, `--SysAdminUnitName`) for new or modified option names.
+
+When renaming an existing camelCase option to kebab-case:
+1. Change the main `[Option]` string to kebab-case.
+2. Add a **hidden** alias property that delegates to the main property (for backward compatibility):
+```csharp
+[Option("restart-environment", Required = false, HelpText = "...")]
+public bool RestartEnvironment { get; set; }
+
+[Option("restartEnvironment", Required = false, Hidden = true, HelpText = "Alias for --restart-environment")]
+public bool RestartEnvironmentAlias {
+    get => RestartEnvironment;
+    set { if (value) RestartEnvironment = value; }
+}
+```
+3. Update all docs (`clio/docs/commands/*.md`, `clio/help/en/*.txt`) to use the new kebab-case form.
+
 # Documentation structure for commands
 
 - `clio\Commands.md` - Overview of all commands (displayed when user types `clio help`)
@@ -111,6 +230,61 @@ When testing command classes:
 - Register test doubles and command-specific dependencies in `AdditionalRegistrations(IServiceCollection containerBuilder)`.
 - Resolve command system-under-test instances from the DI container in setup (`Container.GetRequiredService<TCommand>()`) instead of constructing with `new`.
 - Clear substitute received calls in teardown (`ClearReceivedCalls`) to avoid cross-test interference.
+
+# Smart regression testing policy
+
+Before committing any change, run only the tests for affected modules — do not run the full suite unless core infrastructure changed. This keeps feedback time under 10 seconds for typical single-module changes instead of 60+ seconds for the full unit suite.
+
+## Module-to-source mapping
+
+| Module trait | Source paths |
+|---|---|
+| `Command` | `clio/Command/` (root-level command files) |
+| `McpServer` | `clio/Command/McpServer/` |
+| `ApplicationCommand` | `clio/Command/ApplicationCommand/` |
+| `CreatioInstallCommand` | `clio/Command/CreatioInstallCommand/` |
+| `ProcessModel` | `clio/Command/ProcessModel/` |
+| `ModelBuilder` | `clio/ModelBuilder/` |
+| `Common` | `clio/Common/` |
+| `Package` | `clio/Package/` |
+| `Workspace` | `clio/Workspace/`, `clio/Workspaces/` |
+| `Core` | `clio/Core/` |
+| `Query` | `clio/Query/` |
+| `Requests` | `clio/Requests/` |
+| `Validators` | `clio/Validators/` |
+
+## Selection rules
+
+1. **Identify changed source paths** using `git diff --name-only HEAD` (or staged files).
+2. **Map each changed path to its module trait** using the table above.
+3. **Run targeted tests** before committing:
+
+```shell
+# Single module
+dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Command" --no-build
+
+# Multiple modules (pipe-separated)
+dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=Common)" --no-build
+```
+
+4. **Full-suite triggers** — run `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"` when any of the following changed:
+   - `clio/BindingsModule.cs` or `clio/Program.cs` — DI composition root, affects all modules
+   - `clio/Common/` — shared dependency used by every module
+   - Changes span more than 3 distinct modules
+   - Test infrastructure files: `clio.tests/TestAssemblySetup.cs`, `BaseClioModuleTests.cs`, `BaseCommandTests.cs`
+
+5. **Analyzer-only changes** — `Clio.Analyzers/**` changed: run only the analyzer test project:
+
+```shell
+dotnet test Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj --no-build
+```
+
+## Mandatory agent behavior
+
+- **Before every commit**: run the targeted test filter for each changed module and confirm all pass.
+- **Do not commit if targeted tests fail.**
+- When targeted tests pass but the change touches shared infrastructure (rule 4), additionally run the full unit suite.
+- Include the filter command used in the commit message or PR description so reviewers know what was validated locally (e.g., `Validated: dotnet test --filter "Category=Unit&Module=Command"`).
 
 # Instance creation and DI policy
 

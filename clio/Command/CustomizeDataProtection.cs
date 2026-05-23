@@ -61,7 +61,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 
 	#region Properties: Private
 
-	private IEnumerable<IISScannerHandler.RegisteredSite> AllSites { get; set; }
+	private IEnumerable<RegisteredSite> AllSites { get; set; }
 
 	/// <summary>
 	///  Gets the action to handle the completion of the request for all registered sites.
@@ -72,7 +72,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 	///   <item>Assigns the provided sites to the `AllSites` property.</item>
 	///  </list>
 	/// </remarks>
-	private Action<IEnumerable<IISScannerHandler.RegisteredSite>> OnAllSitesRequestCompleted =>
+	private Action<IEnumerable<RegisteredSite>> OnAllSitesRequestCompleted =>
 		sites => { AllSites = sites; };
 
 	#endregion
@@ -92,7 +92,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 	///   <item>Waits for the task to complete and retrieves the result.</item>
 	///  </list>
 	/// </remarks>
-	private void ExecuteMediatorRequest(Action<IEnumerable<IISScannerHandler.RegisteredSite>> callback){
+	private void ExecuteMediatorRequest(Action<IEnumerable<RegisteredSite>> callback){
 		AllRegisteredSitesRequest request = new() {
 			Callback = callback
 		};
@@ -154,7 +154,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 	///  </list>
 	/// </remarks>
 	private ErrorOr<IDirectoryInfo> GetFolderPathForEnvironmentName(Uri envUri){
-		List<IISScannerHandler.RegisteredSite> sites = AllSites
+		List<RegisteredSite> sites = AllSites
 														.Where(s => s.Uris.Any(iisRegisteredUrl =>
 															Uri.Compare(envUri,
 																iisRegisteredUrl,
@@ -167,7 +167,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 				"Did not find any registered sites");
 		}
 
-		IISScannerHandler.RegisteredSite site = sites.FirstOrDefault();
+		RegisteredSite site = sites.FirstOrDefault();
 		if (site != null && _fileSystem.ExistsDirectory(site.siteBinding.path)) {
 			IDirectoryInfo result = _fileSystem.GetDirectoryInfo(site.siteBinding.path);
 			return result.ToErrorOr();

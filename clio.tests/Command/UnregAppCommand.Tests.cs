@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Clio.Command;
+using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
@@ -10,9 +11,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 {
 	private ISettingsRepository _settingsRepository;
+	private ILogger _logger;
 	private UnregAppCommand _command;
 	private TextReader _originalConsoleIn;
 	private TextWriter _originalConsoleOut;
@@ -21,7 +24,9 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_logger = Substitute.For<ILogger>();
 		containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepository);
+		containerBuilder.AddSingleton<ILogger>(_logger);
 	}
 
 	[SetUp]
@@ -39,6 +44,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		Console.SetIn(_originalConsoleIn);
 		Console.SetOut(_originalConsoleOut);
 		_settingsRepository.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -52,8 +58,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(options);
 
 		result.Should().Be(0, because: "a valid positional environment name should be removed successfully");
-		_consoleOutput.ToString().Should().Contain("Environment Test was deleted...",
-			because: "successful removal should be reported to the user");
+		_logger.Received().WriteLine("Environment Test was deleted...");
 		_settingsRepository.Received(1).RemoveEnvironment("Test");
 		_settingsRepository.DidNotReceive().RemoveAllEnvironment();
 	}
@@ -85,10 +90,8 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(new UnregAppOptions());
 
 		result.Should().Be(0, because: "a valid menu selection should resolve the environment to remove");
-		_consoleOutput.ToString().Should().Contain("1. alpha - https://alpha",
-			because: "the interactive list should be sorted alphabetically");
-		_consoleOutput.ToString().Should().Contain("2. beta - https://beta (active)",
-			because: "the active environment should be marked in the interactive list");
+		_logger.Received().WriteLine("1. alpha - https://alpha");
+		_logger.Received().WriteLine("2. beta - https://beta (active)");
 		_settingsRepository.Received(1).RemoveEnvironment("beta");
 	}
 
@@ -100,8 +103,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(new UnregAppOptions());
 
 		result.Should().Be(0, because: "an empty environment catalog is not an execution failure");
-		_consoleOutput.ToString().Should().Contain("No environments configured",
-			because: "the command should explain why no selection was shown");
+		_logger.Received().WriteLine("No environments configured");
 		_settingsRepository.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
 		_settingsRepository.DidNotReceive().RemoveAllEnvironment();
 	}
@@ -117,8 +119,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(new UnregAppOptions());
 
 		result.Should().Be(0, because: "empty input should cancel the interactive flow instead of failing");
-		_consoleOutput.ToString().Should().Contain("Operation cancelled",
-			because: "the user should be told that no deletion happened");
+		_logger.Received().WriteLine("Operation cancelled");
 		_settingsRepository.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
 	}
 
@@ -133,8 +134,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(new UnregAppOptions());
 
 		result.Should().Be(1, because: "an out-of-range menu choice should be rejected");
-		_consoleOutput.ToString().Should().Contain("Invalid selection. Enter a number from the list.",
-			because: "the command should explain how to fix the interactive input");
+		_logger.Received().WriteError("Invalid selection. Enter a number from the list.");
 		_settingsRepository.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
 	}
 
@@ -148,9 +148,8 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 		int result = _command.Execute(options);
 
 		result.Should().Be(1, because: "silent mode cannot prompt for an interactive environment choice");
-		_consoleOutput.ToString().Should()
-			.Contain("Environment name is required in --silent mode. Pass <Name>, -e/--Environment, or --all.",
-				because: "the failure should tell the user how to run the command non-interactively");
+		_logger.Received().WriteError(
+			"Environment name is required in --silent mode. Pass <Name>, -e/--Environment, or --all.");
 		_settingsRepository.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
 	}
 

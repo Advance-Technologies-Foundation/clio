@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
 
@@ -31,13 +32,11 @@ namespace Clio.Command
 	public class UnregAppCommand : Command<UnregAppOptions>
 	{
 		private readonly ISettingsRepository _settingsRepository;
+		private readonly ILogger _logger;
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="UnregAppCommand"/> class.
-		/// </summary>
-		/// <param name="settingsRepository">The settings repository that stores registered environments.</param>
-		public UnregAppCommand(ISettingsRepository settingsRepository) {
+		public UnregAppCommand(ISettingsRepository settingsRepository, ILogger logger) {
 			_settingsRepository = settingsRepository;
+			_logger = logger;
 		}
 
 		/// <inheritdoc />
@@ -51,12 +50,12 @@ namespace Clio.Command
 					return exitCode;
 				}
 				_settingsRepository.RemoveEnvironment(environmentName);
-				Console.WriteLine($"Environment {environmentName} was deleted...");
-				Console.WriteLine();
-				Console.WriteLine("Done");
+				_logger.WriteLine($"Environment {environmentName} was deleted...");
+				_logger.WriteLine();
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}
@@ -73,7 +72,7 @@ namespace Clio.Command
 				return true;
 			}
 			if (options.IsSilent) {
-				Console.WriteLine("Environment name is required in --silent mode. Pass <Name>, -e/--Environment, or --all.");
+				_logger.WriteError("Environment name is required in --silent mode. Pass <Name>, -e/--Environment, or --all.");
 				exitCode = 1;
 				return false;
 			}
@@ -87,23 +86,25 @@ namespace Clio.Command
 				.OrderBy(environment => environment.Key, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 			if (environments.Count == 0) {
-				Console.WriteLine("No environments configured");
+				_logger.WriteLine("No environments configured");
 				return false;
 			}
 			string activeEnvironmentName = _settingsRepository.GetDefaultEnvironmentName();
-			Console.WriteLine("Registered environments:");
+			_logger.WriteLine("Registered environments:");
 			for (int index = 0; index < environments.Count; index++) {
 				KeyValuePair<string, EnvironmentSettings> environment = environments[index];
-				Console.WriteLine($"{index + 1}. {BuildEnvironmentListItem(environment.Key, environment.Value, activeEnvironmentName)}");
+				_logger.WriteLine($"{index + 1}. {BuildEnvironmentListItem(environment.Key, environment.Value, activeEnvironmentName)}");
 			}
+#pragma warning disable CLIO002
 			Console.Write("Select environment to remove (press Enter to cancel): ");
+#pragma warning restore CLIO002
 			string input = Console.ReadLine();
 			if (string.IsNullOrWhiteSpace(input)) {
-				Console.WriteLine("Operation cancelled");
+				_logger.WriteLine("Operation cancelled");
 				return false;
 			}
 			if (!int.TryParse(input, out int selectedIndex) || selectedIndex < 1 || selectedIndex > environments.Count) {
-				Console.WriteLine("Invalid selection. Enter a number from the list.");
+				_logger.WriteError("Invalid selection. Enter a number from the list.");
 				exitCode = 1;
 				return false;
 			}

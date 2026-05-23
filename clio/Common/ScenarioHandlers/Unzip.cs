@@ -62,7 +62,9 @@ namespace Clio.Common.ScenarioHandlers {
             _ = !Directory.Exists(destinationDirectory) ? null : Directory.CreateDirectory(destinationDirectory);
 
             using var archive = ZipFile.OpenRead(zipFileName);
-            await Console.Out.WriteAsync("Extracting files: "); 
+#pragma warning disable CLIO002
+            await Console.Out.WriteAsync("Extracting files: ");
+#pragma warning restore CLIO002
             foreach (var entry in archive.Entries) {
                 // Skip directories (entries ending with '/')
                 if (!entry.FullName.EndsWith("/")) {
@@ -87,7 +89,9 @@ namespace Clio.Common.ScenarioHandlers {
                 _counter = 0;
             }
             var position = Console.GetCursorPosition();
+#pragma warning disable CLIO002
             Console.Write(_sequence[_counter]);
+#pragma warning restore CLIO002
             Console.SetCursorPosition(position.Left, position.Top);
         }
     }

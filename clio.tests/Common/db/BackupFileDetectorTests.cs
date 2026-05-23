@@ -7,8 +7,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.db;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Common")]
 public class BackupFileDetectorTests
 {
 	private IFileSystem _fileSystem;
@@ -23,7 +24,7 @@ public class BackupFileDetectorTests
 	public void DetectBackupType_WithBackupExtension_ReturnsPostgresBackup() {
 		// Arrange
 		_fileSystem.ExistsFile("database.backup").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.DetectBackupType("database.backup");
@@ -37,7 +38,7 @@ public class BackupFileDetectorTests
 	public void DetectBackupType_WithBakExtension_ReturnsMssqlBackup() {
 		// Arrange
 		_fileSystem.ExistsFile("database.bak").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.DetectBackupType("database.bak");
@@ -51,7 +52,7 @@ public class BackupFileDetectorTests
 	public void DetectBackupType_WithUnknownExtension_ReturnsUnknown() {
 		// Arrange
 		_fileSystem.ExistsFile("database.unknown").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.DetectBackupType("database.unknown");
@@ -65,7 +66,7 @@ public class BackupFileDetectorTests
 	public void DetectBackupType_WhenFileDoesNotExist_ReturnsUnknown() {
 		// Arrange
 		_fileSystem.ExistsFile("nonexistent.backup").Returns(false);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.DetectBackupType("nonexistent.backup");
@@ -79,7 +80,7 @@ public class BackupFileDetectorTests
 	public void DetectBackupType_WithMixedCase_DetectsCorrectly() {
 		// Arrange
 		_fileSystem.ExistsFile("database.BACKUP").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.DetectBackupType("database.BACKUP");
@@ -93,7 +94,7 @@ public class BackupFileDetectorTests
 	public void IsValidBackupFile_WithValidFile_ReturnsTrue() {
 		// Arrange
 		_fileSystem.ExistsFile("database.backup").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.IsValidBackupFile("database.backup");
@@ -107,7 +108,7 @@ public class BackupFileDetectorTests
 	public void IsValidBackupFile_WithInvalidFile_ReturnsFalse() {
 		// Arrange
 		_fileSystem.ExistsFile("database.txt").Returns(true);
-		var sut = new BackupFileDetector(_fileSystem);
+		var sut = new BackupFileDetector(_fileSystem, new System.IO.Abstractions.FileSystem());
 
 		// Act
 		var result = sut.IsValidBackupFile("database.txt");

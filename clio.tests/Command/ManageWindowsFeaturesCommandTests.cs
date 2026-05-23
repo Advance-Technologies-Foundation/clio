@@ -10,6 +10,7 @@ namespace Clio.Tests.Command;
 
 [Category("CommandTests")]
 [Platform(Include = "Win")]
+[Property("Module", "Command")]
 public class ManageWindowsFeaturesCommandTests : BaseCommandTests<ManageWindowsFeaturesOptions>
 {
 	private IWindowsFeatureManager _windowsFeatureManager;

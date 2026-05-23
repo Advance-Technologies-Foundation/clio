@@ -12,12 +12,15 @@ using System.IO;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class CreateWorkspaceCommandDocTests : BaseCommandTests<CreateWorkspaceCommandOptions>
 {
 	// Intentionally empty: BaseCommandTests validates that the command is documented.
 }
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public class CreateWorkspaceCommandTests
 {
 	[Test]

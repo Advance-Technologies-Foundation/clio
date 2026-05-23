@@ -17,9 +17,10 @@ public sealed class AppModelingGuidanceResource {
 	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.")]
+	public ResourceContents GetGuide() => Guide;
+
+	internal static readonly TextResourceContents Guide = new() {
 			Uri = ResourceUri,
 			MimeType = "text/plain",
 			Text = """
@@ -29,43 +30,80 @@ public sealed class AppModelingGuidanceResource {
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
-			       - For existing-app minimal edits, read `docs://mcp/guides/existing-app-maintenance`.
+			       - For existing-app minimal edits, call `get-guidance` with `name` set to `existing-app-maintenance`.
+			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
+			       - For seeding or reading Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
+			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discovery before invocation
-			       - Always read the executable contract through `tool-contract-get` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
-			       - Send tool arguments at the top level of the MCP request. Do not wrap canonical fields inside a synthetic `args` object.
-			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `application-get-info` and `page-list` use `code`, `application-get-info` uses `id`, and `application-create` accepts `icon-background` (not `icon-name` or `icon-color`).
+			       - Always read the executable contract through `get-tool-contract` before the first invocation of any MCP tool in a workflow. The contract specifies exact parameter names, aliases, required fields, defaults, and response shapes.
+			       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"code": "..."}}`). Do not flatten or rename canonical fields.
+			       - Tool-specific identifiers follow their own naming conventions and must not be guessed. For example, `get-app-info` and `list-pages` use `code`, `get-app-info` uses `id`, `create-app` accepts `icon-background`, `create-app-section` accepts `application-code`, and `update-app-section` accepts `application-code` plus `section-code`.
+			       - Use `get-schema-name-prefix` to discover the active SchemaNamePrefix before naming schemas when you need the prefix before calling `create-app` (e.g. working with an existing app or planning schema names upfront). When `create-app` is the first call, its response already includes `schema-name-prefix`.
 
 			       Preferred workflow
-			       - Use `application-create` when the workflow is modeling a new app shell rather than editing an existing installed app.
-			       - Prefer `schema-sync` for multi-step schema work and `page-sync` for multi-page saves.
-			       - Canonical new-app entity flow: `application-create` -> `schema-sync` -> `application-get-info`.
-			       - `schema-sync` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.
-			       - Canonical page flow after planning a page change: `page-list` -> `page-get` -> `component-info` when needed -> `page-sync` or `page-update` -> `page-get` when explicit read-back verification is required.
+			       - Use `create-app` when the workflow is modeling a new app shell rather than editing an existing installed app.
+			       - Use `create-app-section` when the workflow must add a section to an existing installed app instead of creating a new app shell.
+			       - Use `update-app-section` when the workflow must change metadata of an existing section instead of creating a new one.
+			       - Prefer `sync-schemas` for multi-step schema work and `sync-pages` for multi-page saves.
+			       - Canonical new-app entity flow: `create-app` -> `sync-schemas` -> `get-app-info`.
+			       - Canonical existing-app section flow: `list-apps` -> `get-app-info` -> `create-app-section` -> `get-app-info`.
+			       - Canonical existing-section metadata update flow: `list-apps` -> `get-app-info` -> `update-app-section`.
+			       - Canonical section discovery flow: `list-apps` -> `get-app-info` -> `list-app-sections`.
+			       - Canonical section delete flow: `list-apps` -> `get-app-info` -> `list-app-sections` -> `delete-app-section`.
+			       - `create-app` already performs internal Data Forge enrichment and returns optional `dataforge` diagnostics. Do not require a separate external Data Forge preflight for the standard create flow.
+			       - If Data Forge is unavailable or partially degraded, `create-app` still creates the app shell and reports degraded enrichment through warnings and coverage flags instead of failing the whole create path.
+			       - `sync-schemas` requests use `operations[*].type`. Responses also identify each result by `type`; do not invent or send `operations[*].operation`.
+			       - Canonical page flow after planning a page change: `list-pages` -> `get-page` -> `get-component-info` when needed -> `sync-pages` or `update-page` -> `get-page` when explicit read-back verification is required.
 			       - Entity-schema mutations are DB-first. After a successful schema tool call, treat the schema as immediately usable without a compile step.
 			       - Treat single-tool entity or page mutations as compatibility fallbacks. Keep the preferred workflow in the current MCP contract unless the task is truly limited to one column, one lookup, or one page save.
 
 			       Application modeling guardrails
-			       - For a new app with one primary record type, `application-create` usually returns the canonical main entity. Extend that entity instead of creating a synonym entity for the same records.
-			       - `application-create` is scalar-only for app shell fields. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
-			       - The minimal `application-create` shell still requires `template-code` and `icon-background`. `template-code` must be the technical template name such as `AppFreedomUI`, not a display label.
-			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, or `name-localizations` to `application-create`.
-			       - If the app needs localized entity or column captions, create the app first and then apply those captions through `schema-sync`, `create-entity-schema`, `update-entity-schema`, or related entity-schema MCP tools.
-			       - Use `create-lookup` or `schema-sync` `create-lookup` for managed enum-like values such as status or type catalogs.
+			       - Use the `schema-name-prefix` value from `create-app` (or from `get-schema-name-prefix`) as the prefix for ALL custom schema codes in the session (lookups, entity columns, supporting entities, page names). An empty `schema-name-prefix` means no prefix — do not add one. Default Creatio environments return `Usr`.
+			       - For a new app with one primary record type, `create-app` usually returns the canonical main entity. Extend that entity instead of creating a synonym entity for the same records.
+			       - Apply the same anti-duplication rule to supporting entities: when refreshed app context already exposes a supporting or link schema with the same business purpose and relation pair, reuse it instead of creating a synonym schema.
+			       - Business captions are not naming authority for new schema codes. If refreshed runtime context already maps a caption or title to an existing technical schema code, reuse that code instead of synthesizing a new one.
+			       - Creating a synonym supporting or link schema inside the target package when an existing schema already models the same relationship is a blocker-level planning error.
+			       - `create-app` is scalar-only for app shell fields. Keep `name`, `description`, and `optional-template-data-json.appSectionDescription` as plain strings.
+			       - The minimal `create-app` shell requires `template-code`. `template-code` must be the technical template name such as `AppFreedomUI`, not a display label. Omit `icon-background` unless the request explicitly specifies an app color; when provided, it must be one of the Freedom UI palette colors: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, or `name-localizations` to `create-app`.
+			       - `optional-template-data-json.entitySchemaName` is only valid together with `useExistingEntitySchema=true`, and the entity MUST already exist in Creatio before `create-app` is called. Passing `entitySchemaName` for a non-existent entity, or without `useExistingEntitySchema=true`, will cause a server-side error. When you need the app to use an existing entity, first verify the entity exists (e.g. via `dataforge-find-tables`), then call `create-app` with both `entitySchemaName` and `useExistingEntitySchema=true`. To create a new app with a freshly generated entity, omit `optional-template-data-json` entirely and let Creatio generate the entity automatically.
+			       - `useAIContentGeneration` inside `optional-template-data-json` is not supported and will be rejected by clio.
+			       - `create-app-section` is scalar-only for section shell fields. Keep `caption`, `description`, and `entity-schema-name` as plain strings and pass `with-mobile-pages` as a top-level boolean.
+			       - `create-app-section` requires `application-code` as the target-app selector.
+			       - `create-app` automatically creates: (1) a **package** named after `code`; (2) the **app** record; (3) one default **section** record in `ApplicationSection` that wires the canonical main entity to Creatio's navigation bar; (4) the **canonical main entity** (schema code = `code`) with one default column named `{prefix}Name` (MediumText), where `{prefix}` is the active SchemaNamePrefix returned in the response field `schema-name-prefix` (when SchemaNamePrefix is empty the column is named `Name`); and (5) **five Freedom UI pages** — `{code}_FormPage`, `{code}_ListPage`, `{code}_Detail`, `{code}_MobileFormPage`, and `{code}_MobileListPage`. The response returns the entity manifest under `entities` and the page manifest under `pages`; the section record itself is not in the response (use `canonical-main-entity-name` to identify the main entity). Read that manifest instead of re-discovering artifacts via additional tool calls.
+			       - MOBILE PAGE EDITING — STOP. When `get-page` returns `schemaType: 10` (or `list-pages` shows `schema-type: "mobile"`), the page is a mobile page. Before editing its body, call `get-guidance` with name `mobile-page-modification`. Mobile pages use plain JSON (NOT AMD define(...)), have a different component registry, and must NOT contain handlers, validators, or converters sections. Applying web page patterns to mobile pages produces broken schemas.
+			       - The auto-generated `{code}_FormPage` starts with `{prefix}Name` pre-inserted in `SideAreaProfileContainer` and Feed + AttachmentList tabs (see `schema-name-prefix` in the response). The auto-generated `{code}_ListPage` starts with `{prefix}Name`, `CreatedOn`, `CreatedBy` as default DataTable columns. Replace or extend these defaults when configuring the section; always call `get-page` to read the current body before writing.
+			       - `create-app` already creates the default section for the canonical main entity — no separate `create-app-section` call is needed for it. Use `create-app-section` only when the app needs an additional section backed by a new, separately named entity; Creatio derives the new entity code from the `caption` you provide (e.g. caption `Customer Profile` → entity `{prefix}CustomerProfile`, for example `UsrCustomerProfile` when prefix is `Usr` or `AbcCustomerProfile` when prefix is `Abc`). For the primary record type, extend the canonical main entity returned by `create-app` — do not create a synonym section for it.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
+			       - When `create-app-section` receives `entity-schema-name`, it reuses that existing entity. Otherwise omit that field and let Creatio create a new object for the section.
+			       - `update-app-section` is scalar-only for section metadata fields. Keep `caption`, `description`, `icon-id`, and `icon-background` as plain top-level scalar values and omit any field that should remain unchanged.
+			       - Use `update-app-section` with `application-code` plus `section-code` to target one existing section inside the app.
+			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `update-app-section`.
+			       - If the app needs localized entity or column captions, create the app first and then apply those captions through `sync-schemas`, `create-entity-schema`, `update-entity-schema`, or related entity-schema MCP tools.
+			       - Use `create-lookup` or `sync-schemas` `create-lookup` for managed enum-like values such as status or type catalogs.
 			       - `create-lookup` always uses `BaseLookup`. `Name` and `Description` are inherited, and `Name` remains the display field. Do not add duplicate title-like columns just to mirror the lookup caption.
-			       - When the workflow cannot stay inside `schema-sync`, seed lookup rows through `create-data-binding-db` or `upsert-data-binding-row-db` instead of direct SQL helpers so the agent stays on the supported MCP contract.
+			       - For standalone lookup seeding or local binding artifacts, follow `get-guidance` with `name` set to `data-bindings` instead of relying on consumer-repo binding notes.
+			       - When the workflow cannot stay inside `sync-schemas`, seed lookup rows through `create-data-binding-db` or `upsert-data-binding-row-db` instead of direct SQL helpers so the agent stays on the supported MCP contract.
+			       - When a data binding row contains lookup (reference) columns and the correct lookup GUID is not already known, call `dataforge-find-lookups` with `schema-name` set to the reference schema and a descriptive query term before calling `create-data-binding`, `create-data-binding-db`, or `upsert-data-binding-row-db`. Use the `lookup-id` from the best-matching result as the column value.
+			       - When adding a reference (Lookup) column via `update-entity-schema` and the correct `reference-schema-name` is not certain, call `dataforge-find-tables` first to confirm a matching schema exists.
 			       - Entity-schema MCP write tools use explicit localization maps. Send schema and column captions through `title-localizations`, and column descriptions through `description-localizations`. Every provided localization map must include `en-US`.
 			       - Do not send legacy scalar `title`, `caption`, or `description` fields to entity-schema MCP write tools.
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
+			       - To set a lookup column default to a seeded value, the workflow requires two separate calls because the row GUID is only known after creation: (1) create and seed the lookup via sync-schemas; (2) resolve the seeded row GUID via dataforge-find-lookups with schema-name set to the lookup entity and a descriptive query term; (3) apply the default via modify-entity-schema-column or a follow-up sync-schemas update-entity operation with default-value-config source=Const and the resolved GUID as value. Do not skip the GUID resolution step — the default value for a Lookup column must be the row's GUID, not its display name.
 			       - Preserve semantic text field types: use `Email`, `PhoneNumber`, and `WebLink` for email, phone, and URL fields instead of collapsing them to generic `ShortText`. These types affect both data validation and Freedom UI component selection.
 
 			       Page editing guardrails
-			       - `page-list` identifies page candidates by `schema-name`.
-			       - Use the raw page body returned by `page-get`, specifically `raw.body`, as the editable source of truth.
-			       - When writing pages, send the full `raw.body` string back to `page-sync` or `page-update`. Do not send `bundle` or `bundle.viewConfig` fragments as the body payload.
-			       - Use `page-sync` for multi-page or plan-driven page writes. Use `page-update` only for a single-page save or dry-run workflow.
+			       - `list-pages` identifies page candidates by `schema-name`.
+			       - For existing-app page/detail requests backed by data, resolve the backing schema from refreshed app context before planning schema creation: inspect `get-app-info`, then `list-pages` and `get-page`, and fall back to `get-entity-schema-properties` when the relation is still unclear.
+			       - If runtime context already exposes a backing supporting or link schema, treat the request as page-only/object-model reuse work. Do not create a new schema just because the current page body does not yet show the detail.
+			       - Use the raw page body returned by `get-page`, specifically `raw.body`, as the editable source of truth.
+			       - When writing pages, send the full `raw.body` string back to `sync-pages` or `update-page`. Do not send `bundle` or `bundle.viewConfig` fragments as the body payload.
+			       - Use `sync-pages` for multi-page or plan-driven page writes. Use `update-page` only for a single-page save or dry-run workflow.
 			       - Pass `resources` as a JSON object string when edited bodies introduce `#ResourceString(key)#` macros.
-			       - For new apps or extended main entities, perform page edits after `schema-sync` and `application-get-info` refresh so that page bindings reference materialized columns.
+			       - For new apps or extended main entities, perform page edits after `sync-schemas` and `get-app-info` refresh so that page bindings reference materialized columns.
+			       - Example: if the app context already contains `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, add the Related Knowledge detail by wiring the page to that existing schema. Do not create `UsrSupportCaseKnowledgeBase`.
 			       """
 		};
 }
+

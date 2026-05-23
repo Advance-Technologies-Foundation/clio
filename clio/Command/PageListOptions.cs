@@ -7,7 +7,7 @@ namespace Clio.Command {
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
-	[Verb("page-list", HelpText = "List Freedom UI pages")]
+	[Verb("list-pages", Aliases = ["page-list"], HelpText = "List Freedom UI pages")]
 	public class PageListOptions : EnvironmentOptions {
 		[Option("package-name", Required = false, HelpText = "Filter by package name")]
 		public string PackageName { get; set; }
@@ -20,6 +20,9 @@ namespace Clio.Command {
 
 		[Option("limit", Required = false, Default = 50, HelpText = "Maximum number of results")]
 		public int Limit { get; set; }
+
+		[Option("uid", Required = false, HelpText = "Filter by schema UId (exact match)")]
+		public string UId { get; set; }
 	}
 
 	public class PageListCommand : Command<PageListOptions> {
@@ -28,6 +31,7 @@ namespace Clio.Command {
 		private const string FilterTypeKey = "filterType";
 		private const string ItemsKey = "items";
 		private const string ExpressionKey = "expression";
+		private const int ContainsComparisonType = 11;
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -57,6 +61,8 @@ namespace Clio.Command {
 				}
 				var filters = new JObject {
 					[FilterTypeKey] = 6,
+					["logicalOperation"] = 0,
+					["isEnabled"] = true,
 					[ItemsKey] = new JObject {
 						["ManagerName"] = BuildComparisonFilter("ManagerName", "ClientUnitSchemaManager", 1, 3)
 					}
@@ -64,8 +70,12 @@ namespace Clio.Command {
 				if (!string.IsNullOrWhiteSpace(packageName)) {
 					filters[ItemsKey]["PackageName"] = BuildComparisonFilter("SysPackage.Name", packageName, 1, 3);
 				}
-				if (!string.IsNullOrWhiteSpace(options.SearchPattern)) {
-					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", options.SearchPattern, 1, 11);
+				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
+				if (!string.IsNullOrWhiteSpace(nameFilter)) {
+					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
+				}
+				if (!string.IsNullOrWhiteSpace(options.UId)) {
+					filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", options.UId, 0, 3);
 				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",
@@ -121,16 +131,15 @@ namespace Clio.Command {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
-				var rows = rawResponse["rows"] as JArray ?? new JArray();
-				var pages = new List<PageListItem>();
-				foreach (var row in rows) {
-					pages.Add(new PageListItem {
+				JArray rows = rawResponse["rows"] as JArray ?? [];
+				List<PageListItem> pages = rows
+					.Select(row => new PageListItem {
 						SchemaName = row["Name"]?.ToString(),
 						UId = row["UId"]?.ToString(),
 						PackageName = row["PackageName"]?.ToString(),
 						ParentSchemaName = row["ParentSchemaName"]?.ToString()
-					});
-				}
+					})
+					.ToList();
 				response = new PageListResponse {
 					Success = true,
 					Count = pages.Count,

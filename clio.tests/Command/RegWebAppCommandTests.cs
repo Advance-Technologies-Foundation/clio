@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class RegAppCommandTests: BaseClioModuleTests
 {
 	private ISettingsRepository _settingsRepository;

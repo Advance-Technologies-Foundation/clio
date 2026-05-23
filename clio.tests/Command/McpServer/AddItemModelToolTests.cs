@@ -10,6 +10,7 @@ using Clio.Common;
 using Clio.ModelBuilder;
 using Clio.Project;
 using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
 using ConsoleTables;
 using FluentValidation.Results;
 using FluentAssertions;
@@ -20,6 +21,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class AddItemModelToolTests {
 
 	[Test]
@@ -386,7 +388,8 @@ public sealed class AddItemModelToolTests {
 				Substitute.For<IVsProjectFactory>(),
 				logger ?? Substitute.For<ILogger>(),
 				fileSystem ?? new MockFileSystem(new Dictionary<string, MockFileData>(), GetRootedPath()),
-				Substitute.For<IModelBuilder>()) {
+				Substitute.For<IModelBuilder>(),
+				Substitute.For<ICreatioEnvironment>()) {
 			_onExecute = onExecute;
 			_exitCode = exitCode;
 		}

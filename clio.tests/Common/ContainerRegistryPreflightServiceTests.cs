@@ -12,6 +12,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
 public class ContainerRegistryPreflightServiceTests {
 	[Test]
 	[Description("ValidatePushTarget should succeed when the registry answers GET /v2/ and accepts upload initiation for the target repository.")]

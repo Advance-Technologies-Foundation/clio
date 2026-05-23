@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 internal class RemoteEntitySchemaDesignerClientTests
 {
 	private IApplicationClient _applicationClient;

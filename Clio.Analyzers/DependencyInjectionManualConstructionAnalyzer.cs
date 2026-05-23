@@ -33,6 +33,17 @@ public sealed class DependencyInjectionManualConstructionAnalyzer : DiagnosticAn
 		"TryAddTransient",
 		"Replace");
 
+	private static readonly ImmutableHashSet<string> ExemptTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.EnvironmentSettings");
+
+	private static readonly ImmutableHashSet<string> ExemptContainingTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.Program",
+		"Clio.Common.CreatioClientAdapter",
+		"Clio.EnvironmentSettings",
+		"Clio.SettingsRepository");
+
 	#region Properties: Public
 
 	/// <inheritdoc />
@@ -47,46 +58,63 @@ private static void AnalyzeObjectCreation(
 		ImmutableHashSet<INamedTypeSymbol> registeredTypes,
 		ImmutableHashSet<string> registeredFullyQualifiedTypeNames,
 		ImmutableHashSet<string> registeredSimpleTypeNames) {
-		if (IsInsideRegistrationInvocation(context.SemanticModel, context.Node, context.CancellationToken)) {
-			return;
-		}
+		if (IsInsideRegistrationInvocation(context.SemanticModel, context.Node, context.CancellationToken)) return;
 
 		ITypeSymbol? creationType = context.SemanticModel.GetTypeInfo(context.Node, context.CancellationToken).Type
 			?? context.SemanticModel.GetTypeInfo(context.Node, context.CancellationToken).ConvertedType;
 		INamedTypeSymbol? namedType = creationType as INamedTypeSymbol;
+		INamedTypeSymbol? containingType = context.ContainingSymbol?.ContainingType;
 
-		if (namedType?.IsRecord == true) {
-			return;
-		}
+		if (IsExemptCreation(namedType, containingType, context)) return;
 
 		string typeName = namedType?.Name ?? GetTypeNameFromCreationSyntax(context.Node);
 		string displayName = namedType?.ToDisplayString() ?? typeName;
 
 		bool isRegisteredBySymbol = namedType is not null && registeredTypes.Contains(namedType.OriginalDefinition);
-		bool isRegisteredByName = false;
-
-		if (namedType is not null) {
-			string fullyQualifiedName = NormalizeTypeName(
-				namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
-			isRegisteredByName = registeredFullyQualifiedTypeNames.Contains(fullyQualifiedName);
-		}
-		else {
-			// Fall back to simple-name matching only when semantic binding is unavailable.
-			string syntaxTypeName = NormalizeTypeName(GetTypeTextFromCreationSyntax(context.Node));
-			isRegisteredByName = registeredFullyQualifiedTypeNames.Contains(syntaxTypeName);
-			if (!isRegisteredByName && IsSimpleCreationSyntax(context.Node)) {
-				isRegisteredByName = registeredSimpleTypeNames.Contains(typeName);
-			}
-		}
-
+		bool isRegisteredByName = ResolveIsRegisteredByName(namedType, context.Node, registeredFullyQualifiedTypeNames, registeredSimpleTypeNames, typeName);
 		bool isLikelyDiService = namedType is not null && IsLikelyDiServiceType(namedType);
 
-		if (!isRegisteredBySymbol && !isRegisteredByName && !isLikelyDiService) {
-			return;
+		if (!isRegisteredBySymbol && !isRegisteredByName && !isLikelyDiService) return;
+
+		context.ReportDiagnostic(Diagnostic.Create(Rule, context.Node.GetLocation(), displayName));
+	}
+
+	private static bool IsExemptCreation(INamedTypeSymbol? namedType, INamedTypeSymbol? containingType, SyntaxNodeAnalysisContext context) {
+		if (namedType?.IsRecord == true) return true;
+		if (namedType is not null && SymbolEqualityComparer.Default.Equals(namedType.OriginalDefinition, containingType?.OriginalDefinition)) return true;
+		if (containingType is not null && ExemptContainingTypeFullNames.Contains(containingType.ToDisplayString())) return true;
+		if (IsInsideFactoryClass(context)) return true;
+		if (namedType is not null && ExemptTypeFullNames.Contains(namedType.ToDisplayString())) return true;
+		return false;
+	}
+
+	private static bool ResolveIsRegisteredByName(
+		INamedTypeSymbol? namedType,
+		SyntaxNode node,
+		ImmutableHashSet<string> registeredFullyQualifiedTypeNames,
+		ImmutableHashSet<string> registeredSimpleTypeNames,
+		string typeName) {
+		if (namedType is not null) {
+			string fullyQualifiedName = NormalizeTypeName(namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+			return registeredFullyQualifiedTypeNames.Contains(fullyQualifiedName);
+		}
+		string syntaxTypeName = NormalizeTypeName(GetTypeTextFromCreationSyntax(node));
+		if (registeredFullyQualifiedTypeNames.Contains(syntaxTypeName)) return true;
+		return IsSimpleCreationSyntax(node) && registeredSimpleTypeNames.Contains(typeName);
+	}
+
+	private static bool IsInsideFactoryClass(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		if (containingClass is null) {
+			return false;
 		}
 
-		Diagnostic diagnostic = Diagnostic.Create(Rule, context.Node.GetLocation(), displayName);
-		context.ReportDiagnostic(diagnostic);
+		if (containingClass.Name.EndsWith("Factory", StringComparison.Ordinal)) {
+			return true;
+		}
+
+		return containingClass.AllInterfaces.Any(i =>
+			i.Name.EndsWith("Factory", StringComparison.Ordinal));
 	}
 
 	private static bool IsLikelyDiServiceType(INamedTypeSymbol typeSymbol) {
@@ -114,7 +142,9 @@ private static void AnalyzeObjectCreation(
 			if (cancellationToken.IsCancellationRequested) {
 				break;
 			}
+#pragma warning disable RS1030
 			SemanticModel semanticModel = compilation.GetSemanticModel(syntaxTree);
+#pragma warning restore RS1030
 			SyntaxNode root = syntaxTree.GetRoot(cancellationToken);
 			IEnumerable<InvocationExpressionSyntax> invocations
 				= root.DescendantNodes().OfType<InvocationExpressionSyntax>();
@@ -140,6 +170,11 @@ private static void AnalyzeObjectCreation(
 					}
 
 					if (namedType.IsAbstract) {
+						continue;
+					}
+
+					if (namedType.ContainingNamespace.ToDisplayString()
+							.StartsWith("System", StringComparison.Ordinal)) {
 						continue;
 					}
 

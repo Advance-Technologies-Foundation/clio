@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.CsProjManager;
 
 [TestFixture(Category = "Unit")]
+[Property("Module", "Common")]
 public class CsprojFileTests : BaseClioModuleTests
 {
 

@@ -24,8 +24,57 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("application-name")] string? ApplicationName,
 	[property: JsonPropertyName("application-code")] string? ApplicationCode,
 	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("schema-name-prefix")] string? SchemaNamePrefix,
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
+	[property: JsonPropertyName("dataforge")] ApplicationDataForgeEnvelope? DataForge,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record ApplicationSectionContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("section")] ApplicationSectionEnvelope? Section,
+	[property: JsonPropertyName("entity")] ApplicationEntityEnvelope? Entity,
+	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("previous-section")] ApplicationSectionEnvelope? PreviousSection,
+	[property: JsonPropertyName("section")] ApplicationSectionEnvelope? Section,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record ApplicationSectionDeleteContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("deleted-section")] ApplicationSectionEnvelope? DeletedSection,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record ApplicationSectionListContextResponseEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("package-u-id")] string? PackageUId,
+	[property: JsonPropertyName("package-name")] string? PackageName,
+	[property: JsonPropertyName("application-id")] string? ApplicationId,
+	[property: JsonPropertyName("application-name")] string? ApplicationName,
+	[property: JsonPropertyName("application-code")] string? ApplicationCode,
+	[property: JsonPropertyName("application-version")] string? ApplicationVersion,
+	[property: JsonPropertyName("sections")] IReadOnlyList<ApplicationSectionEnvelope>? Sections,
 	[property: JsonPropertyName("error")] string? Error);
 
 internal sealed record ApplicationDeleteResponseEnvelope(
@@ -50,13 +99,75 @@ internal sealed record ApplicationPageEnvelope(
 	[property: JsonPropertyName("packageName")] string PackageName,
 	[property: JsonPropertyName("parentSchemaName")] string ParentSchemaName);
 
+internal sealed record ApplicationSectionEnvelope(
+	[property: JsonPropertyName("id")] string Id,
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("caption")] string Caption,
+	[property: JsonPropertyName("description")] string? Description,
+	[property: JsonPropertyName("entity-schema-name")] string? EntitySchemaName,
+	[property: JsonPropertyName("package-id")] string? PackageId,
+	[property: JsonPropertyName("section-schema-u-id")] string? SectionSchemaUId,
+	[property: JsonPropertyName("icon-id")] string? IconId,
+	[property: JsonPropertyName("icon-background")] string? IconBackground,
+	[property: JsonPropertyName("client-type-id")] string? ClientTypeId);
+
+internal sealed record ApplicationDataForgeEnvelope(
+	[property: JsonPropertyName("used")] bool Used,
+	[property: JsonPropertyName("health")] DataForgeHealthEnvelope? Health,
+	[property: JsonPropertyName("status")] DataForgeStatusEnvelope? Status,
+	[property: JsonPropertyName("coverage")] DataForgeCoverageEnvelope? Coverage,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings,
+	[property: JsonPropertyName("context-summary")] ApplicationDataForgeContextSummaryEnvelope? ContextSummary);
+
+internal sealed record DataForgeHealthEnvelope(
+	[property: JsonPropertyName("liveness")] bool Liveness,
+	[property: JsonPropertyName("readiness")] bool Readiness,
+	[property: JsonPropertyName("data-structure-readiness")] bool DataStructureReadiness,
+	[property: JsonPropertyName("lookups-readiness")] bool LookupsReadiness,
+	[property: JsonPropertyName("correlation-id")] string CorrelationId);
+
+internal sealed record DataForgeStatusEnvelope(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("status")] string Status,
+	[property: JsonPropertyName("error")] string? Error);
+
+internal sealed record DataForgeCoverageEnvelope(
+	[property: JsonPropertyName("health")] bool Health,
+	[property: JsonPropertyName("tables")] bool Tables,
+	[property: JsonPropertyName("lookups")] bool Lookups,
+	[property: JsonPropertyName("relations")] bool Relations,
+	[property: JsonPropertyName("table-columns")] bool Columns);
+
+internal sealed record ApplicationDataForgeContextSummaryEnvelope(
+	[property: JsonPropertyName("similar-tables")] IReadOnlyList<ApplicationDataForgeTableEnvelope>? SimilarTables,
+	[property: JsonPropertyName("similar-lookups")] IReadOnlyList<ApplicationDataForgeLookupEnvelope>? SimilarLookups,
+	[property: JsonPropertyName("relation-pairs")] IReadOnlyList<string>? RelationPairs,
+	[property: JsonPropertyName("column-hints")] IReadOnlyList<ApplicationDataForgeColumnHintEnvelope>? ColumnHints);
+
+internal sealed record ApplicationDataForgeTableEnvelope(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("caption")] string? Caption,
+	[property: JsonPropertyName("description")] string? Description);
+
+internal sealed record ApplicationDataForgeLookupEnvelope(
+	[property: JsonPropertyName("lookup-id")] string LookupId,
+	[property: JsonPropertyName("schema-name")] string SchemaName,
+	[property: JsonPropertyName("value")] string Value,
+	[property: JsonPropertyName("score")] decimal? Score);
+
+internal sealed record ApplicationDataForgeColumnHintEnvelope(
+	[property: JsonPropertyName("table-name")] string TableName,
+	[property: JsonPropertyName("column-count")] int ColumnCount,
+	[property: JsonPropertyName("required-column-count")] int RequiredColumnCount,
+	[property: JsonPropertyName("lookup-column-count")] int LookupColumnCount);
+
 internal static class ApplicationResultParser {
 	public static ApplicationListResponseEnvelope ExtractList(CallToolResult callResult) {
 		if (TryExtract(callResult, IsValidListEnvelope, out ApplicationListResponseEnvelope? envelope)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-get-list MCP result.");
+		throw new InvalidOperationException("Could not parse list-apps MCP result.");
 	}
 
 	public static ApplicationContextResponseEnvelope ExtractInfo(CallToolResult callResult) {
@@ -64,7 +175,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-get-info MCP result.");
+		throw new InvalidOperationException("Could not parse get-app-info MCP result.");
 	}
 
 	public static ApplicationDeleteResponseEnvelope ExtractDelete(CallToolResult callResult) {
@@ -72,7 +183,39 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse application-delete MCP result.");
+		throw new InvalidOperationException("Could not parse delete-app MCP result.");
+	}
+
+	public static ApplicationSectionContextResponseEnvelope ExtractSectionCreate(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionContextEnvelope, out ApplicationSectionContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse create-app-section MCP result.");
+	}
+
+	public static ApplicationSectionUpdateContextResponseEnvelope ExtractSectionUpdate(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionUpdateContextEnvelope, out ApplicationSectionUpdateContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse update-app-section MCP result.");
+	}
+
+	public static ApplicationSectionDeleteContextResponseEnvelope ExtractSectionDelete(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionDeleteContextEnvelope, out ApplicationSectionDeleteContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse delete-app-section MCP result.");
+	}
+
+	public static ApplicationSectionListContextResponseEnvelope ExtractSectionList(CallToolResult callResult) {
+		if (TryExtract(callResult, IsValidSectionListContextEnvelope, out ApplicationSectionListContextResponseEnvelope? envelope)) {
+			return envelope!;
+		}
+
+		throw new InvalidOperationException("Could not parse list-app-sections MCP result.");
 	}
 
 	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result) {
@@ -153,6 +296,26 @@ internal static class ApplicationResultParser {
 	}
 
 	private static bool IsValidDeleteEnvelope(ApplicationDeleteResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionContextEnvelope(ApplicationSectionContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionUpdateContextEnvelope(ApplicationSectionUpdateContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionDeleteContextEnvelope(ApplicationSectionDeleteContextResponseEnvelope? envelope) {
+		return envelope is not null &&
+			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
+	}
+
+	private static bool IsValidSectionListContextEnvelope(ApplicationSectionListContextResponseEnvelope? envelope) {
 		return envelope is not null &&
 			(envelope.Success || !string.IsNullOrWhiteSpace(envelope.Error));
 	}

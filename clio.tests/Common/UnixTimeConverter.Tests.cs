@@ -7,6 +7,8 @@ namespace Clio.Tests.Common;
 
 #region Class: UnixTimeConverterTestCase
 
+[Category("Unit")]
+[Property("Module", "Common")]
 public class UnixTimeConverterTestCase
 {
 

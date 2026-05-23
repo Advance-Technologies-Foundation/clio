@@ -171,9 +171,11 @@ namespace Clio
 		private bool ShowDialogOverwriteDestinationPackageDir(string destinationPackagePath) {
 			bool overwrite = true;
 			if (_msFileSystem.Directory.Exists(destinationPackagePath)) {
+#pragma warning disable CLIO002
 				Console.Write($"Directory {destinationPackagePath} already exist. Do you want replace it (y/n)? ");
+#pragma warning restore CLIO002
 				var key = Console.ReadKey();
-				Console.WriteLine();
+				_logger.WriteLine();
 				overwrite = key.KeyChar == 'y';
 			} else {
 				_msFileSystem.Directory.CreateDirectory(destinationPackagePath);

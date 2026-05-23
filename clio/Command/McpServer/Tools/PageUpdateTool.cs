@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -11,24 +15,48 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class PageUpdateTool(
 	PageUpdateCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "page-update";
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
+	internal const string ToolName = "update-page";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body")]
-	public PageUpdateResponse UpdatePage([Description("Parameters: schema-name, body (required); resources, dry-run, environment-name, uri, login, password (optional)")] [Required] PageUpdateArgs args) {
-		PageUpdateOptions options = new() {
-			SchemaName = args.SchemaName,
-			Body = args.Body,
-			DryRun = args.DryRun ?? false,
-			Resources = args.Resources,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
+	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
+		"For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
+		"Section authoring rules for the body payload: " +
+		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
+		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
+		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.")]
+	public async Task<PageUpdateResponse> UpdatePage(
+		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] PageUpdateArgs args,
+		McpServerLib.McpServer server,
+		CancellationToken cancellationToken = default) {
+		PageUpdateOptions options = BuildOptions(args);
+		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+		if (!bodyLoaded)
+			return new PageUpdateResponse { Success = false, Error = bodyLoadError };
+		if (string.IsNullOrWhiteSpace(options.Body))
+			return new PageUpdateResponse {
+				Success = false,
+				Error = "Either 'body' or 'body-file' must provide page body content."
+			};
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (validationFailure != null)
+			return validationFailure;
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		if (samplingFailure != null)
+			return samplingFailure;
+		PageUpdateResponse response;
 		lock (CommandExecutionSyncRoot) {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -36,10 +64,108 @@ public sealed class PageUpdateTool(
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse response);
-			return response;
+			resolvedCommand.TryUpdatePage(options, out response);
+			if (response.Success && args.Verify == true)
+				TryVerifyPage(args, response);
+		}
+		response.SamplingReview = samplingReview;
+		response.Warnings = validationWarnings;
+		return response;
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
+				options.Body, mobileComponentCatalog, webComponentCatalog);
+			if (!mobileResult.ContentOk) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+				}, null);
+			}
+			return (null, mobileResult.Warnings);
+		}
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
+		if (bodyError != null) {
+			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
+		}
+		return (null, webWarnings);
+	}
+
+	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
+		if (options.DryRun || args.SkipSampling == true) {
+			return (null, null);
+		}
+		PageSamplingReview samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(
+			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
+		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+				SamplingReview = samplingReview
+			}, samplingReview);
+		}
+		return (null, samplingReview);
+	}
+
+	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+		new() {
+			SchemaName = args.SchemaName,
+			Body = args.Body,
+			BodyFile = args.BodyFile,
+			DryRun = args.DryRun ?? false,
+			Resources = args.Resources,
+			OptionalProperties = args.OptionalProperties,
+			Mode = args.Mode,
+			TargetPackageUId = args.TargetPackageUId,
+			TargetSchemaUId = args.TargetSchemaUId,
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password
+		};
+
+	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
+		var errors = new List<string>();
+		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
+		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
+		Collect(SchemaValidationService.ValidateCustomValidatorFactoryShape(body), errors);
+		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
+		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
+		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
+		SchemaValidationResult depsResult = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+		List<string> warnings = depsResult.Warnings.Count > 0 ? depsResult.Warnings : null;
+		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		return (error, warnings);
+	}
+
+	private static void Collect(SchemaValidationResult result, List<string> errors) {
+		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {
+		try {
+			PageGetOptions getOptions = new() {
+				SchemaName = args.SchemaName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
+			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
+			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
+				response.Page = getResponse.Page;
+		} catch {
+			// verify is best-effort; failure does not fail the update
 		}
 	}
+
 }
 
 public sealed record PageUpdateArgs(
@@ -49,12 +175,11 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers. Reuse page-get raw.body.")]
-	[property: Required]
-	string Body,
+	[property: Description("Full JavaScript page body with markers. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope.")]
+	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
@@ -62,10 +187,37 @@ public sealed record PageUpdateArgs(
 	bool? DryRun,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
 	string? EnvironmentName,
 
-	[property: JsonPropertyName("uri")] string? Uri,
-	[property: JsonPropertyName("login")] string? Login,
-	[property: JsonPropertyName("password")] string? Password
+	[property: JsonPropertyName("uri")]
+	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	string? Uri,
+	[property: JsonPropertyName("login")]
+	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	string? Login,
+	[property: JsonPropertyName("password")]
+	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	string? Password,
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	bool? SkipSampling = null,
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]
+	string? OptionalProperties = null,
+	[property: JsonPropertyName("verify")]
+	[property: Description("If true, read the page back after saving and return its metadata. Best-effort — verify failure does not fail the update. Default: false")]
+	bool? Verify = null,
+	[property: JsonPropertyName("body-file")]
+	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
+	string? BodyFile = null,
+	[property: JsonPropertyName("mode")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations.")]
+	string? Mode = null,
+	[property: JsonPropertyName("target-package-uid")]
+	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
+	string? TargetPackageUId = null,
+	[property: JsonPropertyName("target-schema-uid")]
+	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
+	string? TargetSchemaUId = null
 );

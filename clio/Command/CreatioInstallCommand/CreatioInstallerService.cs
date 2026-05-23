@@ -294,7 +294,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	private void CreatePgTemplate(string unzippedDirectoryPath, string tmpDbName, string sourceFileName) {
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		IPostgres postgres = _dbClientFactory.CreatePostgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
 		bool exists = postgres.CheckTemplateExists(tmpDbName);
 		if (exists) {
@@ -304,13 +304,13 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		// Search for a backup file in the db directory or root
 		string dbDirectoryPath = _fileSystem.GetDirectories(unzippedDirectoryPath, "db", SearchOption.TopDirectoryOnly)
-											.FirstOrDefault();
+													.FirstOrDefault();
 		string src = !string.IsNullOrEmpty(dbDirectoryPath)
 			? _fileSystem.GetFiles(dbDirectoryPath, "*.backup", SearchOption.TopDirectoryOnly).FirstOrDefault()
 			: null;
 		if (string.IsNullOrEmpty(src)) {
 			src = _fileSystem.GetFiles(unzippedDirectoryPath, "*.backup", SearchOption.TopDirectoryOnly)
-							 .FirstOrDefault();
+						 .FirstOrDefault();
 		}
 
 		// Log detailed information if a backup file not found
@@ -401,54 +401,53 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	private int DoMsWork(string unzippedDirectoryPath, string siteName) {
-		string dbDirectoryPath = _fileSystem.GetDirectories(unzippedDirectoryPath, "db", SearchOption.TopDirectoryOnly)
-											.FirstOrDefault();
-		string src = !string.IsNullOrEmpty(dbDirectoryPath)
-			? _fileSystem.GetFiles(dbDirectoryPath, "*.bak", SearchOption.TopDirectoryOnly).FirstOrDefault()
-			: null;
-		_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
+	string dbDirectoryPath = _fileSystem.GetDirectories(unzippedDirectoryPath, "db", SearchOption.TopDirectoryOnly)
+				.FirstOrDefault();
+	string src = !string.IsNullOrEmpty(dbDirectoryPath)
+		? _fileSystem.GetFiles(dbDirectoryPath, "*.bak", SearchOption.TopDirectoryOnly).FirstOrDefault()
+		: null;
+	_logger.WriteInfo($"[Starting Database restore] - {DateTime.Now:hh:mm:ss}");
 
-		if (string.IsNullOrEmpty(src) || !_msFileSystem.File.Exists(src)) {
-			throw new FileNotFoundException("Backup file not found in the specified directory.");
-		}
-
-		bool useFs = false;
-		string dest = _msFileSystem.Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure",
-			"mssql", "data",
-			$"{siteName}.bak");
-		if (_msFileSystem.FileInfo.New(src).Length < int.MaxValue) {
-			_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src, $"{siteName}.bak");
-		}
-		else {
-			//This is a hack, we have to fix Cp class to allow large files
-			useFs = true;
-			_logger.WriteWarning($"Copying large file to local directory {dest}");
-			_fileSystem.CopyFile(src, dest, true);
-		}
-
-		k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
-		Mssql mssql = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
-
-		bool exists = mssql.CheckDbExists(siteName);
-		if (!exists) {
-			DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
-				siteName,
-				$"{siteName}.bak",
-				WriteNativeLogLine);
-			if (!restoreResult.Success) {
-				return 1;
-			}
-		}
-
-		if (useFs) {
-			_fileSystem.DeleteFile(dest);
-		}
-		else {
-			_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
-		}
-
-		return 0;
+	if (string.IsNullOrEmpty(src) || !_msFileSystem.File.Exists(src)) {
+		throw new FileNotFoundException("Backup file not found in the specified directory.");
 	}
+
+	bool useFs = false;
+	string dest = _msFileSystem.Path.Join("\\\\\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure",
+		"mssql", "data",
+		$"{siteName}.bak");
+	if (_msFileSystem.FileInfo.New(src).Length < int.MaxValue) {
+		_k8.CopyBackupFileToPod(k8Commands.PodType.Mssql, src, $"{siteName}.bak");
+	}
+	else {
+		useFs = true;
+		_logger.WriteWarning($"Copying large file to local directory {dest}");
+		_fileSystem.CopyFile(src, dest, true);
+	}
+
+	k8Commands.ConnectionStringParams csp = _k8.GetMssqlConnectionString();
+	IMssql mssql = _dbClientFactory.CreateMssql(csp.DbPort, csp.DbUsername, csp.DbPassword);
+
+	bool exists = mssql.CheckDbExists(siteName);
+	if (!exists) {
+		DatabaseRestoreResult restoreResult = mssql.RestoreDatabase(
+			siteName,
+			$"{siteName}.bak",
+			WriteNativeLogLine);
+		if (!restoreResult.Success) {
+			return 1;
+		}
+	}
+
+	if (useFs) {
+		_fileSystem.DeleteFile(dest);
+	}
+	else {
+		_k8.DeleteBackupImage(k8Commands.PodType.Mssql, $"{siteName}.bak");
+	}
+
+	return 0;
+}
 
 	private int ExecutePgRestoreCommand(string pgRestorePath, LocalDbServerConfiguration config, string backupPath,
 		string dbName) {
@@ -1202,7 +1201,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		IPostgres postgres = _dbClientFactory.CreatePostgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
 		postgres.CreateDbFromTemplate(resolvedTemplateName, destDbName);
 		_logger.WriteInfo($"[Database created] - {destDbName}");
 		return 0;
@@ -1239,7 +1238,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			? _msFileSystem.Path.GetFileName(unzippedDirectoryPath)
 			: templateName;
 		k8Commands.ConnectionStringParams csp = _k8.GetPostgresConnectionString();
-		Postgres postgres = new(csp.DbPort, csp.DbUsername, csp.DbPassword);
+		IPostgres postgres = _dbClientFactory.CreatePostgres(csp.DbPort, csp.DbUsername, csp.DbPassword);
 
 		// Try to find the existing template by source file
 		string existingTemplate = postgres.FindTemplateBySourceFile(actualSourceName);

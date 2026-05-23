@@ -12,6 +12,8 @@ namespace Clio.Tests.Query;
 /// Unit tests for CallServiceCommand with --body parameter functionality
 /// </summary>
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Query")]
 public class CallServiceCommandTestCase
 {
 	[Test]

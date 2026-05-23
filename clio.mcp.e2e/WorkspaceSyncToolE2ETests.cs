@@ -66,11 +66,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, and verifies the package appears in the target environment through get-pkg-list.")]
+	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, and verifies the package appears in the target environment through list-packages.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(PackageListToolName)]
-	[AllureName("Push workspace publishes the arranged package and get-pkg-list returns it")]
-	[AllureDescription("Uses the real clio CLI to create a workspace and package locally, invokes push-workspace through MCP, then verifies the pushed package is returned by get-pkg-list with matching version and maintainer.")]
+	[AllureName("Push workspace publishes the arranged package and list-packages returns it")]
+	[AllureDescription("Uses the real clio CLI to create a workspace and package locally, invokes push-workspace through MCP, then verifies the pushed package is returned by list-packages with matching version and maintainer.")]
 	public async Task PushWorkspace_Should_Publish_Arranged_Package_And_GetPkgList_Should_Return_It() {
 		// Arrange
 		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
@@ -244,13 +244,13 @@ public sealed class WorkspaceSyncToolE2ETests {
 		return new WorkspaceCommandActResult(callResult, execution);
 	}
 
-	[AllureStep("Act by invoking get-pkg-list through MCP")]
+	[AllureStep("Act by invoking list-packages through MCP")]
 	private static async Task<PackageListActResult> ActGetPkgListAsync(
 		WorkspaceSyncArrangeContext arrangeContext,
 		string filter) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(PackageListToolName,
-			because: "the get-pkg-list MCP tool must be advertised before the end-to-end call can be executed");
+			because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			PackageListToolName,
@@ -349,21 +349,21 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
 	}
 
-	[AllureStep("Assert get-pkg-list returns the pushed package")]
+	[AllureStep("Assert list-packages returns the pushed package")]
 	private static void AssertPackageWasPublished(PackageListActResult actResult, PackageMetadata? expectedPackage) {
 		expectedPackage.Should().NotBeNull(
 			because: "the sandbox arrange step should capture package metadata before push-workspace runs");
 		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: "get-pkg-list should return a structured MCP payload after a successful push");
+			because: "list-packages should return a structured MCP payload after a successful push");
 		actResult.Packages.Should().ContainSingle(
-			because: "the filtered get-pkg-list request should return the unique package created for the test");
+			because: "the filtered list-packages request should return the unique package created for the test");
 		GetPkgListEnvelope package = actResult.Packages.Single();
 		package.Name.Should().Be(expectedPackage!.Name,
-			because: "the package returned by get-pkg-list should match the package that was pushed");
+			because: "the package returned by list-packages should match the package that was pushed");
 		package.Version.Should().Be(expectedPackage.Version,
-			because: "the version returned by get-pkg-list should match the descriptor version from the arranged workspace package");
+			because: "the version returned by list-packages should match the descriptor version from the arranged workspace package");
 		package.Maintainer.Should().Be(expectedPackage.Maintainer,
-			because: "the maintainer returned by get-pkg-list should match the descriptor maintainer from the arranged workspace package");
+			because: "the maintainer returned by list-packages should match the descriptor maintainer from the arranged workspace package");
 	}
 
 	[AllureStep("Assert restored workspace contains the pushed package metadata")]

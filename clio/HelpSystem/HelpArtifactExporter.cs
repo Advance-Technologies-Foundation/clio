@@ -41,7 +41,7 @@ internal sealed class HelpArtifactExporter {
 	}
 
 	private void CleanLegacyMarkdownDocs(string docsDirectory, HashSet<string> canonicalNames) {
-		HashSet<string> preservedMarkdownNames = [..canonicalNames, "page-sync", "schema-sync"];
+		HashSet<string> preservedMarkdownNames = [..canonicalNames, "sync-pages", "sync-schemas"];
 		foreach (string path in _fileSystem.Directory.GetFiles(docsDirectory, "*.md")) {
 			string fileName = _fileSystem.Path.GetFileNameWithoutExtension(path);
 			if (preservedMarkdownNames.Contains(fileName)) {

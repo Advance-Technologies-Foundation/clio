@@ -26,7 +26,9 @@ namespace Clio.Requests
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 			string requestedLink = ClioParams["url"];
+#pragma warning disable CLIO004 // UseShellExecute=true is required for cross-platform URL opening; IProcessExecutor always uses UseShellExecute=false
 			Process.Start(new ProcessStartInfo { FileName = requestedLink, UseShellExecute = true });
+#pragma warning restore CLIO004
 			return Unit.Task;
 		}
 	}

@@ -11,14 +11,32 @@ namespace Clio.Command
 		[Value(0, MetaName = "Name", Required = false, HelpText = "Name of the compressed package")]
 		public string Name { get; set; }
 
-		[Option('d', "DestinationPath", Required = false, HelpText = "Full destination path for gz file")]
+		[Option('d', "destination-path", Required = false, HelpText = "Full destination path for gz file")]
 		public string DestinationPath { get; set; }
 
-		[Option('p', "Packages", Required = false)]
+		[Option("DestinationPath", Required = false, Hidden = true, HelpText = "Alias for --destination-path")]
+		public string DestinationPathAlias {
+			get => DestinationPath;
+			set { if (!string.IsNullOrEmpty(value)) DestinationPath = value; }
+		}
+
+		[Option('p', "packages", Required = false)]
 		public string Packages { get; set; }
 
-		[Option('s', "SkipPdb", Required = false, Default = false)]
+		[Option("Packages", Required = false, Hidden = true, HelpText = "Alias for --packages")]
+		public string PackagesAlias {
+			get => Packages;
+			set { if (!string.IsNullOrEmpty(value)) Packages = value; }
+		}
+
+		[Option('s', "skip-pdb", Required = false, Default = false)]
 		public bool SkipPdb { get; set; }
+
+		[Option("SkipPdb", Required = false, Hidden = true, HelpText = "Alias for --skip-pdb")]
+		public bool SkipPdbAlias {
+			get => SkipPdb;
+			set { if (value) SkipPdb = value; }
+		}
 	}
 
 	public class CompressPackageCommand : Command<GeneratePkgZipOptions>

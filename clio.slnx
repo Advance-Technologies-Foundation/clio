@@ -4,9 +4,6 @@
     <File Path="README.md" />
     <File Path="clio/Commands.md" />
   </Folder>
-  <Project Path="../commandline/src/CommandLine/CommandLine.csproj" />
-  <Project Path="../creatioclient/creatioclient/creatioclient.csproj" />
-  <Project Path="../repository/ATF.Repository/ATF.Repository.csproj" />
   <Project Path="clio.mcp.e2e/clio.mcp.e2e.csproj" />
   <Project Path="clio.tests\clio.tests.csproj" />
   <Project Path="Clio.Analyzers\Clio.Analyzers.csproj" />

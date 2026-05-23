@@ -416,19 +416,16 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 	{
 		try
 		{
-			// Look for running process that has open files in target directory
+#pragma warning disable CLIO004 // Process enumeration and kill cannot be abstracted via IProcessExecutor
 			System.Diagnostics.Process[] processes = System.Diagnostics.Process.GetProcesses();
-			
 			foreach (var process in processes)
 			{
 				try
 				{
-					// Check if process has the application in its command line or module path
 					string processName = process.ProcessName.ToLower();
 					if (processName.Contains("dotnet") || processName.Contains("creatio") || 
 					    processName.Contains("terrasoft") || processName.Contains("webhost"))
 					{
-						// Try to get modules to see if any DLL is from target path
 						var modules = process.Modules;
 						foreach (System.Diagnostics.ProcessModule module in modules)
 						{
@@ -436,7 +433,7 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 							{
 								_logger.WriteInfo($"Killing existing process {processName} (PID: {process.Id})");
 								process.Kill();
-								await Task.Delay(1000); // Wait for process to terminate
+								await Task.Delay(1000);
 								break;
 							}
 						}
@@ -444,15 +441,14 @@ public class DotNetDeploymentStrategy : IDeploymentStrategy
 				}
 				catch (Exception ex)
 				{
-					// Ignore errors when checking specific processes
 					_logger.WriteInfo($"Error checking process: {ex.Message}");
 				}
 			}
+#pragma warning restore CLIO004
 		}
 		catch (Exception ex)
 		{
 			_logger.WriteWarning($"Could not kill existing application: {ex.Message}");
-			// Continue anyway - might not have permissions on all processes
 		}
 	}
 

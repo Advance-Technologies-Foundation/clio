@@ -78,7 +78,7 @@ Conclusion: the correct implementation path in `clio` is to expose the existing 
   - `ValueSource`
   - `SequencePrefix`
   - `SequenceNumberOfChars`
-- `application-get-info` already understands source names beyond `Const|None`
+- `get-app-info` already understands source names beyond `Const|None`
 - non-constant readback in `ApplicationInfoService` already falls back to `ValueSource`
 
 ### What is currently missing
@@ -89,7 +89,7 @@ Conclusion: the correct implementation path in `clio` is to expose the existing 
 - write path fills only `DefValue.Value`
 - write path never fills `DefValue.ValueSource`, `SequencePrefix`, or `SequenceNumberOfChars`
 - `get-entity-schema-column-properties` still flattens readback to string-style fields and loses structured non-const detail
-- prompts, docs, and `tool-contract-get` still describe the old reduced contract
+- prompts, docs, and `get-tool-contract` still describe the old reduced contract
 
 ## 5. Proposed MCP Contract
 
@@ -166,7 +166,7 @@ Changes:
 
 Expected outcome:
 
-- one canonical model feeds `create-entity-schema`, `modify-entity-schema-column`, `update-entity-schema`, and `schema-sync`
+- one canonical model feeds `create-entity-schema`, `modify-entity-schema-column`, `update-entity-schema`, and `sync-schemas`
 
 ### Phase 2: Serialization and Tool Surface
 
@@ -181,7 +181,7 @@ Changes:
 
 - serialize `default-value-config` in create-column payloads
 - serialize `default-value-config` in update operations
-- ensure `schema-sync` inherits the richer contract because it already reuses these args
+- ensure `sync-schemas` inherits the richer contract because it already reuses these args
 
 Expected outcome:
 
@@ -304,7 +304,7 @@ Changes:
 
 Expected outcome:
 
-- MCP guidance matches real behavior and new capability is discoverable through `tool-contract-get`
+- MCP guidance matches real behavior and new capability is discoverable through `get-tool-contract`
 
 ## 8. Test Plan
 
@@ -336,8 +336,8 @@ Add real server coverage for:
 - `modify-entity-schema-column` with `SystemValue`
 - `modify-entity-schema-column` with `Sequence`
 - `update-entity-schema` structured default-value-config path
-- `schema-sync` update operation using the same structure
-- `tool-contract-get` advertising the new field
+- `sync-schemas` update operation using the same structure
+- `get-tool-contract` advertising the new field
 
 Target area:
 
@@ -351,7 +351,7 @@ Target area:
 4. Update read models
 5. Add unit tests
 6. Add MCP E2E tests
-7. Update docs, prompts, and `tool-contract-get`
+7. Update docs, prompts, and `get-tool-contract`
 
 ## 10. Risks
 
@@ -390,7 +390,7 @@ Mitigation:
 - constant defaults preserve typed JSON values in MCP input
 - readback exposes structured default-value metadata
 - legacy shorthand input continues to work for `Const` and `None`
-- prompts, docs, and `tool-contract-get` all advertise the updated contract
+- prompts, docs, and `get-tool-contract` all advertise the updated contract
 - unit and MCP E2E coverage exist for the new capability
 
 ## 12. Out of Scope

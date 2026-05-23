@@ -1,5 +1,10 @@
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Prompts;
@@ -13,6 +18,8 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
+[NonParallelizable]
 public sealed class EntitySchemaToolTests {
 
 	[Test]
@@ -28,7 +35,8 @@ public sealed class EntitySchemaToolTests {
 			UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+			FindEntitySchemaTool.FindEntitySchemaToolName
 		];
 
 		// Assert
@@ -38,7 +46,8 @@ public sealed class EntitySchemaToolTests {
 				"update-entity-schema",
 				"get-entity-schema-properties",
 				"get-entity-schema-column-properties",
-				"modify-entity-schema-column"
+				"modify-entity-schema-column",
+				"find-entity-schema"
 			},
 			because: "the entity schema MCP tool identifiers should remain stable for callers and tests");
 	}
@@ -162,8 +171,134 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps create-lookup arguments into BaseLookup create options and registers the lookup after successful creation.")]
+	public async Task CreateLookup_Should_Map_Arguments_And_Register_Lookup_On_Success() {
+		// Arrange
+		FakeCreateEntitySchemaCommand defaultCommand = new();
+		FakeCreateEntitySchemaCommand resolvedCommand = new();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(registrationService);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaColumnArgs[] columns = [
+			new("UsrSortOrder", "Integer", Localizations("Sort order"))
+		];
+
+		// Act
+		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
+			"UsrPkg",
+			"UsrOrderStatus",
+			Localizations("Order status"),
+			"dev",
+			columns));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid create-lookup payload should execute through the resolved create-schema command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive mapped lookup creation options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the requested environment must be preserved");
+		resolvedCommand.CapturedOptions.Package.Should().Be("UsrPkg",
+			because: "the requested package must be preserved");
+		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrOrderStatus",
+			because: "the requested lookup schema name must be preserved");
+		resolvedCommand.CapturedOptions.ParentSchemaName.Should().Be("BaseLookup",
+			because: "create-lookup must force BaseLookup inheritance");
+		resolvedCommand.CapturedOptions.ExtendParent.Should().BeFalse(
+			because: "create-lookup should create a concrete lookup instead of a replacement schema");
+		resolvedCommand.CapturedOptions.Title.Should().Be("Order status",
+			because: "the internal scalar title should be derived from title-localizations");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the canonical en-US localization must be preserved");
+		resolvedCommand.CapturedOptions.Columns.Should().NotBeNullOrEmpty(
+			because: "custom columns should be serialized into the underlying create-schema options");
+		resolvedCommand.CapturedOptions.Columns!.Single().Should().Contain("\"name\":\"UsrSortOrder\"",
+			because: "the create-lookup custom column name must be preserved");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrOrderStatus", "Order status");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes the expected required and optional JSON fields for create-entity-schema MCP callers.")]
+	public void CreateEntitySchemaArgs_Should_Expose_Expected_Json_Contract() {
+		// Arrange
+		System.Reflection.PropertyInfo environmentProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.EnvironmentName))!;
+		System.Reflection.PropertyInfo packageProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.PackageName))!;
+		System.Reflection.PropertyInfo schemaProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.SchemaName))!;
+		System.Reflection.PropertyInfo titleLocalizationsProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.TitleLocalizations))!;
+		System.Reflection.PropertyInfo parentSchemaProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.ParentSchemaName))!;
+		System.Reflection.PropertyInfo extendParentProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.ExtendParent))!;
+		System.Reflection.PropertyInfo columnsProperty = typeof(CreateEntitySchemaArgs)
+			.GetProperty(nameof(CreateEntitySchemaArgs.Columns))!;
+
+		// Act
+		string environmentJsonName = environmentProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		string packageJsonName = packageProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		string schemaJsonName = schemaProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		string titleLocalizationsJsonName = titleLocalizationsProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		string parentSchemaJsonName = parentSchemaProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		string extendParentJsonName = extendParentProperty.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+			.Cast<JsonPropertyNameAttribute>()
+			.Single()
+			.Name;
+		bool columnsHasRequired = columnsProperty.GetCustomAttributes(typeof(RequiredAttribute), false).Any();
+
+		// Assert
+		environmentJsonName.Should().Be("environment-name",
+			because: "create-entity-schema callers should use the canonical environment selector");
+		packageJsonName.Should().Be("package-name",
+			because: "create-entity-schema callers should use the canonical package selector");
+		schemaJsonName.Should().Be("schema-name",
+			because: "create-entity-schema callers should use the canonical schema selector");
+		titleLocalizationsJsonName.Should().Be("title-localizations",
+			because: "create-entity-schema should require the explicit localization map contract");
+		parentSchemaJsonName.Should().Be("parent-schema-name",
+			because: "parent schema should stay exposed as an optional extension field");
+		extendParentJsonName.Should().Be("extend-parent",
+			because: "replacement-schema mode should stay exposed through the canonical boolean field");
+		environmentProperty.GetCustomAttributes(typeof(RequiredAttribute), false).Should().NotBeEmpty(
+			because: "environment-name is required for remote schema creation");
+		packageProperty.GetCustomAttributes(typeof(RequiredAttribute), false).Should().NotBeEmpty(
+			because: "package-name is required for remote schema creation");
+		schemaProperty.GetCustomAttributes(typeof(RequiredAttribute), false).Should().NotBeEmpty(
+			because: "schema-name is required for remote schema creation");
+		titleLocalizationsProperty.GetCustomAttributes(typeof(RequiredAttribute), false).Should().NotBeEmpty(
+			because: "title-localizations is required for MCP callers");
+		columnsHasRequired.Should().BeFalse(
+			because: "columns must remain optional so callers can create minimal schemas without custom columns");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps structured batch MCP mutation arguments into update-entity-schema command options.")]
-	public void UpdateEntitySchema_Should_Map_All_Arguments() {
+	public async Task UpdateEntitySchema_Should_Map_All_Arguments() {
 		// Arrange
 		FakeUpdateEntitySchemaCommand defaultCommand = new();
 		FakeUpdateEntitySchemaCommand resolvedCommand = new();
@@ -173,7 +308,7 @@ public sealed class EntitySchemaToolTests {
 		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
@@ -206,6 +341,93 @@ public sealed class EntitySchemaToolTests {
 		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"title-localizations\"");
 		resolvedCommand.CapturedOptions.Operations!.First().Should().Contain("\"en-US\":\"Status\"");
 		resolvedCommand.CapturedOptions.Operations!.Last().Should().Contain("\"default-value-source\":\"None\"");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps lookup-specific optional flags in update-entity-schema batch operations.")]
+	public async Task UpdateEntitySchema_Should_Map_Lookup_Optional_Flags() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand defaultCommand = new();
+		FakeUpdateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			[
+				new UpdateEntitySchemaOperationArgs(
+					"add",
+					"UsrOwner",
+					Type: "Lookup",
+					TitleLocalizations: Localizations("Owner"),
+					ReferenceSchemaName: "Contact",
+					SimpleLookup: true,
+					Cascade: true,
+					DoNotControlIntegrity: true)
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "lookup-specific optional flags should be accepted in batch update operations");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved batch command should receive the serialized operations");
+		resolvedCommand.CapturedOptions!.Operations.Should().NotBeNullOrEmpty(
+			because: "the lookup add operation should be serialized for the underlying command");
+		string operation = resolvedCommand.CapturedOptions.Operations!.Single();
+		operation.Should().Contain("\"simple-lookup\":true",
+			because: "simple-lookup must survive MCP batch serialization");
+		operation.Should().Contain("\"cascade\":true",
+			because: "cascade must survive MCP batch serialization");
+		operation.Should().Contain("\"do-not-control-integrity\":true",
+			because: "do-not-control-integrity must survive MCP batch serialization");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves add, modify, and remove operations in order when update-entity-schema serializes the batch payload.")]
+	public async Task UpdateEntitySchema_Should_Preserve_Mixed_Operation_Order() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand defaultCommand = new();
+		FakeUpdateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			[
+				new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "Text", TitleLocalizations: Localizations("Status")),
+				new UpdateEntitySchemaOperationArgs("modify", "UsrName", Indexed: true),
+				new UpdateEntitySchemaOperationArgs("remove", "UsrLegacy")
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a valid mixed batch should still execute through the resolved command");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the serialized mixed batch");
+		string[] serializedOperations = resolvedCommand.CapturedOptions!.Operations!.ToArray();
+		serializedOperations.Should().HaveCount(3,
+			because: "all requested operations should be serialized");
+		serializedOperations[0].Should().Contain("\"action\":\"add\"")
+			.And.Contain("\"column-name\":\"UsrStatus\"",
+				because: "the first serialized operation should preserve the add payload");
+		serializedOperations[1].Should().Contain("\"action\":\"modify\"")
+			.And.Contain("\"column-name\":\"UsrName\"",
+				because: "the second serialized operation should preserve the modify payload");
+		serializedOperations[2].Should().Contain("\"action\":\"remove\"")
+			.And.Contain("\"column-name\":\"UsrLegacy\"",
+				because: "the third serialized operation should preserve the remove payload");
 	}
 
 	[Test]
@@ -314,6 +536,116 @@ public sealed class EntitySchemaToolTests {
 			because: "the value-source should be preserved through tool mapping");
 		resolvedCommand.CapturedOptions.DefaultValueSource.Should().BeNull(
 			because: "structured default configs should not be flattened into legacy shorthand fields");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps lookup-specific optional flags for modify-entity-schema-column add flows.")]
+	public void ModifyEntitySchemaColumn_Should_Map_Lookup_Optional_Flags() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"add",
+			"UsrOwner",
+			Type: "Lookup",
+			TitleLocalizations: Localizations("Owner"),
+			ReferenceSchemaName: "Contact",
+			SimpleLookup: true,
+			Cascade: true,
+			DoNotControlIntegrity: true));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "lookup-specific optional flags should be accepted for single-column add flows");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved mutation command should receive mapped lookup options");
+		resolvedCommand.CapturedOptions!.ReferenceSchemaName.Should().Be("Contact",
+			because: "lookup add flows must preserve the reference schema");
+		resolvedCommand.CapturedOptions.SimpleLookup.Should().BeTrue(
+			because: "simple-lookup must be preserved for lookup add flows");
+		resolvedCommand.CapturedOptions.Cascade.Should().BeTrue(
+			because: "cascade must be preserved for lookup add flows");
+		resolvedCommand.CapturedOptions.DoNotControlIntegrity.Should().BeTrue(
+			because: "do-not-control-integrity must be preserved for lookup add flows");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves omitted optional mutation flags as null so modify-entity-schema-column does not force defaults that were not requested.")]
+	public void ModifyEntitySchemaColumn_Should_Keep_Omitted_Optional_Flags_As_Null() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "minimal valid modify calls should still execute through the resolved command");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive mapped mutation options");
+		resolvedCommand.CapturedOptions!.Indexed.Should().BeNull(
+			because: "omitted indexed should stay unspecified instead of forcing a default");
+		resolvedCommand.CapturedOptions.SimpleLookup.Should().BeNull(
+			because: "omitted simple-lookup should stay unspecified instead of forcing a default");
+		resolvedCommand.CapturedOptions.Cascade.Should().BeNull(
+			because: "omitted cascade should stay unspecified instead of forcing a default");
+		resolvedCommand.CapturedOptions.DoNotControlIntegrity.Should().BeNull(
+			because: "omitted do-not-control-integrity should stay unspecified instead of forcing a default");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Derives the internal scalar title from MCP title-localizations and passes provided localizations through as-is without synthesizing additional cultures.")]
+	public void ModifyEntitySchemaColumn_Should_Derive_Title_From_TitleLocalizations_Without_CultureSynthesis() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			"modify",
+			"Name",
+			TitleLocalizations: Localizations("Vehicle name")));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "localized MCP mutation payloads should still map to validator-safe internal options");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive mapped mutation options");
+		resolvedCommand.CapturedOptions!.Title.Should().Be("Vehicle name",
+			because: "Clio should derive the internal scalar title from title-localizations");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the canonical en-US title localization must be preserved");
+		resolvedCommand.CapturedOptions.TitleLocalizations.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
 	}
 
 	[Test]
@@ -470,15 +802,17 @@ public sealed class EntitySchemaToolTests {
 			because: "lookup prompt guidance should direct callers to the canonical post-create verification path");
 		lookupPrompt.Should().Contain("`Name`",
 			because: "lookup prompt guidance should explain the inherited display-field contract for BaseLookup");
-		lookupPrompt.Should().Contain("docs://mcp/guides/app-modeling",
-			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide");
+		lookupPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "lookup prompt guidance should point callers to the MCP-owned modeling guide through the guidance tool");
+		lookupPrompt.Should().Contain("app-modeling",
+			because: "lookup prompt guidance should identify the exact guidance name callers must pass to the guidance tool");
 		updatePrompt.Should().Contain(UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
 			because: "batch update prompt guidance should reference the exact production tool name");
 		updatePrompt.Should().Contain("title-localizations",
 			because: "batch update prompt guidance should instruct callers to use localization maps");
 		updatePrompt.Should().Contain("schema default",
 			because: "batch update prompt guidance should explain that seed rows do not define defaults");
-		updatePrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
+		updatePrompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "batch update prompt guidance should point callers to the dedicated maintenance guide for existing-app edits");
 		updatePrompt.Should().Contain("get-entity-schema-properties",
 			because: "batch update prompt guidance should tell callers to inspect the current schema before mutating it");
@@ -486,14 +820,14 @@ public sealed class EntitySchemaToolTests {
 			because: "batch update prompt guidance should distinguish single-column edits from batch schema updates");
 		schemaPrompt.Should().Contain(GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 			because: "schema-read prompt guidance should reference the exact production tool name");
-		schemaPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide");
-		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `schema-sync`",
+		schemaPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
+		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `sync-schemas`",
 			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
-		columnPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "column-read prompt guidance should point callers to the existing-app maintenance guide");
+		columnPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "column-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
 			because: "column-read prompt guidance should describe the canonical verification pattern for single-column edits");
 		modifyPrompt.Should().Contain(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
@@ -502,8 +836,8 @@ public sealed class EntitySchemaToolTests {
 			because: "modify prompt guidance should instruct callers to use localization maps");
 		modifyPrompt.Should().Contain("type",
 			because: "mutation prompt guidance should remind callers about action-specific options");
-		modifyPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "modify prompt guidance should point callers to the existing-app maintenance guide");
+		modifyPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "modify prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		modifyPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "modify prompt guidance should tell callers to inspect current column metadata before mutating it");
 	}
@@ -584,7 +918,7 @@ public sealed class EntitySchemaToolTests {
 			because: "update prompt guidance should advertise the supported Email aliases");
 		updatePrompt.Should().Contain("default-value-source=Const",
 			because: "update prompt guidance should still explain unsupported legacy binary default usage");
-		updatePrompt.Should().Contain("schema-sync",
+		updatePrompt.Should().Contain("sync-schemas",
 			because: "update prompt guidance should steer multi-step schema workflows toward the composite MCP tool");
 		modifyPrompt.Should().Contain("File",
 			because: "modify prompt guidance should advertise file column support");
@@ -602,6 +936,19 @@ public sealed class EntitySchemaToolTests {
 		}
 
 		public override int Execute(ModifyEntitySchemaColumnOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeCreateEntitySchemaCommand : CreateEntitySchemaCommand {
+		public CreateEntitySchemaOptions CapturedOptions { get; private set; }
+
+		public FakeCreateEntitySchemaCommand()
+			: base(Substitute.For<IRemoteEntitySchemaCreator>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(CreateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			return 0;
 		}
@@ -628,5 +975,23 @@ public sealed class EntitySchemaToolTests {
 			result["uk-UA"] = ukUa;
 		}
 		return result;
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

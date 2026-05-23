@@ -19,12 +19,14 @@ internal class WebBrowser : IWebBrowser
 
 	private readonly IProcessExecutor _processExecutor;
 	private readonly IOSPlatformChecker _platformChecker;
+	private readonly ILogger _logger;
 
 	#region Constructors: Public
 
-	public WebBrowser(IProcessExecutor processExecutor, IOSPlatformChecker platformChecker) {
+	public WebBrowser(IProcessExecutor processExecutor, IOSPlatformChecker platformChecker, ILogger logger) {
 		_processExecutor = processExecutor;
 		_platformChecker = platformChecker;
+		_logger = logger;
 	}
 
 	#endregion
@@ -50,7 +52,7 @@ internal class WebBrowser : IWebBrowser
 
 	public void OpenUrl(string url) {
 		if (_platformChecker.IsWindowsEnvironment) {
-			Console.WriteLine($"Open {url}...");
+			_logger.WriteLine($"Open {url}...");
 			_processExecutor.Execute("cmd", $"/c start {url}", waitForExit: false, workingDirectory: null, showOutput: false);
 		}
 		else {

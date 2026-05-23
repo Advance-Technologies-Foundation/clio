@@ -1,7 +1,9 @@
 namespace Clio.Package
 {
+	using System;
 	using System.Collections.Generic;
 	using System.Linq;
+	using System.Text.Json;
 	using Clio.Common;
 
 	#region Interface: IPackageLockManager
@@ -15,7 +17,6 @@ namespace Clio.Package
 		void Lock();
 		void Unlock(IEnumerable<string> packages);
 		void Lock(IEnumerable<string> packages);
-
 
 		#endregion
 
@@ -32,16 +33,25 @@ namespace Clio.Package
 
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IApplicationClientFactory _applicationClientFactory;
+		private readonly IServiceUrlBuilder _serviceUrlBuilder;
+
+		private static readonly JsonSerializerOptions JsonOptions = new() {
+			PropertyNameCaseInsensitive = true
+		};
 
 		#endregion
-		
+
 		#region Constructors: Public
 
-		public PackageLockManager(EnvironmentSettings environmentSettings, IApplicationClientFactory applicationClientFactory) {
+		public PackageLockManager(EnvironmentSettings environmentSettings,
+			IApplicationClientFactory applicationClientFactory,
+			IServiceUrlBuilder serviceUrlBuilder) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
+			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
+			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
 		#endregion
@@ -51,27 +61,31 @@ namespace Clio.Package
 		private IApplicationClient CreateApplicationClient() =>
 			_applicationClientFactory.CreateClient(_environmentSettings);
 
-		private string GetRequestData(string argumentName, IEnumerable<string> packages) =>
-			"{\"" + argumentName + "\":[" + string.Join(",", packages.Select(pkg => $"\"{pkg.Trim()}\"")) + "]}";
-
+		private void CallGate(ServiceUrlBuilder.KnownRoute route, string paramName, string[] packages) {
+			string url = _serviceUrlBuilder.Build(route);
+			string[] payload = packages.Length > 0 ? packages : null;
+			string body = JsonSerializer.Serialize(
+				new Dictionary<string, object> { [paramName] = payload },
+				JsonOptions);
+			string response = CreateApplicationClient().ExecutePostRequest(url, body);
+			bool success = JsonSerializer.Deserialize<bool>(response, JsonOptions);
+			if (!success) {
+				throw new InvalidOperationException(
+					$"ClioGate {route} returned false. Check the Creatio application logs for details.");
+			}
+		}
 
 		#endregion
 
 		#region Methods: Public
 
-		public void Unlock(IEnumerable<string> packages) {
-			IApplicationClient applicationClient = CreateApplicationClient();
-			string requestData = GetRequestData("unlockPackages", packages);
-			applicationClient.CallConfigurationService("CreatioApiGateway", "UnlockPackages", requestData) ;
-		}
+		public void Unlock(IEnumerable<string> packages) =>
+			CallGate(ServiceUrlBuilder.KnownRoute.UnlockPackages, "unlockPackages", packages.ToArray());
 
 		public void Unlock() => Unlock(Enumerable.Empty<string>());
 
-		public void Lock(IEnumerable<string> packages) {
-			IApplicationClient applicationClient = CreateApplicationClient();
-			string requestData = GetRequestData("lockPackages", packages);
-			applicationClient.CallConfigurationService("CreatioApiGateway", "LockPackages", requestData) ;
-		}
+		public void Lock(IEnumerable<string> packages) =>
+			CallGate(ServiceUrlBuilder.KnownRoute.LockPackages, "lockPackages", packages.ToArray());
 
 		public void Lock() => Lock(Enumerable.Empty<string>());
 
@@ -82,4 +96,3 @@ namespace Clio.Package
 	#endregion
 
 }
-

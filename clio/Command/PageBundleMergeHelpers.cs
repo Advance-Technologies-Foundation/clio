@@ -20,6 +20,14 @@ internal static class PageBundleMergeHelpers {
 		return result;
 	}
 
+	public static void MergeInPlace(JObject target, JObject next) {
+		if (target is null || next is null) {
+			return;
+		}
+
+		target.Merge(next, MergeSettings);
+	}
+
 	public static JsonObject ToJsonObject(JObject token) {
 		return ToJsonNode(token) as JsonObject ?? [];
 	}

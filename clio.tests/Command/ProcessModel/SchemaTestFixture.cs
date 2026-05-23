@@ -13,6 +13,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ProcessModel;
 
 [TestFixture]
+[Property("Module", "ProcessModel")]
+[Category("Unit")]
 [Category("ProcessSchemaParser")]
 
 public class SchemaTestFixture{

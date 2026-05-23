@@ -7,6 +7,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command.ApplicationCommand;
 
+[Property("Module", "ApplicationCommand")]
 internal class SetApplicationIconCommandTestCase : BaseCommandTests<SetApplicationVersionOption>
 {
 

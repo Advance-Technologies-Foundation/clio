@@ -8,7 +8,7 @@ using ConsoleTables;
 using CreatioModel;
 namespace Clio.Command;
 
-[Verb("get-app-list", Aliases = new[] {"lia", "list-apps", "apps", "app-list", "apps-list", "list - installed - applications" },
+[Verb("list-apps", Aliases = new[] {"get-app-list", "lia", "apps", "app-list", "apps-list", "list - installed - applications" },
 	HelpText = "List installed apps")]
 public class ListInstalledAppsOptions : EnvironmentOptions
 {

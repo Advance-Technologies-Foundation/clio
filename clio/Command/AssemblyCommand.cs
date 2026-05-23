@@ -1,7 +1,7 @@
 ﻿using System;
-using System.IO;
 using Clio.Common;
 using CommandLine;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -29,16 +29,20 @@ internal class ExecuteScriptRequest
 
 class AssemblyCommand : RemoteCommand<ExecuteAssemblyOptions>
 {
+	private readonly IFileSystem _fileSystem;
+
 	protected override string ServicePath => @"/IDE/ExecuteScript";
 
-	public AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
+	public AssemblyCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+		IFileSystem fileSystem)
 		: base(applicationClient, settings) {
+		_fileSystem = fileSystem;
 	}
 
 	protected override string GetRequestData(ExecuteAssemblyOptions options) {
 		string filePath = options.Name;
 		string executorType = options.ExecutorType;
-		var fileContent = File.ReadAllBytes(filePath);
+		var fileContent = _fileSystem.File.ReadAllBytes(filePath);
 		return JsonSerializer.Serialize(new ExecuteScriptRequest {
 			Body = fileContent,
 			LibraryType = executorType

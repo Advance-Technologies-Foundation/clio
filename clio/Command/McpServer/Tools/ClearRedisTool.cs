@@ -13,10 +13,14 @@ public class ClearRedisTool(
 	internal const string ClearRedisByCredentialsToolName = "clear-redis-db-by-credentials";
 	internal const string ClearRedisByEnvironmentName = "clear-redis-db-by-environment";
 	
-	[McpServerTool(Name = ClearRedisByEnvironmentName), Description("Empties redis database used by creatio instance")]
+	[McpServerTool(Name = ClearRedisByEnvironmentName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	 Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByName(
 		[Description("Target Environment name")] [Required] string environmentName
 	) {
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+		}
 		ClearRedisOptions options = new() {
 			Environment = environmentName,
 			TimeOut = 30_000
@@ -24,13 +28,18 @@ public class ClearRedisTool(
 		return InternalExecute<RedisCommand>(options);
 	}
 
-	[McpServerTool(Name = ClearRedisByCredentialsToolName), Description("Empties redis database used by creatio instance")]
+	[McpServerTool(Name = ClearRedisByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	 Description("Empties redis database used by creatio instance")]
 	public CommandExecutionResult ClearRedisByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
 	) {
+		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
+		if (validationError != null) {
+			return validationError;
+		}
 		ClearRedisOptions options = new() {
 			Login = userName,
 			Password = password,

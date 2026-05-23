@@ -10,6 +10,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
+[Property("Module", "Command")]
 public class ManageWindowsFeaturesCommandTestFixture : BaseClioModuleTests{
 	#region Fields: Private
 

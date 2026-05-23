@@ -51,10 +51,8 @@ public class UserPromptService : IUserPromptService {
 	}
 
 	public async Task DisplayVersionInfoAsync(string currentVersion, string latestVersion) {
-		_logger.WriteLine("");
 		_logger.WriteInfo($"Current version: {currentVersion}");
 		_logger.WriteInfo($"Latest version:  {latestVersion}");
-		_logger.WriteLine("");
 		await Task.CompletedTask;
 	}
 

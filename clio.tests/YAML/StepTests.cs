@@ -11,6 +11,8 @@ using OneOf;
 using OneOf.Types;
 
 [TestFixture(Author = "Kirill Krylov")]
+[Property("Module", "Core")]
+[Category("Unit")]
 [Category("YAML")]
 internal class StepTests
 {

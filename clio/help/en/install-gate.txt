@@ -14,7 +14,6 @@ DESCRIPTION
 
     The cliogate package is required for:
     - Workspace operations (push-workspace, restore-workspace)
-    - T.I.D.E. (Terribly Isolated Development Environment) functionality
     - Advanced remote operations and extended API access
     - Database and configuration management commands
 
@@ -57,7 +56,6 @@ NOTES
     - Use 'clio get-info -e <ENV>' to verify the installed cliogate version
 
 SEE ALSO
-    install-tide - Install T.I.D.E. extension
     push-workspace - Push workspace to environment
     get-info - Get information about a Creatio instance
     info - Display clio version information

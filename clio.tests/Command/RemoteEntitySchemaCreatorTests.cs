@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
@@ -13,11 +15,14 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
+[Property("Module", "Command")]
 internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 {
 	private IApplicationClient _applicationClient;
 	private IApplicationPackageListProvider _packageListProvider;
 	private ILogger _logger;
+	private ISysSettingsManager _sysSettingsManager;
 	private IRemoteEntitySchemaCreator _creator;
 	private Guid _packageUId;
 
@@ -32,6 +37,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				UId = _packageUId
 			}, string.Empty, Enumerable.Empty<string>())
 		});
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("\"Usr\"");
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder)
@@ -40,13 +46,15 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_logger = Substitute.For<ILogger>();
+		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _logger);
+		containerBuilder.AddTransient(_ => _sysSettingsManager);
 	}
 
 	[Test]
-	[Description("Creates a root entity schema, auto-adds Id when needed, and persists the requested text column metadata.")]
+	[Description("Creates a root entity schema, auto-adds the prefixed primary column from SchemaNamePrefix when needed, and persists the requested text column metadata.")]
 	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
 	{
 		string saveBody = null;
@@ -54,7 +62,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		bool runtimeVerifyCalled = false;
 		SetupApplicationClient((url, body) => {
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
-				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[],\"administratedByOperations\":true,\"administratedByColumns\":true,\"administratedByRecords\":true,\"useDenyRecordRights\":true,\"rightSchemaName\":\"UsrBrokenRights\"}}";
 			}
 			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"value\":true}";
@@ -106,10 +114,75 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
 		json["caption"]![0]!["value"]!.Value<string>().Should().Be("Vehicle");
 		Guid.Parse(json["package"]!["uId"]!.Value<string>()!).Should().Be(_packageUId);
-		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id");
-		json["primaryDisplayColumn"]!["name"]!.Value<string>().Should().Be("Name");
-		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain(["Id", "Name"]);
-		json["columns"]!.Single(column => column["name"]!.Value<string>() == "Id")["type"]!.Value<int>().Should().Be(0);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("UsrId",
+			because: "the generated primary GUID column should use the configured SchemaNamePrefix");
+		json["primaryDisplayColumn"]!["name"]!.Value<string>().Should().Be("Name",
+			because: "the first text column should become the primary display column");
+		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain(["UsrId", "Name"],
+			because: "the saved schema should include the generated prefixed primary column and the requested text column");
+		json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrId")["type"]!.Value<int>().Should().Be(0,
+			because: "the generated prefixed primary column should remain a guid column");
+		json["administratedByOperations"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should not inherit an invalid operation-rights state from CreateNewSchema");
+		json["administratedByColumns"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should start with column administration disabled unless explicitly configured");
+		json["administratedByRecords"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should start with record administration disabled unless explicitly configured");
+		json["useDenyRecordRights"]!.Value<bool>().Should().BeFalse(
+			because: "new root entity schemas should not carry deny-record-rights metadata from the initial designer draft");
+		json["rightSchemaName"]!.Value<string>().Should().BeEmpty(
+			because: "new root entity schemas should clear stale right schema names before save");
+	}
+
+	[Test]
+	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
+	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
+	{
+		// Arrange
+		string saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id",
+			because: "empty SchemaNamePrefix should preserve the legacy primary column name");
+		json["columns"]!.Select(column => column["name"]!.Value<string>()).Should().Contain("Id",
+			because: "the generated schema should keep the legacy primary column name when no prefix is configured");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "entity creation must still materialize DB structure when the prefix is empty");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "entity creation must still verify runtime availability when the prefix is empty");
 	}
 
 	[Test]
@@ -328,6 +401,12 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "structured create-column specs should preserve the optional masked flag");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "structured create-column specs should preserve schema-level value masking");
+		savedColumn["valueMaskingSettings"]!["pattern"]!.Value<string>().Should().Be(".*",
+			because: "masked create-column specs should synthesize a default masking regex accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["replacement"]!.Value<string>().Should().Be("********",
+			because: "masked create-column specs should synthesize a default masked replacement accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["adminOperationCode"]!.Value<string>().Should().Be("UsrVehicle_Status_UnmaskedValue",
+			because: "masked create-column specs should synthesize the conventional unmask admin operation code");
 		saveDbStructureCalled.Should().BeTrue();
 		runtimeVerifyCalled.Should().BeTrue();
 	}
@@ -347,6 +426,9 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
 				saveBody = body;
 				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("GetSystemValues", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"items\":[{\"displayValue\":\"Current Time and Date\",\"value\":\"d7c295d3-3146-4ee1-ac49-3a7bd0edc45d\"}]}";
 			}
 			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
 				return "{\"success\":true}";
@@ -378,8 +460,121 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStartDate");
 		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.SystemValue,
 			because: "structured default-value-config should preserve non-legacy default sources");
-		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("CurrentDateTime",
-			because: "structured default-value-config should preserve the requested system value name");
+		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("d7c295d3-3146-4ee1-ac49-3a7bd0edc45d",
+			because: "structured default-value-config should persist the canonical system value guid");
+	}
+
+	[Test]
+	[Description("Creates schema and column captions using only the explicitly provided title-localizations without synthesizing additional cultures.")]
+	public void Create_CreatesSchema_WithExplicitTitleLocalizations_WithoutCultureSynthesis() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrStatus",
+			type = "Text",
+			title_localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Status"
+			}
+		}).Replace("title_localizations", "title-localizations");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Vehicle"
+			},
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]!.Should().Contain(token =>
+				token["cultureName"]!.Value<string>() == "en-US"
+				&& token["value"]!.Value<string>() == "Vehicle",
+			because: "schema caption should include the provided en-US localization");
+		json["caption"]!.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
+		JToken savedColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrStatus");
+		savedColumn["caption"]!.Should().Contain(token =>
+				token["cultureName"]!.Value<string>() == "en-US"
+				&& token["value"]!.Value<string>() == "Status",
+			because: "column caption should include the provided en-US localization");
+		savedColumn["caption"]!.Should().HaveCount(1,
+			because: "Clio must not synthesize additional culture localizations beyond what was explicitly provided");
+	}
+
+	[Test]
+	[Description("Normalizes structured Settings defaults from display names to canonical setting codes before save.")]
+	public void Create_CreatesSchema_WithStructuredSettingsDefault_UsingCanonicalCode() {
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Code\":\"UsrDefaultTitle\",\"Name\":\"Default Title\",\"ValueTypeName\":\"Text\"}]}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+		string structuredColumn = JsonSerializer.Serialize(new {
+			name = "UsrTitle",
+			type = "Text",
+			title = "Title",
+			default_value_config = new {
+				source = "Settings",
+				value_source = "Default Title"
+			}
+		}).Replace("default_value_config", "default-value-config").Replace("value_source", "value-source");
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = [structuredColumn]
+		});
+
+		// Assert
+		JToken savedColumn = JObject.Parse(saveBody)["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrTitle");
+		savedColumn["defValue"]!["valueSourceType"]!.Value<int>().Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Settings,
+			because: "structured default-value-config should preserve Settings source metadata");
+		savedColumn["defValue"]!["valueSource"]!.Value<string>().Should().Be("UsrDefaultTitle",
+			because: "settings defaults must persist canonical setting codes after resolution");
 	}
 
 	[Test]
@@ -429,6 +624,12 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "strict schema-level masking requires masked=true for password columns");
 		(savedColumn["isValueMasked"] ?? savedColumn["valueMasked"])!.Value<bool>().Should().BeTrue(
 			because: "strict schema-level masking requires isValueMasked=true for password columns");
+		savedColumn["valueMaskingSettings"]!["pattern"]!.Value<string>().Should().Be(".*",
+			because: "masked secure text columns should synthesize a default masking regex accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["replacement"]!.Value<string>().Should().Be("********",
+			because: "masked secure text columns should synthesize a default replacement accepted by core validation");
+		savedColumn["valueMaskingSettings"]!["adminOperationCode"]!.Value<string>().Should().Be("UsrVehicle_UsrPassword_UnmaskedValue",
+			because: "masked secure text columns should synthesize the conventional unmask admin operation code");
 	}
 
 	[Test]
@@ -602,6 +803,100 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("Succeeds when GetSchemaDesignItem returns an HTML error page and falls back to runtime schema name verification.")]
+	public void Create_Succeeds_WhenGetSchemaDesignItem_ReturnsHtml_AndFallsBackToRuntimeVerification() {
+		bool runtimeVerifyCalled = false;
+		bool designItemCalled = false;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				string url = callInfo.ArgAt<string>(0);
+				if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				}
+				if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"value\":true}";
+				}
+				if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+				}
+				if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+					return "{\"success\":true}";
+				}
+				if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+					runtimeVerifyCalled = true;
+					return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+				}
+				if (url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)) {
+					designItemCalled = true;
+					return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Request Error</title></head><body>Service Unavailable</body></html>";
+				}
+				throw new InvalidOperationException($"Unexpected url {url}");
+			});
+
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle"
+		});
+
+		act.Should().NotThrow(
+			because: "when GetSchemaDesignItem returns HTML the creator should fall back to runtime verification and succeed");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "runtime schema must still be verified before falling back");
+		designItemCalled.Should().BeTrue(
+			because: "GetSchemaDesignItem must have been attempted");
+		_logger.Received().WriteInfo(Arg.Is<string>(msg => msg.Contains("HTML response")));
+	}
+
+	[Test]
+	[Description("Fails when GetSchemaDesignItem returns HTML and the runtime schema name does not match the requested schema name.")]
+	public void Create_Fails_WhenGetSchemaDesignItem_ReturnsHtml_AndRuntimeNameMismatch() {
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				string url = callInfo.ArgAt<string>(0);
+				if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				}
+				if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"value\":true}";
+				}
+				if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+				}
+				if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+					return "{\"success\":true}";
+				}
+				if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+					return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrWrongName\"}}";
+				}
+				if (url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)) {
+					return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Request Error</title></head><body>Service Unavailable</body></html>";
+				}
+				throw new InvalidOperationException($"Unexpected url {url}");
+			});
+
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle"
+		});
+
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*runtime schema name*does not match*",
+				because: "a name mismatch in runtime schema must still be reported as failure even when designer returns HTML");
+	}
+
 	private void SetupApplicationClient(Func<string, string, string> handler)
 	{
 		_applicationClient.ExecutePostRequest(
@@ -633,5 +928,23 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 
 				return handler(url, body);
 			});
+	}
+
+	private sealed class CultureScope : IDisposable {
+		private readonly CultureInfo _originalCurrentCulture;
+		private readonly CultureInfo _originalCurrentUiCulture;
+
+		public CultureScope(string cultureName) {
+			_originalCurrentCulture = CultureInfo.CurrentCulture;
+			_originalCurrentUiCulture = CultureInfo.CurrentUICulture;
+			CultureInfo culture = CultureInfo.GetCultureInfo(cultureName);
+			CultureInfo.CurrentCulture = culture;
+			CultureInfo.CurrentUICulture = culture;
+		}
+
+		public void Dispose() {
+			CultureInfo.CurrentCulture = _originalCurrentCulture;
+			CultureInfo.CurrentUICulture = _originalCurrentUiCulture;
+		}
 	}
 }

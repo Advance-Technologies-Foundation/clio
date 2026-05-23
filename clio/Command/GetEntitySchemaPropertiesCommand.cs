@@ -13,11 +13,23 @@ namespace Clio.Command;
 [Verb("get-entity-schema-properties", HelpText = "Get properties from a remote Creatio entity schema")]
 public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
 
-	[Option("schema-name", Required = true, HelpText = "Entity schema name")]
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
+
+	[Option("schema-name", Required = false, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }
+
+	[Option("name", Required = false, Hidden = true, HelpText = "Alias for --schema-name")]
+	public string? SchemaNameAlias {
+		get => SchemaName;
+		set { if (!string.IsNullOrEmpty(value)) SchemaName = value; }
+	}
 }
 
 /// <summary>

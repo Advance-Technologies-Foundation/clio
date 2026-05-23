@@ -8,6 +8,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
+[Property("Module", "Command")]
 internal class UninstallCreatioCommandTests : BaseCommandTests<UninstallCreatioCommandOptions>
 {
 

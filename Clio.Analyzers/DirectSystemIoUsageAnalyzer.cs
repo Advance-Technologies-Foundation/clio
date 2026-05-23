@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -49,6 +50,10 @@ public sealed class DirectSystemIoUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsFileSystemImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, invocation.GetLocation(), methodSymbol.ContainingType.Name));
 	}
 
@@ -66,6 +71,10 @@ public sealed class DirectSystemIoUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsFileSystemImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, memberAccess.GetLocation(), symbol.ContainingType.Name));
 	}
 
@@ -80,7 +89,18 @@ public sealed class DirectSystemIoUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsFileSystemImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, context.Node.GetLocation(), namedType.Name));
+	}
+
+	private static bool IsFileSystemImplementation(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		return containingClass is not null
+			&& containingClass.AllInterfaces.Any(i =>
+				i.ToDisplayString() == "System.IO.Abstractions.IFileSystem");
 	}
 
 	private static bool IsForbiddenType(ITypeSymbol? typeSymbol) {

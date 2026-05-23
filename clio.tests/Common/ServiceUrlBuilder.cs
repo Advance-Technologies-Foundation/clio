@@ -7,8 +7,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Common")]
 internal class ServiceUrlBuilderCommandTests
 {
 

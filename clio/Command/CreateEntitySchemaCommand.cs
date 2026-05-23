@@ -9,8 +9,14 @@ namespace Clio.Command;
 [Verb("create-entity-schema", HelpText = "Create an entity schema in a remote Creatio package")]
 public class CreateEntitySchemaOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
+
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
 
 	[Option("name", Required = true, HelpText = "Schema name")]
 	public string SchemaName { get; set; }
@@ -64,9 +70,6 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new InvalidOperationException("Schema name is required.");
-		}
-		if (options.SchemaName.Trim().Length > 22) {
-			throw new InvalidOperationException("Schema name must not exceed 22 characters.");
 		}
 		if (string.IsNullOrWhiteSpace(options.Title)) {
 			throw new InvalidOperationException("Schema title is required.");

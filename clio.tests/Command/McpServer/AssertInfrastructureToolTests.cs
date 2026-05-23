@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class AssertInfrastructureToolTests
 {
 	[Test]

@@ -13,30 +13,44 @@ namespace Clio.Command
 		[Value(0, MetaName = "NugetPkgPath", Required = true, HelpText = "Nuget package file path")]
 		public string NugetPkgPath { get; set; }
 
-		[Option('k', "ApiKey", Required = true, HelpText = "The API key for the server")]
+		[Option('k', "api-key", Required = false, HelpText = "The API key for the server")]
 		public string ApiKey { get; set; }
 
-		[Option('s', "Source", Required = true, HelpText = "Specifies the server URL")]
+		[Option("ApiKey", Required = false, Hidden = true, HelpText = "Alias for --api-key")]
+		public string ApiKeyAlias {
+			get => ApiKey;
+			set { if (!string.IsNullOrEmpty(value)) ApiKey = value; }
+		}
+
+		[Option('s', "source", Required = false, HelpText = "Specifies the server URL")]
 		public string SourceUrl { get; set; }
+
+		[Option("Source", Required = false, Hidden = true, HelpText = "Alias for --source")]
+		public string SourceUrlAlias {
+			get => SourceUrl;
+			set { if (!string.IsNullOrEmpty(value)) SourceUrl = value; }
+		}
 
 	}
 
 	public class PushNuGetPackagesCommand : Command<PushNuGetPkgsOptions>
 	{
 		private INuGetManager _nugetManager;
+		private readonly ILogger _logger;
 
-		public PushNuGetPackagesCommand(INuGetManager nugetManager) {
+		public PushNuGetPackagesCommand(INuGetManager nugetManager, ILogger logger) {
 			nugetManager.CheckArgumentNull(nameof(nugetManager));
 			_nugetManager = nugetManager;
+			_logger = logger;
 		}
 
 		public override int Execute(PushNuGetPkgsOptions options) {
 			try {
 				_nugetManager.Push(options.NugetPkgPath, options.ApiKey, options.SourceUrl);
-				Console.WriteLine("Done");
+				_logger.WriteLine("Done");
 				return 0;
 			} catch (Exception e) {
-				Console.WriteLine(e.Message);
+				_logger.WriteError(e.Message);
 				return 1;
 			}
 		}

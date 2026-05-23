@@ -91,6 +91,8 @@ public class DownloadConfigurationCommandOptionsValidator : AbstractValidator<Do
 public class DownloadConfigurationCommandOptions : EnvironmentOptions{
 	#region Properties: Public
 
+	internal override bool RequiredEnvironment => false;
+
 	[Option('b', "build", Required = false,
 		HelpText = "Path to Creatio zip file or extracted directory to get configuration from")]
 	public string BuildZipPath { get; set; }

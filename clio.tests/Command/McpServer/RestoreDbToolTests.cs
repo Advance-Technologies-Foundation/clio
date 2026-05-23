@@ -19,6 +19,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class RestoreDbToolTests {
 	[Test]
 	[Category("Unit")]
@@ -248,6 +249,7 @@ public sealed class RestoreDbToolTests {
 			: base(
 				logger,
 				Substitute.For<IFileSystem>(),
+				new System.IO.Abstractions.FileSystem(),
 				Substitute.For<IDbClientFactory>(),
 				Substitute.For<ISettingsRepository>(),
 				Substitute.For<ICreatioInstallerService>(),

@@ -25,6 +25,10 @@ clio upsert-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME>
 ## Behavior
 
 Calls SchemaDataDesignerService.svc/SaveSchema to upsert the given row in the remote DB.
+SaveSchema metadata is rebuilt from the primary key plus the columns present in the
+existing bound rows and the requested upsert payload.
+After remote mutation, read back from Creatio instead of treating the request payload
+or install log as proof.
 To sync the result to a local workspace, use restore-workspace separately.
 
 ## Example

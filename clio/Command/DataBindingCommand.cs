@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -18,12 +19,6 @@ namespace Clio.Command;
 /// </summary>
 [Verb("create-data-binding", HelpText = "Create or regenerate a package data binding")]
 public class CreateDataBindingOptions : EnvironmentOptions {
-	[Option("environment", Required = false, HelpText = "Environment name")]
-	public string? EnvironmentAlias {
-		get => Environment;
-		set => Environment = value;
-	}
-
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
@@ -623,7 +618,6 @@ internal sealed class DataBindingService(
 			}
 
 			row.Add(BuildMainRowValue(
-				descriptor.Name,
 				column,
 				node,
 				allowEmptyPrimaryKey || !column.IsKey,
@@ -714,7 +708,6 @@ internal sealed class DataBindingService(
 	}
 
 	private DataBindingRowValue BuildMainRowValue(
-		string bindingName,
 		DataBindingColumnDefinition column,
 		JsonNode? node,
 		bool allowEmptyString,
@@ -727,7 +720,6 @@ internal sealed class DataBindingService(
 			column.ColumnName,
 			allowEmptyString,
 			fileBasePath: valueFileBasePath);
-		converted = DataBindingDomainRules.NormalizeValue(bindingName, column.ColumnName, converted);
 		object? normalizedValue = NormalizeBindingRowValue(column, converted);
 		DataBindingRowValue rowValue = new() {
 			SchemaColumnUId = column.ColumnUId,
@@ -986,56 +978,27 @@ internal sealed class DataBindingService(
 	}
 }
 
-internal sealed class DataBindingSchemaClient(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+internal sealed class DataBindingSchemaClient(IRuntimeEntitySchemaReader runtimeEntitySchemaReader)
 	: IDataBindingSchemaClient {
 	public DataBindingSchema Fetch(string schemaName) {
-		if (string.IsNullOrWhiteSpace(schemaName)) {
-			throw new InvalidOperationException("Schema name is required.");
-		}
-
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
-		string response = applicationClient.ExecutePostRequest(url, $$"""{"Name":"{{schemaName}}"}""");
-		DataBindingRuntimeSchemaResponse? schemaResponse =
-			JsonSerializer.Deserialize<DataBindingRuntimeSchemaResponse>(response, DataBindingJson.Options);
-		if (schemaResponse?.Schema?.Columns?.Items is null || !schemaResponse.Success) {
-			throw new InvalidOperationException($"Runtime schema '{schemaName}' was not returned by Creatio.");
-		}
-
-		List<DataBindingSchemaColumn> columns = schemaResponse.Schema.Columns.Items.Values
+		RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(schemaName);
+		List<DataBindingSchemaColumn> columns = runtimeSchema.Columns
 			.Select(column => new DataBindingSchemaColumn(
 				column.UId,
 				column.Name,
 				column.DataValueType,
 				column.ReferenceSchemaName))
 			.ToList();
-		if (schemaResponse.Schema.PrimaryColumnUId == Guid.Empty) {
+		if (runtimeSchema.PrimaryColumnUId == Guid.Empty) {
 			throw new InvalidOperationException($"Schema '{schemaName}' does not expose a primary column.");
 		}
 
 		return new DataBindingSchema(
-			schemaResponse.Schema.UId,
-			schemaResponse.Schema.Name,
-			schemaResponse.Schema.PrimaryColumnUId,
+			runtimeSchema.UId,
+			runtimeSchema.Name,
+			runtimeSchema.PrimaryColumnUId,
 			columns,
-			schemaResponse.Schema.PrimaryDisplayColumnName ??
-			ResolvePrimaryDisplayColumnName(schemaResponse.Schema));
-	}
-
-	private static string? ResolvePrimaryDisplayColumnName(DataBindingRuntimeSchemaPayload schemaPayload) {
-		if (!string.IsNullOrWhiteSpace(schemaPayload.PrimaryDisplayColumnName)) {
-			return schemaPayload.PrimaryDisplayColumnName;
-		}
-
-		if (schemaPayload.PrimaryDisplayColumnUId is Guid primaryDisplayColumnUId &&
-			schemaPayload.Columns?.Items is not null) {
-			foreach (DataBindingRuntimeSchemaColumnPayload column in schemaPayload.Columns.Items.Values) {
-				if (column.UId == primaryDisplayColumnUId) {
-					return column.Name;
-				}
-			}
-		}
-
-		return null;
+			runtimeSchema.PrimaryDisplayColumnName);
 	}
 }
 
@@ -1247,7 +1210,7 @@ internal sealed class DataBindingTemplateCatalog : IDataBindingTemplateSchemaCat
 					new DataBindingSchemaColumn(new Guid("b3fefb7f-2aab-4b16-97aa-6ca3f3bd7ac2"), "SysPageSchemaUId", 0, null),
 					new DataBindingSchemaColumn(new Guid("1e4741cc-9a6e-446f-9865-5f5910fadd67"), "Type", 4, null),
 					new DataBindingSchemaColumn(new Guid("f3a29fb6-f13d-443e-8360-d4f51e8bcec8"), "TypeColumnValue", 0, null)
-				])
+				]),
 		};
 
 	public bool HasTemplate(string schemaName) {
@@ -1271,66 +1234,6 @@ internal sealed class DataBindingSerializer : IDataBindingSerializer {
 
 	public string SerializePackageData(DataBindingPackageDataFile dataFile) {
 		return JsonSerializer.Serialize(dataFile, DataBindingJson.Options);
-	}
-}
-
-internal enum SysModuleAllowedIconBackgroundColor {
-	HexA6DE00,
-	Hex20A959,
-	Hex22AC14,
-	HexFFAC07,
-	HexFF8800,
-	HexF9307F,
-	HexFF602E,
-	HexFF4013,
-	HexB87CCF,
-	Hex7848EE,
-	Hex247EE5,
-	Hex0058EF,
-	Hex009DE3,
-	Hex4F43C2,
-	Hex08857E,
-	Hex00BFA5
-}
-
-internal static class DataBindingDomainRules {
-	private static readonly IReadOnlyDictionary<SysModuleAllowedIconBackgroundColor, string> SysModuleIconBackgroundPalette =
-		new Dictionary<SysModuleAllowedIconBackgroundColor, string> {
-			[SysModuleAllowedIconBackgroundColor.HexA6DE00] = "#A6DE00",
-			[SysModuleAllowedIconBackgroundColor.Hex20A959] = "#20A959",
-			[SysModuleAllowedIconBackgroundColor.Hex22AC14] = "#22AC14",
-			[SysModuleAllowedIconBackgroundColor.HexFFAC07] = "#FFAC07",
-			[SysModuleAllowedIconBackgroundColor.HexFF8800] = "#FF8800",
-			[SysModuleAllowedIconBackgroundColor.HexF9307F] = "#F9307F",
-			[SysModuleAllowedIconBackgroundColor.HexFF602E] = "#FF602E",
-			[SysModuleAllowedIconBackgroundColor.HexFF4013] = "#FF4013",
-			[SysModuleAllowedIconBackgroundColor.HexB87CCF] = "#B87CCF",
-			[SysModuleAllowedIconBackgroundColor.Hex7848EE] = "#7848EE",
-			[SysModuleAllowedIconBackgroundColor.Hex247EE5] = "#247EE5",
-			[SysModuleAllowedIconBackgroundColor.Hex0058EF] = "#0058EF",
-			[SysModuleAllowedIconBackgroundColor.Hex009DE3] = "#009DE3",
-			[SysModuleAllowedIconBackgroundColor.Hex4F43C2] = "#4F43C2",
-			[SysModuleAllowedIconBackgroundColor.Hex08857E] = "#08857E",
-			[SysModuleAllowedIconBackgroundColor.Hex00BFA5] = "#00BFA5"
-		};
-
-	private static readonly IReadOnlyDictionary<string, string> SysModuleIconBackgroundLookup =
-		SysModuleIconBackgroundPalette.Values.ToDictionary(color => color, color => color, StringComparer.OrdinalIgnoreCase);
-
-	public static object? NormalizeValue(string bindingName, string columnName, object? value) {
-		if (!string.Equals(bindingName, "SysModule", StringComparison.OrdinalIgnoreCase) ||
-			!string.Equals(columnName, "IconBackground", StringComparison.OrdinalIgnoreCase) ||
-			value is not string stringValue ||
-			string.IsNullOrWhiteSpace(stringValue)) {
-			return value;
-		}
-
-		if (SysModuleIconBackgroundLookup.TryGetValue(stringValue, out string? normalizedColor)) {
-			return normalizedColor;
-		}
-
-		throw new InvalidOperationException(
-			$"Column 'IconBackground' for binding 'SysModule' must use one of the predefined colors: {string.Join(", ", SysModuleIconBackgroundPalette.Values)}.");
 	}
 }
 
@@ -1573,53 +1476,6 @@ internal static class DataBindingJson {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		WriteIndented = true
 	};
-}
-
-internal sealed class DataBindingRuntimeSchemaResponse {
-	[JsonPropertyName("schema")]
-	public DataBindingRuntimeSchemaPayload? Schema { get; set; }
-
-	[JsonPropertyName("success")]
-	public bool Success { get; set; }
-}
-
-internal sealed class DataBindingRuntimeSchemaPayload {
-	[JsonPropertyName("columns")]
-	public DataBindingRuntimeSchemaColumns? Columns { get; set; }
-
-	[JsonPropertyName("primaryColumnUId")]
-	public Guid PrimaryColumnUId { get; set; }
-
-	[JsonPropertyName("uId")]
-	public Guid UId { get; set; }
-
-	[JsonPropertyName("name")]
-	public string Name { get; set; } = string.Empty;
-
-	[JsonPropertyName("primaryDisplayColumnName")]
-	public string? PrimaryDisplayColumnName { get; set; }
-
-	[JsonPropertyName("primaryDisplayColumnUId")]
-	public Guid? PrimaryDisplayColumnUId { get; set; }
-}
-
-internal sealed class DataBindingRuntimeSchemaColumns {
-	[JsonPropertyName("Items")]
-	public Dictionary<Guid, DataBindingRuntimeSchemaColumnPayload> Items { get; set; } = new();
-}
-
-internal sealed class DataBindingRuntimeSchemaColumnPayload {
-	[JsonPropertyName("uId")]
-	public Guid UId { get; set; }
-
-	[JsonPropertyName("name")]
-	public string Name { get; set; } = string.Empty;
-
-	[JsonPropertyName("dataValueType")]
-	public int DataValueType { get; set; }
-
-	[JsonPropertyName("referenceSchemaName")]
-	public string? ReferenceSchemaName { get; set; }
 }
 
 internal sealed class DataBindingDescriptorFile {

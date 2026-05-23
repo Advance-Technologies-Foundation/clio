@@ -29,6 +29,8 @@ public class NullLogger : ILogger
 	public void WriteInfo(string value) { }
 	public void WriteDebug(string value) { }
 	public void WriteDebug(string message, Dictionary<string, object> metadata) { }
+	public void BeginSpinner(string message) { }
+	public void EndSpinner(bool success = true) { }
 	public void PrintTable(ConsoleTable table) { }
 	public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) { }
 	public void Dispose() { }

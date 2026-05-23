@@ -20,13 +20,41 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-application`](docs/commands/download-application.md) - Download an application package from Creatio, `dapp`, `download-app`
 <a id="get-app-hash"></a>
 - [`get-app-hash`](docs/commands/get-app-hash.md) - Calculate the hash of an application package
+<a id="create-app"></a>
+- [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
+<a id="get-app-info"></a>
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+<a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
 <a id="apps"></a>
 <a id="apps-list"></a>
 <a id="lia"></a>
-<a id="list-apps"></a>
-- [`get-app-list`](docs/commands/get-app-list.md) - List installed applications, `app-list`, `apps`, `apps-list`, `lia`, `list-apps`
+- [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
+<a id="create-app-section"></a>
+- [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
+<a id="update-app-section"></a>
+- [`update-app-section`](docs/commands/update-app-section.md) - Update metadata of a section inside an existing installed application
+<a id="delete-app-section"></a>
+- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its artifacts from an existing installed application
+<a id="list-app-sections"></a>
+- [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
+<a id="idp-list"></a>
+- [`idp-list`](docs/commands/idp-list.md) - List identity providers
+<a id="idp-upsert"></a>
+- [`idp-upsert`](docs/commands/idp-upsert.md) - Create or update an identity provider
+<a id="idp-set-secret"></a>
+- [`idp-set-secret`](docs/commands/idp-set-secret.md) - Set identity provider client secret
+<a id="idp-delete"></a>
+- [`idp-delete`](docs/commands/idp-delete.md) - Delete an identity provider
+<a id="idp-set-default"></a>
+- [`idp-set-default`](docs/commands/idp-set-default.md) - Set the default identity provider
+<a id="idp-bind"></a>
+- [`idp-bind`](docs/commands/idp-bind.md) - Bind an identity provider to an external service code
+<a id="idp-unbind"></a>
+- [`idp-unbind`](docs/commands/idp-unbind.md) - Unbind an identity provider from an external service code
+<a id="idp-services"></a>
+- [`idp-services`](docs/commands/idp-services.md) - List external services and identity provider bindings
 <a id="get-info"></a>
 <a id="describe"></a>
 <a id="describe-creatio"></a>
@@ -74,10 +102,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="localenvs"></a>
 - [`show-local-envs`](docs/commands/show-local-envs.md) - Show local environments with filesystem and auth status, `localenvs`
 <a id="show-web-app-list"></a>
+<a id="list-environments"></a>
 <a id="env"></a>
 <a id="envs"></a>
 <a id="show-web-app"></a>
-- [`show-web-app-list`](docs/commands/show-web-app-list.md) - List registered Creatio environments, `env`, `envs`, `show-web-app`
+- [`list-environments`](docs/commands/list-environments.md) - List registered Creatio environments, `show-web-app-list`, `env`, `envs`, `show-web-app`
 <a id="uninstall-app-remote"></a>
 <a id="uninstall"></a>
 - [`uninstall-app-remote`](docs/commands/uninstall-app-remote.md) - Uninstall an application package from Creatio, `uninstall`
@@ -125,9 +154,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="comp-pkg"></a>
 <a id="compress"></a>
 - [`generate-pkg-zip`](docs/commands/generate-pkg-zip.md) - Prepare an archive of creatio package, `comp-pkg`, `compress`
+<a id="generate-source-code"></a>
+<a id="gsc"></a>
+- [`generate-source-code`](docs/commands/generate-source-code.md) - Generate source code for schemas in Creatio, `gsc`
 <a id="get-pkg-list"></a>
+<a id="list-packages"></a>
 <a id="packages"></a>
-- [`get-pkg-list`](docs/commands/get-pkg-list.md) - List packages in a Creatio environment, `packages`
+- [`list-packages`](docs/commands/list-packages.md) - List packages in a Creatio environment, `get-pkg-list`, `packages`
 <a id="get-pkg-version"></a>
 <a id="gpv"></a>
 - [`get-pkg-version`](docs/commands/get-pkg-version.md) - Get package version, `gpv`
@@ -172,6 +205,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="unlock-package"></a>
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
+<a id="autoupdate"></a>
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic updates on startup
+
 <a id="update-cli"></a>
 <a id="update"></a>
 - [`update-cli`](docs/commands/update-cli.md) - Update clio, `update`
@@ -266,8 +302,19 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="cs"></a>
 <a id="callservice"></a>
 - [`call-service`](docs/commands/call-service.md) - Call a Creatio service endpoint, `cs`
+<a id="create-client-unit-schema"></a>
+<a id="client-unit-schema-create"></a>
+- [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
 - [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+<a id="create-lookup"></a>
+- [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
+<a id="create-schema"></a>
+<a id="schema-create"></a>
+- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, `schema-create`
+<a id="create-sql-schema"></a>
+<a id="sql-schema-create"></a>
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -285,10 +332,21 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
+<a id="get-client-unit-schema"></a>
+<a id="client-unit-schema-get"></a>
+- [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
 - [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
+<a id="find-entity-schema"></a>
+- [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema
+<a id="get-schema"></a>
+<a id="schema-get"></a>
+- [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
+<a id="get-sql-schema"></a>
+<a id="sql-schema-get"></a>
+- [`get-sql-schema`](docs/commands/get-sql-schema.md) - Read body and metadata of a SQL script schema on a remote Creatio environment, `sql-schema-get`
 <a id="git-sync"></a>
 <a id="sync"></a>
 - [`git-sync`](docs/commands/git-sync.md) - Syncs environment with Git repository, `sync`
@@ -297,6 +355,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="i"></a>
 <a id="ver"></a>
 - [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+<a id="install-sql-schema"></a>
+<a id="sql-schema-install"></a>
+<a id="execute-sql-schema"></a>
+- [`install-sql-schema`](docs/commands/install-sql-schema.md) - Execute a SQL script schema on a remote Creatio environment (irreversible raw SQL), `sql-schema-install`, `execute-sql-schema`
 <a id="listen"></a>
 - [`listen`](docs/commands/listen.md) - Stream Creatio log events over WebSocket
 <a id="mock-data"></a>
@@ -323,12 +385,25 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="os"></a>
 <a id="settings"></a>
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
+<a id="get-page"></a>
 <a id="page-get"></a>
-- [`page-get`](docs/commands/page-get.md) - Get a Freedom UI page bundle and raw schema body
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="list-pages"></a>
 <a id="page-list"></a>
-- [`page-list`](docs/commands/page-list.md) - List Freedom UI pages
+- [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
+<a id="update-client-unit-schema"></a>
+<a id="client-unit-schema-update"></a>
+- [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
+<a id="update-page"></a>
 <a id="page-update"></a>
-- [`page-update`](docs/commands/page-update.md) - Update Freedom UI page schema body
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
+<a id="create-page"></a>
+<a id="page-create"></a>
+- [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
+<a id="list-page-templates"></a>
+<a id="page-templates"></a>
+<a id="page-templates-list"></a>
+- [`list-page-templates`](docs/commands/list-page-templates.md) - List Freedom UI page templates available for create-page, `page-templates`, `page-templates-list`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
@@ -344,11 +419,17 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`show-package-file-content`](docs/commands/show-package-file-content.md) - Show files that belong to a package, `files`, `show-files`
 <a id="update-entity-schema"></a>
 - [`update-entity-schema`](docs/commands/update-entity-schema.md) - Apply batch column operations to a remote Creatio entity schema
+<a id="update-schema"></a>
+<a id="schema-update"></a>
+- [`update-schema`](docs/commands/update-schema.md) - Update the body of a C# source-code schema on a remote Creatio environment, `schema-update`
+<a id="update-sql-schema"></a>
+<a id="sql-schema-update"></a>
+- [`update-sql-schema`](docs/commands/update-sql-schema.md) - Update the body of a SQL script schema on a remote Creatio environment, `sql-schema-update`
 
 ## Deployment & Infrastructure
 
 <a id="build-docker-image"></a>
-- [`build-docker-image`](docs/commands/build-docker-image.md) - Build a Docker image for a Creatio .NET 8+ distribution or bundled database backup
+- [`build-docker-image`](docs/commands/build-docker-image.md) - Build one or more Docker images for a Creatio .NET 8+ distribution or bundled database backup
 <a id="check-windows-features"></a>
 <a id="cf"></a>
 <a id="checkf"></a>
@@ -454,10 +535,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
 <a id="install-skills"></a>
 - [`install-skills`](docs/commands/install-skills.md) - Install managed skills from a repository
-<a id="install-tide"></a>
-<a id="itide"></a>
-<a id="tide"></a>
-- [`install-tide`](docs/commands/install-tide.md) - Install T.I.D.E. for the current environment, `itide`, `tide`
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`

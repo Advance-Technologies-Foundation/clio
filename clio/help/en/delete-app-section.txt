@@ -1,0 +1,48 @@
+COMMAND TYPE
+    Application management commands
+
+NAME
+    delete-app-section - Delete a section from an existing installed application
+
+DESCRIPTION
+    The delete-app-section command removes a section and all its associated
+    metadata artifacts from a Creatio application. The following artifacts
+    are deleted in order:
+
+        - SysModuleInWorkplace records (workplace visibility entries)
+        - SysModuleLcz records (section localizations, if any)
+        - Freedom UI page schemas and addon schemas (via WorkspaceExplorer)
+        - SysModuleEntity record (section-to-entity binding)
+        - SysModule record (the section itself)
+
+    By default, the underlying entity schema is preserved. Pass
+    --delete-entity-schema to remove it as well.
+
+SYNOPSIS
+    clio delete-app-section [options]
+
+OPTIONS
+    --application-code               Installed application code. Required.
+
+    --section-code                   Section code (schema name). Required.
+
+    --delete-entity-schema           Also delete the underlying entity schema.
+                                     Default: false
+
+    --Environment            -e      Environment name. Required.
+
+EXAMPLE
+    clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders -e dev
+        delete the UsrOrders section from UsrOrdersApp, keeping the entity schema
+
+    clio delete-app-section --application-code UsrOrdersApp --section-code UsrOrders --delete-entity-schema -e dev
+        delete the section and also remove the UsrOrders entity schema
+
+NOTES
+    - The entity schema is preserved by default so data in the underlying
+      table is not lost.
+    - The command is destructive and cannot be undone.
+    - cliogate must be installed on the target environment.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

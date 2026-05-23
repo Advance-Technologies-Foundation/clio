@@ -5,9 +5,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.ApplicationCommand;
+using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.EntitySchemaDesigner;
@@ -27,6 +30,8 @@ using Clio.Common.K8;
 using Clio.Common.Kubernetes;
 using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
+using Clio.Common.DataForge;
+using Clio.Common.EntitySchema;
 using Clio.ComposableApplication;
 using Clio.Help;
 using Clio.Package;
@@ -46,6 +51,7 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -90,6 +96,7 @@ public class BindingsModule {
 		RegisterAssemblyInterfaceTypes(services);
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
+		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton<IDbOperationLogContextAccessor, DbOperationLogContextAccessor>();
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
@@ -108,19 +115,19 @@ public class BindingsModule {
 
 		if (activeSettings is not null) {
 			services.AddSingleton(activeSettings);
-			services.AddTransient<IDataProvider>(_ => string.IsNullOrEmpty(activeSettings.ClientId)
-				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-					activeSettings.IsNetCore)
-				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-					activeSettings.ClientSecret, activeSettings.IsNetCore));
-			CreatioClient creatioClient = string.IsNullOrEmpty(activeSettings.ClientId)
+			services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
+				string.IsNullOrEmpty(activeSettings.ClientId)
+					? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
+						activeSettings.IsNetCore)
+					: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
+						activeSettings.ClientSecret, activeSettings.IsNetCore)));
+			Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
 				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
 					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
-					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore);
-			
-			services.AddSingleton(creatioClient);
-			services.AddSingleton<IApplicationClient>(new CreatioClientAdapter(creatioClient));
+					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
+			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
+			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
 			services.AddTransient<SysSettingsManager>();
 		}
 
@@ -179,6 +186,7 @@ public class BindingsModule {
 		services.AddSingleton(serializer);
 
 		services.AddTransient<IProcessExecutor, ProcessExecutor>();
+		services.AddTransient<IDotnetExecutor, DotnetExecutor>();
 		services.AddTransient<IPackageUtilities, PackageUtilities>();
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
@@ -191,25 +199,110 @@ public class BindingsModule {
 		services.AddTransient<DeleteSkillCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
+		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
+		services.AddTransient<CreateAppSectionCommand>();
+		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
+		services.AddTransient<UpdateAppSectionCommand>();
+		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
+		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
+		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
+		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
+		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
+		services.AddTransient<CreateEntityBusinessRuleCommand>();
+		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
+		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
+		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
+		services.AddTransient<CreatePageBusinessRuleCommand>();
+		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
+		services.AddTransient<DeleteAppSectionCommand>();
+		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
+		services.AddTransient<GetAppSectionsCommand>();
+		services.AddTransient<IdentityProviderListCommand>();
+		services.AddTransient<IdentityProviderUpsertCommand>();
+		services.AddTransient<IdentityProviderSetSecretCommand>();
+		services.AddTransient<IdentityProviderDeleteCommand>();
+		services.AddTransient<IdentityProviderSetDefaultCommand>();
+		services.AddTransient<IdentityProviderBindCommand>();
+		services.AddTransient<IdentityProviderUnbindCommand>();
+		services.AddTransient<IdentityProviderServicesCommand>();
+		services.AddTransient<CreateAppCommand>();
+		services.AddTransient<GetAppInfoCommand>();
+		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<PageTemplatesListCommand>();
+		services.AddTransient<SourceCodeSchemaCreateCommand>();
+		services.AddTransient<SourceCodeSchemaUpdateCommand>();
+		services.AddTransient<GetSourceCodeSchemaCommand>();
+		services.AddTransient<ClientUnitSchemaCreateCommand>();
+		services.AddTransient<ClientUnitSchemaUpdateCommand>();
+		services.AddTransient<GetClientUnitSchemaCommand>();
+		services.AddTransient<SqlSchemaCreateCommand>();
+		services.AddTransient<SqlSchemaGetCommand>();
+		services.AddTransient<SqlSchemaUpdateCommand>();
+		services.AddTransient<SqlSchemaInstallCommand>();
+		services.AddTransient<ISchemaTemplateCatalog, SchemaTemplateCatalog>();
 		services.AddTransient<IPageDesignerHierarchyClient, PageDesignerHierarchyClient>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
+		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
+		services.AddTransient<ApplicationGetListTool>();
+		services.AddTransient<ApplicationGetInfoTool>();
+		services.AddTransient<ApplicationCreateTool>();
+		services.AddTransient<ApplicationSectionCreateTool>();
+		services.AddTransient<ApplicationSectionUpdateTool>();
+		services.AddTransient<CreateEntityBusinessRuleTool>();
+		services.AddTransient<CreatePageBusinessRuleTool>();
+		services.AddTransient<ApplicationSectionDeleteTool>();
+		services.AddTransient<ApplicationSectionGetListTool>();
+		services.AddTransient<ApplicationDeleteTool>();
+		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<PageCreateTool>();
+		services.AddTransient<PageTemplatesListTool>();
+		services.AddTransient<SchemaCreateTool>();
+		services.AddTransient<SchemaUpdateTool>();
+		services.AddTransient<GetSchemaTool>();
+		services.AddTransient<ClientUnitSchemaCreateTool>();
+		services.AddTransient<ClientUnitSchemaUpdateTool>();
+		services.AddTransient<GetClientUnitSchemaTool>();
+		services.AddTransient<SqlSchemaCreateTool>();
+		services.AddTransient<SqlSchemaGetTool>();
+		services.AddTransient<SqlSchemaUpdateTool>();
+		services.AddTransient<SqlSchemaInstallTool>();
+		services.AddTransient<DeleteSchemaTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<DataForgeTool>();
+		services.AddTransient<SysSettingGetTool>();
+		services.AddTransient<SysSettingsListTool>();
+		services.AddTransient<SysSettingCreateTool>();
+		services.AddTransient<SysSettingUpdateTool>();
+		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
+		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
+		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
+		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
+		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
+		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
+		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
+		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<OpenCfgCommand>();
-		services.AddTransient<InstallGatePkgCommand>();
+		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
@@ -222,6 +315,7 @@ public class BindingsModule {
 		services.AddTransient<CheckNugetUpdateCommand>();
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
+		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -270,6 +364,7 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommand>();
 		services.AddTransient<DeployCommand>();
 		services.AddTransient<InfoCommand>();
+		services.AddTransient<QuizCommand>();
 		services.AddTransient<ExtractPackageCommand>();
 		services.AddTransient<ExternalLinkCommand>();
 		services.AddTransient<PowerShellFactory>();
@@ -341,6 +436,8 @@ public class BindingsModule {
 			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
 			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
 		});
+		services.AddTransient<IisScannerHandler>();
+		services.AddTransient<IIisScanner, IisScannerHandler>();
 
 		services.AddTransient<ExternalLinkOptionsValidator>();
 		services.AddTransient<SetFsmConfigOptionsValidator>();
@@ -364,13 +461,13 @@ public class BindingsModule {
 		services.AddTransient<PullPkgCommand>();
 		services.AddTransient<AssemblyCommand>();
 		services.AddTransient<UninstallCreatioCommand>();
-		services.AddTransient<InstallTideCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<UpdateEntitySchemaCommand>();
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
@@ -388,23 +485,28 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
-		services.AddSingleton<ISystemServiceManager>(_ =>
-			RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? new LinuxSystemServiceManager() :
-			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? new MacOSSystemServiceManager() :
-			new WindowsSystemServiceManager());
-		services.AddSingleton<Common.IIS.IIISSiteDetector>(_ =>
+		services.AddSingleton<ISystemServiceManager>(sp => {
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+				return new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>());
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+				return new MacOSSystemServiceManager(sp.GetRequiredService<IProcessExecutor>());
+			return new WindowsSystemServiceManager();
+		});
+		services.AddSingleton<Common.IIS.IIISSiteDetector>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISSiteDetector()
+				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISSiteDetector());
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
-		services.AddSingleton<Common.IIS.IIISAppPoolManager>(_ =>
+		services.AddSingleton<Common.IIS.IIISAppPoolManager>(sp =>
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-				? new Common.IIS.WindowsIISAppPoolManager()
+				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
 		services.AddTransient<CompileConfigurationCommand>();
+		services.AddTransient<CompileWorkspaceCommand>();
+		services.AddTransient<GenerateSourceCodeCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
@@ -414,12 +516,26 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
-		services.AddMcpServer()
+		services.AddMcpServer(options => {
+					options.Capabilities ??= new();
+					options.Capabilities.Logging = new();
+					options.ServerInstructions = McpServerInstructions.Text;
+				})
 				.WithStdioServerTransport()
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
 				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
 		
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
+			envSettings => {
+				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
+					? new RemoteDataProvider(envSettings.Uri, envSettings.Login, envSettings.Password,
+						envSettings.IsNetCore)
+					: new RemoteDataProvider(envSettings.Uri, envSettings.AuthAppUri, envSettings.ClientId,
+						envSettings.ClientSecret, envSettings.IsNetCore);
+				return new SysSettingsManager(dataProvider);
+			});
+
 		RegisterFluentValidators(services);
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {
@@ -438,7 +554,7 @@ public class BindingsModule {
 		if (profile == BindingsModuleRegistrationProfile.EnvironmentScoped) {
 			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
 		}
-		return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
+		return CreateBootstrapPlaceholderEnvironment();
 	}
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
@@ -520,6 +636,17 @@ public class BindingsModule {
 	}
 
 	#endregion
+
+	private sealed class LazyDataProvider : IDataProvider {
+		private readonly Lazy<IDataProvider> _lazy;
+		internal LazyDataProvider(Func<IDataProvider> factory) => _lazy = new(factory);
+		public IDefaultValuesResponse GetDefaultValues(string entitySchemaName) => _lazy.Value.GetDefaultValues(entitySchemaName);
+		public IItemsResponse GetItems(ISelectQuery selectQuery) => _lazy.Value.GetItems(selectQuery);
+		public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => _lazy.Value.BatchExecute(queries);
+		public T GetSysSettingValue<T>(string sysSettingCode) => _lazy.Value.GetSysSettingValue<T>(sysSettingCode);
+		public bool GetFeatureEnabled(string featureCode) => _lazy.Value.GetFeatureEnabled(featureCode);
+		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => _lazy.Value.ExecuteProcess(request);
+	}
 
 }
 #pragma warning restore CLIO001 // Non-nullable field is uninitialized.

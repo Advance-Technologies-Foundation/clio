@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class K8SCommandTests : BaseClioModuleTests
 {
 	override protected void AdditionalRegistrations(IServiceCollection containerBuilder) {

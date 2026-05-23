@@ -14,6 +14,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions> {
 
 	private const string CreateNewSchemaUrl =

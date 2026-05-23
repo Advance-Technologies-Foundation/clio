@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command {
 
 	[TestFixture]
+	[Property("Module", "Core")]
 	public class UpdateCliCommandTests : BaseCommandTests<UpdateCliOptions> {
 
 		private IAppUpdater _mockAppUpdater;
@@ -24,6 +25,8 @@ namespace Clio.Tests.Command {
 			_mockAppUpdater = Substitute.For<IAppUpdater>();
 			_mockPromptService = Substitute.For<IUserPromptService>();
 			_mockLogger = Substitute.For<ILogger>();
+			_mockAppUpdater.GetUpdateType(Arg.Any<string>(), Arg.Any<string>()).Returns("build");
+			_mockAppUpdater.GetReleaseNotesAsync(Arg.Any<string>()).Returns(Task.FromResult<string>(null));
 			_command = new UpdateCliCommand(_mockAppUpdater, _mockPromptService, _mockLogger);
 		}
 

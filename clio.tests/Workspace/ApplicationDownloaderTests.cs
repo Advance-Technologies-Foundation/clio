@@ -13,6 +13,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Workspace;
 
 [TestFixture(Category = "Unit")]
+[Property("Module", "Workspace")]
 public class ApplicationDownloaderTests : BaseClioModuleTests
 {
 

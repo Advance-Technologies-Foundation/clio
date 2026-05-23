@@ -164,4 +164,3 @@ internal class ApplicationPackageListProviderTest
 		result.Should().BeEmpty("because null rows should be treated as empty collection");
 	}
 }
-

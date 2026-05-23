@@ -75,6 +75,42 @@ internal sealed class RuntimeEntitySchemaResponse : BaseResponse
 	public RuntimeEntitySchemaDto Schema { get; set; }
 }
 
+internal sealed class SystemValuesResponse : BaseResponse
+{
+	[JsonProperty("items")]
+	public SystemValueLookupValueDto[] Items { get; set; } = [];
+}
+
+internal sealed class SystemValueLookupValueDto
+{
+	[JsonProperty("value")]
+	public Guid Value { get; set; }
+
+	[JsonProperty("displayValue")]
+	public string DisplayValue { get; set; } = string.Empty;
+}
+
+internal sealed class SysSettingsSelectQueryResponse : BaseResponse
+{
+	[JsonProperty("rows")]
+	public SysSettingsSelectQueryRowDto[] Rows { get; set; } = [];
+}
+
+internal sealed class SysSettingsSelectQueryRowDto
+{
+	[JsonProperty("Id")]
+	public Guid Id { get; set; }
+
+	[JsonProperty("Code")]
+	public string Code { get; set; } = string.Empty;
+
+	[JsonProperty("Name")]
+	public string Name { get; set; } = string.Empty;
+
+	[JsonProperty("ValueTypeName")]
+	public string ValueTypeName { get; set; } = string.Empty;
+}
+
 internal sealed class RuntimeEntitySchemaDto
 {
 	[JsonProperty("uId")]
@@ -305,6 +341,9 @@ internal sealed class EntitySchemaColumnDto
 	[JsonProperty("isValueMasked")]
 	public bool ValueMasked { get; set; }
 
+	[JsonProperty("valueMaskingSettings")]
+	public EntitySchemaColumnValueMaskingSettingsDto ValueMaskingSettings { get; set; }
+
 	[JsonProperty("isFormatValidated")]
 	public bool FormatValidated { get; set; }
 
@@ -322,6 +361,18 @@ internal sealed class EntitySchemaColumnDto
 
 	[JsonProperty("isSensitiveData")]
 	public bool SensitiveData { get; set; }
+}
+
+internal sealed class EntitySchemaColumnValueMaskingSettingsDto
+{
+	[JsonProperty("pattern")]
+	public string Pattern { get; set; }
+
+	[JsonProperty("replacement")]
+	public string Replacement { get; set; }
+
+	[JsonProperty("adminOperationCode")]
+	public string AdminOperationCode { get; set; }
 }
 
 internal sealed class GetSchemaDesignItemRequestDto

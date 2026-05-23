@@ -9,7 +9,9 @@ DESCRIPTION
     application directory, or one of the bundled templates. The command resolves a
     bundled template (`base`, `dev`, `prod`, `db`) or a custom template directory,
     stages the required files into a temporary Docker build context, and invokes
-    the resolved container image CLI.
+    the resolved container image CLI. `--template` also accepts a comma-separated
+    template list such as `db,dev,prod` so one invocation can build several images
+    from the same prepared source payload.
 
     Container image CLI selection:
     - `--use-docker` forces docker for this invocation
@@ -40,7 +42,7 @@ DESCRIPTION
     - template `prod` + source folder `release-build` -> `creatio-prod:release-build`
 
 SYNOPSIS
-    clio build-docker-image --template <NAME_OR_PATH> [OPTIONS]
+    clio build-docker-image --template <NAME_OR_PATH[,NAME_OR_PATH...]> [OPTIONS]
 
 OPTIONS
     --from PATH
@@ -48,13 +50,15 @@ OPTIONS
         Bundled `db` expects the payload under a `db` folder in the source archive
         or directory.
 
-    --template NAME_OR_PATH
-        Required. Bundled template name (`base`, `dev`, `prod`, `db`) or custom
-        template directory path.
+    --template NAME_OR_PATH[,NAME_OR_PATH...]
+        Required. Bundled template name (`base`, `dev`, `prod`, `db`), custom
+        template directory path, or a comma-separated ordered list. Empty items
+        and duplicate template names are rejected.
 
     --output-path PATH
         Optional. Save the built image into a local tar file by running docker save.
-        Useful for air-gapped environments or offline transport.
+        For a multi-template build, PATH must be a directory and clio writes one
+        tar file per built image into that directory.
 
     --vscode-version VERSION
         Optional. Applies to the bundled `dev` template only. clio downloads the
@@ -164,9 +168,12 @@ TEMPLATES
         The directory must contain a Dockerfile.
 
 BEHAVIOR
-    1. Resolve and validate template
-    2. For templates other than `base`, resolve and validate source path
-    3. Prepare a temporary Docker build context
+    1. Resolve and validate the ordered template list
+    2. For batches that include any template other than `base`, resolve and validate source path once
+    3. Extract ZIP input at most once and reuse the prepared payload across the batch
+    4. Resolve the effective container image CLI from CLI flags or runtime probing once per invocation
+    5. Run the CLI version check once per invocation
+    6. For each template in order, prepare an isolated Docker build context
        - for bundled `db`, locate the source `db` directory and copy it to the
          Docker build context as `db/`
        - for `dev`, `prod`, and custom Creatio templates, exclude `db` directories
@@ -176,26 +183,28 @@ BEHAVIOR
        - Normalize staged `*.sh` files to Unix LF line endings for Linux container compatibility
        - for bundled `dev`, ensure the requested code-server archive is cached locally
          and copy it into the Docker build context as `code-server.tar.gz`
-    4. Resolve the effective container image CLI from CLI flags or runtime probing
-    5. Run the CLI version check
-    6. For bundled `dev` and `prod`, verify that the selected base image is available locally
+    7. For bundled `dev` and `prod`, verify that the selected base image is available locally
        - if it is missing and a cached base image archive exists, restore it first
        - when `nerdctl` is used, clio accepts the image from namespace `k8s.io`
          or `buildkit`
        - if it is available only in `k8s.io`, clio also syncs that image into the
          `buildkit` namespace so BuildKit can resolve `FROM <base-image>` locally
          without registry access
-    7. If `--registry` is set, run registry push preflight before the expensive image build
+    8. If `--registry` is set, run registry push preflight before the expensive image build
        - probe `GET /v2/` to confirm registry availability
        - probe `POST /v2/<repository>/blobs/uploads/` to confirm upload initiation
        - fail early when the registry is unreachable, rejects anonymous upload,
          or requires authentication
-    8. Run image build with `--pull=false` so locally cached base images are reused
-    9. Optionally run image save
-    10. Optionally run image tag + image push
+        - multi-template builds run this preflight once per invocation, then rely on
+          real tag/push results for each template
+    9. Run image build with `--pull=false` so locally cached base images are reused
+    10. Optionally run image save
+    11. Optionally run image tag + image push
        - clio now logs explicit `Tagging Docker image for registry push: ...`
          and `Pushing Docker image to registry: ...` lines before these steps
-    11. Clean up temporary files
+    12. Continue through the remaining templates even if one template build, save,
+        tag, or push step fails
+    13. Emit a batch summary and clean up temporary files
 
 PERFORMANCE NOTE
     Build log lines such as:
@@ -232,6 +241,9 @@ EXAMPLES
     Build a database-backup image from a ZIP archive:
         clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db
 
+    Build db, dev, and prod from one ZIP archive:
+        clio build-docker-image --from "C:\Creatio\8.3.4_StudioNet8.zip" --template db,dev,prod
+
     Build and export a tar file:
         clio build-docker-image \
           --from "/opt/builds/creatio-net8" \
@@ -244,6 +256,12 @@ EXAMPLES
           --template prod \
           --output-path "C:\Images\creatio-prod.tar" \
           --registry "ghcr.io/acme"
+
+    Build multiple templates and export one tar per image:
+        clio build-docker-image \
+          --from "C:\Creatio\8.3.4_StudioNet8.zip" \
+          --template db,dev,prod \
+          --output-path "C:\Images\batch"
 
     Force nerdctl for a single run:
         clio build-docker-image --from "/opt/builds/creatio-net8" --template prod --use-nerdctl

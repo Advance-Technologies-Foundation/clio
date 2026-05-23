@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class PingAppCommandTests : BaseCommandTests<PingAppOptions>{
 	
 	private PingAppCommand _command;

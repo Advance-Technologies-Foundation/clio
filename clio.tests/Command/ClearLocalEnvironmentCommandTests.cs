@@ -13,6 +13,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command
 {
 	[TestFixture]
+	[Property("Module", "Command")]
 	public class ClearLocalEnvironmentCommandTests : BaseCommandTests<ClearLocalEnvironmentOptions>
 	{
 		private ClearLocalEnvironmentCommand _command;

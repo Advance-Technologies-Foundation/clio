@@ -17,13 +17,25 @@ public class LinkPackageStoreOptions : EnvironmentOptions {
 
 	#region Properties: Public
 
-	[Option("packageStorePath", Required = true,
+	[Option("package-store-path", Required = false,
 		HelpText = "Path to PackageStore folder with structure: {Package_name}/{branches}/{version}/{content}")]
 	public string PackageStorePath { get; set; }
 
-	[Option("envPkgPath", Required = false,
+	[Option("packageStorePath", Required = false, Hidden = true, HelpText = "Alias for --package-store-path")]
+	public string PackageStorePathAlias {
+		get => PackageStorePath;
+		set { if (!string.IsNullOrEmpty(value)) PackageStorePath = value; }
+	}
+
+	[Option("env-pkg-path", Required = false,
 		HelpText = "Path to environment package folder ({LOCAL_CREATIO_PATH}Terrasoft.WebApp\\Terrasoft.Configuration\\Pkg)")]
 	public string EnvPkgPath { get; set; }
+
+	[Option("envPkgPath", Required = false, Hidden = true, HelpText = "Alias for --env-pkg-path")]
+	public string EnvPkgPathAlias {
+		get => EnvPkgPath;
+		set { if (!string.IsNullOrEmpty(value)) EnvPkgPath = value; }
+	}
 
 	#endregion
 

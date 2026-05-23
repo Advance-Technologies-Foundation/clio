@@ -4,6 +4,8 @@ using NUnit.Framework;
 
 namespace Clio.Tests;
 
+[Category("Unit")]
+[Property("Module", "Core")]
 internal class CommonTests
 {
 	[Test, Category("Unit")]

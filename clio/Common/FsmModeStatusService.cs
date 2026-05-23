@@ -25,16 +25,22 @@ public sealed class FsmModeStatusService : IFsmModeStatusService
 {
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IApplicationClientFactory _applicationClientFactory;
+	private readonly IServiceUrlBuilderFactory _serviceUrlBuilderFactory;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="FsmModeStatusService"/> class.
 	/// </summary>
 	/// <param name="settingsRepository">Repository used to resolve registered environments.</param>
 	/// <param name="applicationClientFactory">Factory used to create environment clients.</param>
-	public FsmModeStatusService(ISettingsRepository settingsRepository, IApplicationClientFactory applicationClientFactory)
+	/// <param name="serviceUrlBuilderFactory">Factory used to create service URL builders for runtime-resolved environments.</param>
+	public FsmModeStatusService(
+		ISettingsRepository settingsRepository,
+		IApplicationClientFactory applicationClientFactory,
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory)
 	{
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
+		_serviceUrlBuilderFactory = serviceUrlBuilderFactory ?? throw new ArgumentNullException(nameof(serviceUrlBuilderFactory));
 	}
 
 	/// <inheritdoc />
@@ -50,7 +56,7 @@ public sealed class FsmModeStatusService : IFsmModeStatusService
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 
 		IApplicationClient client = _applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		string requestUrl = new ServiceUrlBuilder(environmentSettings)
+		string requestUrl = _serviceUrlBuilderFactory.Create(environmentSettings)
 			.Build(ServiceUrlBuilder.KnownRoute.GetApplicationInfo);
 		string response = client.ExecutePostRequest(requestUrl, string.Empty);
 

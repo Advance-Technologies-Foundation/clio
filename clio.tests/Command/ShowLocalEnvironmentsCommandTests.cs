@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class ShowLocalEnvironmentsCommandTests : BaseCommandTests<ShowLocalEnvironmentsOptions>
 {
 	private ISettingsRepository _settingsRepository;

@@ -9,6 +9,7 @@ using Clio.Common;
 using Clio.Common.db;
 using Clio.UserEnvironment;
 using CommandLine;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -23,15 +24,33 @@ public class RestoreDbCommandOptions : EnvironmentOptions{
 		HelpText = "Disables reset password after restore")]
 	public bool DisableResetPassword { get; set; } = true;
 
-	[Option( "dbName", Required = false, HelpText = "dbName")]
+	[Option("db-name", Required = false, HelpText = "Database name")]
 	public string DbName { get; set; }
-	
-	[Option( "backupPath", Required = false, HelpText = "backup Path")]
+
+	[Option("dbName", Required = false, Hidden = true, HelpText = "Alias for --db-name")]
+	public string DbNameAlias {
+		get => DbName;
+		set { if (!string.IsNullOrEmpty(value)) DbName = value; }
+	}
+
+	[Option("backup-path", Required = false, HelpText = "Backup file path")]
 	public string BackupPath { get; set; }
 
-	[Option("dbServerName", Required = false, 
+	[Option("backupPath", Required = false, Hidden = true, HelpText = "Alias for --backup-path")]
+	public string BackupPathAlias {
+		get => BackupPath;
+		set { if (!string.IsNullOrEmpty(value)) BackupPath = value; }
+	}
+
+	[Option("db-server-name", Required = false,
 		HelpText = "Name of database server configuration from appsettings.json")]
 	public string DbServerName { get; set; }
+
+	[Option("dbServerName", Required = false, Hidden = true, HelpText = "Alias for --db-server-name")]
+	public string DbServerNameAlias {
+		get => DbServerName;
+		set { if (!string.IsNullOrEmpty(value)) DbServerName = value; }
+	}
 
 	[Option("drop-if-exists", Required = false, 
 		HelpText = "Automatically drops existing database if present without prompting")]
@@ -57,6 +76,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 
 	private readonly ILogger _logger;
 	private readonly IFileSystem _fileSystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly IDbClientFactory _dbClientFactory;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ICreatioInstallerService _creatioInstallerService;
@@ -85,7 +105,8 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	/// <param name="processExecutor">Process execution abstraction used to run <c>pg_restore</c>.</param>
 	/// <param name="dbOperationLogSessionFactory">Factory that creates per-invocation database operation log artifacts.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
-	public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IDbClientFactory dbClientFactory, 
+	public RestoreDbCommand(ILogger logger, IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem,
+		IDbClientFactory dbClientFactory,
 		ISettingsRepository settingsRepository, ICreatioInstallerService creatioInstallerService,
 		IDbConnectionTester dbConnectionTester, IBackupFileDetector backupFileDetector,
 		IPostgresToolsPathDetector postgresToolsPathDetector, IProcessExecutor processExecutor,
@@ -93,6 +114,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 		_logger = logger;
 		_fileSystem = fileSystem;
+		_abstractionsFileSystem = abstractionsFileSystem;
 		_dbClientFactory = dbClientFactory;
 		_settingsRepository = settingsRepository;
 		_creatioInstallerService = creatioInstallerService;
@@ -340,7 +362,7 @@ public class RestoreDbCommand : Command<RestoreDbCommandOptions>
 	private string ExtractBackupFromZip(string zipPath, string dbType, out BackupFileType backupType) {
 		backupType = BackupFileType.Unknown;
 		try {
-			string tempDir = CombinePath(Path.GetTempPath(), $"clio_restore_{Guid.NewGuid():N}");
+			string tempDir = CombinePath(_abstractionsFileSystem.Path.GetTempPath(), $"clio_restore_{Guid.NewGuid():N}");
 			_fileSystem.CreateDirectory(tempDir);
 
 			_logger.WriteInfo($"Extracting ZIP file to temporary directory: {tempDir}");

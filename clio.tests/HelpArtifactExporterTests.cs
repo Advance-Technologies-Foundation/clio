@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture]
+[Property("Module", "Core")]
 internal class HelpArtifactExporterTests : BaseClioModuleTests {
 	private string _helpDirectory;
 	private string _repositoryRoot;

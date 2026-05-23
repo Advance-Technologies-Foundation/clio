@@ -13,6 +13,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserTaskParametersOptions> {
 	private const string GetWorkspaceItemsUrl =
 		"https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems";

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using Clio.Common;
 using Clio.Workspaces;
 using CommandLine;
 using System.Linq;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command
 {
@@ -41,17 +41,19 @@ namespace Clio.Command
 
 		private readonly IWorkspaceMerger _workspaceMerger;
 		private readonly ILogger _logger;
+		private readonly IFileSystem _fileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public MergeWorkspacesCommand(IWorkspaceMerger workspaceMerger, ILogger logger)
+		public MergeWorkspacesCommand(IWorkspaceMerger workspaceMerger, ILogger logger, IFileSystem fileSystem)
 		{
 			workspaceMerger.CheckArgumentNull(nameof(workspaceMerger));
 			logger.CheckArgumentNull(nameof(logger));
 			_workspaceMerger = workspaceMerger;
 			_logger = logger;
+			_fileSystem = fileSystem;
 		}
 
 		#endregion
@@ -77,7 +79,7 @@ namespace Clio.Command
 				// Verify all workspace paths exist
 				foreach (string workspacePath in workspacePaths)
 				{
-					if (!Directory.Exists(workspacePath))
+					if (!_fileSystem.Directory.Exists(workspacePath))
 					{
 						_logger.WriteError($"Workspace directory not found: {workspacePath}");
 						return 1;

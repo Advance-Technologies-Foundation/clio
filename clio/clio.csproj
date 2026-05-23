@@ -1,17 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFrameworks>net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
 		<Authors>creatio rnd team</Authors>
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
-		<!-- Default version for local development. Will be overridden during release from tag -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.0.2.58</AssemblyVersion>
-		<FileVersion>$(AssemblyVersion)</FileVersion>
-		<Version>$(AssemblyVersion)</Version>
+		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.31</AssemblyVersion>
+		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
+		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
 		<PackageLicense>MIT</PackageLicense>
 		<RepositoryUrl>https://github.com/Advance-Technologies-Foundation/clio</RepositoryUrl>
@@ -22,8 +22,7 @@
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<CodeAnalysisRuleSet>clio.ruleset</CodeAnalysisRuleSet>
-		<LangVersion>latest</LangVersion>
-<!--		<UseAppHost>false</UseAppHost>-->
+		<LangVersion>12</LangVersion>
 		<NoWarn>NU5119;NU5118;NU1701;CS8632;CS0659;CS0661;CS0108;NU5100;CA1416;CS0169</NoWarn>
 	</PropertyGroup>
 
@@ -37,6 +36,7 @@
 		<PlatformTarget>AnyCPU</PlatformTarget>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 	</PropertyGroup>
+
 	<ItemGroup>
 		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
 			<_Parameter1>clio.tests</_Parameter1>
@@ -72,76 +72,69 @@
 		<Content Include="cliogate\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 		<Compile Remove="Wiki\**" />
 		<Content Include="Wiki\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 		<Compile Remove="help\**"/>
 		<Content Include="help\**">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+
+		<None Include="resources\**"/>
+		<Compile Remove="resources\**"/>
+		<Content Include="resources\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
 		<Content Include="Command\McpServer\Data\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
-		
+
 	</ItemGroup>
 
 	<Choose>
-		<When Condition="Exists('..\..\creatioclient\creatioclient\creatioclient.csproj')">
+		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
-				<ProjectReference Include="..\..\creatioclient\creatioclient\creatioclient.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="creatio.client" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
+				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
 
-	<Choose>
-		<When Condition="Exists('..\..\commandline\src\CommandLine\CommandLine.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\commandline\src\CommandLine\CommandLine.csproj"/>
-			</ItemGroup>
-		</When>
-		<Otherwise>
-			<ItemGroup>
-				<PackageReference Include="CommandLineSDK" />
-			</ItemGroup>
-		</Otherwise>
-	</Choose>
+				<!--
+				 Warning NU1903 : Package 'System.Security.Cryptography.Xml'
+				 10.0.5 has a known high severity vulnerability,
+				 https://github.com/advisories/GHSA-37gx-xxp4-5rgx
 
-	<Choose>
-		<When Condition="Exists('..\..\repository\ATF.Repository\ATF.Repository.csproj')">
-			<ItemGroup>
-				<ProjectReference Include="..\..\repository\ATF.Repository\ATF.Repository.csproj"/>
+				 Temporary workaround: pin to 10.0.6 which contains the fix,
+				 but doesn't have a CVE published yet.
+
+				 Offending package Powershell.SDK
+				-->
+				<PackageReference Include="System.Security.Cryptography.Xml" />
 			</ItemGroup>
 		</When>
 		<Otherwise>
 			<ItemGroup>
-				<PackageReference Include="ATF.Repository" />
+				<PackageReference Include="Microsoft.PowerShell.SDK"/>
 			</ItemGroup>
 		</Otherwise>
 	</Choose>
 
 	<ItemGroup>
-		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'" 
+		<ProjectReference Condition="'$(Configuration)|$(Platform)'!='Release|AnyCPU'"
 						  Include="..\Clio.Analyzers\Clio.Analyzers.csproj"
 		                  OutputItemType="Analyzer"
 		                  ReferenceOutputAssembly="false" />
-		
-		<PackageReference Include="DocumentFormat.OpenXmlSDK" VersionOverride="2.0.0"/>
-		<PackageReference Include="MediatR" VersionOverride="[12.5.0]"/>
-		<PackageReference Include="Microsoft.Dism" VersionOverride="4.0.7"/>
-		<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/> <!-- 7.4.13 Is the latest supported on .NET8-->
-		<PackageReference Include="Microsoft.Web.Administration" VersionOverride="11.1.0"/>
 	</ItemGroup>
-	
+
 	<ItemGroup Label="Centrally Managed Package Versions">
+		<PackageReference Include="creatio.client" />
+		<PackageReference Include="ATF.Repository" />
+		<PackageReference Include="MediatR" />
+		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
+		<PackageReference Include="Microsoft.Web.Administration" />
+		<PackageReference Include="Microsoft.Dism" />
+		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />
 		<PackageReference Include="OneOf" />
 		<PackageReference Include="Ignore" />
@@ -167,5 +160,27 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
-	
+
+	<ItemGroup>
+	  <Folder Include="tpl\workspace\.codex\skills\" />
+	</ItemGroup>
+
+	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
+	<Target Name="SetVersionFromGitTag"
+	        BeforeTargets="GenerateAssemblyInfo;GenerateNuspec"
+	        Condition="'$(AssemblyVersion)' == '0.0.0.0'">
+		<Exec Command="git describe --tags --abbrev=0 --match &quot;[0-9]*.[0-9]*.[0-9]*.[0-9]*&quot;"
+		      ConsoleToMSBuild="true"
+		      IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="_GitTagRaw"/>
+			<Output TaskParameter="ExitCode" PropertyName="_GitTagExitCode"/>
+		</Exec>
+		<PropertyGroup Condition="'$(_GitTagExitCode)' == '0' and '$(_GitTagRaw)' != ''">
+			<AssemblyVersion>$(_GitTagRaw.Trim())</AssemblyVersion>
+			<FileVersion>$(_GitTagRaw.Trim())</FileVersion>
+			<Version>$(_GitTagRaw.Trim())</Version>
+			<InformationalVersion>$(_GitTagRaw.Trim())</InformationalVersion>
+		</PropertyGroup>
+	</Target>
+
 </Project>

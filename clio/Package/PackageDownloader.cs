@@ -4,9 +4,9 @@ namespace Clio.Package
 {
 	using System;
 	using System.Collections.Generic;
-	using System.IO;
 	using Clio.Common;
 	using Clio.WebApplication;
+	using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 	#region Class: PackageDownloader
 
@@ -24,6 +24,7 @@ namespace Clio.Package
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IApplicationPing _applicationPing;
 		private readonly IFileSystem _fileSystem;
+		private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 		private readonly ILogger _logger;
 		private string _reportPath;
 
@@ -35,7 +36,7 @@ namespace Clio.Package
 				IApplicationClientFactory applicationClientFactory, IPackageArchiver packageArchiver,
 				IApplicationDownloader applicationDownloader, IServiceUrlBuilder serviceUrlBuilder,
 				IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
-				IFileSystem fileSystem, ILogger logger) {
+				IFileSystem fileSystem, IAbstractionsFileSystem abstractionsFileSystem, ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			packageArchiver.CheckArgumentNull(nameof(packageArchiver));
@@ -44,6 +45,7 @@ namespace Clio.Package
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			applicationPing.CheckArgumentNull(nameof(applicationPing));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
+			abstractionsFileSystem.CheckArgumentNull(nameof(abstractionsFileSystem));
 			logger.CheckArgumentNull(nameof(logger));
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
@@ -53,6 +55,7 @@ namespace Clio.Package
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_applicationPing = applicationPing;
 			_fileSystem = fileSystem;
+			_abstractionsFileSystem = abstractionsFileSystem;
 			_logger = logger;
 		}
 
@@ -72,7 +75,7 @@ namespace Clio.Package
 
 		private string GetPackageZipPath(string packageName, string destinationPath) {
 			string safePackageName = GetSafePackageName(packageName);
-			return Path.Combine(destinationPath, $"{safePackageName}.zip");
+			return _abstractionsFileSystem.Path.Combine(destinationPath, $"{safePackageName}.zip");
 		}
 
 		private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,

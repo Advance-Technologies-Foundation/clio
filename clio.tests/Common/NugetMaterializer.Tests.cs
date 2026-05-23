@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class NugetMaterializerTests
 {

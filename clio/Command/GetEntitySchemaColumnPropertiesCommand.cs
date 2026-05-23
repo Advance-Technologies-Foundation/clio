@@ -12,14 +12,26 @@ namespace Clio.Command;
 	HelpText = "Get column properties from a remote Creatio entity schema")]
 public class GetEntitySchemaColumnPropertiesOptions : RemoteCommandOptions
 {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText = "Target package name")]
 	public string Package { get; set; }
 
-	[Option("schema-name", Required = true, HelpText = "Entity schema name")]
+	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
+	public string? PackageNameAlias {
+		get => Package;
+		set { if (!string.IsNullOrEmpty(value)) Package = value; }
+	}
+
+	[Option("schema-name", Required = false, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }
 
-	[Option("column-name", Required = true, HelpText = "Column name")]
+	[Option("column-name", Required = false, HelpText = "Column name")]
 	public string ColumnName { get; set; }
+
+	[Option("column", Required = false, Hidden = true, HelpText = "Alias for --column-name")]
+	public string? ColumnAlias {
+		get => ColumnName;
+		set { if (!string.IsNullOrEmpty(value)) ColumnName = value; }
+	}
 }
 
 /// <summary>

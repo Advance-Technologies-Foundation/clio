@@ -1,20 +1,30 @@
 using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Common.IIS;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common.IIS;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class WindowsIISAppPoolManagerTests
 {
+	private IProcessExecutor _processExecutor;
+
+	[SetUp]
+	public void SetUp() {
+		_processExecutor = Substitute.For<IProcessExecutor>();
+	}
+
 	[Test]
 	[Description("Returns NotFound or Unknown when app pool does not exist (depends on IIS availability)")]
 	public async Task GetAppPoolState_ReturnsNotFound_WhenAppPoolDoesNotExist()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 		string nonExistentAppPool = "NonExistentAppPool_" + System.Guid.NewGuid();
 
 		// Act
@@ -32,7 +42,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task GetAppPoolState_ReturnsUnknown_WhenAppPoolNameIsNullOrEmpty()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 
 		// Act
 		string stateNull = await manager.GetAppPoolState(null);
@@ -50,7 +60,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task IsAppPoolRunning_ReturnsFalse_WhenAppPoolDoesNotExist()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 		string nonExistentAppPool = "NonExistentAppPool_" + System.Guid.NewGuid();
 
 		// Act
@@ -65,7 +75,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task StartAppPool_ReturnsFalse_WhenAppPoolDoesNotExist()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 		string nonExistentAppPool = "NonExistentAppPool_" + System.Guid.NewGuid();
 
 		// Act
@@ -80,7 +90,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task StopAppPool_ReturnsFalse_WhenAppPoolDoesNotExist()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 		string nonExistentAppPool = "NonExistentAppPool_" + System.Guid.NewGuid();
 
 		// Act
@@ -95,7 +105,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task StartAppPool_ReturnsFalse_WhenAppPoolNameIsNullOrEmpty()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 
 		// Act
 		bool startedNull = await manager.StartAppPool(null);
@@ -113,7 +123,7 @@ public class WindowsIISAppPoolManagerTests
 	public async Task StopAppPool_ReturnsFalse_WhenAppPoolNameIsNullOrEmpty()
 	{
 		// Arrange
-		WindowsIISAppPoolManager manager = new();
+		WindowsIISAppPoolManager manager = new(_processExecutor);
 
 		// Act
 		bool stoppedNull = await manager.StopAppPool(null);

@@ -238,4 +238,42 @@ public sealed class DependencyInjectionManualConstructionAnalyzerTests {
 			.Should()
 			.Be(1, because: "one explicit offending construction should produce one diagnostic");
 	}
+
+	[Test]
+	[Description("Does not report CLIO001 for Clio.EnvironmentSettings manual construction (DTO exempt).")]
+	public async Task RunAnalyzerAsync_WhenEnvironmentSettingsIsConstructedWithNew_ReturnsNoClio001Diagnostic() {
+		const string source = """
+		                    namespace Microsoft.Extensions.DependencyInjection {
+		                    	public interface IServiceCollection { }
+		                    	public sealed class ServiceCollection : IServiceCollection { }
+		                    	public static class ServiceCollectionServiceExtensions {
+		                    		public static IServiceCollection AddSingleton<TService>(
+		                    			this IServiceCollection services, TService instance) {
+		                    			return services;
+		                    		}
+		                    	}
+		                    }
+
+		                    namespace Clio {
+		                    	public sealed class EnvironmentSettings {
+		                    		public string Uri { get; set; }
+		                    	}
+
+		                    	public static class Program {
+		                    		public static void Run() {
+		                    			Microsoft.Extensions.DependencyInjection.IServiceCollection services =
+		                    				new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+		                    			services.AddSingleton(new EnvironmentSettings());
+		                    			EnvironmentSettings dto = new EnvironmentSettings { Uri = "http://x" };
+		                    		}
+		                    	}
+		                    }
+		                    """;
+		DependencyInjectionManualConstructionAnalyzer analyzer = new();
+
+		var diagnostics = await AnalyzerTestRunner.RunAnalyzerAsync(source, analyzer);
+
+		diagnostics.Should().NotContain(d => d.Id == "CLIO001",
+			because: "EnvironmentSettings is a DTO whose single DI-registered instance represents the active environment, while consumer code legitimately builds new instances for persistence, detection, or manifest assembly");
+	}
 }

@@ -26,8 +26,15 @@ public sealed class EntitySchemaDefaultValueConfig
 	/// Gets or sets the source payload for system settings or system values.
 	/// </summary>
 	[JsonPropertyName("value-source")]
-	[Description("System setting code or system value name. Used when source is Settings or SystemValue.")]
+	[Description("System setting or system value selector. For Settings accepts code, name, or id. For SystemValue accepts GUID, enum alias, or display caption. Used when source is Settings or SystemValue.")]
 	public string? ValueSource { get; init; }
+
+	/// <summary>
+	/// Gets or sets the canonical backend identifier resolved from <c>value-source</c>.
+	/// </summary>
+	[JsonPropertyName("resolved-value-source")]
+	[Description("Canonical persisted identifier resolved from value-source. SystemValue resolves to GUID; Settings resolves to setting code.")]
+	public string? ResolvedValueSource { get; init; }
 
 	/// <summary>
 	/// Gets or sets the optional prefix for sequence defaults.

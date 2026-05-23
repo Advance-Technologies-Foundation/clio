@@ -14,6 +14,7 @@ using Creatio.Client.Dto; // WsMessage type
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public class ListenCommandTestCase : BaseCommandTests<ListenOptions>, IDisposable
 {
 	#region Fields: Private

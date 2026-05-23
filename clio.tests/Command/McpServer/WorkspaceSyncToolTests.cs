@@ -17,6 +17,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class WorkspaceSyncToolTests {
 
 	[Test]
@@ -281,8 +282,8 @@ public sealed class WorkspaceSyncToolTests {
 				Substitute.For<IWorkspace>(),
 				new UnlockPackageCommand(
 					Substitute.For<IPackageLockManager>(),
-					Substitute.For<IClioGateway>(),
 					Substitute.For<ISysSettingsManager>(),
+					Substitute.For<IClioGateway>(),
 					Substitute.For<ILogger>()),
 				Substitute.For<IApplicationClientFactory>(),
 				new EnvironmentSettings(),

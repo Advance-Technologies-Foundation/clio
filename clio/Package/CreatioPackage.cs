@@ -6,11 +6,10 @@ using System.IO;
 namespace Clio
 {
 	public class CreatioPackage{
-		private readonly ILogger _logger;
+		private readonly IDotnetExecutor _dotnetExecutor;
 
-
-		public CreatioPackage(ILogger logger) {
-			_logger = logger;
+		public CreatioPackage(ILogger logger, IDotnetExecutor dotnetExecutor) {
+			_dotnetExecutor = dotnetExecutor;
 		}
 		
 		public const string DescriptorName = "descriptor.json";
@@ -52,11 +51,16 @@ namespace Clio
 			protected set => _createdOn = GetDateTimeTillSeconds(value);
 		}
 
-		protected CreatioPackage(string packageName, string maintainer) {
+		protected CreatioPackage(string packageName, string maintainer,
+			ILogger logger = null, IDotnetExecutor dotnetExecutor = null) {
 			PackageName = packageName;
 			Maintainer = maintainer;
 			CreatedOn = DateTime.UtcNow;
 			FullPath = Path.Combine(Environment.CurrentDirectory, packageName);
+			ILogger resolvedLogger = logger ?? ConsoleLogger.Instance;
+#pragma warning disable CLIO001
+			_dotnetExecutor = dotnetExecutor ?? new DotnetExecutor(new ProcessExecutor(resolvedLogger));
+#pragma warning restore CLIO001
 		}
 
 		private static DateTime GetDateTimeTillSeconds(DateTime dateTime) {
@@ -93,10 +97,7 @@ namespace Clio
 		}
 
 		private void ExecuteDotnetCommand(string command) {
-			ILogger logger = _logger ?? ConsoleLogger.Instance;
-			IProcessExecutor processExecutor = new ProcessExecutor(logger);
-			IDotnetExecutor dotnetExecutor = new DotnetExecutor(processExecutor);
-			dotnetExecutor.Execute(command, true, FullPath);
+			_dotnetExecutor.Execute(command, true, FullPath);
 		}
 
 		public static string GetExecutingDirectorybyAppDomain() {

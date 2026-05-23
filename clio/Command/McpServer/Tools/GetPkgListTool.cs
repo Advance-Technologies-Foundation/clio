@@ -11,7 +11,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for the <c>get-pkg-list</c> command.
+/// MCP tool surface for the <c>list-packages</c> command.
 /// </summary>
 public sealed class GetPkgListTool(
 	GetPkgListCommand command,
@@ -22,7 +22,7 @@ public sealed class GetPkgListTool(
 	/// <summary>
 	/// Stable MCP tool name for listing packages from a Creatio environment.
 	/// </summary>
-	internal const string GetPkgListToolName = "get-pkg-list";
+	internal const string GetPkgListToolName = "list-packages";
 
 	/// <summary>
 	/// Returns environment packages as structured MCP JSON.
@@ -31,7 +31,7 @@ public sealed class GetPkgListTool(
 		OpenWorld = false)]
 	[Description("Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.")]
 	public IReadOnlyList<PackageListItemResult> GetPkgList(
-		[Description("Get-pkg-list parameters")] [Required] GetPkgListArgs args) {
+		[Description("List-packages parameters")] [Required] GetPkgListArgs args) {
 		PkgListOptions options = new() {
 			Environment = args.EnvironmentName,
 			SearchPattern = args.Filter ?? string.Empty
@@ -40,7 +40,9 @@ public sealed class GetPkgListTool(
 		try {
 			resolvedCommand = ResolveCommand<GetPkgListCommand>(options);
 		} catch (Exception ex) {
-			throw new InvalidOperationException($"Failed to resolve environment: {ex.Message}", ex);
+			throw new InvalidOperationException(
+				$"Failed to resolve environment '{args.EnvironmentName}': {ex.Message}. " +
+				"Verify the environment is registered with 'reg-web-app' and accessible.", ex);
 		}
 		if (!resolvedCommand.TryGetFilteredPackages(options, out IReadOnlyList<PackageInfo> packages,
 				out string errorMessage, out string remediationMessage)) {
@@ -52,13 +54,14 @@ public sealed class GetPkgListTool(
 			.Select(package => new PackageListItemResult(
 				package.Descriptor.Name,
 				package.Descriptor.PackageVersion,
-				package.Descriptor.Maintainer))
+				package.Descriptor.Maintainer,
+				package.Descriptor.UId.ToString()))
 			.ToList();
 	}
 }
 
 /// <summary>
-/// MCP arguments for the <c>get-pkg-list</c> tool.
+/// MCP arguments for the <c>list-packages</c> tool.
 /// </summary>
 public sealed record GetPkgListArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -72,9 +75,10 @@ public sealed record GetPkgListArgs(
 );
 
 /// <summary>
-/// Structured package-list item returned by the <c>get-pkg-list</c> MCP tool.
+/// Structured package-list item returned by the <c>list-packages</c> MCP tool.
 /// </summary>
 public sealed record PackageListItemResult(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("version")] string Version,
-	[property: JsonPropertyName("maintainer")] string Maintainer);
+	[property: JsonPropertyName("maintainer")] string Maintainer,
+	[property: JsonPropertyName("uId")] string UId);

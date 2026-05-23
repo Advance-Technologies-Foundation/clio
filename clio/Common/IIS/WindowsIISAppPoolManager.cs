@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -9,6 +8,12 @@ namespace Clio.Common.IIS;
 public class WindowsIISAppPoolManager : IIISAppPoolManager
 {
 	private const string AppCmdPath = @"C:\Windows\System32\inetsrv\appcmd.exe";
+	private readonly IProcessExecutor _processExecutor;
+
+	public WindowsIISAppPoolManager(IProcessExecutor processExecutor)
+	{
+		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
+	}
 
 	private string ExecuteAppCmd(string arguments)
 	{
@@ -18,25 +23,7 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return string.Empty;
 			}
-
-			using Process process = new()
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = AppCmdPath,
-					Arguments = arguments,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			string output = process.StandardOutput.ReadToEnd();
-			process.WaitForExit();
-
-			return output;
+			return _processExecutor.Execute(AppCmdPath, arguments, waitForExit: true);
 		}
 		catch
 		{
@@ -52,19 +39,15 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return "Unknown";
 			}
-
-			// Check if IIS/appcmd is available first
 			if (!File.Exists(AppCmdPath))
 			{
 				return "Unknown";
 			}
-
 			string appPoolXml = ExecuteAppCmd($"list apppool \"{appPoolName}\" /xml");
 			if (string.IsNullOrWhiteSpace(appPoolXml))
 			{
 				return "NotFound";
 			}
-
 			try
 			{
 				XElement appPoolRoot = XElement.Parse(appPoolXml);
@@ -78,7 +61,6 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return "Unknown";
 			}
-
 			return "NotFound";
 		});
 	}
@@ -97,18 +79,15 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return false;
 			}
-
 			string currentState = GetAppPoolState(appPoolName).GetAwaiter().GetResult();
 			if (currentState == "NotFound")
 			{
 				return false;
 			}
-
 			if (currentState == "Started")
 			{
 				return true;
 			}
-
 			string result = ExecuteAppCmd($"start apppool \"{appPoolName}\"");
 			return !string.IsNullOrWhiteSpace(result) && !result.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
 		});
@@ -122,18 +101,15 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return false;
 			}
-
 			string currentState = GetAppPoolState(appPoolName).GetAwaiter().GetResult();
 			if (currentState == "NotFound")
 			{
 				return false;
 			}
-
 			if (currentState == "Stopped")
 			{
 				return true;
 			}
-
 			string result = ExecuteAppCmd($"stop apppool \"{appPoolName}\"");
 			return !string.IsNullOrWhiteSpace(result) && !result.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
 		});
@@ -147,7 +123,6 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return false;
 			}
-
 			string result = ExecuteAppCmd($"start site \"{siteName}\"");
 			return !string.IsNullOrWhiteSpace(result) && !result.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
 		});
@@ -161,13 +136,11 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return false;
 			}
-
 			string siteXml = ExecuteAppCmd($"list site \"{siteName}\" /xml");
 			if (string.IsNullOrWhiteSpace(siteXml))
 			{
 				return false;
 			}
-
 			try
 			{
 				XElement siteRoot = XElement.Parse(siteXml);
@@ -182,7 +155,6 @@ public class WindowsIISAppPoolManager : IIISAppPoolManager
 			{
 				return false;
 			}
-
 			return false;
 		});
 	}

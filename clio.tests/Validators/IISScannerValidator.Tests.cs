@@ -10,6 +10,8 @@ namespace Clio.Tests.Validators;
 #if !WINDOWS
 [Ignore("Windows only test")]
 #endif
+[Category("Unit")]
+[Property("Module", "Validators")]
 public class IISScannerRequestValidatorTestCase {
 
 	private ISSScannerValidator _sut;

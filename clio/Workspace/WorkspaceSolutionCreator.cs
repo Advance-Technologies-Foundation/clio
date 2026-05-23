@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Clio.Common;
 using Clio.Package;
 using Clio.Workspaces;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Workspace
 {
@@ -33,19 +33,22 @@ namespace Clio.Workspace
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly ISolutionCreator _solutionCreator;
 		private readonly IStandalonePackageFileManager _standalonePackageFileManager;
+		private readonly IAbstractionsFileSystem _fileSystem;
 
 		#endregion
 
 		#region Constructors: Public
 
 		public WorkspaceSolutionCreator(IWorkspacePathBuilder workspacePathBuilder, ISolutionCreator solutionCreator,
-				IStandalonePackageFileManager standalonePackageFileManager) {
+				IStandalonePackageFileManager standalonePackageFileManager, IAbstractionsFileSystem fileSystem) {
 			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
 			standalonePackageFileManager.CheckArgumentNull(nameof(standalonePackageFileManager));
+			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			_workspacePathBuilder = workspacePathBuilder;
 			_solutionCreator = solutionCreator;
 			_standalonePackageFileManager = standalonePackageFileManager;
+			_fileSystem = fileSystem;
 		}
 
 		#endregion
@@ -59,7 +62,7 @@ namespace Clio.Workspace
 			
 			foreach (StandalonePackageProject standalonePackageProject in standalonePackageProjects) {
 				string relativeStandaloneProjectPath =
-					Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
+					_fileSystem.Path.GetRelativePath(solutionFolderPath, standalonePackageProject.Path);
 				SolutionProject solutionProject = new (standalonePackageProject.PackageName, relativeStandaloneProjectPath);
 				solutionProjects.Add(solutionProject);
 			}

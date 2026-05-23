@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
@@ -18,6 +17,24 @@ using MediatR;
 
 namespace Clio.Requests;
 
+public enum SiteType {
+	NetFramework,
+	Core,
+	NotCreatioSite
+}
+
+public sealed record SiteBinding(string name, string state, string binding, string path) { }
+
+public sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
+
+public sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
+
+/// <summary>Provides discovery of Creatio sites registered in IIS.</summary>
+public interface IIisScanner {
+	IEnumerable<UnregisteredSite> FindAllCreatioSites();
+	IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites();
+}
+
 public class IISScannerRequest : IExternalLink {
 
 	#region Properties: Public
@@ -32,7 +49,7 @@ internal class AllUnregisteredSitesRequest : IRequest {
 
 	#region Fields: Public
 
-	public Action<IEnumerable<IISScannerHandler.UnregisteredSite>> Callback;
+	public Action<IEnumerable<UnregisteredSite>> Callback;
 
 	#endregion
 
@@ -41,7 +58,7 @@ internal class AllRegisteredSitesRequest : IRequest {
 
 	#region Fields: Public
 
-	public Action<IEnumerable<IISScannerHandler.RegisteredSite>> Callback;
+	public Action<IEnumerable<RegisteredSite>> Callback;
 
 	#endregion
 
@@ -78,128 +95,11 @@ internal class DeleteInstanceByNameRequest : IRequest {
 /// </remarks>
 /// <example>
 /// </example>
-internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISScannerRequest>,
+internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IRequestHandler<IISScannerRequest>,
 	IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
 	IRequestHandler<StopInstanceByNameRequest>,IRequestHandler<AllRegisteredSitesRequest> {
 
-	#region Enum: Internal
-
-	internal enum SiteType {
-
-		NetFramework,
-		Core,
-		NotCreatioSite
-
-	}
-
-	#endregion
-
 	#region Fields: Private
-
-	/// <summary>
-	///  Finds Creatio Sites in IIS that are not registered with clio
-	/// </summary>
-	private static readonly Func<ISettingsRepository, IEnumerable<UnregisteredSite>> FindUnregisteredCreatioSites = settingsRepository => {
-			return GetBindings().Where(site => {
-					bool isRegisteredEnvironment = false;
-					ConvertBindingToUri(site.binding).ForEach(uri => {
-						string key = settingsRepository.FindEnvironmentNameByUri(uri.ToString());
-						if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment) {
-							isRegisteredEnvironment = true;
-						}
-					});
-					return !isRegisteredEnvironment;
-				})
-				.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
-				.Select(site => new UnregisteredSite(
-					site,
-					ConvertBindingToUri(site.binding),
-					DetectSiteType(site.path)));
-		};
-
-	/// <summary>
-	///  Executes appcmd.exe with arguments and captures output
-	/// </summary>
-	private static readonly Func<string, string> _appcmd = args => {
-		const string dirPath = @"C:\Windows\System32\inetsrv\";
-		const string exeName = "appcmd.exe";
-		return Process.Start(new ProcessStartInfo {
-			RedirectStandardError = true,
-			RedirectStandardOutput = true,
-			UseShellExecute = false,
-			Arguments = args,
-			FileName = Path.Join(dirPath, exeName)
-		})?.StandardOutput.ReadToEnd();
-	};
-
-	private static readonly Action<string> StopAppPoolByName = name => { _appcmd($"stop apppool /apppool.name:{name}"); };
-
-	private static readonly Action<string> StopSiteByName = name => { _appcmd($"stop site /site.name:{name}"); };
-
-	private static readonly Action<string> RemoveSiteByName = name => { _appcmd($"delete site /site.name:{name}"); };
-
-	private static readonly Action<string> RemoveAppPoolByName = name => { _appcmd($"delete apppool /apppool.name:{name}"); };
-
-	
-	/// <summary>
-	///  Finds Creatio Sites in IIS that are not registered with clio
-	/// </summary>
-	internal static Func<IEnumerable<UnregisteredSite>> FindAllCreatioSites = () => {
-		return GetBindings()
-			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
-			.Select(site => new UnregisteredSite(
-				site,
-				ConvertBindingToUri(site.binding),
-				DetectSiteType(site.path)));
-	};
-	
-	/// <summary>
-	///  Finds Creatio Sites in IIS that are not registered with clio
-	/// </summary>
-	internal static readonly Func<IEnumerable<RegisteredSite>> FindAllRegisteredCreatioSites = () => {
-		return GetBindings()
-				.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
-				.Select(site => new RegisteredSite(
-					site,
-					ConvertBindingToUri(site.binding),
-					DetectSiteType(site.path)));
-	};
-
-	/// <summary>
-	///  Gets data from appcmd.exe
-	/// </summary>
-	private static readonly Func<IEnumerable<SiteBinding>> GetBindings = () => {
-		List<SiteBinding> result = [];
-		
-		// Get all top-level sites
-		string sitesXml = _appcmd("list sites /xml");
-		if (!string.IsNullOrWhiteSpace(sitesXml)) {
-			XElement sitesRoot = XElement.Parse(sitesXml);
-			IEnumerable<SiteBinding> topLevelSites = sitesRoot.Elements("SITE")
-				.Select(site => GetSiteBindingFromXmlElement(site));
-			result.AddRange(topLevelSites);
-		}
-		
-		// Get all applications to discover nested sites
-		string appsXml = _appcmd("list app /xml");
-		if (!string.IsNullOrWhiteSpace(appsXml)) {
-			XElement appsRoot = XElement.Parse(appsXml);
-			IEnumerable<SiteBinding> nestedApps = appsRoot.Elements("APP")
-				.Where(app => {
-					string appName = app.Attribute("APP.NAME")?.Value ?? string.Empty;
-					// APP.NAME format is "SiteName/AppPath" or "SiteName/" for root
-					// Skip root applications (ending with "/"), as they're already covered by top-level sites
-					// We only want nested applications like "Default Web Site/MyApp"
-					return !string.IsNullOrEmpty(appName) && 
-					       !appName.EndsWith("/") && 
-					       appName.Contains("/");
-				})
-				.Select(app => GetApplicationBindingFromXmlElement(app));
-			result.AddRange(nestedApps);
-		}
-		
-		return result;
-	};
 
 	/// <summary>
 	///  Splits IIS Binding into list
@@ -211,11 +111,7 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	/// </summary>
 	private static readonly Func<string, List<Uri>> ConvertBindingToUri = binding => {
 		List<Uri> result = [];
-
-		//"http/*:7080:localhost,http/*:7080:kkrylovn
 		SplitBinding(binding).ForEach(item => {
-			//http/*:7080:localhost
-			//http/*:80:
 			string[] items = item.Split(':');
 			if (items.Length >= 3) {
 				string hostName = string.IsNullOrEmpty(items[2]) ? "localhost" : items[2];
@@ -223,69 +119,12 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 				string other = items[0];
 				string protocol = other.Replace("/*", "");
 				string url = $"{protocol}://{hostName}:{port}";
-
 				if (Uri.TryCreate(url, UriKind.Absolute, out Uri value)) {
 					result.Add(value);
 				}
 			}
 		});
 		return result;
-	};
-
-	/// <summary>
-	///  Converts XElement to Sitebinding
-	/// </summary>
-	private static readonly Func<XElement, SiteBinding> GetSiteBindingFromXmlElement = xmlElement => new SiteBinding(
-		xmlElement.Attribute("SITE.NAME")?.Value,
-		xmlElement.Attribute("state")?.Value,
-		xmlElement.Attribute("bindings")?.Value,
-		_appcmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
-	);
-
-	/// <summary>
-	///  Converts Application XElement to SiteBinding for nested applications
-	/// </summary>
-	private static readonly Func<XElement, SiteBinding> GetApplicationBindingFromXmlElement = xmlElement => {
-		string appName = xmlElement.Attribute("APP.NAME")?.Value ?? string.Empty;
-		// APP.NAME format is "SiteName/AppPath" e.g., "Default Web Site/MyApp"
-		string[] parts = appName.Split('/', 2);
-		string siteName = parts.Length > 0 ? parts[0] : string.Empty;
-		string appPath = parts.Length > 1 ? ("/" + parts[1]) : string.Empty;
-		
-		// Get the site's bindings to construct the full URL
-		string siteXml = _appcmd($"list site \"{siteName}\" /xml");
-		string siteBindings = string.Empty;
-		string siteState = string.Empty;
-		
-		if (!string.IsNullOrWhiteSpace(siteXml)) {
-			try {
-				XElement siteElement = XElement.Parse(siteXml).Element("SITE");
-				if (siteElement != null) {
-					siteBindings = siteElement.Attribute("bindings")?.Value ?? string.Empty;
-					siteState = siteElement.Attribute("state")?.Value ?? string.Empty;
-				}
-			} catch {
-				// If parsing fails, continue with empty bindings
-			}
-		}
-		
-		// Get the physical path for this application via vdir query
-		// For nested apps, the vdir path is "SiteName/AppPath/"
-		string vdirPath = string.IsNullOrEmpty(appPath) ? $"{siteName}/" : $"{siteName}{appPath}/";
-		string physicalPath = _appcmd($"list vdir \"{vdirPath}\" /text:physicalPath").Trim();
-		
-		// If vdir query didn't work, try getting it from the app directly
-		if (string.IsNullOrWhiteSpace(physicalPath)) {
-			physicalPath = _appcmd($"list app \"{appName}\" /text:physicalPath").Trim();
-		}
-		
-		// Use the full APP.NAME as the combined name (e.g., "Default Web Site/MyApp")
-		return new SiteBinding(
-			appName,
-			siteState,
-			siteBindings,
-			physicalPath
-		);
 	};
 
 	/// <summary>
@@ -298,21 +137,18 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 			Path.GetFileName(normalizedPath),
 			"Terrasoft.WebApp",
 			StringComparison.OrdinalIgnoreCase);
-
 		string webapp = Path.Join(path, "Terrasoft.WebApp");
 		string configuration = Path.Join(path, "Terrasoft.Configuration");
-
 		if (new DirectoryInfo(webapp).Exists) {
 			return SiteType.NetFramework;
 		}
-
 		if (!isTerrasoftWebAppFolder && new DirectoryInfo(configuration).Exists) {
 			return SiteType.Core;
 		}
-
 		return SiteType.NotCreatioSite;
 	};
 
+	private readonly IProcessExecutor _processExecutor;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly RegAppCommand _regCommand;
 	private readonly PowerShellFactory _powerShellFactory;
@@ -370,12 +206,120 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 	#region Constructors: Public
 
-	public IISScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
-		PowerShellFactory powerShellFactory, ILogger logger){
+	public IisScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
+		PowerShellFactory powerShellFactory, ILogger logger, IProcessExecutor processExecutor) {
 		_settingsRepository = settingsRepository;
 		_regCommand = regCommand;
 		_powerShellFactory = powerShellFactory;
 		_logger = logger;
+		_processExecutor = processExecutor;
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private string ExecuteAppCmd(string args) {
+		const string dirPath = @"C:\Windows\System32\inetsrv\";
+		return _processExecutor.Execute(Path.Join(dirPath, "appcmd.exe"), args, waitForExit: true);
+	}
+
+	private void StopAppPool(string name) => ExecuteAppCmd($"stop apppool /apppool.name:{name}");
+	private void StopSite(string name) => ExecuteAppCmd($"stop site /site.name:{name}");
+	private void RemoveSite(string name) => ExecuteAppCmd($"delete site /site.name:{name}");
+	private void RemoveAppPool(string name) => ExecuteAppCmd($"delete apppool /apppool.name:{name}");
+
+	private SiteBinding GetSiteBinding(XElement xmlElement) => new SiteBinding(
+		xmlElement.Attribute("SITE.NAME")?.Value,
+		xmlElement.Attribute("state")?.Value,
+		xmlElement.Attribute("bindings")?.Value,
+		ExecuteAppCmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
+	);
+
+	private SiteBinding GetApplicationBinding(XElement xmlElement) {
+		string appName = xmlElement.Attribute("APP.NAME")?.Value ?? string.Empty;
+		string[] parts = appName.Split('/', 2);
+		string siteName = parts.Length > 0 ? parts[0] : string.Empty;
+		string appPath = parts.Length > 1 ? ("/" + parts[1]) : string.Empty;
+		string siteXml = ExecuteAppCmd($"list site \"{siteName}\" /xml");
+		string siteBindings = string.Empty;
+		string siteState = string.Empty;
+		if (!string.IsNullOrWhiteSpace(siteXml)) {
+			try {
+				XElement siteElement = XElement.Parse(siteXml).Element("SITE");
+				if (siteElement != null) {
+					siteBindings = siteElement.Attribute("bindings")?.Value ?? string.Empty;
+					siteState = siteElement.Attribute("state")?.Value ?? string.Empty;
+				}
+			} catch (Exception ex) {
+				System.Diagnostics.Trace.TraceWarning(ex.Message);
+			}
+		}
+		string vdirPath = string.IsNullOrEmpty(appPath) ? $"{siteName}/" : $"{siteName}{appPath}/";
+		string physicalPath = ExecuteAppCmd($"list vdir \"{vdirPath}\" /text:physicalPath").Trim();
+		if (string.IsNullOrWhiteSpace(physicalPath)) {
+			physicalPath = ExecuteAppCmd($"list app \"{appName}\" /text:physicalPath").Trim();
+		}
+		return new SiteBinding(appName, siteState, siteBindings, physicalPath);
+	}
+
+	private IEnumerable<SiteBinding> GetIISBindings() {
+		List<SiteBinding> result = [];
+		string sitesXml = ExecuteAppCmd("list sites /xml");
+		if (!string.IsNullOrWhiteSpace(sitesXml)) {
+			XElement sitesRoot = XElement.Parse(sitesXml);
+			IEnumerable<SiteBinding> topLevelSites = sitesRoot.Elements("SITE")
+				.Select(site => GetSiteBinding(site));
+			result.AddRange(topLevelSites);
+		}
+		string appsXml = ExecuteAppCmd("list app /xml");
+		if (!string.IsNullOrWhiteSpace(appsXml)) {
+			XElement appsRoot = XElement.Parse(appsXml);
+			IEnumerable<SiteBinding> nestedApps = appsRoot.Elements("APP")
+				.Where(app => {
+					string appName = app.Attribute("APP.NAME")?.Value ?? string.Empty;
+					return !string.IsNullOrEmpty(appName) && !appName.EndsWith('/') && appName.Contains('/');
+				})
+				.Select(app => GetApplicationBinding(app));
+			result.AddRange(nestedApps);
+		}
+		return result;
+	}
+
+	private IEnumerable<UnregisteredSite> FindUnregisteredSites() {
+		return GetIISBindings().Where(site => {
+			bool isRegisteredEnvironment = false;
+			ConvertBindingToUri(site.binding).ForEach(uri => {
+				string key = _settingsRepository.FindEnvironmentNameByUri(uri.ToString());
+				if (!string.IsNullOrEmpty(key) && !isRegisteredEnvironment) {
+					isRegisteredEnvironment = true;
+				}
+			});
+			return !isRegisteredEnvironment;
+		})
+		.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+		.Select(site => new UnregisteredSite(
+			site,
+			ConvertBindingToUri(site.binding),
+			DetectSiteType(site.path)));
+	}
+
+	public IEnumerable<UnregisteredSite> FindAllCreatioSites() {
+		return GetIISBindings()
+			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+			.Select(site => new UnregisteredSite(
+				site,
+				ConvertBindingToUri(site.binding),
+				DetectSiteType(site.path)));
+	}
+
+	public IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites() {
+		return GetIISBindings()
+			.Where(site => DetectSiteType(site.path) != SiteType.NotCreatioSite)
+			.Select(site => new RegisteredSite(
+				site,
+				ConvertBindingToUri(site.binding),
+				DetectSiteType(site.path)));
 	}
 
 	#endregion
@@ -394,19 +338,19 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 
 	public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
 		string name = request.SiteName;
-		StopSiteByName(name);
-		StopAppPoolByName(name);
+		StopSite(name);
+		StopAppPool(name);
 	}
 
 	public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
 		string name = request.SiteName;
-		RemoveSiteByName(name);
-		RemoveAppPoolByName(name);
+		RemoveSite(name);
+		RemoveAppPool(name);
 	}
 
 	public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken){
 		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
-		IEnumerable<UnregisteredSite> unregSites = FindUnregisteredCreatioSites(_settingsRepository);
+		IEnumerable<UnregisteredSite> unregSites = FindUnregisteredSites();
 
 		string r = ClioParams?["return"];
 		if (r == "remote") {
@@ -450,23 +394,6 @@ internal class IISScannerHandler : BaseExternalLinkHandler, IRequestHandler<IISS
 	}
 
 	#endregion
-
-	/// <summary>
-	/// </summary>
-	/// <param name="name">Site name in IIS</param>
-	/// <param name="state">
-	///  State of IIS site
-	///  <list type="bullet">
-	///   <item>Started: when IIS site Started</item>
-	///   <item>Stopped: when IIS site Started</item>
-	///  </list>
-	/// </param>
-	/// <param name="binding"></param>
-	/// <param name="path">Site directory path</param>
-	internal sealed record SiteBinding(string name, string state, string binding, string path) { }
-
-	internal sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
-	internal sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
 }
 

@@ -38,8 +38,11 @@ EXAMPLES
     # Rename a column and clear its default in one batch
     clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"Owner\",\"new-name\":\"PrimaryOwner\",\"title\":\"Primary owner\"}" --operation "{\"action\":\"modify\",\"column-name\":\"Status\",\"default-value-source\":\"None\"}"
 
-    # Set a system-value default in one batch
-    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"CurrentDateTime\"}}"
+    # Set a system-value default in one batch (caption/alias/guid accepted)
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrStartDate\",\"default-value-config\":{\"source\":\"SystemValue\",\"value-source\":\"Current Time and Date\"}}"
+
+    # Set a system-setting default in one batch (name/code/id accepted)
+    clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrOwner\",\"default-value-config\":{\"source\":\"Settings\",\"value-source\":\"Maintainer\"}}"
 
 NOTES
     - operations are applied in order
@@ -47,6 +50,14 @@ NOTES
     - the batch is saved and materialized once after all operations are applied
     - operation JSON can also use structured default-value-config; legacy
       default-value-source/default-value remain shorthand for Const and None
+    - For default-value-config source=SystemValue:
+      value-source can be Guid, enum alias, or caption; values are normalized
+      to Guid before save
+    - For default-value-config source=Settings:
+      value-source can be setting code, setting name, or setting id; values are
+      normalized to setting code before save
+    - If Settings or SystemValue lookup is ambiguous, execution fails with a
+      validation error and requests explicit code/Guid input
     - this is the clio-native alternative to frontend-style entity.update.operationsJson
     - Binary, Image, and File operations do not support default-value or default-value-source Const
 

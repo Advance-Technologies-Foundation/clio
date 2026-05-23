@@ -30,20 +30,22 @@ namespace Clio.Command
 	public class LockPackageCommand : Command<LockPackageOptions>
 	{
 
+		private const string ClioGateMinVersion = "2.0.0.42";
+
 		#region Fields: Private
 
 		private readonly IPackageLockManager _packageLockManager;
-		private readonly ILogger _logger;
 		private readonly IClioGateway _clioGateway;
+		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger, IClioGateway clioGateway) {
+		public LockPackageCommand(IPackageLockManager packageLockManager, IClioGateway clioGateway, ILogger logger) {
 			_packageLockManager = packageLockManager;
-			_logger = logger;
 			_clioGateway = clioGateway;
+			_logger = logger;
 		}
 
 		#endregion
@@ -53,7 +55,7 @@ namespace Clio.Command
 		private static IEnumerable<string> GetPackagesNames(LockPackageOptions options) =>
 			string.IsNullOrWhiteSpace(options.Name)
 				? []
-				: options.Name.Split(',').Select(i=> i.Trim()); 
+				: options.Name.Split(',').Select(i=> i.Trim());
 
 		#endregion
 
@@ -61,16 +63,7 @@ namespace Clio.Command
 
 		public override int Execute(LockPackageOptions options) {
 			try {
-				
-				const string minClioGateVersion = "2.0.0.0";
-				if(!_clioGateway.IsCompatibleWith(minClioGateVersion)) {
-					_logger.WriteError($"lock package feature requires cliogate package version {minClioGateVersion} or higher installed in Creatio.");
-					_logger.WriteInfo(string.IsNullOrWhiteSpace(options.Environment)
-						?  "To install cliogate use the following command: clio install-gate"
-						: $"To install cliogate use the following command: clio install-gate -e {options.Environment}");
-					return 0;
-				}
-				
+				_clioGateway.CheckCompatibleVersion(ClioGateMinVersion);
 				_packageLockManager.Lock(GetPackagesNames(options));
 				_logger.WriteInfo("Done");
 				return 0;

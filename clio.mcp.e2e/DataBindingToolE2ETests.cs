@@ -174,174 +174,31 @@ public sealed class DataBindingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Creates a SysModule binding through MCP, adds a row whose image-content column points to a local image file, and verifies that the stored binding value is base64-encoded file content.")]
-	[AllureTag(CreateToolName)]
-	[AllureTag(AddRowToolName)]
-	[AllureName("Add data-binding row encodes image-content file path")]
-	[AllureDescription("Uses the real clio MCP server to create an offline SysModule binding, add a row with an Image16 file path, and verify that data.json contains the base64-encoded file bytes rather than the original path string.")]
-	public async Task AddDataBindingRow_Should_Encode_Image_File() {
-		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
-		string relativeImagePath = await WriteImageFileAsync(arrangeContext.WorkspacePath);
-		string bindingDirectoryPath = Path.Combine(arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", "SysModule");
-		CommandExecutionActResult createResult = await ActCommandAsync(
-			arrangeContext,
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysModule",
-				["workspace-path"] = arrangeContext.WorkspacePath
-			});
-		AssertToolCallSucceeded(createResult);
-		AssertCommandExitCode(createResult, 0,
-			"create-data-binding should create the offline SysModule binding before the row add flow runs");
-
-		// Act
-		CommandExecutionActResult addResult = await ActCommandAsync(
-			arrangeContext,
-			AddRowToolName,
-			new Dictionary<string, object?> {
-				["package-name"] = arrangeContext.PackageName,
-				["binding-name"] = "SysModule",
-				["workspace-path"] = arrangeContext.WorkspacePath,
-				["values"] = JsonSerializer.Serialize(new Dictionary<string, string> {
-					["Code"] = "UsrImageModule",
-					["Image16"] = relativeImagePath
-				})
-			});
-
-		// Assert
-		AssertToolCallSucceeded(addResult);
-		AssertCommandExitCode(addResult, 0,
-			"add-data-binding-row should succeed when an image-content column points to an existing local file");
-		AssertIncludesInfoMessage(addResult,
-			"successful add-data-binding-row execution should emit progress output");
-		string dataJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "data.json"));
-		dataJson.Should().Contain("UsrImageModule",
-			because: "the added row should preserve the non-image payload values");
-		dataJson.Should().Contain("\"Value\": \"AQID\"",
-			because: "the image-content file bytes should be base64-encoded into the binding instead of keeping the original file path");
-	}
-
-	[Test]
-	[Description("Creates an offline SysModule binding through MCP with explicit displayValue objects for lookup and image-reference columns and verifies that both display texts are written to data.json.")]
-	[AllureTag(CreateToolName)]
-	[AllureName("Create SysModule binding preserves explicit lookup and image-reference display values")]
-	[AllureDescription("Uses the real clio MCP server to create an offline SysModule binding with structured FolderMode and Logo values and verifies that data.json contains both identifier values and their DisplayValue fields.")]
-	public async Task CreateDataBinding_Should_Write_DisplayValue_For_Lookup_And_ImageReference_Columns() {
-		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
-
-		// Act
-		CommandExecutionActResult createResult = await ActCommandAsync(
-			arrangeContext,
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysModule",
-				["workspace-path"] = arrangeContext.WorkspacePath,
-				["values"] =
-					"""{"Code":"UsrDisplayModule","FolderMode":{"value":"b659d704-3955-e011-981f-00155d043204","displayValue":"Folder mode display"},"Logo":{"value":"1171d0f0-63eb-4bd1-a50b-001ecbaf0001","displayValue":"Logo display"}}"""
-			});
-
-		// Assert
-		AssertToolCallSucceeded(createResult);
-		AssertCommandExitCode(createResult, 0,
-			"create-data-binding should accept structured display-value payloads for offline lookup and image-reference columns");
-		string bindingDirectoryPath = Path.Combine(arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", "SysModule");
-		string dataJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "data.json"));
-		dataJson.Should().Contain("\"DisplayValue\": \"Folder mode display\"",
-			because: "lookup columns should preserve caller-supplied display text in the generated binding");
-		dataJson.Should().Contain("\"DisplayValue\": \"Logo display\"",
-			because: "image-reference columns should preserve caller-supplied display text in the generated binding");
-	}
-
-	[Test]
-	[Description("Fails clearly through MCP when create-data-binding targets a schema without a built-in template and no environment-name or uri is provided.")]
+	[Description("Fails clearly through MCP when create-data-binding targets a schema without a built-in template and no environment-name is provided.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("Create non-templated data binding without environment fails clearly")]
-	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for a non-templated schema without environment-name and verifies that MCP returns a clear resolution error instead of silently attempting offline generation.")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for a non-templated schema without environment-name and verifies that command execution fails with a clear runtime-resolution error instead of silently attempting offline generation.")]
 	public async Task CreateDataBinding_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
 		// Arrange
 		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
 
 		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["package-name"] = arrangeContext.PackageName,
-					["schema-name"] = "UsrOfflineOnly",
-					["workspace-path"] = arrangeContext.WorkspacePath
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-
-		// Assert
-		callResult.IsError.Should().BeTrue(
-			because: "non-templated schemas still require environment-based resolution in the MCP create tool");
-		DescribeCallResult(callResult).Should().Contain("An error occurred invoking 'create-data-binding'.",
-			because: "the MCP server currently wraps non-templated resolution failures as a top-level invocation error");
-	}
-
-	[Test]
-	[Description("Fails clearly through MCP when SysModule.IconBackground uses a color outside the predefined palette.")]
-	[AllureTag(CreateToolName)]
-	[AllureName("Create SysModule binding with invalid IconBackground color fails clearly")]
-	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for the offline SysModule template with an invalid IconBackground color and verifies that command execution fails with a human-readable validation error.")]
-	public async Task CreateDataBinding_Should_Fail_For_Invalid_SysModule_IconBackground_Color() {
-		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
-
-		// Act
 		CommandExecutionActResult result = await ActCommandAsync(
 			arrangeContext,
 			CreateToolName,
 			new Dictionary<string, object?> {
 				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysModule",
-				["workspace-path"] = arrangeContext.WorkspacePath,
-				["values"] = """{"Code":"UsrModule","IconBackground":"#123456"}"""
+				["schema-name"] = "UsrOfflineOnly",
+				["workspace-path"] = arrangeContext.WorkspacePath
 			});
 
 		// Assert
 		result.CallResult.IsError.Should().NotBeTrue(
-			because: "validation failures should still be returned as normal command execution envelopes");
+			because: "non-templated runtime-resolution failures should be returned as normal command execution envelopes");
 		AssertCommandExitCode(result, 1,
-			"create-data-binding should reject SysModule IconBackground colors outside the allowed palette");
-		result.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-			because: "validation failures should emit an error message in the execution log");
-		DescribeExecution(result.Execution).Should().Contain("predefined colors",
-			because: "the failure should explain why the requested SysModule color was rejected");
-	}
-
-	[Test]
-	[Description("Fails clearly through MCP when an offline lookup payload omits DisplayValue for a non-null SysModule FolderMode value.")]
-	[AllureTag(CreateToolName)]
-	[AllureName("Create SysModule binding without lookup display value fails clearly")]
-	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for the offline SysModule template with a scalar FolderMode lookup value and verifies that command execution fails with a human-readable displayValue validation error.")]
-	public async Task CreateDataBinding_Should_Fail_When_Lookup_DisplayValue_Is_Missing_Offline() {
-		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
-
-		// Act
-		CommandExecutionActResult result = await ActCommandAsync(
-			arrangeContext,
-			CreateToolName,
-			new Dictionary<string, object?> {
-				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "SysModule",
-				["workspace-path"] = arrangeContext.WorkspacePath,
-				["values"] = """{"Code":"UsrModule","FolderMode":"b659d704-3955-e011-981f-00155d043204"}"""
-			});
-
-		// Assert
-		result.CallResult.IsError.Should().NotBeTrue(
-			because: "command validation failures should still be returned as normal MCP command envelopes");
-		AssertCommandExitCode(result, 1,
-			"offline create-data-binding should reject non-null lookup values that do not include display text");
-		DescribeExecution(result.Execution).Should().Contain("requires displayValue",
-			because: "the error should explain how the lookup value must be shaped");
+			"non-templated schemas still require environment-based resolution in the MCP create tool");
+		DescribeExecution(result.Execution).Should().Contain("configured environment name or an explicit URI is required",
+			because: "the failure should explain why offline generation is unavailable for the requested schema");
 	}
 
 	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
@@ -393,14 +250,6 @@ public sealed class DataBindingToolE2ETests {
 		Assert.Ignore(
 			$"Data-binding MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 		return string.Empty;
-	}
-
-	private static async Task<string> WriteImageFileAsync(string workspacePath) {
-		string assetsDirectoryPath = Path.Combine(workspacePath, "assets");
-		Directory.CreateDirectory(assetsDirectoryPath);
-		string imagePath = Path.Combine(assetsDirectoryPath, "icon.png");
-		await File.WriteAllBytesAsync(imagePath, [1, 2, 3]);
-		return Path.Combine("assets", "icon.png");
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

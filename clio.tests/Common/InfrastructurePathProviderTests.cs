@@ -9,6 +9,7 @@ using MsPath = System.IO.Abstractions.IPath;
 namespace Clio.Tests.Common
 {
 	[TestFixture]
+[Property("Module", "Common")]
 	[Category("Unit")]
 	[Description("Unit tests for InfrastructurePathProvider")]
 	public class InfrastructurePathProviderTests

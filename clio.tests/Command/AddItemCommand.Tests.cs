@@ -5,6 +5,7 @@ using Clio.Common;
 using Clio.ModelBuilder;
 using Clio.Project;
 using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -13,6 +14,7 @@ using System.IO.Abstractions.TestingHelpers;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 	#region Fields: Private
 
@@ -150,7 +152,8 @@ internal class AddItemCommandTests : BaseCommandTests<AddItemOptions>{
 			_vsProjectFactory,
 			_logger,
 			_fileSystem,
-			_modelBuilder);
+			_modelBuilder,
+			Substitute.For<ICreatioEnvironment>());
 	}
 
 	#endregion

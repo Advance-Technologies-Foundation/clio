@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -11,6 +10,7 @@ using Clio.Common.IIS;
 using Clio.UserEnvironment;
 using CommandLine;
 using ModelContextProtocol;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command;
 
@@ -27,22 +27,23 @@ public class StartCommand : Command<StartOptions>
 	private readonly IDotnetExecutor _dotnetExecutor;
 	private readonly ILogger _logger;
 	private readonly IFileSystem _fileSystem;
+	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly ICreatioHostService _creatioHostService;
 	private readonly IIISAppPoolManager _iisAppPoolManager;
 	private readonly IIISSiteDetector _iisSiteDetector;
 	private readonly IApplicationClient _applicationClient;
 
-	
+
 	public event EventHandler<ProgressNotificationValue> StatusChanged;
 
 	private void OnStatusChanged(ProgressNotificationValue e) {
 		StatusChanged?.Invoke(this, e);
 	}
-	
+
 	public StartCommand(ISettingsRepository settingsRepository, IDotnetExecutor dotnetExecutor,
 		ILogger logger, IFileSystem fileSystem, ICreatioHostService creatioHostService,
 		IIISAppPoolManager iisAppPoolManager, IIISSiteDetector iisSiteDetector,
-		IApplicationClient applicationClient) {
+		IApplicationClient applicationClient, IAbstractionsFileSystem abstractionsFileSystem) {
 		_settingsRepository = settingsRepository;
 		_dotnetExecutor = dotnetExecutor;
 		_logger = logger;
@@ -51,6 +52,7 @@ public class StartCommand : Command<StartOptions>
 		_iisAppPoolManager = iisAppPoolManager;
 		_iisSiteDetector = iisSiteDetector;
 		_applicationClient = applicationClient;
+		_abstractionsFileSystem = abstractionsFileSystem;
 	}
 
 	public override int Execute(StartOptions options) {
@@ -115,7 +117,7 @@ public class StartCommand : Command<StartOptions>
 			}
 
 			// Fall back to .NET Core deployment
-			string dllPath = Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost.dll");
+			string dllPath = _abstractionsFileSystem.Path.Combine(env.EnvironmentPath, "Terrasoft.WebHost.dll");
 			if (!_fileSystem.ExistsFile(dllPath)) {
 				_logger.WriteError($"Terrasoft.WebHost.dll not found at: {dllPath}");
 				_logger.WriteInfo("This environment does not appear to be a .NET deployment.");

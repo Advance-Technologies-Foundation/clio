@@ -17,6 +17,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class RestoreDbLogArtifactTests {
 	[Test]
 	[Description("restore-db always creates a temp database-operation log artifact and reports its path even when validation fails before restore starts.")]
@@ -45,6 +47,7 @@ public sealed class RestoreDbLogArtifactTests {
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),
@@ -120,6 +123,7 @@ public sealed class RestoreDbLogArtifactTests {
 			RestoreDbCommand sut = new(
 				logger,
 				fileSystem,
+				new System.IO.Abstractions.FileSystem(),
 				dbClientFactory,
 				settingsRepository,
 				Substitute.For<ICreatioInstallerService>(),
@@ -191,6 +195,7 @@ public sealed class RestoreDbLogArtifactTests {
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),

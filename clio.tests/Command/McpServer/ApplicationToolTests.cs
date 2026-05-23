@@ -3,11 +3,14 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.DataForge;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -19,10 +22,11 @@ using Clio.UserEnvironment;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for application-get-list so callers and tests share the same production identifier.")]
+	[Description("Advertises the stable MCP tool name for list-apps so callers and tests share the same production identifier.")]
 	public void ApplicationGetList_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationGetListTool)
@@ -44,9 +48,11 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetList_Should_Call_List_Service_Without_Filters_And_Return_Success_Envelope() {
 		// Arrange
 		IApplicationListService applicationListService = Substitute.For<IApplicationListService>();
+		Guid betaId = Guid.NewGuid();
+		Guid alphaId = Guid.NewGuid();
 		IReadOnlyList<InstalledApplicationListItem> installedApplications = [
-			new InstalledApplicationListItem(Guid.NewGuid(), "Beta", "BETA", "2.0.0", "Beta description"),
-			new InstalledApplicationListItem(Guid.NewGuid(), "Alpha", "ALPHA", "1.0.0", "Alpha description")
+			new InstalledApplicationListItem(betaId, "Beta", "BETA", "2.0.0", "Beta description"),
+			new InstalledApplicationListItem(alphaId, "Alpha", "ALPHA", "1.0.0", "Alpha description")
 		];
 		applicationListService.GetApplications("sandbox", null, null).Returns([.. installedApplications]);
 		ApplicationGetListTool tool = new(applicationListService);
@@ -65,10 +71,14 @@ public sealed class ApplicationToolTests {
 			because: "successful list calls should include the application collection");
 		result.Applications!.Select(item => item.Name).Should().Equal(new[] { "Beta", "Alpha" },
 			because: "the MCP wrapper should preserve the structured order produced by the application list service");
+		result.Applications[0].Id.Should().Be(betaId.ToString(),
+			because: "list-apps should preserve the installed application identifier so follow-up MCP tools can target the same app");
 		result.Applications[0].Code.Should().Be("BETA",
 			because: "the MCP tool should preserve the installed application code");
 		result.Applications[0].Version.Should().Be("2.0.0",
 			because: "the MCP tool should preserve the installed application version");
+		result.Applications[1].Id.Should().Be(alphaId.ToString(),
+			because: "every returned application item should preserve its identifier instead of only the first item");
 	}
 
 	[Test]
@@ -95,7 +105,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Wraps environment resolution failures from application-get-list in a structured error envelope.")]
+	[Description("Wraps environment resolution failures from list-apps in a structured error envelope.")]
 	public void ApplicationGetList_Should_Return_Error_Envelope_When_Environment_Resolution_Fails() {
 		// Arrange
 		IApplicationListService applicationListService = Substitute.For<IApplicationListService>();
@@ -120,7 +130,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for application-get-info so callers and tests share the same production identifier.")]
+	[Description("Advertises the stable MCP tool name for get-app-info so callers and tests share the same production identifier.")]
 	public void ApplicationGetInfo_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationGetInfoTool)
@@ -138,7 +148,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for application-create so callers and tests share the same production identifier.")]
+	[Description("Advertises the stable MCP tool name for create-app so callers and tests share the same production identifier.")]
 	public void ApplicationCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationCreateTool)
@@ -151,6 +161,78 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		toolName.Should().Be(ApplicationCreateTool.ApplicationCreateToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for create-app-section so callers and tests share the same production identifier.")]
+	public void ApplicationSectionCreate_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionCreateTool)
+			.GetMethod(nameof(ApplicationSectionCreateTool.ApplicationSectionCreate))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for update-app-section so callers and tests share the same production identifier.")]
+	public void ApplicationSectionUpdate_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionUpdateTool)
+			.GetMethod(nameof(ApplicationSectionUpdateTool.ApplicationSectionUpdate))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for delete-app-section so callers and tests share the same production identifier.")]
+	public void ApplicationSectionDelete_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionDeleteTool)
+			.GetMethod(nameof(ApplicationSectionDeleteTool.ApplicationSectionDelete))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+			because: "the MCP tool name must stay centralized on the production tool type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for list-app-sections so callers and tests share the same production identifier.")]
+	public void ApplicationSectionGetList_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationSectionGetListTool)
+			.GetMethod(nameof(ApplicationSectionGetListTool.ApplicationSectionGetList))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Act
+		string toolName = attribute.Name;
+
+		// Assert
+		toolName.Should().Be(ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 			because: "the MCP tool name must stay centralized on the production tool type");
 	}
 
@@ -190,7 +272,8 @@ public sealed class ApplicationToolTests {
 				ApplicationId: "app-id",
 				ApplicationName: "Vehicle App",
 				ApplicationCode: "UsrVehicleApp",
-				ApplicationVersion: "8.3.0"));
+				ApplicationVersion: "8.3.0",
+				SchemaNamePrefix: "Usr"));
 		ApplicationGetInfoTool tool = new(applicationInfoService);
 
 		// Act
@@ -224,9 +307,11 @@ public sealed class ApplicationToolTests {
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the Clio response should preserve application column types");
 		result.Pages.Should().ContainSingle(
-			because: "application-get-info should now return the primary-package page summaries");
+			because: "get-app-info should now return the primary-package page summaries");
 		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
-			because: "application-get-info should expose page identities through schema-name");
+			because: "get-app-info should expose page identities through schema-name");
+		result.SchemaNamePrefix.Should().Be("Usr",
+			because: "get-app-info should surface the active SchemaNamePrefix so the agent knows the correct prefix for subsequent schema names");
 	}
 
 	[Test]
@@ -253,6 +338,264 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*code*",
 			because: "the MCP tool contract should mention the supported identifier names");
 		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls the section-create service with the top-level MCP request fields and returns the structured section envelope on success.")]
+	public void ApplicationSectionCreate_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(new ApplicationSectionCreateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"Orders",
+					"Order workspace",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"icon-id",
+					"#A6DE00",
+					null),
+				new ApplicationEntityInfoResult(
+					"entity-uid",
+					"UsrOrder",
+					"Order",
+					[]),
+				[
+					new PageListItem {
+						SchemaName = "UsrOrders_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrOrdersApp",
+						ParentSchemaName = "BasePage"
+					}
+				]));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders",
+			Description: "Order workspace",
+			EntitySchemaName: "UsrOrder",
+			WithMobilePages: true), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		applicationSectionCreateService.Received(1).CreateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionCreateRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp" &&
+				request.Caption == "Orders" &&
+				request.Description == "Order workspace" &&
+				request.EntitySchemaName == "UsrOrder" &&
+				request.WithMobilePages));
+		result.Success.Should().BeTrue(
+			because: "a successful section-create call should be wrapped in a core-style success envelope");
+		result.Section.Should().NotBeNull(
+			because: "the MCP tool should return the created section metadata");
+		result.Section!.Code.Should().Be("UsrOrders",
+			because: "the section envelope should preserve the created section code");
+		result.Entity!.Name.Should().Be("UsrOrder",
+			because: "the entity envelope should preserve the created or targeted entity");
+		result.Pages.Should().ContainSingle(
+			because: "the create response should include page readback data when available");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-create omits application-code.")]
+	public void ApplicationSectionCreate_Should_Return_Error_When_ApplicationCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: null!,
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*application-code is required*",
+			because: "the tool should explain that application-code is the supported target selector");
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-create receives forbidden localization maps.")]
+	public void ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders",
+			TitleLocalizations: new Dictionary<string, string> {
+				["en-US"] = "Orders"
+			}), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "create-app-section should reject localization maps before any create side effect is attempted");
+		result.Error.Should().Match("*scalar-only*",
+			because: "the failure should explain that localization maps are forbidden on create-app-section");
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls the section-update service with the top-level MCP request fields and returns structured before-and-after section envelopes on success.")]
+	public void ApplicationSectionUpdate_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		applicationSectionUpdateService.UpdateSection("sandbox", Arg.Any<ApplicationSectionUpdateRequest>())
+			.Returns(new ApplicationSectionUpdateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"{\"en-US\":\"Orders\"}",
+					"Old description",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"icon-old",
+					"#111111",
+					null),
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"Orders",
+					"New description",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"11111111-1111-1111-1111-111111111111",
+					"#A6DE00",
+					null)));
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			Caption: "Orders",
+			Description: "New description",
+			IconId: "11111111-1111-1111-1111-111111111111",
+			IconBackground: "#A6DE00"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		applicationSectionUpdateService.Received(1).UpdateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionUpdateRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp" &&
+				request.SectionCode == "UsrOrders" &&
+				request.Caption == "Orders" &&
+				request.Description == "New description" &&
+				request.IconId == "11111111-1111-1111-1111-111111111111" &&
+				request.IconBackground == "#A6DE00"));
+		result.Success.Should().BeTrue(
+			because: "a successful section-update call should be wrapped in a core-style success envelope");
+		result.PreviousSection.Should().NotBeNull(
+			because: "the MCP tool should return the section metadata before the update");
+		result.Section.Should().NotBeNull(
+			because: "the MCP tool should return the section metadata after the update");
+		result.PreviousSection!.Caption.Should().Be("{\"en-US\":\"Orders\"}",
+			because: "the before-section payload should preserve the original stored caption");
+		result.Section!.Caption.Should().Be("Orders",
+			because: "the after-section payload should preserve the updated plain-text caption");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update omits section-code.")]
+	public void ApplicationSectionUpdate_Should_Return_Error_When_SectionCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: null!,
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*section-code is required*",
+			because: "the tool should explain that section-code is required for existing-section updates");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update receives no mutable fields.")]
+	public void ApplicationSectionUpdate_Should_Return_Error_When_No_Mutable_Fields_Are_Provided() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should stay inside the structured response payload");
+		result.Error.Should().Match("*at least one mutable field*",
+			because: "the tool should explain that section-update requires at least one field to change");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-update receives forbidden localization maps.")]
+	public void ApplicationSectionUpdate_Should_Reject_Localization_Map_Fields() {
+		// Arrange
+		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
+		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+
+		// Act
+		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			Caption: "Orders",
+			TitleLocalizations: new Dictionary<string, string> {
+				["en-US"] = "Orders"
+			}), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "update-app-section should reject localization maps before any update side effect is attempted");
+		result.Error.Should().Match("*scalar-only*",
+			because: "the failure should explain that localization maps are forbidden on update-app-section");
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
 	}
 
 	[Test]
@@ -305,9 +648,10 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Calls the application create service with the core-aligned required arguments and parsed optional-template-data-json.")]
-	public void ApplicationCreate_Should_Return_Structured_Success_Envelope() {
+	public async Task ApplicationCreate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication(
 				"sandbox",
 				Arg.Any<ApplicationCreateRequest>())
@@ -341,17 +685,29 @@ public sealed class ApplicationToolTests {
 				ApplicationName: "Codex App",
 				ApplicationCode: "UsrCodexApp",
 				ApplicationVersion: "1.0.0"));
-		ApplicationCreateTool tool = new(applicationCreateService);
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+			.Returns(new ApplicationDataForgeResult(
+				Used: true,
+				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
+				Status: new DataForgeMaintenanceStatusResult(true, "Ready", null),
+				Coverage: new DataForgeCoverage(true, true, true, true, true),
+				Warnings: [],
+				ContextSummary: new ApplicationDataForgeContextSummary(
+					[new SimilarTableResult("Contact", "Contact", null)],
+					[new SimilarLookupResult("lookup-id", "ContactType", "Customer", 0.98m)],
+					["Contact->Account"],
+					[new ApplicationDataForgeColumnHint("Contact", 3, 1, 1)])));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: "auto",
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: "22222222-2222-2222-2222-222222222222",
 			OptionalTemplateDataJson: """
 				{"entitySchemaName":"UsrCodexEntity","useExistingEntitySchema":true,"useAIContentGeneration":false,"appSectionDescription":"Section description"}
@@ -366,13 +722,23 @@ public sealed class ApplicationToolTests {
 				request.Description == null &&
 				request.TemplateCode == "AppFreedomUI" &&
 				request.IconId == "auto" &&
-				request.IconBackground == "#112233" &&
+				request.IconBackground == "#0058EF" &&
 				request.ClientTypeId == "22222222-2222-2222-2222-222222222222" &&
 				request.OptionalTemplateData != null &&
 				request.OptionalTemplateData.EntitySchemaName == "UsrCodexEntity" &&
 				request.OptionalTemplateData.UseExistingEntitySchema == true &&
 				request.OptionalTemplateData.UseAiContentGeneration == false &&
 				request.OptionalTemplateData.AppSectionDescription == "Section description"));
+		enrichmentService.Received(1).Enrich(
+			Arg.Is<ApplicationCreateArgs>(request =>
+				request.EnvironmentName == "sandbox" &&
+				request.Name == "Codex App" &&
+				request.Code == "UsrCodexApp"),
+			Arg.Is<ApplicationOptionalTemplateData?>(templateData =>
+				templateData != null &&
+				templateData.EntitySchemaName == "UsrCodexEntity" &&
+				templateData.AppSectionDescription == "Section description"),
+			default);
 		result.Success.Should().BeTrue(
 			because: "successful create calls should be wrapped in a core-style success envelope");
 		result.Error.Should().BeNull(
@@ -382,14 +748,21 @@ public sealed class ApplicationToolTests {
 		result.CanonicalMainEntityName.Should().Be("UsrCodexApp",
 			because: "the create MCP tool should expose the canonical main entity when the created app returns one");
 		result.ApplicationId.Should().Be("created-app-id",
-			because: "application-create should return the installed application identifier in the same envelope shape as application-get-info");
+			because: "create-app should return the installed application identifier in the same envelope shape as get-app-info");
 		result.ApplicationCode.Should().Be("UsrCodexApp",
-			because: "application-create should return the created application code in the structured envelope");
+			because: "create-app should return the created application code in the structured envelope");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the create MCP tool should preserve Clio-style column metadata");
 		result.Pages.Should().ContainSingle(
-			because: "application-create should return the same primary-package page summaries as application-get-info");
+			because: "create-app should return the same primary-package page summaries as get-app-info");
 		result.Pages![0].SchemaName.Should().Be("UsrCodexApp_FormPage");
+		result.DataForge.Should().NotBeNull(
+			because: "create-app should return Data Forge diagnostics together with the created application metadata");
+		result.DataForge!.Used.Should().BeTrue(
+			because: "create-app should always report that the Data Forge enrichment stage ran");
+		result.DataForge.ContextSummary!.ColumnHints.Should().ContainSingle(
+			hint => hint.TableName == "Contact" && hint.ColumnCount == 3,
+			because: "create-app should expose compact column hints instead of the full Data Forge column payload");
 	}
 
 	[Test]
@@ -426,7 +799,19 @@ public sealed class ApplicationToolTests {
 					PackageName = "Pkg",
 					ParentSchemaName = "BasePage"
 				}
-			]);
+			],
+			SchemaNamePrefix: "Usr",
+			DataForge: new ApplicationDataForgeResult(
+				Used: true,
+				Health: new DataForgeHealthResult(true, true, true, true, "corr-id"),
+				Status: new DataForgeMaintenanceStatusResult(true, "Ready", null),
+				Coverage: new DataForgeCoverage(true, true, false, true, false),
+				Warnings: ["tables:Task App:degraded"],
+				ContextSummary: new ApplicationDataForgeContextSummary(
+					[new SimilarTableResult("Contact", "Contact", null)],
+					[],
+					["Contact->Account"],
+					[new ApplicationDataForgeColumnHint("Contact", 2, 1, 1)])));
 
 		// Act
 		string json = JsonSerializer.Serialize(response);
@@ -448,6 +833,8 @@ public sealed class ApplicationToolTests {
 			because: "application context responses should preserve the installed application version");
 		json.Should().Contain("\"pages\"",
 			because: "application context responses should now surface primary-package page summaries");
+		json.Should().Contain("\"schema-name-prefix\":\"Usr\"",
+			because: "application context responses should surface the active SchemaNamePrefix using the standard kebab-case field name");
 		json.Should().Contain("\"schema-name\":\"UsrEntity_FormPage\"",
 			because: "application page payloads should use schema-name instead of name");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
@@ -456,6 +843,12 @@ public sealed class ApplicationToolTests {
 			because: "column payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"reference-schema\":\"Contact\"",
 			because: "lookup payloads should keep Clio kebab-case payload fields");
+		json.Should().Contain("\"dataforge\"",
+			because: "create-app responses should serialize the optional Data Forge diagnostics block");
+		json.Should().Contain("\"context-summary\"",
+			because: "the Data Forge diagnostics should use a stable kebab-case context-summary field");
+		json.Should().Contain("\"column-hints\"",
+			because: "the compact Data Forge summary should expose kebab-case column hint metadata");
 	}
 
 	[Test]
@@ -487,18 +880,18 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Declares the core-aligned required attributes for the application-create fields while keeping description optional.")]
+	[Description("Declares the core-aligned required attributes for the create-app fields while keeping description optional.")]
 	public void ApplicationCreateArgs_Should_Mark_Core_Required_Fields_As_Required() {
 		// Arrange
 		Type argsType = typeof(ApplicationCreateArgs);
 		string[] requiredProperties = [
 			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.Name),
-			nameof(ApplicationCreateArgs.Code),
-			nameof(ApplicationCreateArgs.TemplateCode),
-			nameof(ApplicationCreateArgs.IconBackground)
+			nameof(ApplicationCreateArgs.Code)
 		];
 		string[] optionalProperties = [
+			nameof(ApplicationCreateArgs.TemplateCode),
+			nameof(ApplicationCreateArgs.IconBackground),
 			nameof(ApplicationCreateArgs.IconId),
 			nameof(ApplicationCreateArgs.ClientTypeId),
 			nameof(ApplicationCreateArgs.Description),
@@ -527,20 +920,21 @@ public sealed class ApplicationToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when optional-template-data-json is invalid.")]
-	public void ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Is_Invalid() {
+	public async Task ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Is_Invalid() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: "{not-json"));
 
@@ -550,25 +944,60 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*optional-template-data-json*",
 			because: "the create tool should reject malformed template data before calling the backend service");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when optional-template-data-json requests AI content generation.")]
-	public void ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Requests_AiContentGeneration() {
+	[Description("Returns a structured error envelope when create-app receives forbidden localization maps.")]
+	public async Task ApplicationCreate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: null,
+			TitleLocalizations: new Dictionary<string, string> {
+				["en-US"] = "Codex App"
+			}));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "create-app should reject localization maps before any enrichment or create side effect is attempted");
+		result.Error.Should().Match("*scalar-only*",
+			because: "the failure should explain that localization maps are forbidden on create-app");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when optional-template-data-json requests AI content generation.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_OptionalTemplateDataJson_Requests_AiContentGeneration() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
 				useAIContentGeneration = true
@@ -580,27 +1009,101 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*useAiContentGeneration=true*",
 			because: "the create tool should match the core behavior that rejects AI-generated template content");
 		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when entitySchemaName is supplied without useExistingEntitySchema=true, which would cause a server-side NPE.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_EntitySchemaName_Provided_Without_UseExistingEntitySchema() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				entitySchemaName = "UsrCustomerProfile"
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "passing entitySchemaName without useExistingEntitySchema=true triggers a server-side NullReferenceException and must be blocked in clio");
+		result.Error.Should().Match("*useExistingEntitySchema=true*",
+			because: "the error message must tell the caller that entitySchemaName is only valid together with useExistingEntitySchema=true");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when useExistingEntitySchema=true is supplied without entitySchemaName.")]
+	public async Task ApplicationCreate_Should_Return_Error_When_UseExistingEntitySchema_True_But_EntitySchemaName_Is_Empty() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Customer Base",
+			Code: "UsrCustomerBase",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: "#0058EF",
+			ClientTypeId: null,
+			OptionalTemplateDataJson: JsonSerializer.Serialize(new {
+				useExistingEntitySchema = true
+			})));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "useExistingEntitySchema=true without entitySchemaName is an incomplete and unusable combination");
+		result.Error.Should().Match("*entitySchemaName*required*",
+			because: "the error message must tell the caller that entitySchemaName is required when useExistingEntitySchema=true");
+		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error envelope when the backend create flow fails.")]
-	public void ApplicationCreate_Should_Return_Error_When_Backend_Fails() {
+	public async Task ApplicationCreate_Should_Return_Error_When_Backend_Fails() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
 		applicationCreateService.CreateApplication("sandbox", Arg.Any<ApplicationCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
-		ApplicationCreateTool tool = new(applicationCreateService);
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
+			.Returns(new ApplicationDataForgeResult(
+				Used: true,
+				Health: null,
+				Status: null,
+				Coverage: new DataForgeCoverage(false, false, false, false, false),
+				Warnings: ["dataforge:unavailable"],
+				ContextSummary: new ApplicationDataForgeContextSummary([], [], [], [])));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
 			Description: null,
 			TemplateCode: "AppFreedomUI",
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
@@ -609,11 +1112,160 @@ public sealed class ApplicationToolTests {
 			because: "backend failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*Template dependency failed*",
 			because: "the create error envelope should preserve the backend diagnostics");
+		enrichmentService.Received(1).Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the stable MCP tool name for application-delete so callers and tests share the same production identifier.")]
+	[Description("Calls the section-list service with the top-level MCP request fields and returns the structured section list envelope on success.")]
+	public void ApplicationSectionGetList_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
+		applicationSectionGetListService.GetSections("sandbox", Arg.Any<ApplicationSectionGetListRequest>())
+			.Returns(new ApplicationSectionGetListResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				[
+					new ApplicationSectionInfoResult(
+						"section-id",
+						"UsrOrders",
+						"Orders",
+						"Order workspace",
+						"UsrOrder",
+						"pkg-uid",
+						"section-schema-uid",
+						"icon-id",
+						"#A6DE00",
+						null)
+				]));
+		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+
+		// Act
+		ApplicationSectionListContextResponse result = tool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp"));
+
+		// Assert
+		applicationSectionGetListService.Received(1).GetSections(
+			"sandbox",
+			Arg.Is<ApplicationSectionGetListRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp"));
+		result.Success.Should().BeTrue(
+			because: "a successful section-list call should be wrapped in a core-style success envelope");
+		result.ApplicationCode.Should().Be("UsrOrdersApp",
+			because: "the section-list envelope should preserve the target application code");
+		result.Sections.Should().ContainSingle(
+			because: "the section-list envelope should surface the section collection returned by the backend service");
+		result.Sections![0].Code.Should().Be("UsrOrders",
+			because: "the section-list envelope should preserve each section code");
+		result.Error.Should().BeNull(
+			because: "successful section-list calls should not include an error payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-list omits application-code.")]
+	public void ApplicationSectionGetList_Should_Return_Error_When_ApplicationCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
+		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+
+		// Act
+		ApplicationSectionListContextResponse result = tool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: null!));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*application-code is required*",
+			because: "the tool should explain that application-code is the required selector for section discovery");
+		applicationSectionGetListService.DidNotReceiveWithAnyArgs().GetSections(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Calls the section-delete service with the top-level MCP request fields and returns the structured deleted-section envelope on success.")]
+	public void ApplicationSectionDelete_Should_Return_Structured_Success_Envelope() {
+		// Arrange
+		IApplicationSectionDeleteService applicationSectionDeleteService = Substitute.For<IApplicationSectionDeleteService>();
+		applicationSectionDeleteService.DeleteSection("sandbox", Arg.Any<ApplicationSectionDeleteRequest>())
+			.Returns(new ApplicationSectionDeleteResult(
+				null,
+				null,
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id",
+					"UsrOrders",
+					"Orders",
+					"Order workspace",
+					"UsrOrder",
+					"pkg-uid",
+					"section-schema-uid",
+					"icon-id",
+					"#A6DE00",
+					null)));
+		ApplicationSectionDeleteTool tool = new(applicationSectionDeleteService);
+
+		// Act
+		ApplicationSectionDeleteContextResponse result = tool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: "UsrOrders",
+			DeleteEntitySchema: false));
+
+		// Assert
+		applicationSectionDeleteService.Received(1).DeleteSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionDeleteRequest>(request =>
+				request.ApplicationCode == "UsrOrdersApp" &&
+				request.SectionCode == "UsrOrders" &&
+				request.DeleteEntitySchema == false));
+		result.Success.Should().BeTrue(
+			because: "a successful section-delete call should be wrapped in a core-style success envelope");
+		result.ApplicationCode.Should().Be("UsrOrdersApp",
+			because: "the section-delete envelope should preserve the target application code");
+		result.DeletedSection.Should().NotBeNull(
+			because: "the section-delete envelope should return the deleted section metadata");
+		result.DeletedSection!.Code.Should().Be("UsrOrders",
+			because: "the deleted-section envelope should preserve the deleted section code");
+		result.Error.Should().BeNull(
+			because: "successful section-delete calls should not include an error payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured error envelope when section-delete omits section-code.")]
+	public void ApplicationSectionDelete_Should_Return_Error_When_SectionCode_Is_Missing() {
+		// Arrange
+		IApplicationSectionDeleteService applicationSectionDeleteService = Substitute.For<IApplicationSectionDeleteService>();
+		ApplicationSectionDeleteTool tool = new(applicationSectionDeleteService);
+
+		// Act
+		ApplicationSectionDeleteContextResponse result = tool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			SectionCode: " ",
+			DeleteEntitySchema: false));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "tool validation failures should be returned as structured error payloads");
+		result.Error.Should().Match("*section-code is required*",
+			because: "the tool should explain that section-code identifies the section to remove");
+		applicationSectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the stable MCP tool name for delete-app so callers and tests share the same production identifier.")]
 	public void ApplicationDelete_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ApplicationDeleteTool)
@@ -631,7 +1283,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when application-delete omits app-name.")]
+	[Description("Returns a structured error envelope when delete-app omits app-name.")]
 	public void ApplicationDelete_Should_Return_Error_When_AppName_Is_Missing() {
 		// Arrange
 		UninstallAppCommand startupCommand = new(
@@ -658,7 +1310,7 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(
-			because: "application-delete should reject calls that do not identify the application to uninstall");
+			because: "delete-app should reject calls that do not identify the application to uninstall");
 		response.Error.Should().Contain("app-name is required",
 			because: "the tool should explain which required MCP argument is missing");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<UninstallAppCommand>(default!);
@@ -666,7 +1318,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves application-delete against the current MCP connection arguments instead of the startup-time command instance.")]
+	[Description("Resolves delete-app against the current MCP connection arguments instead of the startup-time command instance.")]
 	public void ApplicationDelete_Should_Resolve_Command_From_Current_Mcp_Connection() {
 		// Arrange
 		IApplicationClient startupApplicationClient = Substitute.For<IApplicationClient>();
@@ -702,7 +1354,7 @@ public sealed class ApplicationToolTests {
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "the resolver exception should be surfaced as a structured MCP failure");
-		response.Error.Should().Be("resolved from current MCP call",
+		response.Error.Should().Contain("resolved from current MCP call",
 			because: "the tool should resolve the uninstall command from the current MCP request target");
 		startupApplicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 		commandResolver.Received(1).Resolve<UninstallAppCommand>(Arg.Is<EnvironmentOptions>(options =>
@@ -714,7 +1366,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns readable diagnostics when application-delete cannot resolve a target environment or explicit URI.")]
+	[Description("Returns readable diagnostics when delete-app cannot resolve a target environment or explicit URI.")]
 	public void ApplicationDelete_Should_Return_Readable_Error_When_Target_Resolution_Fails() {
 		// Arrange
 		UninstallAppCommand startupCommand = new(
@@ -732,7 +1384,7 @@ public sealed class ApplicationToolTests {
 		commandResolver
 			.When(resolver => resolver.Resolve<UninstallAppCommand>(Arg.Any<EnvironmentOptions>()))
 			.Do(_ => throw new InvalidOperationException(
-				"Either a configured environment name or an explicit URI is required for MCP command execution."));
+				"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback."));
 		ApplicationDeleteTool tool = new(startupCommand, logger, commandResolver);
 
 		// Act
@@ -745,8 +1397,8 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(
-			because: "application-delete should return a structured failure when no execution target can be resolved");
-		response.Error.Should().Be("Either a configured environment name or an explicit URI is required for MCP command execution.",
+			because: "delete-app should return a structured failure when no execution target can be resolved");
+		response.Error.Should().Contain("Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.",
 			because: "the error payload should preserve the human-readable resolver diagnostics");
 		response.Error.Should().NotContain("ErrorMessage",
 			because: "the error payload should contain the log text instead of the log message type name");
@@ -754,7 +1406,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Marks app-name as the only required MCP field for application-delete while keeping environment and credentials optional.")]
+	[Description("Marks app-name as the only required MCP field for delete-app while keeping environment and credentials optional.")]
 	public void ApplicationDeleteArgs_Should_Require_Only_AppName() {
 		// Arrange
 		Type argsType = typeof(ApplicationDeleteArgs);
@@ -782,7 +1434,7 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		propertiesWithoutRequired.Should().BeEmpty(
-			because: "application-delete should keep app-name required in the MCP contract");
+			because: "delete-app should keep app-name required in the MCP contract");
 		propertiesStillRequired.Should().BeEmpty(
 			because: "environment-name and direct connection arguments should remain optional in the MCP contract");
 	}
@@ -804,11 +1456,26 @@ public sealed class ApplicationToolTests {
 			name: "Codex App",
 			code: "UsrCodexApp",
 			templateCode: "AppFreedomUI",
-			iconBackground: "#112233",
+			iconBackground: "#0058EF",
 			description: null,
 			iconId: "11111111-1111-1111-1111-111111111111",
 			clientTypeId: "22222222-2222-2222-2222-222222222222",
 			optionalTemplateDataJson: "{\"entitySchemaName\":\"UsrCodexEntity\"}");
+		string sectionCreatePrompt = ApplicationPrompt.ApplicationSectionCreate(
+			environmentName: "sandbox",
+			applicationCode: "UsrOrdersApp",
+			caption: "Orders",
+			description: "Order workspace",
+			entitySchemaName: "UsrOrder",
+			withMobilePages: true);
+		string sectionUpdatePrompt = ApplicationPrompt.ApplicationSectionUpdate(
+			environmentName: "sandbox",
+			applicationCode: "UsrOrdersApp",
+			sectionCode: "UsrOrders",
+			caption: "Orders",
+			description: "Order workspace",
+			iconId: "11111111-1111-1111-1111-111111111111",
+			iconBackground: "#A6DE00");
 
 		// Assert
 		listPrompt.Should().Contain(ApplicationGetListTool.ApplicationGetListToolName,
@@ -817,14 +1484,20 @@ public sealed class ApplicationToolTests {
 			because: "the list prompt should bootstrap the workflow from the authoritative MCP contract before the first application call");
 		listPrompt.Should().Contain("`environment-name`",
 			because: "the list prompt should keep the normalized environment argument visible");
-		listPrompt.Should().Contain("do not wrap `environment-name` inside an `args` object",
-			because: "the list prompt should explicitly reject the request shape that caused the analyzed session failure");
+		listPrompt.Should().Contain("call `reg-web-app` first",
+			because: "the list prompt should guide callers toward registering an environment before normal MCP work");
+		listPrompt.Should().Contain("emergency recovery flow",
+			because: "the list prompt should keep direct connection args in an emergency-only role");
+		listPrompt.Should().Contain("Wrap tool arguments under the top-level `args` JSON object",
+			because: "the list prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
+		listPrompt.Should().Contain("places `environment-name` inside the required `args` object",
+			because: "the list prompt should call out that environment-name must live inside the wrapped args object");
 		listPrompt.Should().NotContain("`app-id`",
 			because: "the list prompt should no longer advertise application filters");
 		listPrompt.Should().NotContain("`app-code`",
 			because: "the list prompt should no longer advertise application filters");
-		listPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the list prompt should point existing-app flows to the dedicated MCP maintenance guide");
+		listPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the list prompt should point existing-app flows to the dedicated guidance tool");
 		listPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			because: "the list prompt should direct callers to the canonical follow-up application inspection step");
 		infoPrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
@@ -839,92 +1512,207 @@ public sealed class ApplicationToolTests {
 			because: "the info prompt should document the canonical installed-application id selector");
 		infoPrompt.Should().Contain("`code`",
 			because: "the info prompt should document the canonical installed-application code selector");
-		infoPrompt.Should().Contain("docs://mcp/guides/existing-app-maintenance",
-			because: "the info prompt should point callers to the dedicated MCP maintenance guide for discover and inspect flows");
+		infoPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the info prompt should point callers to the dedicated guidance tool for discover and inspect flows");
 		createPrompt.Should().Contain(ApplicationCreateTool.ApplicationCreateToolName,
 			because: "the create prompt should reference the exact production tool name");
 		createPrompt.Should().Contain(ToolContractGetTool.ToolName,
 			because: "the create prompt should bootstrap app-modeling workflows from the authoritative MCP contract");
-		createPrompt.Should().Contain("Provide `name`, `code`, `template-code`, and `icon-background`",
-			because: "the create prompt should explain the new required input contract");
-		createPrompt.Should().Contain("do not nest them under `args`",
-			because: "the create prompt should explicitly reject the wrapper shape that caused the analyzed session failure");
+		createPrompt.Should().Contain("Provide `name`, `code`, and `template-code`",
+			because: "the create prompt should explain the required input contract");
+		createPrompt.Should().Contain("Wrap those fields inside the top-level `args` JSON object",
+			because: "the create prompt should explicitly publish the wrapped request shape required by the clio MCP tool schema");
 		createPrompt.Should().Contain("`optional-template-data-json`",
 			because: "the create prompt should mention the JSON string template-data field");
-		createPrompt.Should().Contain("docs://mcp/guides/app-modeling",
-			because: "the create prompt should point callers to the MCP-owned modeling guidance instead of relying only on consumer AGENTS instructions");
+		createPrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the create prompt should point callers to the MCP-owned modeling guidance through the guidance tool");
+		createPrompt.Should().Contain("internal Data Forge enrichment step",
+			because: "the create prompt should teach callers that create-app already runs the canonical Data Forge enrichment stage");
+		createPrompt.Should().Contain("Do not add a separate mandatory Data Forge preflight",
+			because: "the create prompt should prevent orchestration layers from duplicating required Data Forge logic outside create-app");
 		createPrompt.Should().Contain("canonical main entity",
 			because: "the create prompt should explain how callers should treat the template-created primary entity");
 		createPrompt.Should().Contain("scalar app-shell tool",
-			because: "the create prompt should state that application-create keeps app shell fields as plain strings");
+			because: "the create prompt should state that create-app keeps app shell fields as plain strings");
 		createPrompt.Should().Contain("Do not send `title-localizations`",
-			because: "the create prompt should prevent callers from mixing application-create with entity-schema localization maps");
+			because: "the create prompt should prevent callers from mixing create-app with entity-schema localization maps");
 		createPrompt.Should().Contain("Known values include `AppFreedomUI`",
 			because: "the create prompt should steer callers toward technical template names instead of display labels");
 		createPrompt.Should().Contain("Pass `client-type-id` only when a non-default Creatio client type is required.",
-			because: "the create prompt signature should stay in parity with the executable application-create contract");
+			because: "the create prompt signature should stay in parity with the executable create-app contract");
 		createPrompt.Should().Contain("follow-up entity-schema tools",
 			because: "the create prompt should direct callers to schema tools when localized captions are needed");
+		sectionCreatePrompt.Should().Contain(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+			because: "the section-create prompt should reference the exact production tool name");
+		sectionCreatePrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the section-create prompt should bootstrap existing-app mutation workflows from the authoritative MCP contract");
+		sectionCreatePrompt.Should().Contain("`application-code`",
+			because: "the section-create prompt should document the canonical code selector");
+		sectionCreatePrompt.Should().Contain("Provide `caption` as a plain scalar string",
+			because: "the section-create prompt should explain the scalar field shape explicitly");
+		sectionCreatePrompt.Should().Contain("`with-mobile-pages`",
+			because: "the section-create prompt should keep the mobile-page toggle visible");
+		sectionCreatePrompt.Should().Contain("defaults to `true`",
+			because: "the section-create prompt should document the mobile-enabled default explicitly");
+		sectionCreatePrompt.Should().Contain("`entity-schema-name` is provided",
+			because: "the section-create prompt should explain that the entity field alone triggers entity reuse");
+		sectionCreatePrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the section-create prompt should reject localization maps on the scalar section tool");
+		sectionCreatePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the section-create prompt should point callers to the existing-app maintenance guide through the guidance tool");
+		sectionCreatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the section-create prompt should point callers to the canonical inspect and verify step");
+		sectionUpdatePrompt.Should().Contain(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+			because: "the section-update prompt should reference the exact production tool name");
+		sectionUpdatePrompt.Should().Contain(ToolContractGetTool.ToolName,
+			because: "the section-update prompt should bootstrap existing-app mutation workflows from the authoritative MCP contract");
+		sectionUpdatePrompt.Should().Contain("`application-code`",
+			because: "the section-update prompt should document the canonical app selector");
+		sectionUpdatePrompt.Should().Contain("`section-code`",
+			because: "the section-update prompt should document the canonical section selector");
+		sectionUpdatePrompt.Should().Contain("partial update fields",
+			because: "the section-update prompt should explain that omitted fields remain unchanged");
+		sectionUpdatePrompt.Should().Contain("plain-text `caption`",
+			because: "the section-update prompt should explain how callers fix broken JSON-style headings");
+		sectionUpdatePrompt.Should().Contain("Do not send `title-localizations`",
+			because: "the section-update prompt should reject localization maps on the scalar update tool");
+		sectionUpdatePrompt.Should().Contain(GuidanceGetTool.ToolName,
+			because: "the section-update prompt should point callers to the existing-app maintenance guide through the guidance tool");
+		sectionUpdatePrompt.Should().Contain(ApplicationGetInfoTool.ApplicationGetInfoToolName,
+			because: "the section-update prompt should point callers to the canonical inspect step");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when template-code is missing from the minimal application-create shell.")]
-	public void ApplicationCreate_Should_Return_Error_When_TemplateCode_Is_Missing() {
+	[Description("Uses AppFreedomUI as default when template-code is null or empty.")]
+	public async Task ApplicationCreate_Should_Use_Default_Template_When_TemplateCode_Is_Empty() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult(
+				PackageUId: Guid.NewGuid().ToString(),
+				PackageName: "UsrCodexApp",
+				Entities: Array.Empty<ApplicationEntityInfoResult>(),
+				ApplicationId: Guid.NewGuid().ToString()));
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(
+				Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
 			Description: null,
 			TemplateCode: string.Empty,
 			IconId: null,
-			IconBackground: "#112233",
+			IconBackground: "#0058EF",
 			ClientTypeId: null,
 			OptionalTemplateDataJson: null));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "missing required shell fields should fail before the backend create flow starts");
-		result.Error.Should().Contain("template-code is required",
-			because: "the validation message should identify the missing contract field");
-		result.Error.Should().Contain("AppFreedomUI",
-			because: "the validation message should point callers to a usable technical template example");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		result.Success.Should().BeTrue(
+			because: "empty template-code should fall back to AppFreedomUI and succeed");
+		applicationCreateService.Received(1).CreateApplication(
+			"sandbox",
+			Arg.Is<ApplicationCreateRequest>(r => r.TemplateCode == "AppFreedomUI"));
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured error envelope when icon-background is missing from the minimal application-create shell.")]
-	public void ApplicationCreate_Should_Return_Error_When_IconBackground_Is_Missing() {
+	[Description("Accepts a missing icon-background and forwards the request to the service, which assigns a random palette color.")]
+	public async Task ApplicationCreate_Should_Accept_Missing_IconBackground_And_Forward_To_Service() {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
-		ApplicationCreateTool tool = new(applicationCreateService);
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
 
 		// Act
-		ApplicationContextResponse result = tool.ApplicationCreate(new ApplicationCreateArgs(
+		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
 			EnvironmentName: "sandbox",
 			Name: "Codex App",
 			Code: "UsrCodexApp",
-			Description: null,
-			TemplateCode: "AppFreedomUI",
-			IconId: null,
-			IconBackground: string.Empty,
-			ClientTypeId: null,
-			OptionalTemplateDataJson: null));
+			IconBackground: null));
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "missing required shell fields should fail before the backend create flow starts");
-		result.Error.Should().Contain("icon-background is required",
-			because: "the validation message should identify the missing contract field");
-		result.Error.Should().Contain("#1F5F8B",
-			because: "the validation message should point callers to a valid color example");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		result.Success.Should().BeTrue(
+			because: "omitting icon-background is valid — the service assigns a random Freedom UI palette color");
+		applicationCreateService.ReceivedWithAnyArgs().CreateApplication(default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.Colors contains exactly the 16 swatches the Creatio backend accepts for SysModule.IconBackground")]
+	public void SectionIconPalette_Should_Expose_Exactly_16_Allowed_Colors() {
+		Clio.Command.McpServer.Tools.SectionIconPalette.Colors.Should().HaveCount(16,
+			because: "Creatio renders exactly 16 swatches in the designer and the DataBinding enum has 16 values");
+		foreach (string color in Clio.Command.McpServer.Tools.SectionIconPalette.Colors) {
+			color.Should().MatchRegex(@"^#[0-9A-F]{6}$",
+				because: "every palette entry must be an uppercase #RRGGBB hex literal so value round-tripping stays stable");
+			Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed(color).Should().BeTrue(
+				because: "the palette entry itself must pass the public validator");
+			Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed(color.ToLowerInvariant()).Should().BeTrue(
+				because: "lookup must be case-insensitive so AI callers passing lowercase hex still pass");
+		}
+		Clio.Command.McpServer.Tools.SectionIconPalette.IsAllowed("#123456").Should().BeFalse(
+			because: "arbitrary colors outside the 16 swatches must be rejected to prevent backend failures");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.ResolveAsync throws ArgumentException listing allowed colors when the client does not support elicitation and the caller passed an invalid value")]
+	public async System.Threading.Tasks.Task SectionIconPalette_Should_Throw_With_Palette_List_When_Client_Cannot_Elicit() {
+		Func<System.Threading.Tasks.Task> act = () => Clio.Command.McpServer.Tools.SectionIconPalette.ResolveAsync(
+			server: null,
+			requestedColor: "#999999",
+			sectionLabel: "Orders",
+			cancellationToken: System.Threading.CancellationToken.None);
+
+		ArgumentException thrown = (await act.Should().ThrowAsync<ArgumentException>(
+			because: "without an elicitation-capable client the tool must fail fast with a machine-readable error")).Which;
+		thrown.Message.Should().Contain("not a recognised color",
+			because: "the error must name the rejected value and the rule that was broken");
+		thrown.Message.Should().Contain("#A6DE00",
+			because: "the error must include the full palette so AI callers can retry with a valid color");
+		thrown.Message.Should().Contain("#00BFA5");
+		thrown.Message.Should().Contain("color name",
+			because: "the error must tell callers they can also pass named colors not only hex");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SectionIconPalette.TryNormalize maps English, Ukrainian, and Russian color names to canonical palette hex")]
+	public void SectionIconPalette_Should_Resolve_Named_Colors_To_Hex() {
+		var cases = new (string Input, string ExpectedHex)[] {
+			("red", "#FF4013"),
+			("червоний", "#FF4013"),
+			("красный", "#FF4013"),
+			("blue", "#0058EF"),
+			("синій", "#0058EF"),
+			("синий", "#0058EF"),
+			("green", "#20A959"),
+			("зелений", "#20A959"),
+			("mint", "#00BFA5"),
+			("м'ятний", "#00BFA5"),
+			("#a6de00", "#A6DE00"),
+			("#A6DE00", "#A6DE00")
+		};
+		foreach ((string input, string expected) in cases) {
+			Clio.Command.McpServer.Tools.SectionIconPalette.TryNormalize(input, out string normalized).Should().BeTrue(
+				because: $"'{input}' must resolve to a palette hex");
+			normalized.Should().Be(expected,
+				because: $"'{input}' is canonically {expected}");
+		}
+		Clio.Command.McpServer.Tools.SectionIconPalette.TryNormalize("banana", out _).Should().BeFalse(
+			because: "unrecognised free-form names must not smuggle invalid colors into SaveSchema");
 	}
 
 }

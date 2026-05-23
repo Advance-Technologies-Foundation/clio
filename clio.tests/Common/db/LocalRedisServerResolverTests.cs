@@ -6,8 +6,9 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Common.db;
 
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Common")]
 public class LocalRedisServerResolverTests
 {
 	private ISettingsRepository _settingsRepository;

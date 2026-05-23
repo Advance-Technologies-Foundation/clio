@@ -110,7 +110,7 @@ installation instructions
 ## Troubleshooting
 
     If command fails:
-    - Verify environment is registered: clio show-web-app-list
+    - Verify environment is registered: clio list-environments
     - Check cliogate is installed: clio install-gate -e <ENVIRONMENT>
     - Ensure cliogate version is 2.0.0.32 or higher
     - Verify network connectivity to Creatio instance
@@ -120,8 +120,8 @@ installation instructions
 
 install-gate       - Install cliogate on Creatio instance
 reg-web-app        - Register environment configuration
-show-web-app-list  - Show registered environments
-get-pkg-list       - Get list of packages in environment
+list-environments  - Show registered environments
+list-packages      - Get list of packages in environment
 get-build-info     - Get build information
 info               - Get clio version information
 

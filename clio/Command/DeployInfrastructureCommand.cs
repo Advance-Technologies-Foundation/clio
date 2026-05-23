@@ -338,9 +338,10 @@ public class DeployInfrastructureCommand(IProcessExecutor processExecutor, ILogg
 					AbortOnConnectFail = false
 				};
 
-				// Suppress console output during connection attempts
+#pragma warning disable CLIO002
 				TextWriter originalConsoleOut = Console.Out;
 				TextWriter originalConsoleError = Console.Error;
+#pragma warning restore CLIO002
 				try {
 					// Redirect console output to null during connection attempts
 					Console.SetOut(TextWriter.Null);

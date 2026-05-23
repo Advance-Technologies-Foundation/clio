@@ -7,6 +7,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.IIS;
 
 [TestFixture]
+[Property("Module", "Common")]
 public sealed class AvailableIisPortServiceTests
 {
 	[Test]

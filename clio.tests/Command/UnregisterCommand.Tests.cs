@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 	#region Fields: Private
 
@@ -90,6 +91,43 @@ internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 		result.Should().Be(1, because: "unregister should fail when process execution throws");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("reg failure", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	[Test]
+	[Description("Execute should log only the message without stack trace when exception occurs in normal mode")]
+	public void Execute_WhenProcessExecutorThrows_LogsMessageOnly_InNormalMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = false;
+		try {
+			_processExecutor
+				.When(x => x.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()))
+				.Do(_ => throw new Exception("reg failure"));
+
+			_unregisterCommand.Execute(new UnregisterOptions());
+
+			_logger.Received(1).WriteError("reg failure");
+			_logger.DidNotReceive().WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
+	[Description("Execute should log full stack trace when exception occurs in debug mode")]
+	public void Execute_WhenProcessExecutorThrows_LogsFullStackTrace_InDebugMode() {
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = true;
+		try {
+			_processExecutor
+				.When(x => x.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()))
+				.Do(_ => throw new Exception("reg failure"));
+
+			_unregisterCommand.Execute(new UnregisterOptions());
+
+			_logger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("   at ")));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
 	}
 
 	[Test]

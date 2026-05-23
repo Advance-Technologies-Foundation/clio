@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.Kubernetes;
 
 [TestFixture]
+[Property("Module", "Common")]
 [Category("Unit")]
 public class K8DatabaseAssertionTests
 {

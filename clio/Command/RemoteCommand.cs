@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Reflection;
 using Clio.Common;
 using CommandLine;
-using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace Clio.Command
 {
@@ -16,15 +15,31 @@ namespace Clio.Command
         private int? _timeOut;
         protected virtual int DefaultTimeout { get; set; } = 100_000;
 
-        [Option("timeout", Required = false, HelpText = "Request timeout in milliseconds", Default = 100_000)]
+        [Option("timeout", Required = false, HelpText = "Request timeout in milliseconds")]
         public int TimeOut
         {
-            get => _timeOut ?? DefaultTimeout;
+            get => _timeOut ?? GetTimeOut();
             internal set => _timeOut = value;
         }
 
         public int RetryCount { get; internal set; } = 3;
         public int RetryDelay { get; internal set; } = 1;
+
+
+        private int GetTimeOut() {
+            string commandName = this.GetType().GetCustomAttribute<VerbAttribute>()?.Name ?? "undefined-command";
+            int timeout =  commandName switch {
+                               "generate-source-code" 
+                                   or "compile-configuration" => 
+                                   (int)TimeSpan.FromMinutes(60).TotalMilliseconds,
+                               "compile-package" => (int)TimeSpan.FromMinutes(10).TotalMilliseconds,
+                               "call-service" => (int)TimeSpan.FromMinutes(1).TotalMilliseconds,
+                               var _ => DefaultTimeout
+                           };
+            this.TimeOut = timeout; // cache timeout value for future use
+            return timeout;
+        }
+        
     }
 
     /// <summary>
@@ -187,7 +202,7 @@ namespace Clio.Command
             }
             catch (Exception e)
             {
-                Logger.WriteError(e.Message);
+                Logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
                 return 1;
             }
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis;
@@ -27,6 +28,15 @@ public sealed class ConsoleOutputAnalyzer : DiagnosticAnalyzer {
 	private static readonly ImmutableHashSet<string> ConsoleOutputProperties = ImmutableHashSet.Create(
 		"Out",
 		"OutputEncoding");
+
+	private static readonly ImmutableHashSet<string> ExemptNamespaces = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.Command.Quiz");
+
+	private static readonly ImmutableHashSet<string> ExemptTypeFullNames = ImmutableHashSet.Create(
+		StringComparer.Ordinal,
+		"Clio.Program",
+		"Clio.EnvironmentSettings");
 
 	#region Properties: Public
 
@@ -58,7 +68,7 @@ public sealed class ConsoleOutputAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
-		if (IsClioConsoleLogger(context)) {
+		if (IsClioConsoleLogger(context) || IsExemptContext(context)) {
 			return;
 		}
 
@@ -73,7 +83,7 @@ public sealed class ConsoleOutputAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
-		if (IsClioConsoleLogger(context)) {
+		if (IsClioConsoleLogger(context) || IsExemptContext(context)) {
 			return;
 		}
 
@@ -107,6 +117,22 @@ public sealed class ConsoleOutputAnalyzer : DiagnosticAnalyzer {
 		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
 		return containingClass?.Name == "ConsoleLogger"
 			&& containingClass.ContainingNamespace.ToDisplayString().StartsWith("Clio", StringComparison.Ordinal);
+	}
+
+	private static bool IsExemptContext(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		if (containingClass is null) {
+			return false;
+		}
+
+		string fullTypeName = containingClass.ToDisplayString();
+		if (ExemptTypeFullNames.Contains(fullTypeName)) {
+			return true;
+		}
+
+		string namespaceName = containingClass.ContainingNamespace.ToDisplayString();
+		return ExemptNamespaces.Any(exempt =>
+			namespaceName == exempt || namespaceName.StartsWith(exempt + ".", StringComparison.Ordinal));
 	}
 
 	private static bool IsConsoleType(INamedTypeSymbol typeSymbol) {

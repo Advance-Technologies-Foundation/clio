@@ -14,5 +14,4 @@ Connects a workspace to a T.I.D.E. repository structure for collaborative develo
 
 ## See also
 
-- [install-tide](./install-tide.md)
 - [Commands.md](../../Commands.md#link-workspace-with-tide-repository)

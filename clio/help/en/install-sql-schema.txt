@@ -1,0 +1,58 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    install-sql-schema - Execute a SQL script schema on a remote Creatio environment
+
+ALIASES
+    sql-schema-install, execute-sql-schema
+
+SYNOPSIS
+    clio install-sql-schema [OPTIONS]
+
+DESCRIPTION
+    Executes an existing SQL script schema on a remote Creatio environment via
+    ScriptSchemaDesignerService.svc/ExecuteScript. The schema is resolved by
+    name and its current body is executed directly against the configured
+    database.
+
+    WARNING
+        This command runs raw SQL against the live database behind the target
+        Creatio environment. The effects are IRREVERSIBLE: statements such as
+        DROP, DELETE, TRUNCATE, UPDATE, or schema changes will be applied
+        immediately and cannot be rolled back by clio. There is no transactional
+        safety net, no dry-run, and no confirmation prompt. Review the schema
+        body with get-sql-schema before running, and prefer pointing it at a
+        disposable or backed-up environment first. Production use requires
+        explicit change-management approval.
+
+OPTIONS
+    --schema-name                      SQL script schema name to execute (required)
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+    --Maintainer             -m       Maintainer name
+
+EXAMPLES
+    clio install-sql-schema --schema-name UsrCleanupStaleRows -e dev
+        Execute the current body of UsrCleanupStaleRows on the dev environment
+
+    clio sql-schema-install --schema-name UsrCleanupStaleRows -e dev
+        Same as above using the alias
+
+    clio execute-sql-schema --schema-name UsrCleanupStaleRows -e dev
+        Same as above using the execute-sql-schema alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-sql-schema - Read body and metadata of a SQL script schema
+    update-sql-schema - Replace the body of a SQL script schema
+    create-sql-schema - Create a new SQL script schema

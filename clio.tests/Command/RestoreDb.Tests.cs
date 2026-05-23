@@ -13,8 +13,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
-[Category("UnitTests")]
+[Category("Unit")]
 [TestFixture]
+[Property("Module", "Command")]
 public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 {
 	[Test]
@@ -58,6 +59,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			Substitute.For<ICreatioInstallerService>(),
@@ -105,6 +107,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			creatioInstallerService,
@@ -164,6 +167,7 @@ public class RestoreDbTests : BaseCommandTests<RestoreDbCommandOptions>
 		RestoreDbCommand sut = new(
 			logger,
 			fileSystem,
+			new System.IO.Abstractions.FileSystem(),
 			dbClientFactory,
 			settingsRepository,
 			creatioInstallerService,

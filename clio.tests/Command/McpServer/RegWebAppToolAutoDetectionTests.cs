@@ -10,6 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
 public sealed class RegWebAppToolAutoDetectionTests {
 	[Test]
 	[Description("Leaves IsNetCore unset when the MCP caller omits is-net-core so reg-web-app can auto-detect the runtime.")]

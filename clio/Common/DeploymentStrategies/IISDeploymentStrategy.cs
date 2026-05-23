@@ -8,6 +8,7 @@ using Clio.Common;
 using Clio.Common.ScenarioHandlers;
 using MediatR;
 using OneOf;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.DeploymentStrategies;
 
@@ -19,14 +20,22 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 {
 	private readonly IMediator _mediator;
 	private readonly ILogger _logger;
+	private readonly IAbstractionsFileSystem _fileSystem;
+	private readonly IWindowsFeatureManager _windowsFeatureManager;
 
 	/// <summary>
 	/// Initializes a new instance of the IISDeploymentStrategy class.
 	/// </summary>
-	public IISDeploymentStrategy(IMediator mediator, ILogger logger)
+	public IISDeploymentStrategy(
+		IMediator mediator,
+		ILogger logger,
+		IAbstractionsFileSystem fileSystem,
+		IWindowsFeatureManager windowsFeatureManager)
 	{
 		_mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_windowsFeatureManager = windowsFeatureManager ?? throw new ArgumentNullException(nameof(windowsFeatureManager));
 	}
 
 	/// <summary>
@@ -60,6 +69,11 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 
 		_logger.WriteInfo("[Create IIS Site] - Started");
 
+		// Pre-deploy: best-effort check & install of Windows features required by Creatio.
+		// Runs for every IIS-on-Windows deploy regardless of framework. Failures are logged
+		// as warnings — deployment continues just like before this check existed.
+		EnsureRequiredWindowsFeatures();
+
 		try {
 			InstallerHelper.FrameworkType frameworkType = InstallerHelper.DetectFrameworkByPath(appDirectoryPath);
 			CreateIISSiteRequest request = new() {
@@ -67,7 +81,7 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 					{ "siteName", options.SiteName },
 					{ "port", options.SitePort.ToString() },
 					{ "sourceDirectory", appDirectoryPath },
-					{ "destinationDirectory", System.IO.Path.GetDirectoryName(appDirectoryPath) ?? string.Empty }, // Will be filled from settings
+					{ "destinationDirectory", _fileSystem.Path.GetDirectoryName(appDirectoryPath) ?? string.Empty },
 					{ "isNetFramework", (frameworkType == InstallerHelper.FrameworkType.NetFramework).ToString() }
 				}
 			};
@@ -123,4 +137,30 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 	/// Gets a human-readable description of this deployment strategy.
 	/// </summary>
 	public string GetDescription() => "Windows IIS (Internet Information Services)";
+
+	private void EnsureRequiredWindowsFeatures()
+	{
+		try {
+			List<WindowsFeature> missed = _windowsFeatureManager.GetMissedComponents();
+			if (missed is null || missed.Count == 0) {
+				_logger.WriteInfo("[Create IIS Site] - All required Windows features are installed.");
+				return;
+			}
+			_logger.WriteInfo($"[Create IIS Site] - Found {missed.Count} missing Windows feature(s) required by Creatio. Attempting to install...");
+			foreach (WindowsFeature feature in missed) {
+				try {
+					_windowsFeatureManager.InstallFeature(feature.Name);
+				}
+				catch (Exception ex) {
+					_logger.WriteWarning(
+						$"Could not install Windows feature '{feature.Name}': {ex.Message}. "
+						+ "Deployment will continue; install it manually if required.");
+				}
+			}
+		}
+		catch (Exception ex) {
+			_logger.WriteWarning(
+				$"Could not check required Windows features: {ex.Message}. Deployment will continue.");
+		}
+	}
 }

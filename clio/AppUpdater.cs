@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -8,13 +8,14 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
 
 namespace Clio;
 
-public class AppUpdater(ILogger logger) : IAppUpdater {
+public class AppUpdater(ILogger logger, IProcessExecutor processExecutor) : IAppUpdater {
 
 
 	#region Properties: Private
@@ -33,18 +34,18 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 
 	#region Methods: Private
 
-	private async Task<string> GetLatestPackageVersionAsync(string packageName){
+	private async Task<string> GetLatestPackageVersionAsync(string packageName,
+		CancellationToken cancellationToken = default){
 		string searchUrl = $"https://api.nuget.org/v3-flatcontainer/{packageName.ToLower()}/index.json";
 
 		try {
 			using HttpClient client = new();
-			HttpResponseMessage response = await client.GetAsync(searchUrl);
+			HttpResponseMessage response = await client.GetAsync(searchUrl, cancellationToken);
 			response.EnsureSuccessStatusCode();
 
-			string responseBody = await response.Content.ReadAsStringAsync();
+			string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 			JObject data = JObject.Parse(responseBody);
 
-			// Extracting the latest version from the response
 			string latestVersion = data["versions"].Last.ToString();
 
 			return latestVersion;
@@ -126,34 +127,21 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 				arguments += " -g";
 			}
 
-			ProcessStartInfo psi = new ProcessStartInfo {
-				FileName = "dotnet",
-				Arguments = arguments,
-				UseShellExecute = false,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				CreateNoWindow = true
-			};
+			ProcessExecutionOptions options = new("dotnet", arguments);
+			ProcessExecutionResult result = await processExecutor.ExecuteAndCaptureAsync(options);
 
-			using (Process process = Process.Start(psi)) {
-				if (process == null) {
-					logger.WriteError("Failed to start dotnet tool update process");
-					return 1;
-				}
-
-				string output = await process.StandardOutput.ReadToEndAsync();
-				string error = await process.StandardError.ReadToEndAsync();
-
-				process.WaitForExit();
-
-				if (process.ExitCode != 0) {
-					logger.WriteError($"Update failed: {error}");
-					return 1;
-				}
-
-				logger.WriteInfo(output);
-				return 0;
+			if (!result.Started) {
+				logger.WriteError($"Failed to start dotnet tool update process: {result.StandardError}");
+				return 1;
 			}
+
+			if (result.ExitCode != 0) {
+				logger.WriteError($"Update failed: {result.StandardError}");
+				return 1;
+			}
+
+			logger.WriteDebug(result.StandardOutput.Trim());
+			return 0;
 		} catch (Exception e) {
 			logger.WriteError($"Error executing update: {e.Message}");
 			return 1;
@@ -163,43 +151,104 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 	/// <inheritdoc/>
 	public async Task<bool> VerifyInstallationAsync(string expectedVersion){
 		try {
-			ProcessStartInfo psi = new ProcessStartInfo {
-				FileName = "clio",
-				Arguments = "info --clio",
-				UseShellExecute = false,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				CreateNoWindow = true
-			};
+			ProcessExecutionOptions options = new("clio", "info --clio");
+			ProcessExecutionResult result = await processExecutor.ExecuteAndCaptureAsync(options);
 
-			using (Process process = Process.Start(psi)) {
-				if (process == null) {
-					logger.WriteError("Failed to verify clio installation");
-					return false;
-				}
-
-				string output = await process.StandardOutput.ReadToEndAsync();
-				string error = await process.StandardError.ReadToEndAsync();
-				process.WaitForExit();
-
-				if (process.ExitCode != 0) {
-					logger.WriteError($"Verification command failed: {error.Trim()}");
-					return false;
-				}
-
-				string installedVersion = NormalizeInstalledVersion(output, error);
-				bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
-
-				if (!isVerified) {
-					logger.WriteWarning($"Version mismatch: expected {expectedVersion}, got {installedVersion}");
-				}
-
-				return isVerified;
+			if (!result.Started) {
+				logger.WriteError("Failed to verify clio installation");
+				return false;
 			}
+
+			if (result.ExitCode != 0) {
+				logger.WriteError($"Verification command failed: {result.StandardError.Trim()}");
+				return false;
+			}
+
+			string installedVersion = NormalizeInstalledVersion(result.StandardOutput, result.StandardError);
+			bool isVerified = installedVersion.Equals(expectedVersion, StringComparison.OrdinalIgnoreCase);
+
+			if (!isVerified) {
+				logger.WriteWarning($"Version mismatch: expected {expectedVersion}, got {installedVersion}");
+			}
+
+			return isVerified;
 		} catch (Exception e) {
 			logger.WriteError($"Error verifying installation: {e.Message}");
 			return false;
 		}
+	}
+
+	/// <inheritdoc/>
+	public string GetUpdateType(string currentVersion, string latestVersion) {
+		try {
+			var current = new Version(currentVersion);
+			var latest = new Version(latestVersion);
+			if (latest.Major != current.Major) return "MAJOR";
+			if (latest.Minor != current.Minor) return "minor";
+			if (latest.Build != current.Build) return "patch";
+			return "build";
+		} catch {
+			return "update";
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task<string> GetReleaseNotesAsync(string version) {
+		try {
+			using HttpClient client = new();
+			client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+			client.DefaultRequestHeaders.UserAgent.TryParseAdd("clio");
+
+			string url = $"https://api.github.com/repos/Advance-Technologies-Foundation/clio/releases/tags/{version}";
+			using HttpResponseMessage response = await client.GetAsync(url);
+
+			if (!response.IsSuccessStatusCode) {
+				return null;
+			}
+
+			string json = await response.Content.ReadAsStringAsync();
+			JsonObject jsonDoc = (JsonObject)JsonNode.Parse(json);
+			string body = jsonDoc["body"]?.ToString();
+			return string.IsNullOrWhiteSpace(body) ? null : body.Trim();
+		} catch {
+			return null;
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder) {
+		try {
+			UpdateCheckCache cache = UpdateCheckCache.Load(cacheFolder);
+			string currentVersion = GetCurrentVersion();
+
+			if (!cache.IsCheckDue() && !string.IsNullOrEmpty(cache.LatestVersion)) {
+				bool available = CompareVersions(currentVersion, cache.LatestVersion) < 0;
+				return (available, cache.LatestVersion);
+			}
+
+			using CancellationTokenSource cts = new(TimeSpan.FromSeconds(3));
+			string latestVersion = await GetLatestPackageVersionAsync("clio", cts.Token)
+				.ConfigureAwait(false);
+
+			if (string.IsNullOrEmpty(latestVersion)) {
+				return (false, null);
+			}
+
+			UpdateCheckCache.Save(cacheFolder, new UpdateCheckCache {
+				LastCheckedUtc = DateTime.UtcNow,
+				LatestVersion = latestVersion
+			});
+
+			return (CompareVersions(currentVersion, latestVersion) < 0, latestVersion);
+		} catch {
+			return (false, null);
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task UpdateInBackgroundAsync() {
+		ProcessExecutionOptions options = new("dotnet", "tool update clio -g");
+		await processExecutor.FireAndForgetAsync(options).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -214,7 +263,6 @@ public class AppUpdater(ILogger logger) : IAppUpdater {
 			var v2 = new Version(version2);
 			return v1.CompareTo(v2);
 		} catch {
-			// Fallback to string comparison if version parsing fails
 			return string.Compare(version1, version2, StringComparison.OrdinalIgnoreCase);
 		}
 	}
@@ -303,6 +351,29 @@ public interface IAppUpdater {
 	/// <param name="expectedVersion">Expected version string to verify</param>
 	/// <returns>True if verification successful, false otherwise</returns>
 	Task<bool> VerifyInstallationAsync(string expectedVersion);
+
+	/// <summary>
+	/// Determines the type of version change (MAJOR, minor, patch, build).
+	/// </summary>
+	string GetUpdateType(string currentVersion, string latestVersion);
+
+	/// <summary>
+	/// Fetches release notes from GitHub for the specified version tag.
+	/// </summary>
+	/// <returns>Release notes body or null if not available</returns>
+	Task<string> GetReleaseNotesAsync(string version);
+
+	/// <summary>
+	/// Checks whether an update is available, using a local cache to avoid hitting NuGet more
+	/// than once every 8 hours.
+	/// </summary>
+	Task<(bool Available, string LatestVersion)> CheckForUpdateWithCacheAsync(string cacheFolder);
+
+	/// <summary>
+	/// Launches <c>dotnet tool update clio -g</c> as a detached background process and returns
+	/// immediately.  The update takes effect on the next invocation of clio.
+	/// </summary>
+	Task UpdateInBackgroundAsync();
 
 	#endregion
 

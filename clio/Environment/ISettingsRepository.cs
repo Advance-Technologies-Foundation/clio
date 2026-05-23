@@ -163,5 +163,22 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <returns>The configured default environment name.</returns>
 		string GetDefaultEnvironmentName();
+		
+		/// <summary>
+		/// Gets the actual environment name to use based on the supplied environment name or default when omitted.
+		/// </summary>
+		/// <param name="environmentName"></param>
+		/// <returns></returns>
+		string GetActualEnvironmentName(string environmentName);
+
+		/// <summary>
+		/// Gets the AutoUpdate setting. Returns true when not explicitly configured (opt-out model).
+		/// </summary>
+		bool GetAutoupdate();
+
+		/// <summary>
+		/// Persists the AutoUpdate setting.
+		/// </summary>
+		void SetAutoupdate(bool value);
 	}
 }

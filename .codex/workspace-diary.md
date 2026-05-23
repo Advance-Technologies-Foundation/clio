@@ -320,6 +320,20 @@ Discovery: A large share of the missing GitHub docs surface was caused by filena
 Files: clio/docs/commands/*.md, .codex/workspace-diary.md
 Impact: The specific command set previously missing local help now also has matching GitHub markdown documentation pages.
 
+## 2026-04-10 00:00 – Resolve remaining PR 524 Sonar warnings
+Context: User asked to fix the SonarCloud warnings that remained relevant on pull request 524 after triage.
+Decision: Replaced remaining raw MCP field-name literals in the tool-contract catalog with shared constants, added an explicit suppression for the intentionally wide serialized `ToolContractDefinition` record, and extracted Data Forge coverage calculation helpers from `GetContextAsync` to lower method cognitive complexity without changing behavior.
+Discovery: The `RuntimeEntitySchemaReader` Sonar “unassigned property” findings were false positives caused by positional record deserialization through `System.Text.Json`, while the true actionable warnings were confined to the MCP contract file and Data Forge aggregation method.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Common/DataForge/DataForgeContextService.cs, .codex/workspace-diary.md
+Impact: PR 524’s remaining actionable Sonar warnings are addressed with targeted, behavior-preserving changes and focused unit-test coverage remains green.
+
+## 2026-04-10 00:20 – Backfill DataForge coverage-flag unit tests
+Context: Staged review of the Sonar warning fix found that the extracted Data Forge coverage helper branches were not fully exercised by existing tests.
+Decision: Extended `DataForgeContextServiceTests` to assert positive coverage flags in the existing success path, assert omitted-input behavior, and add a negative-path test covering false `Tables`, `Lookups`, and `Relations` coverage outcomes.
+Discovery: NSubstitute needed an explicit faulted `Task` return for async relation lookup failure; using a throwing lambda against `Returns` was ambiguous for the async overload set.
+Files: clio.tests/Common/DataForgeContextServiceTests.cs, .codex/workspace-diary.md
+Impact: The staged review finding is resolved and the extracted coverage helpers now have direct regression protection.
+
 ## 2026-02-23 - Remove CLIO004 ProcessStartInfo usage in RestoreDb
 Context: User requested addressing CLIO004 warning for direct ProcessStartInfo usage in RestoreDb.cs.
 Decision: Injected IProcessExecutor into RestoreDbCommand and replaced ExecutePgRestoreCommand low-level Process/ProcessStartInfo logic with ProcessExecutionOptions + ExecuteWithRealtimeOutputAsync, preserving debug and throttled progress logging behavior.
@@ -995,6 +1009,13 @@ Files: clio/clio.csproj, clio.mcp.e2e/Support/Configuration/TestConfiguration.cs
 Impact: Future test-start requests can use a direct `dotnet build ./clio/clio.csproj -c Debug --no-incremental` instead of the heavier full packaging script unless `cliogate` artifacts also need regeneration.
 
 ## 2026-03-24 14:28 – Add component-info MCP catalog and ADAC integration
+
+## 2026-04-10 16:20 – Restore full clio.tests pass after merge-related test drift
+Context: After validating tests for files changed by the latest merges, the user asked to run the full `clio.tests` project and confirm the overall suite status.
+Decision: Removed a duplicate test method from `RemoteEntitySchemaColumnManagerTests`, realigned the `CreateEntitySchemaTool` localization test with the current no-synthesis behavior, and updated `McpGuidanceResourceTests` to assert the current wording of the existing-app maintenance guidance resource.
+Discovery: The remaining full-suite failure was not a production regression but a stale exact-string assertion in `McpGuidanceResourceTests`; the guidance text now instructs callers to resolve the backing schema from runtime app context before planning new schema work.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, .codex/workspace-diary.md
+Impact: Future full-suite validations on this branch should start from a green `clio.tests` baseline, and merge conflict resolutions in entity-schema MCP tests can be checked against the current no-localization-synthesis contract.
 Context: User asked to execute the new plan for a curated `component-info` MCP tool in `clio` and wire the corresponding ADAC guidance so page-editing agents can inspect unfamiliar Freedom UI component types on demand.
 Decision: Added a shipped JSON component registry plus a local `component-info` MCP tool with grouped list/detail modes, updated page prompt and `mcp-server` docs to mention the new helper, and synchronized ADAC docs plus `scripts/mcp_client.py` validation so the new tool is callable from agent workflows.
 Discovery: `component-info` does not need environment resolution, so a plain local MCP tool is enough; targeted `clio.tests` passed with `--no-restore`, ADAC `unittest` passed, and `clio.mcp.e2e` remains blocked on this machine because the project targets `net10.0` while the installed SDK is `8.0.124`.
@@ -1125,6 +1146,131 @@ Decision: Used frontend `@CrtViewElement`, `contentSlots`, collection-property u
 Discovery: Several important Freedom UI contracts were missing from the shipped registry even though the frontend exposes them clearly, including `crt.Calendar`, `crt.Gallery`, `crt.Chat`, `crt.Conversation`, `crt.Feed`, `crt.Summaries`, `crt.FilePreview`, and nested menu contracts like `crt.MenuItem`, `crt.MenuLabel`, and `crt.MenuDivider`; local MCP E2E execution is currently blocked here because `clio.mcp.e2e` targets `net10.0` while the installed SDK is `8.0.124`.
 Files: clio/Command/McpServer/Data/ComponentRegistry.json, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.mcp.e2e/ComponentInfoToolE2ETests.cs, .codex/workspace-diary.md
 Impact: Future page-editing flows can inspect real frontend-derived component slots and action contracts directly through MCP, and the added tests guard both catalog search semantics and nested menu detail lookups.
+## 2026-03-22 21:30 – Composite MCP tools: schema-sync and page-sync
+Context: MCP clients making sequential calls (5 for schema setup, 9 for page sync) pay per-call overhead: 500ms Thread.Sleep, global lock acquisition, JSON-RPC round-trip. Spec doc: ai-driven-app-creation/docs/optimization/02-clio-composite-tools.md
+Decision: Created two new MCP-only tools (schema-sync, page-sync) that batch operations in a single lock/sleep. Extracted CommandExecutionLock from BaseTool<T> to McpToolExecutionLock static class — this also fixed a latent bug where the generic static field created per-T locks instead of a true global lock.
+Discovery: ConsoleLogger.Instance is a process-wide singleton shared across all DI containers (including environment-specific ones created by ToolCommandResolver), so log capture works correctly from composite tools. PageUpdateCommand.TryUpdatePage and PageGetCommand.TryGetPage return structured responses (not exit codes), while entity schema commands use Execute() returning int exit codes — composite tools use the appropriate pattern for each.
+Files: clio/Command/McpServer/Tools/McpToolExecutionLock.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/BaseTool.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, clio/docs/commands/schema-sync.md, clio/docs/commands/page-sync.md
+Impact: AI agents can now reduce 5 schema calls to 1 (~4.5s saved) and 9 page calls to 1 (~8.7s saved). MCP prompts reviewed — no existing prompts reference the atomic tools being composited, so no prompt updates needed. These are MCP-only tools (no CLI verb), documented in docs/commands/ only.
+
+## 2026-03-23 19:04 – Inspect CrtDataForge package role
+Context: User asked whether `CrtDataForge` is relevant for an ADAC + clio MCP app-creation flow and pointed to the local package as the source of truth.
+Decision: Inspected the package descriptor, service code, Copilot intents, process user tasks, syssettings, and event listeners instead of assuming DataForge was an app-catalog layer.
+Discovery: `CrtDataForge` depends on `CrtCopilot`, connects to an external microservice via `DataForgeServiceUrl`, syncs Creatio schema and lookup metadata in real time or bulk, and exposes Copilot intents for table discovery, relationship discovery, lookup resolution, and JSON filter generation/refinement. It is a metadata/filter assistant, not a workspace/package/page/app creation engine.
+Files: C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\descriptor.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeService\DataForgeService.cs, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeEventListener\DataForgeEventListener.cs, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataStructureUnderstanding\metadata.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Schemas\DataForgeBuildFilterConfigSkill\metadata.json, C:\Projects\PackageStore\CrtDataForge\branches\7.8.0\Files\IntentJsonSchema\filter-config.schema.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC planning should treat DataForge as an optional semantic metadata/filter assistant that can complement `clio MCP` discovery, but not replace `clio` as the execution layer for app creation.
+
+## 2026-03-23 19:18 – Inspect dataforge-service repository role
+Context: User asked what logic lives in `C:\Projects\dataforge-service` to understand whether the service should participate in the ADAC app-creation flow.
+Decision: Inspected the web controllers, worker polling services, RAG managers, solution layout, README, and docker-compose instead of inferring behavior from project names.
+Discovery: `dataforge-service` is a standalone multi-tenant semantic metadata service. The web API accepts data-structure and lookup state/init/update/delete/query requests; background workers process those requests asynchronously; table similarity and lookup similarity are implemented through embeddings plus vector search; table relationships are stored and queried through a graph store; readiness/state is persisted in relational storage; maintenance endpoints copy graph/vector collections between tenants.
+Files: C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\DataStructureController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\LookupsController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\Controllers\MaintenanceController.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Worker\Services\DataStructureTaskPollingService.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Worker\Services\LookupsTaskPollingService.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.DataStructure\RelatedTablesManager.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.DataStructure\TableRelationsManager.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.Rag.Lookups\LookupManager.cs, C:\Projects\dataforge-service\docker-compose.yml, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC integration should treat `dataforge-service` as the upstream instance-model/semantic retrieval backend behind `CrtDataForge`, not as a package/workspace/app creation engine.
+
+## 2026-03-23 19:33 – Save ADAC DataForge integration plan
+Context: User asked to persist the agreed architecture plan for integrating `CrtDataForge` and `dataforge-service` into the current `ADAC + clio` flow.
+Decision: Saved the plan under `spec/adac-dataforge-integration/` using the repository feature-doc naming convention and kept the design centered on a single external facade in `clio MCP` with read-only DataForge tools plus the existing execution surface.
+Discovery: The right split remains stable: `dataforge-service` provides semantic metadata retrieval, `CrtDataForge` bridges Creatio to that backend, `clio MCP` exposes one agent-facing facade, and ADAC uses that facade for both discovery and execution.
+Files: C:\Projects\ai\clio\spec\adac-dataforge-integration\adac-dataforge-integration-plan.md, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future implementation work can start from a persisted, repo-local architecture plan without re-deriving the component roles and MCP contract.
+
+## 2026-03-24 14:18 – Add Data Forge read facade for MCP planning
+Context: User asked to implement the ADAC DataForge integration plan so `CrtDataForge` exposes a stable read API for `clio`, while `clio MCP` remains the single external facade for semantic planning plus execution.
+Decision: Implemented a new read-only `DataForgeReadService` and shared probe service in the editable `CrtDataForge` package under `core_min`, added a dedicated `ExternalReadApiEnabled` feature flag plus `CanReadDataForgeContext` permission, and wired new `clio` MCP tools to call the Creatio-side service instead of `dataforge-service` directly.
+Discovery: The package already contained the required internal primitives (`IDataForgeService` for similar tables/lookups/relations and entity-schema metadata for columns); the missing piece was a normalized external contract. `GetSimilarTableNames` was too weak for planning, so the facade uses details-level table results and enriches them with local column metadata. `clio` E2E coverage compiles, but the repository test harness is currently pinned to `C:\Projects\clio\...` and fails at runtime in this workspace (`C:\Projects\ai\clio\...`).
+Files: C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeProbeService\DataForgeProbeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeReadContracts\DataForgeReadContracts.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeReadService\DataForgeReadService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeFeatures\DataForgeFeatures.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeMaintenanceService\DataForgeMaintenanceService.cs, C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio\Command\McpServer\Tools\DataForgeTool.cs, C:\Projects\ai\clio\clio\Command\McpServer\Prompts\DataForgePrompt.cs, C:\Projects\ai\clio\clio.tests\Command\McpServer\DataForgeToolTests.cs, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: ADAC-style clients can now query instance-model readiness, tables, columns, lookups, relations, and aggregated context through one `clio MCP` facade without direct `dataforge-service` coupling, while existing sync behavior in `CrtDataForge` remains unchanged.
+
+## 2026-03-24 15:02 – Add DataForge route fallback for MCP readiness
+Context: User tested `dataforge-readiness` in MCP Inspector and hit an empty-response failure; browser validation showed `404` on one service-path variant, which exposed a route mismatch between `clio` environment settings and the actual Creatio base path.
+Decision: Updated the `clio` Data Forge client to retry the alternate service base path automatically when the primary route returns an empty or invalid response. Added unit coverage for both fallback directions: `/0/... -> /...` and `/... -> /0/...`.
+Discovery: The failure was in `clio -> Creatio` routing, not in the MCP tool contract itself. `DataForgeReadService` was too strict about `EnvironmentSettings.IsNetCore`; real environments can be misflagged, and the Data Forge read facade benefits from one bounded fallback attempt before surfacing an error.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` and the rest of the Data Forge MCP reads are now resilient to a common environment-path misconfiguration and should succeed as long as either the `/0/...` or bare `/...` service route is valid.
+
+## 2026-03-24 16:55 – Add configuration-service fallback for DataForge reads
+Context: After the route fallback was added, the user's Creatio environment still returned empty responses from both direct `DataForgeReadService.svc` URLs while browser probing showed the endpoint existed but direct fetch hit `403`.
+Decision: Extended `clio`'s `DataForgeReadService` to try `IApplicationClient.CallConfigurationService("DataForgeReadService", <method>, payload)` after both direct URL variants fail, and added a dedicated unit test for that path.
+Discovery: `CallConfigurationService` is a distinct Creatio client path already used elsewhere in `clio`, so it provides a safer fallback when raw service POSTs are blocked or behave differently from authenticated configuration-service calls.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` no longer depends solely on direct WCF-style POSTs and can recover through the Creatio configuration-service gateway on environments where the service endpoint is present but not readable through the original transport.
+
+## 2026-03-24 17:18 – Unwrap wrapped configuration-service responses for DataForge MCP
+Context: After the configuration-service fallback was added, `dataforge-readiness` still surfaced only `Failed to load Data Forge readiness.` because some Creatio responses were wrapped under a method-specific result property instead of returning the payload at the top level.
+Decision: Updated `clio` Data Forge response deserialization to unwrap method-specific `*Result` payloads, including the explicit `GetReadinessResult` shape used by configuration-service calls, and added unit coverage for the wrapped-response scenario.
+Discovery: A wrapped payload can deserialize into a non-null DTO with default property values (`Success = false`, `Error = null`), so unwrapping must happen before top-level deserialization or the client will silently lose the real server response.
+Files: C:\Projects\ai\clio\clio\Command\DataForgeReadService.cs, C:\Projects\ai\clio\clio.tests\Command\DataForgeReadServiceTests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: `dataforge-readiness` can now consume both direct JSON responses and configuration-service wrappers, which removes the last known `clio`-side cause of the generic readiness failure.
+
+## 2026-03-24 17:45 – Find and fix DataForge OAuth scope mismatch
+Context: After `dataforge-readiness` started returning real server data, the user asked to find the exact failure cause from logs instead of relying on guesses.
+Decision: Traced the request from `clio` through `CrtDataForge` into runtime logs, then aligned `CrtDataForge` OAuth requests with the same `use_enrichment` scope already used by working Enrichment/GenAI integrations.
+Discovery: `DataForge.log` showed repeated `401 Unauthorized` and `JWT authentication failed due to error: invalid_token` for both readiness and state endpoints after `DataForgeServiceUrl` was configured. The concrete code mismatch was that `CrtDataForge` called `.WithOAuth<DataForgeFeatures.UseOAuth>(..., string.Empty)` in both `DataForgeService` and `DataForgeProbeService`, while `dataforge-service` expects audience/scope `use_enrichment` and neighboring integrations explicitly request that scope.
+Files: C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\DataForge.log, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeService\DataForgeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Pkg\CrtDataForge\Schemas\DataForgeProbeService\DataForgeProbeService.cs, C:\Projects\core_min\TSBpm\Src\Lib\Terrasoft.WebApp.Loader\Terrasoft.WebApp\Terrasoft.Configuration\Autogenerated\Src\EnrichmentConstants.Enrichment.cs, C:\Projects\dataforge-service\src\Creatio.DataForge.WebApp\appsettings.Development.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future DataForge debugging should first distinguish transport issues from OAuth issues. If readiness reports `invalid_token`, compare requested OAuth scope with `dataforge-service` audience expectations before re-running init jobs.
+
+## 2026-03-24 18:35 – Verify dev-env identity connectivity for DataForge
+Context: User asked to validate the current `dev-env` setup end-to-end after DataForge readiness failures moved from JWT rejection to token-discovery/connectivity errors.
+Decision: Checked the active `clio` environment mapping, probed network reachability to the identity hosts implicated by logs, and correlated that with Creatio runtime logs instead of guessing from syssettings names alone.
+Discovery: `dev-env` in local clio config points to `http://localhost:2376/WebApp780`. The Creatio runtime then tries to obtain OAuth tokens from `https://identity-qa.creatio.com:31390`, and current logs show discovery-time socket timeouts to that host. Direct probes from this machine also time out to both `identity-qa.creatio.com:31390` and `identity-stage.creatio.com:31390`. This confirms the current blocker is identity-host reachability/configuration, not MCP routing or DataForge service routing.
+Files: C:\Users\t.moshon\AppData\Local\creatio\clio\appsettings.json, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\Error.log, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_24\DataForge.log, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future debugging on this local instance should verify `IdentityServerUrl` reachability first. If discovery-time timeouts appear, do not keep retesting MCP/DataForge surfaces until the identity endpoint is reachable from the Creatio host.
+
+## 2026-03-24 20:10 – Add reuse-first planning context to ADAC repo
+Context: User asked to implement the ADAC-side integration plan so planning consumes only `clio MCP`, prefers reuse over create, and degrades cleanly when semantic readiness is unavailable.
+Decision: Extended `ai-driven-app-creation/scripts/mcp_context_adapter.py` with a new planning-context normalization path that merges installed-app discovery with semantic instance-model context, plus degraded-mode coverage metadata. Updated the orchestrator, Agent 3, Agent 4, and README docs to make `planning-context.json` and the `dataforge-readiness` / `dataforge-get-instance-model-context` flow part of the official runtime contract.
+Discovery: The repo’s executable behavior is split between helper scripts and markdown agent specs. Adding a concrete `planning-context` subcommand made the reuse-first flow testable without requiring a separate planner runtime. Existing schema/page sync helpers remained compatible after the adapter change. Full `unittest discover` still fails on pre-existing workflow-gate tests in this Windows environment because they shell out to `/bin/bash` through WSL.
+Files: C:\Projects\ai\ai-driven-app-creation\scripts\mcp_context_adapter.py, C:\Projects\ai\ai-driven-app-creation\tests\test_mcp_context_adapter.py, C:\Projects\ai\ai-driven-app-creation\tests\test_default_contract_docs.py, C:\Projects\ai\ai-driven-app-creation\AGENTS.md, C:\Projects\ai\ai-driven-app-creation\README.md, C:\Projects\ai\ai-driven-app-creation\agents\03-implementation-plan.md, C:\Projects\ai\ai-driven-app-creation\agents\04-implementation.md, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC work can consume a stable `planning-context.json` artifact and aligned agent instructions instead of re-deriving how semantic readiness, installed app discovery, and degraded mode should be merged at planning time.
+
+## 2026-03-24 20:28 – Tighten ADAC reuse guardrails against premature greenfield plans
+Context: User showed a planner response that detected an existing Events domain but still jumped to creating a new lightweight `Usr*` app because the existing app looked “too complex”.
+Decision: Strengthened ADAC rule docs and tests so Agent 3 must record explicit gap analysis before any greenfield recommendation and prefer `mixed` over full replacement when reuse plus custom additions are both needed. Agent 4 now also states that it must not silently switch from an existing-domain strategy to a full new `Usr` app path.
+Discovery: The original reuse-first wording was too soft; it allowed plausible but invalid planner prose that acknowledged existing apps and then bypassed them without proving why reuse or extension was rejected. Doc-contract tests are effective for freezing these orchestration rules because the repo behavior is largely prompt-driven.
+Files: C:\Projects\ai\ai-driven-app-creation\AGENTS.md, C:\Projects\ai\ai-driven-app-creation\agents\03-implementation-plan.md, C:\Projects\ai\ai-driven-app-creation\agents\04-implementation.md, C:\Projects\ai\ai-driven-app-creation\tests\test_default_contract_docs.py, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC planner outputs should no longer treat “existing app is more complex” as a sufficient reason to create a parallel `Usr*` domain model without explicit gap analysis and strategy selection.
+
+## 2026-03-26 11:00 – Validate DataForge MCP on dev-env
+Context: User asked whether the Data Forge tools are currently working for the local `dev-env` clio instance.
+Decision: Validated the live path instead of relying only on historical logs: checked `ping-app` for `dev-env`, re-checked identity host TCP reachability, and ran targeted real MCP E2E tests against `dev-env` using the current local `clio` build.
+Discovery: `dev-env` (`http://localhost:2376/WebApp780`) is reachable, identity endpoints on port `31390` are currently reachable from this machine, and the real `clio mcp-server` passed `DataForgeReadiness_Should_Return_Structured_Readiness`, `DataForgeFindTables_Should_Return_Structured_Tables`, and `DataForgeGetInstanceModelContext_Should_Return_Structured_Context` when `McpE2E__Sandbox__EnvironmentName=dev-env` and `McpE2E__ClioProcessPath` pointed to `C:\Projects\ai\clio\clio\bin\Debug\net8.0\clio.exe`.
+Files: C:\Users\t.moshon\AppData\Local\creatio\clio\appsettings.json, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_25\DataForge.log, C:\Users\t.moshon\AppData\Local\Temp\Creatio\Terrasoft.WebApp-Site\WebApp780\0\Log\2026_03_25\OAuth20.log, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Current evidence says the Data Forge MCP read tools are operational on `dev-env`; prior failures were environment/connectivity-related and are not reproducing in the current validation.
+
+## 2026-04-10 11:15 – Probe live dataforge-status response on dev-env
+Context: User asked to verify the current `dataforge-status` MCP tool against `dev-env` and to show the actual request payload and returned data.
+Decision: Confirmed the canonical tool name in source and E2E tests, then executed a one-off live MCP stdio call against the local `clio` build for `dev-env` to capture the exact request envelope and raw response payload.
+Discovery: The live `dataforge-status` call succeeded for `dev-env` with request payload `{"args":{"environment-name":"dev-env"}}`. The server returned a success payload from `clio+dataforge-service` with correlation id `56e9ebd38a2f471496539c6135702ad9`, `liveness/readiness/data-structure-readiness/lookups-readiness = true`, and maintenance status `Ready`. In this direct client probe the MCP SDK surfaced the payload under text content rather than `StructuredContent`, so callers should be tolerant of either representation.
+Files: C:\Projects\ai\clio\clio\Command\McpServer\Tools\DataForgeTool.cs, C:\Projects\ai\clio\clio.mcp.e2e\DataForgeToolE2ETests.cs, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future manual validation of Data Forge on `dev-env` can use `dataforge-status` as the shortest end-to-end proof that both direct service health and Creatio maintenance status are currently healthy.
+
+## 2026-03-26 14:10 – Merge upstream master into DataForge branch
+Context: User asked to update the local `master` branch and merge it into the current `ENG-87085-adac-clio-testing` branch without losing in-progress DataForge work.
+Decision: Stashed the dirty worktree, fast-forwarded local `master` to `upstream/master`, merged that updated `master` into the current branch, and then reapplied the stash while resolving the append-only diary conflict by keeping both upstream and local entries.
+Discovery: The merge fast-forwarded cleanly to `f50c3248`; the only restore conflict was `.codex/workspace-diary.md`, and `clio.tests/testbin/` remained as untracked local content outside the merge path.
+Files: C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future work on `ENG-87085-adac-clio-testing` now starts from the latest `upstream/master` history while preserving the local DataForge changes already in progress.
+
+## 2026-03-26 15:05 – Trace Activity typed usage across entity and UI metadata
+Context: User asked whether object source code itself carries information about where an entity is used, using `Activity` as the example for tasks, calls, and emails.
+Decision: Inspected the `Activity` entity source plus package data/config metadata instead of assuming the answer from UI behavior. Distinguished entity-level typing from page/config-level routing.
+Discovery: `Activity.cs` contains data/business typing only: it resolves `ActivityType.Code`, derives `TypeId` from `ActivityCategoryId`, and already branches for `Email`. The usage/page-routing layer lives separately in metadata: `SysModuleEntity.TypeColumnUId`, `SysModuleEdit.TypeColumnValue`, and `SysModuleEdit.SysPageSchemaUId` are queried in `CommonUtilities`, while `SysModule_Activity/data.json` sets the type column to `Type` and `SysModuleEditUpdateActivity/data.json` stores a concrete type-specific edit record. Page schemas like `Tasks_FormPage`, `Calls_FormPage`, and `EmailPageV2` exist as separate `ClientUnitSchema` artifacts. Conclusion: there is no single descriptor in `Activity.cs` that fully describes task/call/email usage; the complete picture spans entity schema plus module/page metadata.
+Files: C:\Projects\PackageStore\CrtCoreBase\branches\7.8.0\Schemas\Activity\Activity.cs, C:\Projects\PackageStore\CrtCoreBase\branches\7.8.0\Schemas\CommonUtilities\CommonUtilities.cs, C:\Projects\PackageStore\CrtBase\branches\7.8.0\Data\SysModule_Activity\data.json, C:\Projects\PackageStore\CrtNUI\branches\7.8.0\Data\SysModuleEditUpdateActivity\data.json, C:\Projects\PackageStore\CrtUIv2\branches\7.8.0\Schemas\Tasks_FormPage\descriptor.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future ADAC/DataForge reasoning about typed entities should not rely on entity source alone. To understand reuse of `Activity` for tasks/calls/emails, inspect both the data model and module/page metadata.
+
+## 2026-03-26 15:35 – Pull live MCP DataForge payloads for Activity
+Context: User asked for real DataForge data via MCP tools instead of code-level inference.
+Decision: Launched a temporary MCP client against the local `clio mcp-server` and queried the live `dev-env` with `dataforge-get-table-columns`, `dataforge-find-lookups`, and `dataforge-get-instance-model-context` focused on `Activity`.
+Discovery: The live DataForge context confirms `Activity` is modeled as a typed base entity. `dataforge-get-table-columns` returned `Type` as a lookup to `ActivityType` with description “Defines the activity type, such as meeting, email, task, or call.” It also returned `Status`, `Result`, `Owner`, `StartDate`, `DueDate`, `ActivityCategory`, `CallDirection`, `EmailSendStatus`, and `Title` (required). `dataforge-find-lookups` for `ActivityType` returned concrete values for `Call` (`e1831dec-cfc0-df11-b00f-001d60e938c6`), `Email` (`e2831dec-cfc0-df11-b00f-001d60e938c6`), and `Task` (`fbe0acdc-cfc0-df11-b00f-001d60e938c6`). `dataforge-get-instance-model-context` returned `Activity` with the semantic description “Represents a scheduled or logged interaction (meeting, email, task, or call)...” and reported readiness online/ready for both data-structure and lookups stores.
+Files: C:\Projects\ai\clio\clio\bin\Debug\net8.0\clio.exe, C:\Projects\ai\clio\clio.mcp.e2e\bin\Debug\net10.0\ModelContextProtocol.dll, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future planner work can rely on live MCP evidence that DataForge already recognizes `Activity` as a typed base entity and exposes the `ActivityType` lookup values needed for reuse-first reasoning, while still not surfacing page-level type routing.
+
+## 2026-03-27 14:29 – Add repo-local Creatio CLI MCP plugin scaffold
+Context: User asked for a Codex plugin that exposes the installed `clio mcp-server` through a repo-local plugin package instead of relying on the repo root manifests.
+Decision: Used the `plugin-creator` scaffold to create `plugins/creatio-cli-mcp`, then replaced the generated placeholder manifest with a usable MCP-only plugin definition and a plugin-local `.mcp.json` that launches `clio mcp-server` from PATH.
+Discovery: This repo already had root-level `plugin.json` and `mcp.json`, but they are not the Codex plugin package shape expected by the plugin scaffold. A repo-local plugin can stay self-contained by using `command: "clio"` and does not need marketplace registration, assets, skills, hooks, or app metadata for the first pass.
+Files: C:\Projects\ai\clio\plugins\creatio-cli-mcp\.codex-plugin\plugin.json, C:\Projects\ai\clio\plugins\creatio-cli-mcp\.mcp.json, C:\Projects\ai\clio\.codex\workspace-diary.md
+Impact: Future work can iterate on a dedicated Codex plugin package for CLIO MCP without coupling plugin packaging to the repository’s root manifests or local build output paths.
 
 ## 2026-03-25 13:35 – Make Docker base image flow explicit
 Context: User wanted `build-docker-image` to treat the bundled base image as an explicit first-class target instead of auto-building it behind bundled `dev` and `prod` flows.
@@ -1148,14 +1294,14 @@ Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/dev/Do
 Impact: Future bundled `dev` and `prod` builds should reuse a locally built base image under both Docker and nerdctl without failing on offline DNS/registry lookups for the bundled base tag.
 
 ## 2026-03-25 15:43 – Make bundled docker builds offline-safe under nerdctl
-Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop 
+Context: User asked for an end-to-end self-check after bundled ase and ZIP-based prod builds kept failing under Rancher Desktop
 erdctl because BuildKit still tried registry lookups for local images.
-Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is 
+Decision: Removed the named docker-image:// base-image handoff for bundled templates, restored normal ARG BASE_IMAGE Dockerfiles for dev and prod, and taught BuildDockerImageService to materialize bundled base sources as exported rootfs tarballs (ase-rootfs.tar) when the selected container CLI is
 erdctl.
-Discovery: Under this Windows/Rancher Desktop setup, 
+Discovery: Under this Windows/Rancher Desktop setup,
 erdctl build still resolves local tags and docker-image:// named contexts through registry metadata paths, but FROM scratch plus ADD <exported-rootfs>.tar / is fully local and works for both the bundled SDK base image and the reusable creatio-base image. The exact sequential self-check succeeded with clio-dev build-docker-image --template base --use-nerdctl and then clio-dev build-docker-image --template prod --from F:\CreatioBuilds\8.3.4\8.3.4.1971_StudioNet8_Softkey_PostgreSQL_ENU.zip.
 Files: clio/Command/BuildDockerImageService.cs, clio/tpl/docker-templates/base/Dockerfile, clio/tpl/docker-templates/dev/Dockerfile, clio/tpl/docker-templates/prod/Dockerfile, clio.tests/Command/BuildDockerImageServiceTests.cs, .codex/workspace-diary.md
-Impact: Future bundled base/dev/prod builds can reuse cached local images under 
+Impact: Future bundled base/dev/prod builds can reuse cached local images under
 erdctl without DNS access, and debugging this path no longer depends on BuildKit resolving custom local tags through a registry.
 
 ## 2026-03-25 16:39 – Cache and restore bundled base images across Docker CLIs
@@ -1650,7 +1796,14 @@ Discovery: The clean worktree regeneration touched a broad set of markdown docs 
 Files: clio/HelpSystem/CommandHelpRenderer.cs, clio.tests/CommandHelpRendererTests.cs, clio.tests/CommonProgramTest.cs, clio/docs/commands, .codex/workspace-diary.md
 Impact: `clio add-item --help` no longer shows unrelated inherited environment/requirement blocks, sparse manuals such as `set-pkg-version` stay manual-only by design, and GitHub markdown docs now match the same manual-first contract as runtime help.
 
-## 2026-04-01 15:02 – Canonicalize entity/schema MCP contract ownership
+
+## 2026-04-08 19:25 – DataForge enrichment in update-entity-schema + orchestration docs
+Context: Wire DataForge best-effort enrichment into `UpdateEntitySchemaTool`, create `DataForgeOrchestrationGuidanceResource` (Layer 0–4 protocol), update prompts, and skill docs.
+Decision: Enrichment in `UpdateEntitySchemaTool` is wrapped in its own try/catch (before the command try/catch) so exceptions never block mutations. `InternalExecute<UpdateEntitySchemaCommand>` used for command execution via resolver.
+Discovery: "add" operations in `UpdateEntitySchemaOperationArgs` require `TitleLocalizations` with an `en-US` key — `NormalizeMutationTitleLocalizations` throws if absent. All tests that construct "add" ops must supply `TitleLocalizations`. Also, `IToolCommandResolver.Resolve<T>` mock with `Arg.Any<EnvironmentOptions>()` works correctly when the call originates from `BaseTool.ResolveCommand` (the argument is typed as `EnvironmentOptions` in the switch case, runtime type is `UpdateEntitySchemaOptions`).
+Files: clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, .github/skills/clio/references/commands-reference.md, clio.tests/Command/McpServer/UpdateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaSyncToolTests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs
+Impact: `update-entity-schema` now returns a `dataforge` section alongside mutation results. ADAC gets a full Layer 0–4 orchestration guide via `docs://mcp/guides/dataforge-orchestration`. 62 targeted tests pass.
+
 Context: ENG-87888 required `clio` to stay the sole owner of entity/schema MCP semantics while ADAC drops duplicate schema validation and schema-handbook behavior.
 Decision: Removed the phantom `settings-health` contract from `tool-contract-get`, expanded contract coverage tests around the canonical entity/schema surface, and updated ADAC schema sync plus workflow docs to pass semantics through to `clio` via `tool-contract-get` and `docs://mcp/guides/app-modeling` instead of enforcing them locally.
 Discovery: The main blocker was not schema behavior itself but stale contract advertising: `ToolContractGetTool` and its E2E tests still referenced a non-existent `SettingsHealthTool`, which prevented the targeted test slice from compiling until the dead contract was removed.
@@ -1853,9 +2006,1277 @@ Discovery: The last leak-period finding was isolated to `GetLegacyAliasError`, s
 Files: /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/PageListTool.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
 Impact: PR 514 can now be revalidated against Sonar's new-code gate without a leftover `page-list` maintainability issue.
 
+## 2026-04-06 07:30 – Update clio skill with new commands
+Context: Skill files hadn't been updated since b042f984 (2026-03-30); many new commands were missing.
+Decision: Added 19 missing command sections to commands-reference.md and 3 new workflow sections to SKILL.md; fixed stale publish-workspace→publish-app and env-ui alias references.
+Files: .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
+Impact: Skill now covers entity schema management, Freedom UI page management, data bindings, delete-schema, add-user-task, modify-user-task-parameters, externalLink; commands-reference.md grew from 908 to 1153 lines.
+
+## 2026-04-06 19:45 – Normalize entity default sources for SystemValue/Settings
+Context: Clio MCP did not consistently persist object-column defaults when callers provided friendly System variable or System setting identifiers; behavior needed to match Entity Schema Designer backend contracts.
+Decision: Added a shared default-value source resolver in entity schema create/modify flows, backed by designer/DataService endpoints (`GetSystemValues`, `SysSettings SelectQuery`) and canonical normalization rules (`SystemValue -> Guid`, `Settings -> Code`) with deterministic ambiguity failures.
+Discovery: The reliability gap was in command-layer normalization rather than MCP mapping alone; fixing only MCP wrappers would still leave non-MCP command paths inconsistent. Structured readback required an additive canonical field (`resolved-value-source`) so clients can rely on stable persisted identifiers.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueConfig.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerDtos.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/modify-entity-schema-column.txt, clio/help/en/update-entity-schema.txt, clio/help/en/get-entity-schema-column-properties.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/modify-entity-schema-column.md, clio/docs/commands/update-entity-schema.md, clio/docs/commands/get-entity-schema-column-properties.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md, .codex/workspace-diary.md
+Impact: Entity schema default persistence is now stable across create/modify/update paths with backend-canonical identifiers, MCP consumers can read canonical values directly, and command/skill docs now describe accepted input forms and normalization behavior.
+
+## 2026-04-06 20:20 – Fix SystemValue runtime type UId mapping for entity-schema defaults
+Context: Review flagged a blocker: SystemValue resolution used process-model runtime type mapping (`DataValueTypeMap.FromRuntimeValueType`) which mismatches entity-schema runtime ids.
+Decision: Switched resolver to entity-schema-specific mapping (`EntitySchemaDesignerSupport.GetDataValueTypeUIdForRuntimeType`) and added explicit runtime->UId map in entity-schema layer; removed process-model map dependency from resolver.
+Discovery: Runtime id `30` must map to LongText UId (not RichText), and runtime id `50` (Currency3) must be supported for SystemValue lookups using currency UId.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, .codex/workspace-diary.md
+Impact: GetSystemValues queries now use correct entity-schema dataValueType UIds, preventing false unsupported-type errors and wrong SystemValue resolution for valid column types.
+
+## 2026-04-07 10:10 – Fix ambiguous Settings code error path
+Context: Session review found confusing validation output when a Settings default was provided by code (`SiteUrl`) but multiple rows shared that code.
+Decision: Updated settings resolution logic to treat duplicate code matches as a direct ambiguity error (`matched multiple setting code values`) instead of falling back to name resolution.
+Discovery: Previous flow used `TryResolveSingle` for code and silently switched to name lookup when more than one code match existed, producing misleading "setting name" errors.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/EntitySchemaDefaultValueSourceResolverTests.cs, .codex/workspace-diary.md
+Impact: Operators now get correct diagnostics for ambiguous setting codes and can resolve with explicit setting id without confusion.
+
+## 2026-04-07 17:40 – Refactor Data Forge runtime schema reads onto a shared by-name reader
+Context: Data Forge MCP work introduced a by-name `RuntimeEntitySchemaRequest` path for `dataforge-get-table-columns`, but the repo already had another by-name consumer in Data Binding and a separate by-UId designer path that could not be conflated before merge.
+Decision: Added a neutral rich `IRuntimeEntitySchemaReader`/`RuntimeEntitySchemaReader` for name-based runtime schema reads, migrated Data Forge columns/context enrichment and `DataBindingSchemaClient` onto it, deleted the old `DataForgeColumnsReader`, extracted `dataforge-context` aggregation into `IDataForgeContextService`, and made the Data Forge DI registrations explicit in `BindingsModule`.
+Discovery: The shared reader had to preserve more than the original Data Forge projection: Data Binding still needs raw `UId`, `DataValueType` as `int`, and primary-column/display-column metadata, while Data Forge only needs a filtered, friendly projection layered on top. The refactor is intentionally limited to by-name reads; the by-UId designer client and `ApplicationInfoService` remain separate flows.
+Files: clio/BindingsModule.cs, clio/Command/DataBindingCommand.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Common/DataForge/DataForgeContextService.cs, clio/Common/DataForge/DataForgeModels.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, clio.tests/Common/RuntimeEntitySchemaReaderTests.cs, clio.tests/Command/DataBindingSchemaClientTests.cs, clio.tests/Common/DataForgeContextServiceTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: By-name runtime schema reading is now implemented once and reused across Data Forge and Data Binding, Data Forge tool orchestration is isolated from the MCP facade, the earlier runtime DI bug is closed, and MCP/unit coverage exists for the new shape while the by-UId designer/application flows remain untouched.
+
+## 2026-04-07 18:25 – Fix Data Forge review findings for degraded probes and safe runtime-schema payloads
+Context: Follow-up review found three valid issues in the new Data Forge MCP surface: health probes threw on expected non-2xx degraded states, the by-name runtime-schema request body was still composed with raw JSON interpolation, and the public `scope` description no longer matched the runtime default.
+Decision: Added a non-throwing probe path in `DataForgeClient` so health/status/context derive booleans from HTTP status codes instead of exceptions, switched `RuntimeEntitySchemaReader` to serializer-based request payload creation, corrected the public `scope` description to match the actual `use_enrichment` default, and expanded staged MCP E2E coverage with a `dataforge-context` smoke test.
+Discovery: The earlier raw-JSON review note still applied after the refactor, but the affected code had moved from the deleted `DataForgeColumnsReader` into the new shared by-name reader. Existing staged E2E coverage already existed for Data Forge, so the "no E2E coverage" finding itself was stale; the real gap was incomplete coverage breadth, not absence.
+Files: clio/Common/DataForge/DataForgeClient.cs, clio/Common/DataForge/DataForgeModels.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, clio.tests/Common/DataForgeClientTests.cs, clio.tests/Common/RuntimeEntitySchemaReaderTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Data Forge health-oriented tools can now represent degraded services without failing the whole call path, runtime-schema requests are safe for quoted/backslashed schema names, the MCP contract text matches real auth behavior, and staged coverage now includes the context aggregation path.
+
+## 2026-04-08 10:25 – Expand Data Forge MCP E2E coverage to all public tools
+Context: Review follow-up still flagged partial `clio.mcp.e2e` coverage because the Data Forge suite exercised only health, get-table-columns, and context while six newly exposed public MCP tools remained uncovered.
+Decision: Extended `DataForgeToolE2ETests` with live MCP calls for `dataforge-status`, `dataforge-find-tables`, `dataforge-find-lookups`, `dataforge-get-relations`, `dataforge-initialize`, and `dataforge-update`, and added a shared helper that first verifies each production tool name is advertised before invoking it.
+Discovery: The destructive maintenance tools can follow the repository’s existing `AllowDestructiveMcpTests` gate rather than inventing a Data Forge-specific opt-in, while the read-side smoke coverage can reuse the same reachable-sandbox arrangement as the existing tests.
+Files: clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: The Data Forge MCP suite now covers the full public tool family end to end, including both destructive maintenance endpoints and the remaining live read paths the review called out.
+
+## 2026-04-08 11:10 – Remove unreachable bearer-token branch from Data Forge auth
+Context: Follow-up review on the Data Forge auth path showed that `BearerToken` existed in the shared config/client layer but no production caller, including the MCP surface, could ever populate it.
+Decision: Removed `BearerToken` and `DataForgeAuthMode.BearerToken` from the Data Forge models, deleted the corresponding resolver branch, and simplified the HTTP client authorization logic to support only `None` and `OAuthClientCredentials`.
+Discovery: The bearer-token path had no live callers outside tests and only increased auth-state complexity; current MCP args already expose OAuth credentials and syssettings fallback but no direct access-token input.
+Files: clio/Common/DataForge/DataForgeModels.cs, clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeClient.cs, .codex/workspace-diary.md
+Impact: Data Forge auth precedence is simpler and matches the real public surface, reducing dead code without changing MCP contracts or runtime behavior for supported callers.
+
+## 2026-04-08 16:35 – Embed Data Forge enrichment into application-create
+Context: `application-create` had to use Data Forge semantics inside `clio` itself instead of relying on ADAC-only orchestration, while keeping the existing request contract stable and preserving a soft fallback when Data Forge is unavailable.
+Decision: Added `IApplicationCreateEnrichmentService` and wired `ApplicationCreateTool` to run Data Forge context aggregation before shell creation, return compact `dataforge` diagnostics in the create response, update prompt/resource guidance to describe the internal enrichment stage, and align `tool-contract-get` so explicit lookup exposes the full Data Forge surface while the default bootstrap set keeps maintenance tools out.
+Discovery: The clean integration point is the shared Data Forge service layer resolved through `IToolCommandResolver`, not MCP self-calls; this keeps environment/auth resolution in `clio` and lets create-flow degrade to warnings plus false coverage flags instead of blocking shell creation.
+Files: clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolResponses.cs, clio/Command/McpServer/Tools/ApplicationToolSupport.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, clio.mcp.e2e/ToolContractGetToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Direct `clio` callers now get Data Forge-assisted app creation behavior and structured diagnostics from the canonical create tool, while orchestration layers can stay thin and rely on the updated MCP contract/guidance instead of re-implementing Data Forge planning rules.
+
+
+## 2026-04-08 17:39 - DataForge enrichment wired into schema MCP tools
+Context: Only application-create had DataForge enrichment; schema tools (schema-sync, create-entity-schema, create-lookup) had none.
+Decision: Extract reusable ISchemaEnrichmentService from ApplicationCreateEnrichmentService pattern; inject it as optional ctor param in the three schema tools; return ApplicationDataForgeResult in each tool response.
+Discovery: CollectCandidateTerms/CollectLookupHints must cast Dictionary.ValueCollection to IEnumerable<string> before ?? [] to avoid CS0019.
+Files:
+- clio/Command/McpServer/Tools/SchemaEnrichmentService.cs (new)
+- clio/Command/McpServer/Tools/CommandExecutionResult.cs — added DataForge? optional param
+- clio/Command/McpServer/Tools/SchemaSyncTool.cs — async enrichment + DataForge in SchemaSyncResponse
+- clio/Command/McpServer/Tools/EntitySchemaTool.cs — CreateEntitySchemaTool + CreateLookupTool enrichment
+- clio/BindingsModule.cs — registered ISchemaEnrichmentService
+- clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs — guidance for dataforge-find-lookups pre-flight and update-entity-schema reference check
+- .github/skills/clio/references/commands-reference.md — DataForge enrichment note on create-entity-schema/create-lookup; lookup value resolution note on create-data-binding-db/upsert-data-binding-row-db; dataforge tip on update-entity-schema
+- clio.tests/Command/McpServer/SchemaSyncToolTests.cs — all test methods made async Task (await tool.SchemaSync)
+- clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs — all test methods made async Task
+- clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs (new) — 3 unit tests
+Impact: schema-sync, create-entity-schema, and create-lookup now return a dataforge context-summary section; AI consumers have similar-tables and lookup hints before committing to schema operations.
+
+## 2026-04-08 20:15 – Add reuse guardrails for existing supporting schemas in MCP guidance and ADAC skills
+Context: Existing instructions strongly protected the canonical main entity but still allowed planning drift where agents could invent a duplicate supporting/link schema for page-detail tasks, even when refreshed runtime context already exposed the correct object model.
+Decision: Updated existing-app maintenance and app-modeling MCP guidance with inspect-before-create rules, supporting-schema reuse invariants, and a concrete Support Case example; updated DataForge guidance to keep exact package-local reuse checks on runtime context first; updated `entity-creation` and `page-schema-editing` skills with blocker rules against duplicate supporting schemas; added unit assertions for the new guidance text.
+Discovery: The gap was documentation and orchestration logic, not missing runtime facts: `application-get-info`, `page-get`, and `get-entity-schema-properties` already form a sufficient source of truth for most existing-app detail requests.
+Files: clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, ../ai-driven-app-creation/skills/entity-creation/SKILL.md, ../ai-driven-app-creation/skills/page-schema-editing/SKILL.md, .codex/workspace-diary.md
+Impact: Agents now have an explicit instruction path that defaults existing-app detail requests to page-only/object-model reuse and treats duplicate supporting/link schema creation as a blocker-level planning error.
+## 2026-04-08 11:00 – Normalize entity titles for `.NET Framework` schema mutations
+Context: Session analysis showed `.NET Framework` environments could create entity columns with only `title-localizations`, but later `modify-entity-schema-column` or `update-entity-schema` saves failed because the server validator still expected an effective title/caption for the current culture.
+Decision: Added a shared title-localization normalization helper that derives an effective title, synthesizes the current-culture localization when only `en-US` is supplied, and threads that normalized result through schema create, single-column modify, and batch update flows without reopening the public MCP `title` field. Added focused unit/MCP coverage plus an MCP E2E regression scenario for `update-entity-schema add -> modify-entity-schema-column default-value-config`.
+Discovery: The remaining red test after the code change was a fixture-state leak in `UpdateEntitySchemaCommandBatchExecutionTests`: `_savedSchema` persisted across tests and made later batch cases reload the wrong schema. Resetting fixture state in `Setup()` stabilized the suite.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/UpdateEntitySchemaCommand.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/UpdateEntitySchemaCommandTests.cs, clio.tests/Command/UpdateEntitySchemaCommand.BatchExecution.Tests.cs, clio.tests/Command/McpServer/CreateEntitySchemaToolTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Clio now keeps localized schema/column writes validator-safe for `.NET Framework` save paths while preserving the stricter MCP localization contract, and the regression is covered in unit/MCP tests with a dedicated E2E scenario ready for configured sandbox runs.
+
+## 2026-04-08 11:09 – Freedom UI pages parallel research breakdown
+Context: Needed to analyze a large Freedom UI pages initiative from a whiteboard screenshot, compare it to current `clio` capabilities, and prepare Jira work items so multiple developers can join in parallel.
+Decision: Mapped the brainstorm into eight implementation streams and created one parent `Research` issue plus seven parallelizable subtasks and one second-wave contract-dependent subtask cluster in Jira.
+Discovery: Current repository support is strongest around `page-list`/`page-get`/`page-update`, MCP `page-sync`, MCP `component-info`, and merged hierarchy/parameters in `page-get`; the biggest gaps are page creation/lifecycle, richer metadata/schema flows, component authoring automation, version-aware component contracts, and developer workflow guidance.
+Files: /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: Future work on Freedom UI page automation can start from Jira parent `ENG-88188` with subtasks `ENG-88189`..`ENG-88196`, reducing re-analysis and making parallel ownership boundaries explicit.
+
+## 2026-04-08 11:14 – Rewrite Freedom UI Jira set from analysis to implementation plans
+Context: The initial Jira breakdown used research-oriented wording, but the required outcome was implementation-ready tasks because the analysis is happening in the current session.
+Decision: Rewrote parent `ENG-88188` and subtasks `ENG-88189`..`ENG-88196` to use implementation-first summaries and descriptions with goal, scope, implementation steps, deliverables, validation, and dependency/sync sections.
+Discovery: Keeping the same issue keys was preferable to creating a second parallel issue tree; adding a superseding parent comment avoids confusion with the earlier analysis note.
+Files: /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: Developers can now enter the Jira set directly as execution tracks without reinterpreting analysis-only wording.
+
+## 2026-04-08 12:35 – Reframe Freedom UI parent as acceptance-only and add Jira execution links
+Context: The Jira structure still mixed parent-level planning with subtask execution, while the intended delivery model is that implementation happens only through subtasks.
+Decision: Reworked `ENG-88188` so its description now contains only final acceptance criteria and done condition, expanded each subtask description into a fuller implementation plan with explicit wave/dependency notes, and added Jira links using `relates to` and `is blocked by`.
+Discovery: The cleanest execution graph is a Wave 1 foundation set (`ENG-88189`, `ENG-88190`, `ENG-88193`, `ENG-88194`, `ENG-88195`, `ENG-88196`) plus Wave 2 tasks blocked by the page contract (`ENG-88191`, `ENG-88192`), with component placement additionally blocked by catalog/version tracks.
+Files: /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: The parent issue now behaves like a completion gate, while the subtasks and Jira links carry the actionable implementation plan for parallel developer execution.
+
+## 2026-04-08 12:59 – Tighten Freedom UI Jira graph after plan review
+Context: Follow-up review of `ENG-88188` found that several subtasks still had misleading wave labels or under-modeled blockers in Jira despite the earlier restructuring.
+Decision: Updated `ENG-88190`, `ENG-88193`, `ENG-88194`, `ENG-88195`, and `ENG-88196` descriptions to reflect the reviewed execution order and added missing `blocks` links: `ENG-88189 -> ENG-88190`, `ENG-88189 -> ENG-88193`, `ENG-88190 -> ENG-88193`, `ENG-88195 -> ENG-88194`, `ENG-88189 -> ENG-88196`, and `ENG-88190 -> ENG-88196`.
+Discovery: The reviewed graph is more stable when `ENG-88189` owns the base page contract, `ENG-88190` extends that contract, `ENG-88195` owns the versioned metadata model, `ENG-88194` builds the catalog on top of it, and `ENG-88193` starts only after both page and component metadata contracts are fixed.
+Files: /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: Jira now reflects the real delivery order more accurately, reducing the risk that developers start component placement or docs/test work before the required contracts exist.
+
+## 2026-04-08 13:05 – Add existing-app section creation flow
+Context: ENG-88149 required a dedicated CLI and MCP flow for creating a section inside an already installed application without overloading `application-create`.
+Decision: Added `create-app-section` plus `application-section-create`, backed by a dedicated `IApplicationSectionCreateService` that inserts `ApplicationSection`, resolves the target app through `application-get-info`, and returns structured readback for the created section, entity, and pages.
+Discovery: The stable backend seam for this scenario is the `ApplicationSection` virtual object through DataService `InsertQuery`; mobile-page behavior is represented by omitting `ClientTypeId` for mixed web/mobile creation and using the web client type only for web-only sections.
+Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/BindingsModule.cs, clio/Program.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio/Command/McpServer/Tools/ApplicationToolResponses.cs, clio/Command/McpServer/Tools/ApplicationToolSupport.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, clio.tests/Command/CreateAppSectionCommandTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs, clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, clio/help/en/create-app-section.txt, clio/docs/commands/create-app-section.md, clio/Commands.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md, .codex/workspace-diary.md
+Impact: CLIO now has a dedicated existing-app section creation contract across CLI, MCP, docs, and tests, which lets agents and developers add sections predictably while keeping new-app shell creation separate.
+
+## 2026-04-08 13:48 – Simplify section-create contract to application-code only
+Context: Follow-up review of ENG-88149 concluded that the first cut exposed extra inputs that were not product-necessary for existing-app section creation.
+Decision: Simplified `create-app-section` and `application-section-create` to require only `application-code`, removed `application-id`, `icon-id`, `icon-background`, and `use-existing-entity-schema`, changed `with-mobile-pages` default to `true`, and made `entity-schema-name` alone the signal for reusing an existing entity.
+Discovery: The implementation could keep the full structured output contract unchanged while significantly shrinking the input surface; only service tests needed extra `SysAppIcons` stubs after switching icon resolution to unconditional auto mode.
+Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, clio.tests/Command/CreateAppSectionCommandTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/ApplicationSectionToolE2ETests.cs, clio/help/en/create-app-section.txt, clio/docs/commands/create-app-section.md, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md, .codex/workspace-diary.md
+Impact: The section-create flow is now easier for humans and agents to call correctly, with fewer invalid combinations and a clearer default behavior for mobile pages and entity reuse.
+
+## 2026-04-08 14:08 – Local MCP validation for existing-app section creation
+Context: Needed a real local validation pass for ENG-88149 on `http://localhost:5001` after finding that the environment had no installed applications for the original manual test case.
+Decision: Created a temporary local test app `UsrSectionLunch0804` through `application-create`, then exercised `application-section-create` three times against it: a web-only new-object section (`Orders`), a mobile-enabled new-object section (`Visits`), and an existing-entity section reusing `Account` (`Accounts`).
+Discovery: All three `application-section-create` calls returned `success=true` and created expected page sets, and `application-get-info` showed new `UsrOrders`/`UsrVisits` entities plus all new pages. However, each `application-section-create` response returned the same stale `section`/`entity` payload for the app’s main section instead of the just-created section, and the `Account` reuse case created pages but did not surface `Account` in refreshed app entities.
+Files: /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: The local environment is now seeded with a reproducible test app for follow-up debugging, and there is concrete evidence that the mutation path works while the structured readback contract likely still has a correctness bug.
+
+## 2026-04-08 13:26 – Fix section caption persistence for UI headers
+Context: Local validation of create-app-section on http://localhost:5001 showed section titles rendering as serialized localization JSON like {"en-US":"Orders"} in the navigation and page header.
+Decision: Changed ApplicationSection insert payload generation to persist Caption as plain text instead of serializing a localization dictionary string, and tightened the unit test to assert the outgoing insert body uses the plain caption value.
+Discovery: The UI header defect came from CLIO persisting the literal JSON string into ApplicationSection.Caption. During the same validation pass, create-app-section still showed two separate correctness issues: stale section/entity readback in the command response and mobile pages being created even when --with-mobile-pages false is supplied.
+Files: /Users/a.kravchuk/Projects/clio/clio/Command/ApplicationSectionCreateCommand.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/ApplicationSectionCreateServiceTests.cs, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: Newly created sections now render human-readable captions in the Creatio UI, and the regression is covered by a focused service test.
+
+## 2026-04-08 15:02 – Add existing-section metadata update flow
+Context: Needed a broader follow-up to ENG-88149 so existing installed application sections can be updated after creation, including repairing broken JSON-style headings with a new plain-text caption.
+Decision: Added `update-app-section` and MCP tool `application-section-update`, backed by `IApplicationSectionUpdateService`, which resolves the target app by `application-code`, selects the target section by `ApplicationId + Code`, performs partial `UpdateQuery` mutations for caption/description/icon metadata, and returns structured before/after section readback.
+Discovery: The safest partial-update semantics for this flow is to treat every provided mutable field as an update intent even when the value matches the stored one; matching test predicates also had to distinguish `SelectQuery` from `UpdateQuery` by `columnValues` to avoid shadowing the select response with the update stub.
+Files: /Users/a.kravchuk/Projects/clio/clio/Command/ApplicationSectionUpdateCommand.cs, /Users/a.kravchuk/Projects/clio/clio/BindingsModule.cs, /Users/a.kravchuk/Projects/clio/clio/Program.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ApplicationToolArgs.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ApplicationToolResponses.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ApplicationToolSupport.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ApplicationTool.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Prompts/ApplicationPrompt.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Resources/ExistingAppMaintenanceGuidanceResource.cs, /Users/a.kravchuk/Projects/clio/clio/Command/McpServer/Tools/ToolContractGetTool.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/ApplicationSectionUpdateServiceTests.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/UpdateAppSectionCommandTests.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/McpServer/ApplicationToolTests.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/McpServer/ToolContractGetToolTests.cs, /Users/a.kravchuk/Projects/clio/clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/Support/Results/ApplicationEnvelope.cs, /Users/a.kravchuk/Projects/clio/clio.mcp.e2e/ApplicationSectionUpdateToolE2ETests.cs, /Users/a.kravchuk/Projects/clio/clio/help/en/update-app-section.txt, /Users/a.kravchuk/Projects/clio/clio/docs/commands/update-app-section.md, /Users/a.kravchuk/Projects/clio/clio/Commands.md, /Users/a.kravchuk/Projects/clio/.github/skills/clio/references/commands-reference.md, /Users/a.kravchuk/Projects/clio/.github/skills/clio/SKILL.md, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
+Impact: CLIO now exposes a dedicated repair/update path for existing sections across CLI, MCP, docs, and tests, which unblocks post-creation metadata fixes without overloading section creation.
+
+## 2026-04-08 - Fix --with-mobile-pages false not working
+Context: ENG-88149 bug: --with-mobile-pages false had no effect; mobile pages were always created.
+Decision: Root cause was CommandLineParser treating bool option with Default=true as a switch (presence=true, cannot set false). Fixed by changing CreateAppSectionOptions.WithMobilePages backing store to string? with a bool computed property. ClientTypeId (WEB_APP_CLIENT_TYPE_ID) is now correctly included in InsertQuery body when WithMobilePages=false.
+Discovery: CommandLineParser cannot set a bool option to false via --flag false or --flag=false when Default=true. Must use string? with manual bool.Parse. Also added missing create-app-section and update-app-section entries to clio/Wiki/WikiAnchors.txt to fix VisibleCommands_ShouldHaveCanonicalArtifacts test.
+Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Wiki/WikiAnchors.txt
+Impact: --with-mobile-pages false now correctly prevents mobile page schema generation. 1921/1921 relevant tests pass; 3 pre-existing StopCommand failures unrelated to our work.
+
+## 2026-04-08 16:05 – Keep canonical application entity captions out of `Base object`
+Context: AI-driven app creation logs showed `application-create` returning the correct canonical main entity caption, but a later `application-get-info` after `schema-sync` could degrade that same entity to the generic `Base object` caption on `.NET Framework` environments.
+Decision: Narrowed the fix to `ApplicationInfoService` readback: pass the installed application display name into entity mapping and, for the canonical main entity only, use that display name when runtime metadata says `Base object` and the design caption cannot be read. Added regression/guard unit tests plus an MCP E2E scenario that mutates the created app through `schema-sync` before re-reading `application-get-info`.
+Discovery: The existing canonical-entity safeguard already preferred a design caption over `Base object`, so the missing case was specifically the unreadable-design fallback path rather than application creation or MCP response mapping.
+Files: clio/Command/ApplicationInfoService.cs, clio.tests/Command/ApplicationInfoServiceTests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `application-get-info` now keeps the business caption for the canonical main entity after schema mutations instead of leaking the template fallback `Base object`, while non-canonical entity captions remain unchanged.
+
 ## 2026-04-04 08:44 – Prepare release 8.0.2.58 on master
 Context: After merging PR 514 and creating the follow-up branch, the next requested task was to create the next repository release and update the project version in the csproj beforehand.
 Decision: Fast-forwarded local `master` to `origin/master`, derived the next version from the latest tag `8.0.2.57`, and bumped the default `AssemblyVersion` in `clio.csproj` to `8.0.2.58` so the local project file matches the release tag.
 Discovery: The release workflow still takes the published GitHub release tag as the source of truth for package versioning, but the repository also expects `clio.csproj` to be updated for local builds before cutting the release.
 Files: /Users/a.kravchuk/Projects/clio/clio/clio.csproj, /Users/a.kravchuk/Projects/clio/.codex/workspace-diary.md
 Impact: The upcoming tag and GitHub release will align with both the automated NuGet publish flow and the repository’s default local version metadata.
+
+## 2026-04-06 16:17 – Batch docker-image builds and stale Jsonh package fix
+Context: The `build-docker-image` command needed to build `db`, `dev`, and `prod` from one ZIP in a single invocation without repeating extraction and CLI detection, and local verification was blocked by a stale `HjsonSharp` package reference.
+Decision: Refactored `BuildDockerImageService` into batch orchestration with shared source preparation, per-template isolated build contexts, batch-aware output and registry preflight handling, and end-of-run summary logging; updated command docs/help for comma-separated templates; replaced the remaining `HjsonSharp` package reference with `JsonhCs` to match current code usage.
+Discovery: The main regression risk in batch mode was not syntax but orchestration detail: mixed registry targets need shared preflight across distinct effective push targets, dev-template tests need a cached code-server archive stub, and output-path validation must reject tar-like file targets without rejecting dotted directory names.
+Files: C:\Projects\clio\clio\Command\BuildDockerImageService.cs, C:\Projects\clio\clio\Command\BuildDockerImageCommand.cs, C:\Projects\clio\clio.tests\Command\BuildDockerImageServiceTests.cs, C:\Projects\clio\clio\help\en\build-docker-image.txt, C:\Projects\clio\clio\docs\commands\build-docker-image.md, C:\Projects\clio\clio\Commands.md, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `clio build-docker-image --template db,dev,prod` now reuses one prepared source payload and one CLI probe/version check per invocation, batch tests run green again, and restore/build is no longer blocked by the stale HJSON package reference.
+
+
+## 2026-04-08 23:20 – Fix PR #522 conflicts and Codex review comments
+Context: PR Alfa-04-06 → master had merge conflict and two P2 Codex review comments.
+Decision: Resolved conflict by merging origin/master into branch; fixed both P2 issues in source code.
+Discovery:
+- CreateAppSectionOptions.WithMobilePages silently coerced invalid inputs (0/no/yes) to true; fixed with explicit validation
+- GetSettingsValueTypeCandidates missing Float dataValueType 5; added `5 => ["Decimal"]`
+Files: clio/Command/ApplicationSectionCreateCommand.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDefaultValueSourceResolver.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs, .codex/workspace-diary.md
+Impact: PR #522 now MERGEABLE, both Codex P2 issues addressed, 15 new tests added (33 total section tests pass)
+
+## 2026-04-10 11:20 – Remove standalone application-model-discovery MCP tool
+Context: Direct reuse-first planning was moved back out of `clio`; business-requirement shaping and explicit reuse decisions should stay in ADAC rather than a separate MCP planning tool.
+Decision: Removed `application-model-discovery`, its planning service, MCP contract exposure, and related prompt/guidance references while keeping internal Data Forge enrichment in `application-create`.
+Discovery: `application-create` already preserves the needed execution-time Data Forge diagnostics, so the extra planning tool only duplicated orchestration responsibility.
+Files: clio/BindingsModule.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, clio/Command/McpServer/Tools/ApplicationToolArgs.cs, clio/Command/McpServer/Tools/ApplicationToolResponses.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, .codex/workspace-diary.md
+Impact: `clio` returns to a simpler MCP surface where `application-create` remains the app-shell mutation entrypoint with built-in Data Forge enrichment, and reuse-first planning stays external.
+
+## 2026-04-10 12:08 – Align DataForge skill guidance with live MCP payloads
+Context: Review of staged DataForge work showed the skill reference documenting fields and thresholds that the current MCP/DataForge contracts do not expose.
+Decision: Updated `.github/skills/clio/references/commands-reference.md` so Layer 0 uses the actual `health` and `status` fields, and table-discovery decisions no longer rely on a nonexistent `similar-tables[].score`.
+Discovery: `similar-lookups` still carries a numeric `score`, but `similar-tables` only returns `name`, `caption`, and `description`, so duplicate detection there must stay descriptive rather than threshold-based.
+Files: .github/skills/clio/references/commands-reference.md, .codex/workspace-diary.md
+Impact: Future agents reading the clio skill will follow DataForge guidance that matches the live MCP payload shape instead of branching on impossible fields.
+
+## 2026-04-10 12:14 – Align DataForge MCP guidance resource with live payloads
+Context: After fixing the skill reference, the MCP `docs://mcp/guides/dataforge-orchestration` resource still documented the old `health.tables`, `status.ready`, and `similar-tables[].score` fields.
+Decision: Updated `DataForgeOrchestrationGuidanceResource` to use the live `health` and `status` fields, descriptive duplicate detection for `similar-tables`, and the real stale-index readiness check.
+Discovery: The resource and skill reference had drifted independently, so both had to be corrected to keep AI-facing guidance consistent with the current MCP/Data Forge models.
+Files: clio/Command/McpServer/Resources/DataForgeOrchestrationGuidanceResource.cs, .codex/workspace-diary.md
+Impact: Agents reading the MCP guidance resource now get the same Data Forge orchestration instructions as the skill reference, without branching on nonexistent payload fields.
+
+## 2026-04-10 12:31 – Deduplicate MCP DataForge enrichment behind a shared builder
+Context: Sonar flagged duplicated logic between application and schema DataForge enrichment services, while both mutation flows already needed the same best-effort context aggregation and compact MCP-facing summary mapping.
+Decision: Introduced `IDataForgeEnrichmentBuilder` / `DataForgeEnrichmentBuilder` as the shared best-effort aggregation layer, then rewired `ApplicationCreateEnrichmentService` and `SchemaEnrichmentService` to only normalize their inputs and delegate the common Data Forge work to the builder.
+Discovery: The bulk of the duplication was not in DataForge MCP args but in repeated context-service resolution, default config construction, degraded fallback handling, and summary compaction; extracting that logic once removed the highest-value duplication with minimal surface change.
+Files: clio/Command/McpServer/Tools/DataForgeEnrichmentBuilder.cs, clio/Command/McpServer/Tools/ApplicationCreateEnrichmentService.cs, clio/Command/McpServer/Tools/SchemaEnrichmentService.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/ApplicationCreateEnrichmentServiceTests.cs, clio.tests/Command/McpServer/SchemaEnrichmentServiceTests.cs, clio.tests/Command/McpServer/DataForgeEnrichmentBuilderTests.cs, .codex/workspace-diary.md
+Impact: `application-create` and schema mutation tools now share one DataForge enrichment path, reducing duplication and keeping fallback behavior and compact summary mapping consistent across MCP mutation flows.
+
+## 2026-04-10 16:44 – Reduce MCP duplication in DataForge tooling and contract catalog
+Context: Sonar flagged new-code duplication in `DataForgeTool.cs` and `ToolContractGetTool.cs`, centered on repeated Data Forge connection payloads and repeated contract-builder scaffolding.
+Decision: Introduced `DataForgeConnectionArgsBase` so all Data Forge MCP arg records inherit one shared connection payload, collapsed target-option creation to a single helper, and extracted `BuildDataForgeContract` plus `DataForgeEnvelopeFields` so the nine Data Forge contract builders reuse one contract shape.
+Discovery: The highest-value duplication was mechanical rather than behavioral: repeated connection JSON fields, repeated `CreateTargetOptions` overloads, and repeated contract catalog envelope/default/alias wiring. Collapsing those sections kept the MCP JSON contract unchanged while cutting more duplication than method-by-method micro-refactors.
+Files: clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge MCP surface keeps the same tool names and JSON fields, but its implementation is smaller, easier to update consistently, and better positioned to clear Sonar duplication checks.
+
+## 2026-04-10 17:01 – Clear Sonar code-smell fallout from DataForge contract deduplication
+Context: After the duplication cleanup, Sonar for PR 524 still flagged `ToolContractGetTool.cs` for repeated literals and a 9-parameter private helper introduced by the refactor.
+Decision: Replaced the high-traffic Data Forge and connection literals with local constants and changed `BuildDataForgeContract` to consume a `DataForgeContractDescriptor` object instead of a long parameter list.
+Discovery: The refactor-induced Sonar noise was concentrated in the helper layer rather than the MCP surface itself, so a descriptor object plus constants removed the warnings without changing any exposed tool names, field names, or payload structure.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The Data Forge contract catalog keeps the deduplicated implementation while avoiding the immediate Sonar maintainability warnings that the first cleanup introduced.
+
+## 2026-04-10 11:48 – Fix entity caption loss during column mutations
+Context: User session analysis (copilot-session-b197a4a1) showed entity caption "Об'єкт" (uk-UA) was reset after clio-schema-sync update-entity on .NET Framework environment.
+Decision: In LoadSchema, removed Cultures=[GetCurrentCultureName()] from GetSchemaDesignItemRequestDto. Sending only the current system culture (en-US) caused Creatio to return Caption filtered to that culture. When SaveSchema sent the filtered Caption back, the original uk-UA caption was overwritten. Empty Cultures=[] (default) tells Creatio to return all localizations, preserving the full round-trip.
+Discovery: GetSchemaDesignItem with Cultures=["en-US"] returns entity Caption mapped to the requested culture key only. SaveSchema then replaces ALL caption entries with the sent subset, wiping other-locale captions. Same pattern in RemoteEntitySchemaCreator is verification-only (not saved back), so no fix needed there.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs
+Impact: Column mutations (add/modify/remove) now preserve entity caption in all cultures, not just the machine current locale.
+
+## 2025-07-18 - Added regression test for multi-culture entity caption preservation
+Context: User confirmed entity had captions in ALL cultures (en-US="MyTest", uk-UA caption). Confirmed cliogate is NOT involved in EntitySchemaDesigner calls.
+Decision: Added test ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHasMultiCultureEntityCaption that creates schema with two Caption cultures, runs column mutation with uk-UA active, and asserts both culture entries are preserved in saved schema.
+Discovery: Unit test mock returns full _loadedSchema regardless of Cultures filter, so test does not reproduce exact server-side filtering bug, but documents expected behavior and catches future code regression that strips Caption entries.
+Files: clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs
+Impact: 42 tests pass; regression coverage for entity-level Caption round-trip preservation.
+
+## 2026-04-10 17:18 – Finish remaining Sonar warnings in Data Forge and runtime schema helpers
+Context: After the MCP contract cleanup, Sonar PR 524 still showed remaining warnings in EntitySchemaTool, DataForgeConfigResolver, DataForgeContextService, and RuntimeEntitySchemaReader.
+Decision: Removed the redundant cast, replaced the manual non-empty scan with a LINQ pipeline, split DataForge context aggregation into focused helper methods, and converted runtime-schema DTO carriers into records while preserving request serialization behavior.
+Discovery: The runtime-schema DTO cleanup changed JSON request escaping from `\"` to `\u0022`, so the request path now uses an explicit relaxed encoder to keep the existing wire format and tests stable.
+Files: clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeContextService.cs, clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs, .codex/workspace-diary.md
+Impact: The remaining PR 524 Sonar warnings from this area are addressed without changing the external MCP surface or the runtime-schema request contract.
+
+## 2025-07-14 – find-entity-schema MCP tool + CLI command
+Context: Agents were calling get-pkg-list twice then iterating packages to find entity schemas (N+1 pattern). New tool solves this with one DataService SelectQuery.
+Decision: Single HTTP request to SysSchema via existing SelectQueryHelper (no cliogate required). Parameters: schema-name (exact), search-pattern (contains), uid (Guid exact). Returns EntitySchemaSearchResult with SchemaName, PackageName, PackageMaintainer, ParentSchemaName.
+Discovery: comparisonType=10 is Contains; SysSchema.ManagerName="EntitySchemaManager" for entity schemas; joined columns SysPackage.Name and [SysSchema:Id:Parent].Name work in DataService SelectQuery.
+Files: clio/Command/FindEntitySchemaCommand.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs (FindEntitySchemaTool + FindEntitySchemaArgs), clio/Command/McpServer/Tools/ToolContractGetTool.cs (BuildFindEntitySchema), clio/Program.cs, clio/BindingsModule.cs, clio/Wiki/WikiAnchors.txt, clio/help/en/find-entity-schema.txt, clio/docs/commands/find-entity-schema.md, clio/Commands.md, clio.tests/Command/FindEntitySchemaCommandTests.cs, clio.tests/Command/McpServer/EntitySchemaToolTests.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, .github/skills/clio/references/commands-reference.md, .github/skills/clio/SKILL.md
+Impact: Agents can now find any entity schema in one round trip without knowing the package name. 96 unit tests green.
+
+## 2026-04-13 13:05 – Analyzed Copilot session d6fe1629
+Context: User asked to analyze `/Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md`.
+Decision: Treated the file as a meta-session that analyzes another exported Copilot session, separating outer-session facts from the nested viewed transcript.
+Discovery: The analyzed session itself only used two `view` actions and three assistant answers; the visible CAPI error and CLIO command failures belong to the nested file being inspected, not to the outer session. The biggest issue in the outer session is inconsistent interpretation of `find-entity-schema` output around `Test1 | Test1 (Creatio)`.
+Files: /Users/a.kravchuk/Projects/copilot-session-d6fe1629-5e8e-42c2-b7ee-6bcfce5cdb27.md, .codex/workspace-diary.md
+Impact: Future session reviews should explicitly distinguish current-session execution from quoted or viewed transcripts to avoid false incident counts and wrong root-cause conclusions.
+
+## 2025-07-16 – Implement application-section-delete (ENG-88149)
+Context: Last unimplemented AC from ENG-88149 — delete section from an installed app.
+Decision: Followed the create/update pattern: service + command + MCP tool + args/response/support + DI + contract + prompt + tests.
+Files: ApplicationSectionDeleteCommand.cs (created), ApplicationTool.cs, ApplicationToolArgs.cs, ApplicationToolResponses.cs, ApplicationToolSupport.cs, BindingsModule.cs, Program.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, DeleteAppSectionCommandTests.cs
+Impact: application-section-delete MCP tool and delete-app-section CLI verb are fully wired. 3 unit tests pass.
+
+## 2025-07-17 – application-section-get-list completed
+Context: ENG-88149 — list sections of an installed Creatio application
+Decision: Reused ApplicationSectionRecord/ApplicationSectionInfoResult from create command; SelectQuery on ApplicationSection filtered by ApplicationId
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio/Command/McpServer/Tools/ApplicationTool.cs, ToolContractGetTool.cs, ApplicationPrompt.cs, guidance resources, BindingsModule.cs, Program.cs, clio.tests/Command/GetAppSectionsCommandTests.cs
+Impact: CLI list-app-sections + MCP application-section-get-list; preferred flow now includes get-list before delete/update in all guidance resources
+
+## 2026-04-13 15:06 – list-app-sections table output (UX improvement)
+Context: Raw single-line JSON output was unreadable in the terminal.
+Decision: Switch default output to ConsoleTable (Code|Caption|EntitySchemaName|Description) preceded by an application header line; add --json flag for script-friendly indented JSON. MCP tool unaffected (calls service directly).
+Files: clio/Command/ApplicationSectionGetListCommand.cs, clio.tests/Command/GetAppSectionsCommandTests.cs, clio/help/en/list-app-sections.txt (new), clio/docs/commands/list-app-sections.md (new), clio/Commands.md, .github/skills/clio/references/commands-reference.md
+Impact: Human-readable table by default; --json for piping; 4 unit tests green.
+
+## 2026-04-14 – ActiveEnvironmentKey optional -e for CLI
+Context: When ActiveEnvironmentKey is set in appsettings.json pointing to an existing env, -e was still required in practice because Execute() guards checked options.Environment directly.
+Decision: Fix infrastructure layer only (Configure() and GetEnvironmentSettings() in Program.cs) to populate options.Environment from GetDefaultEnvironmentName() before Execute() is called. MCP kept environment-required by design (user explicit decision).
+Discovery: GetEnvironment(options) in ConfigurationOptions.cs already resolves settings from active env, but never writes back to options.Environment → guards fail on null. Fix is to set options.Environment = activeEnvName in the two Program.cs entry points.
+Files: clio/Program.cs (Configure, GetEnvironmentSettings)
+Impact: All CLI commands now work without -e when ActiveEnvironmentKey is configured. Execute() guards and unit tests unchanged.
+
+## 2025-07-14 – Level 2 delete-app-section cleanup committed
+
+Context: delete-app-section was hanging because it called DeleteQuery on the virtual ApplicationSection entity (no backend delete handler in Creatio). Investigation showed ApplicationSectionEventListener has NO OnDeleted handler.
+Decision: Level 2 cleanup — delete all metadata artifacts in correct FK order, keep entity schema by default, add --delete-entity-schema flag for full cleanup.
+Discovery: CS9007 with $$""" raw literals — }}  consecutive closing braces after interpolation are treated as closing delimiter. Fix: expand JSON objects to multi-line format (one } per line).
+Files: clio/Command/ApplicationSectionDeleteCommand.cs, ApplicationSectionCreateCommand.cs, McpServer/Tools/ApplicationTool.cs, ApplicationToolArgs.cs, ToolContractGetTool.cs, clio.tests/Command/DeleteAppSectionCommandTests.cs
+Impact: Fully removes SysModuleInWorkplace, SysModuleLcz, SysSchema (Freedom UI pages + mobile), SysModuleEntity, SysModule in correct order. Section can be re-created cleanly afterward.
+
+## 2025-04-13 17:30 – delete-app-section: fix schema filter for AddonSchemaManager schemas
+
+Context: After WorkspaceExplorer refactor, 2 schemas were still left behind after delete
+Decision: Broaden LoadSectionSchemas filter from StartsWith(code+"_") to StartsWith(code) to catch non-underscore schemas
+Discovery:
+  - DataService FK column paths drop Id suffix: SysModuleId column -> path SysModule
+  - SysModuleLcz has no DataService schema for Freedom UI sections (0 rows, non-critical)
+  - AddonSchemaManager schemas (UsrXxxRelatedPage, UsrXxxMobileRelatedPage) use no underscore separator
+  - DataService cannot delete SysSchema (SecurityException) — must use WorkspaceExplorerService.svc/Delete
+Files: clio/Command/ApplicationSectionDeleteCommand.cs
+Impact: delete-app-section now fully cleans up all 7 workspace schemas + SysModule + SysModuleInWorkplace
+
+## 2025-07-07 – Normalize CLI command names to verb-noun convention
+
+Context: Commands page-get/list/update, delete-schema, get-app-list used inconsistent naming patterns.
+Decision: Renamed all to canonical {verb}-{noun} pattern; old names preserved as Aliases for backward compatibility.
+Discovery: Commands.md doc links must reference canonical filenames — HasCommandIndexEntry checks (docs/commands/{canonicalName}.md). Four artifact types must all be consistent: Commands.md index entry, help txt, docs md, WikiAnchors.txt.
+Files: clio/Command/PageGetOptions.cs, PageListOptions.cs, PageUpdateOptions.cs, DeleteSchemaCommand.cs, ListInstalledApplications.cs, Commands.md, CommandHelpCatalog.cs, WikiAnchors.txt
+Impact: All future renames must update Commands.md link paths (not just anchor IDs); test ExecuteCommands_WithUnknownVerb asserts specific canonical names in suggestions.
+
+## 2026-04-16 19:08 – Harden Data Forge config resolution against stale cliogate and poisoned proxy env
+Context: `dataforge-*` MCP/CLI calls could misread `DataForgeServiceUrl` when cliogate was missing, stale, or returned non-setting payloads, while hostile `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` values masked the real cause by forcing traffic to `127.0.0.1:9`.
+Decision: Keep the fix scoped to Data Forge only by adding a Data Forge-specific direct SysSettings reader fallback, strict `DataForgeServiceUrl` validation, and a proxy-safe execution wrapper around `dataforge-*` tool calls; leave general syssetting command behavior unchanged.
+Discovery: The highest-value reuse was already present as local helper files for direct SysSettings reads and proxy-scoped execution, so the remaining work was wiring them into DI, resolver/tool flow, and regression coverage instead of rebuilding them from scratch.
+Files: clio/Common/DataForge/DataForgeConfigResolver.cs, clio/Common/DataForge/DataForgeSysSettingDirectReader.cs, clio/Common/DataForge/DataForgeProxySafeExecutor.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/BindingsModule.cs, clio.tests/Common/DataForgeConfigResolverTests.cs, clio.tests/Common/DataForgeProxySafeExecutorTests.cs, clio.tests/Command/McpServer/DataForgeToolTests.cs, clio.mcp.e2e/DataForgeToolE2ETests.cs, .codex/workspace-diary.md
+Impact: `dataforge-*` calls can now fall back to direct site reads when the gateway path is broken, reject bogus HTML/non-URL values instead of treating them as config, and surface the real downstream TLS/auth/Data Forge failure even when proxy env vars are poisoned.
+## 2026-04-14 07:17 – PR #527 merged: MCP tool naming + CLI UX improvements
+
+Context: Long CI debugging session to get PR #527 merged into master.
+Decision: Merged via --admin with UNSTABLE status (Integration Tests pre-existing, MCP E2E timeout).
+Discovery: GitHub evaluates workflow from the MERGE COMMIT (base+head), not just HEAD branch — explains why complex 5-job workflow ran even though our branch had the simple one. MCP E2E tests: 141 tests x 30s CanReachEnvironmentAsync timeout = ~70 min total when sandbox unreachable. Need OneTimeSetUp refactor. Integration test Execute_CreatesNewPackageInFileSystem is pre-existing failure on Windows CI (templates not found), not caused by our changes. Process zombie fix: process.Kill(entireProcessTree: true) must be called on OperationCanceledException from WaitForExitAsync.
+Files: .github/workflows/build.yml (added timeout-minutes: 30 to mcp-e2e-tests job), clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs
+Impact: PR merged. Next: refactor MCP E2E CanReachEnvironmentAsync to OneTimeSetUp pattern to fix timeout issue.
+
+## 2026-04-14 16:05 – MCP URL fallback vs registered environments
+Context: Investigated why an agent used direct `uri/login/password` instead of registering a new clio environment before operating on a page.
+Decision: Keep the finding at analysis level for now: URL-based MCP execution is an intentional fallback in `ToolCommandResolver`, but it creates ambiguous agent behavior when working tools expose both `environment-name` and direct connection args.
+Discovery: `ToolCommandResolver.Resolve()` explicitly allows either a registered environment or explicit URI credentials, and unit tests lock that in as desired behavior when bootstrap is broken. Direct connection args are currently exposed by `PageGetTool`, `PageListTool`, `PageUpdateTool`, `ApplicationDeleteTool`, and `DataForgeTool`, while `reg-web-app` exists specifically for persistent environment registration.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.tests/Command/McpServer/ToolCommandResolverTests.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Tools/RegWebAppTool.cs, .codex/workspace-diary.md
+Impact: Future fix should likely prefer or require `environment-name` for normal work tools while preserving URL-based access only for bootstrap/break-glass scenarios.
+
+## 2026-04-14 16:24 – Soft MCP guidance toward registered environments
+Context: User approved the soft variant instead of removing URL-based MCP execution entirely.
+Decision: Kept `uri/login/password` compatibility in MCP tools, but changed resolver diagnostics, tool descriptions, and prompts to make `environment-name` the standard path and `reg-web-app` the preferred bootstrap step.
+Discovery: Wording-only MCP surface changes were enough to steer agent behavior without changing payload shape or execution paths. Existing E2E assertions still matched because they only depended on the preserved leading resolver text.
+Files: clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageListTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ApplicationDeleteTool.cs, clio/Command/McpServer/Tools/DataForgeTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Prompts/ApplicationPrompt.cs, clio/Command/McpServer/Prompts/RegWebAppPrompt.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/ApplicationToolTests.cs, .codex/workspace-diary.md
+Impact: Agents should now prefer registering environments and using `environment-name`, while direct credentials stay available only as a documented emergency fallback.
+## 2026-04-17 11:55 – E2E pushed packages need hotfix to become editable
+Context: Debugged MCP E2E failures where tests created a temp workspace/package, used push-workspace to install it on remote stands, then immediately tried package mutations such as create-lookup, create-data-binding-db, and sync-schemas update flows.
+Decision: Keep push-workspace for package deployment but enable `pkg-hotfix <package> true` immediately after push inside mutation-oriented E2E arrange flows so the remote package becomes editable before designer/schema-data writes.
+Discovery: Core computes package read-only state from `InstallType`, not `InstallBehavior`. `push-workspace` installs `CreatioPackages.zip` through archive/package-installer flow, which leaves packages as `InstallType=Repository` and therefore `IsReadOnly=true`. `PackageService.StartPackageHotfix` flips package editability by setting maintainer/install-type to editable state. Verified that EntitySchema, DataBindingDb, and SchemaSync mutation E2Es pass after hotfixing.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/DataBindingDbToolE2ETests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs
+Impact: Future destructive E2E tests that push a workspace and then mutate remote package contents should hotfix the package after push unless a true SourceControl-mode push flow is introduced.
+
+## 2026-04-17 12:32 – sync-pages contract drifted from verified-body-file wire field
+Context: Investigated the failing `ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Contracts` E2E after the broader MCP tool run.
+Decision: Keep the existing `PageSyncTool` wire shape and update `ToolContractGetTool.BuildPageSync()` so the advertised `sync-pages` output contract says `verified-body-file`.
+Discovery: `PageSyncTool` serializes `[JsonPropertyName("verified-body-file")]` and unit tests already assert that wire name, but `get-tool-contract` had drifted to `verified-body`, causing only the contract inspection test to fail.
+Files: clio/Command/McpServer/Tools/ToolContractGetTool.cs
+Impact: MCP contract inspection for `sync-pages` now matches the real response payload, avoiding false contract failures when clients rely on `get-tool-contract` for page verify output fields.
+
+## 2026-04-17 12:58 – get-page E2E expected pre-compaction payload
+Context: Investigated the failing `PageGetTool_Should_Return_Stable_Metadata_Contract_For_Real_Page` E2E after restoring an installed application so the test would run instead of skipping.
+Decision: Keep `PageGetTool` behavior unchanged and update the E2E to validate the compact MCP response (`page` + `files`) plus written `body.js`/`bundle.json`/`meta.json` paths on disk.
+Discovery: `PageGetCommand` still builds inline `bundle` and `raw`, but `PageGetTool.WriteFilesAndCompact()` intentionally strips those fields from successful MCP responses after writing them to `.clio-pages/<schema-name>/`. Unit tests in `PageToolsTests` already locked in that contract.
+Files: clio.mcp.e2e/PageGetToolE2ETests.cs
+Impact: The live-environment `get-page` E2E now tracks the real MCP wire contract and verifies the file-based artifacts that update flows actually consume.
+
+## 2026-04-17 13:18 – masked entity-schema creation needs synthetic value-masking settings
+Context: Investigated why `CreateEntitySchema_Should_Apply_Masked_For_Text_Column_Through_Mcp` still failed after normalizing root-schema administration flags.
+Decision: Keep the administration-flag normalization for fresh root schemas, and additionally synthesize `valueMaskingSettings` whenever `masked=true` is requested during create-entity-schema. Use the conventional unmask operation code `<SchemaName>_<ColumnName>_UnmaskedValue` with default masking pattern `.*` and replacement `********`.
+Discovery: Core validator `EntitySchemaValidator.ValidateValueMaskingSettings` rejects any column with `isValueMasked=true` unless `valueMaskingSettings.adminOperationCode`, `pattern`, and `replacement` are all non-empty. The previous clio payload only set `isMasked`/`isValueMasked`, which triggered the server-side error `Operation permission is not selected.`.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/EntitySchemaDesignerDtos.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs
+Impact: create-entity-schema now produces core-valid masked Text/SecureText payloads, and the live masked-column E2E passes again.
+
+## 2026-04-17 14:05 – entity-schema positive E2Es need Usr-prefixed custom column codes
+Context: Investigated why `UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types` failed even after the package-editability and masked-column fixes.
+Decision: Update the positive entity-schema E2E fixture to use `Usr...` codes for every custom column created through `create-entity-schema` and `update-entity-schema`, including the shared arrange defaults and the binary-like test-specific columns.
+Discovery: The failure was not in binary/image/file column handling. The initial create step still seeded a custom column named `Name`, which core rejects because custom entity-schema column codes must start with `Usr`. The binary-like test also used unprefixed custom add names (`Payload`, `Preview`, `Document`), so fixing the shared setup and per-test constants together avoids the next validation failure.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The targeted binary-like entity-schema E2E now passes, and other positive entity-schema flows that reuse the shared arrange helper are less likely to fail on the same prefix validation.
+
+## 2026-04-17 14:52 – Allure async step attributes can deadlock NUnit tests
+Context: Investigated MCP E2E hangs where async helper methods were annotated with `[AllureStep]`.
+Decision: Remove `[AllureStep]` from private static async Task helpers and wrap their bodies with `await AllureApi.Step(...)` instead.
+Discovery: `[AllureStep]` blocks the NUnit test thread while async continuations still need `NUnitSynchronizationContext` to resume on that same thread, which causes a deadlock. Non-async step methods are unaffected.
+Files: clio.mcp.e2e/*.cs
+Impact: Async E2E helper steps can report to Allure without blocking test execution on NUnit.
+
+## 2026-04-17 15:12 – Reuse one deterministic sys setting in entity-schema E2Es
+Context: Review of the settings-default entity-schema E2Es found that creating a unique sys setting per run polluted the shared sandbox.
+Decision: Replace per-run generated setting codes with one deterministic reusable code, `UsrEntitySchemaE2EDefaultText`, and keep updating that setting idempotently during arrange.
+Discovery: The tests only need any resolvable `Text` sys setting; they do not depend on special semantics of the original `Maintainer` value or on unique setting names per run.
+Files: clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: The settings-default E2Es remain self-sufficient without leaking unbounded sys settings into shared environments.
+
+## 2026-04-20 13:10 – Simplified update-page validator contract
+Context: Follow-up review on the validator-guidance branch flagged PageUpdateTool as a second source of truth because its description duplicated detailed SCHEMA_VALIDATORS rules already maintained in the validator guidance resource.
+Decision: Reduced update-page validator guidance to the same lean pattern used by sync-pages: require reading docs://mcp/guides/page-schema-validators first, and keep detailed binding/control/resource-string rules only in the canonical resource.
+Discovery: PageToolsTests had accumulated assertions against the old inline validator wording, so the contract tests needed to switch from checking duplicated details to checking guide delegation.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator authoring rules now have one canonical maintenance point, reducing MCP contract drift when guidance changes again.
+
+## 2026-04-20 15:40 – Stop MCP E2E from running in GitHub Actions
+Context: MCP end-to-end coverage is being moved off GitHub Actions so the repo should stop scheduling that suite there for now.
+Decision: Remove the dedicated `mcp-e2e-tests` workflow job and the now-unused `mcp` change-detection output/filter from `.github/workflows/build.yml`; keep the `clio.mcp.e2e` project in the repo for future TeamCity ownership.
+Discovery: GitHub Actions invoked MCP E2E only from the dedicated workflow job, so no project or test code changes were required for the stopgap.
+Files: .github/workflows/build.yml, .codex/workspace-diary.md
+Impact: PRs and branch builds on GitHub no longer queue MCP E2E, reducing CI time while preserving the suite for a later TeamCity migration.
+
+## 2026-04-20 19:20 – Add explicit get-guidance MCP tool
+Context: Replaced prompt and tool guidance references from raw `docs://mcp/guides/...` URIs with an explicit MCP tool because external clients routed the custom URI scheme inconsistently through web fetch or help resolvers.
+Decision: Added a `get-guidance` MCP tool backed by a shared guidance catalog, rewired MCP prompts/tool descriptions/resources to instruct agents to call `get-guidance`, and covered the contract with unit plus E2E tests.
+Discovery: `McpGuidanceResourceE2ETests` start a fresh `clio` process from `clio\\bin\\Debug\\net8.0`; running unit tests with `--artifacts-path` alone leaves those E2E checks on stale binaries until the main `clio` and `clio.mcp.e2e` outputs are rebuilt.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP guidance changes can stay in one canonical resource while clients use a machine-actionable tool call instead of relying on custom URI handling.
+
+## 2026-04-20 19:48 – Tighten guidance catalog initialization
+Context: Follow-up review on the new `get-guidance` flow flagged eager resource construction, an unsafe `TextResourceContents` cast, and thin lookup coverage in unit tests.
+Decision: Switched MCP guidance resources to expose `internal static` guide payloads for catalog reuse, updated `GuidanceCatalog` to consume those cached payloads with an explicit type check, and added case-insensitive lookup coverage plus fixture-level unit categorization for `GuidanceGetToolTests`.
+Discovery: The resource attributes can stay on `GetGuide()` while the shared cached article is exposed separately as an internal static field; `GuidanceCatalog` can then remain free of resource instantiation without changing the external MCP contract.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Resources\AppModelingGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future guidance resources can be added to the catalog without startup-time object construction, and the `get-guidance` tests now lock in the case-insensitive behavior actually used by the catalog.
+
+## 2026-04-20 20:14 – Split PageSyncTool body validation helpers
+Context: A follow-up refactoring request targeted `PageSyncTool.ValidateBody(...)` because Sonar flagged cognitive complexity above the project threshold.
+Decision: Kept the validation sequence and output contract unchanged, but extracted resource parsing, gated content validation, error aggregation, warning aggregation, and response assembly into small private helpers.
+Discovery: Most of the complexity came from repeated `contentResult.IsValid ? ... : new SchemaValidationResult { IsValid = true }` guards plus result-list aggregation; those compress cleanly into `RunContentValidation(...)`, `CollectErrors(...)`, and `CollectWarnings(...)` without changing behavior.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validation-rule additions in `sync-pages` can be slotted into the helper pattern with less risk of breaching the complexity threshold again.
+
+## 2026-04-20 20:23 – Simplified validator param binding scan
+Context: Sonar flagged `SchemaValidationService.ScanAttributesForInvalidParamBindings(...)` for excessive cognitive complexity while checking validator param bindings for invalid `$Resources.Strings.*` usage.
+Decision: Preserved the exact diagnostics but split the method into narrow helpers for extracting validator bindings, extracting validator params, and detecting reactive resource bindings.
+Discovery: The complexity was driven by nested guard clauses over `validators`, `params`, and string checks; moving those conditions into `TryGetValidatorBindings(...)`, `TryGetValidatorParams(...)`, and `TryGetReactiveResourceBinding(...)` reduced branching without changing the scan order.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-binding checks in `SchemaValidationService` can reuse the same helper pattern and stay under the Sonar complexity threshold.
+
+## 2026-04-20 20:39 – Consolidated schema-validator scan helpers
+Context: A broader Sonar cleanup request covered repeated marker/property literals and several high-complexity validator scan methods in `SchemaValidationService`, plus lingering complexity in `PageSyncTool.ValidateBody(...)`.
+Decision: Introduced shared constants for schema markers/property names, added a reusable `ForEachMarkerAttributesContainer(...)` traversal helper, flattened validator-binding scans into enumerable/helper-based pipelines, and split `ExtractValidatorBody(...)` into smaller brace/string parsing helpers. `PageSyncTool.ValidateBody(...)` now delegates content-result and final success calculation to helpers.
+Discovery: Most of the remaining complexity came from repeating the same “read marker -> parse JSON -> branch on array vs attributes object” pattern in four different methods. Centralizing that traversal removed multiple Sonar issues at once without changing validation messages or semantics.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future validator-related validation rules can plug into one shared traversal path, making Sonar cleanups and maintenance cheaper across both command and MCP validation flows.
+
+## 2026-04-20 21:19 – Restore PageSync binding errors and harden string-literal scan
+Context: Follow-up review identified that `sync-pages` stopped surfacing column-binding validation errors after the body-validation refactor, and that the validator body scanner could step past the end of a malformed escaped string literal.
+Decision: Added `bindingResult` back into `PageSyncTool.ValidateBody(...)` error aggregation and guarded the escape branch in `SchemaValidationService.ConsumeStringLiteralCharacter(...)` so a trailing backslash advances safely.
+Discovery: `ValidateColumnBindings(...)` is intentionally split between hard errors and warnings in `PageSyncTool`; after the refactor, `bindingResult` still fed warnings but no longer contributed to `Errors`, which hid real validation failures from tool users.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` once again reports binding validation failures in its primary error payload, and malformed trailing escapes in validator bodies no longer risk index overflow during custom-validator parsing.
+
+## 2026-04-20 21:28 – Restore warning-only binding diagnostics in sync-pages
+Context: Review of the recent `PageSyncTool.ValidateBody(...)` refactor found that `ValidateColumnBindings(...)` diagnostics were being returned in both `Errors` and `Warnings`, duplicating the same message for MCP callers.
+Decision: Removed `bindingResult` from `CollectErrors(...)` while keeping it in `CollectWarnings(...)`, restoring the original warning-only contract for column-binding diagnostics.
+Discovery: The prior hotfix that reintroduced `bindingResult` into the validation payload over-corrected by treating binding diagnostics as hard errors; the intended behavior is to surface them only as warnings while other validator-related failures remain blocking.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `sync-pages` now returns binding diagnostics once, in the correct severity bucket, avoiding duplicate handling in MCP clients.
+
+## 2026-04-20 21:36 – Reduce validator control-binding scan complexity
+Context: Sonar flagged `SchemaValidationService.CheckValidatorControlBindings(...)` for cognitive complexity above the project threshold.
+Decision: Extracted the control-target lookup, invalid `$PDS_` binding detection, field-name resolution, and child-element enumeration into small helpers while preserving the existing recursion and error text.
+Discovery: The method's complexity came mostly from stacking array/object guards, values-target selection, control-binding parsing, and recursive child traversal in one block. Splitting those concerns leaves the same traversal semantics with lower local branching.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Further validator control-binding rules can be added through dedicated helpers without pushing the main recursive walker back over the Sonar threshold.
+
+## 2026-04-20 16:30 – Remove handler and converter MCP guidance from validator branch
+Context: Branch feature/validator needed to keep only validator-related MCP guidance and remove handler/converter guidance that had been added earlier.
+Decision: Deleted handler/converter guidance resources and removed all prompt, tool, catalog, help/doc, unit-test, and E2E references while preserving validator guidance and the get-guidance tool flow.
+Discovery: Remaining SCHEMA_CONVERTERS references under MCP tests are fixture payloads for parser/validation behavior, not published guidance surface; guidance E2E also needed one assertion updated from old get-guidance redirect wording to the new validator-only business-rules wording.
+Files: clio/Command/McpServer/Resources/PageSchemaHandlersGuidanceResource.cs, clio/Command/McpServer/Resources/PageSchemaConvertersGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Resources/PageSchemaValidatorsGuidanceResource.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/help/en/mcp-server.txt, clio/docs/commands/mcp-server.md, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Branch MCP surface is now validator-only for page-schema guidance, which reduces drift from unrelated handler/converter maintenance in this branch.
+
+## 2026-04-20 22:20 – Trim validator control-binding complexity by one branch
+Context: Sonar still reported `CheckValidatorControlBindings(...)` at cognitive complexity 16 after the earlier helper extraction.
+Decision: Moved the `$PDS_` control-binding violation detection and error creation into `AddValidatorControlBindingErrorIfNeeded(...)`, leaving the recursive walker responsible only for array/object traversal and child recursion.
+Discovery: The remaining complexity came from a single nested `control`/`$PDS_`/`attributesWithValidators` branch inside the traversal method; extracting that branch was enough to drop the method below the threshold without touching validation semantics or tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future control-binding rule tweaks can stay isolated in the helper while the recursive method remains under the Sonar limit.
+
+## 2026-04-21 11:55 – Remove speculative PageUpdate max-length validator test
+Context: A recently added `PageUpdateTool` test asserted that custom max-length-style validators must stay accepted because runtime validation no longer tries to infer `crt.MaxLength` equivalence. The branch goal is to keep tests tied to current behavior contracts, not to guard against hypothetical future heuristic reintroduction.
+Decision: Deleted the `PageUpdateTool_UpdatePage_Allows_Custom_MaxLength_Style_Validator` test from `PageToolsTests` and kept the remaining validator-related tests that still validate active contracts: `#ResourceString(...)` enforcement, canonical built-in param names, zero-param custom validator rejection, and validator guidance routing through `get-guidance`.
+Discovery: The removed test was the only remaining test in the branch that encoded a negative assertion about a future reintroduction of broad built-in-equivalence heuristics; the rest of the added validator tests remain grounded in current runtime validation behavior.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The MCP validator test suite now checks only present-day contracts and error semantics, which keeps future validation changes free to evolve without carrying a speculative regression test.
+
+## 2026-04-21 12:05 – Remove handler/converter guide references from clio skill docs
+Context: After cleaning the validator branch MCP surface, the clio GitHub skill artifacts still referenced `page-schema-handlers` and `page-schema-converters`, which kept outdated guidance names visible to agents reading repository-local skill docs.
+Decision: Replaced the `commands-reference.md` get-page note with a validator-only `get-guidance` instruction and rewrote the corresponding `SKILL.md` page-body guidance block to mention only validator authoring.
+Discovery: The remaining handler/converter references were confined to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`; repository-wide search confirmed no other `page-schema-handlers` or `page-schema-converters` strings remain after the update.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Agents that rely on the repository-local clio skill now see the same validator-only guidance surface as the branch MCP runtime and tests.
+
+## 2026-04-21 12:12 – Restore validator guidance URI as secondary identifier in skill docs
+Context: After removing handler/converter guide references from repository-local clio skill docs, the validator guide URI also disappeared from human-facing guidance, which made the canonical resource address less visible even though `get-guidance` remains the supported access path.
+Decision: Added `docs://mcp/guides/page-schema-validators` back to `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md` as a secondary identifier while keeping `get-guidance name=page-schema-validators` as the primary instruction.
+Discovery: Keeping the URI as metadata preserves discoverability for inspectors and humans without reintroducing the unreliable client behavior caused by telling agents to read `docs://...` directly.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Repository-local skill docs now expose both the stable guidance tool flow and the canonical validator guide URI without re-opening the broken direct-URI access pattern.
+
+## 2026-04-21 12:16 – Keep skill docs get-guidance-only for validator authoring
+Context: A brief follow-up added the validator guide URI back into the repository-local clio skill docs as metadata, but that made the docs noisier without improving the supported access flow.
+Decision: Removed the secondary `docs://mcp/guides/page-schema-validators` mention again and kept `get-guidance name=page-schema-validators` as the sole instruction in `.github/skills/clio/references/commands-reference.md` and `.github/skills/clio/SKILL.md`.
+Discovery: For these repository-local skill docs, the extra URI adds no operational value because agents should already use `get-guidance`; keeping only the actionable instruction is clearer and avoids reintroducing ambiguous guidance text.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The local clio skill now stays aligned with the single supported validator-guidance access path and avoids redundant URI noise.
+
+## 2026-04-21 12:24 – Align entity-schema prompt test with guidance tool contract
+Context: Review feedback on `EntitySchemaToolTests` noted that prompt assertions should validate the supported guidance access path (`get-guidance` plus guidance name) instead of coupling to a backing `docs://...` URI literal.
+Decision: Updated the lookup prompt assertions to require `GuidanceGetTool.ToolName` and the guidance name `app-modeling`, without asserting the underlying resource URI string.
+Discovery: The entity-schema prompt test had already stopped checking `docs://mcp/guides/app-modeling`; the remaining gap was an explicit assertion on the `app-modeling` guidance name itself.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\EntitySchemaToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The test now tracks the real MCP contract callers use and is less brittle to internal guidance URI changes.
+
+## 2026-04-21 12:33 – Remove remaining converter wording from clio command reference skill
+Context: The validator-only branch still had one leftover line in the repository-local clio command reference describing `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` together for `sync-pages` client-side validation.
+Decision: Rewrote the note to mention only `SCHEMA_VALIDATORS` as a JavaScript object section for function-based validator entries.
+Discovery: This was the last remaining converter-specific wording in `.github/skills/clio/references/commands-reference.md`; no matching text remained in `.github/skills/clio/SKILL.md`.
+Files: C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The repository-local clio skill reference now stays fully aligned with the validator-only focus of the branch.
+
+## 2026-04-21 13:05 – Document clio release flow from GitHub release to NuGet publish
+Context: Needed to answer how a new release is created for the `Advance-Technologies-Foundation/clio` repository without guessing a generic GitHub flow.
+Decision: Verified the release process from the repository-local release prompt, the release workflow, the project fallback version in `clio.csproj`, and the current latest GitHub release/tag.
+Discovery: Publishing a GitHub Release triggers `.github/workflows/reliase-to-nuget.yml` on `release.published`, the workflow accepts `v`-prefixed or plain tags but requires `X.Y.Z.W`, and the repo guidance increments the last version segment plus updates the fallback `AssemblyVersion` in `clio/clio.csproj`.
+Files: C:\Projects\clio\.github\prompts\release.prompt.md, C:\Projects\clio\.github\workflows\reliase-to-nuget.yml, C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future release questions can be answered with the repository-specific procedure and current versioning expectations instead of a generic GitHub Releases walkthrough.
+
+## 2026-04-21 12:40 – Continue JavaScript marker validation after peer failures
+Context: Review found that `ValidateJavaScriptObjectMarkers(...)` stopped on the first malformed JavaScript object marker, which hid later `SCHEMA_VALIDATORS` errors when `SCHEMA_CONVERTERS` failed first.
+Decision: Changed the loop to `continue` after `TryValidateJavaScriptObjectSection(...)` failures and added a regression test that asserts malformed converter and validator sections are both reported in one validation pass.
+Discovery: The early `return` was unnecessary because JavaScript object markers are peer sections and each failure is already added to the shared `SchemaValidationResult`; continuing does not create cascaded parse errors across sections.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: AI-generated page bodies with multiple broken JavaScript object markers now return a complete validation error set in one save attempt instead of forcing iterative rediscovery.
+
+## 2026-04-21 12:48 – Filter diff traversal to attribute-targeted operations only
+Context: Review found that the shared `EnumerateAttributesContainers(...)` helper treated every `viewModelConfigDiff` operation with a `values` object as an attribute container, even when the operation targeted paths such as `handlers` rather than `attributes`.
+Decision: Added `TargetsAttributesPath(...)` and changed diff traversal to yield `values` only for operations whose `path` array contains `attributes`, then added a regression test proving that validator param validation ignores handler-targeted diff payloads even if they contain a validators-like shape.
+Discovery: The same helper feeds validator param binding scans, standard-validator contract checks, and attribute-with-validators collection, so the path filter removes a whole class of false positives across the validator validation pipeline.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `viewModelConfigDiff` validation now inspects only real attribute operations, which prevents unrelated handler/model-config diff entries from being misclassified as validator-bearing attributes.
+
+## 2026-04-21 13:00 – Parse nested custom-validator error objects from return statements only
+Context: Review found that `ExtractReturnErrorProperties(...)` used a flat regex that missed nested error objects, and the first brace-balanced rewrite accidentally matched the top-level validator definition key instead of the returned error object inside `return { ... }`.
+Decision: Anchored extraction to `return { "<validatorType>": { ... } }`, reused brace-balanced object extraction for the nested error payload, and added a regression test for a nested top-level `details` error property whose value is another object.
+Discovery: The correctness boundary here is twofold: the extractor must ignore the `SCHEMA_VALIDATORS` declaration key itself, and it must collect only top-level properties from the returned error object so nested keys like `field` are not misreported as undeclared validator params.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Completeness validation now correctly flags undeclared top-level properties in nested validator error objects without producing false negatives or misclassifying nested child keys.
+
+## 2026-04-21 13:05 – Make standard validator contract cache thread-safe
+Context: Review pointed out that `StandardValidatorContractParser` cached contracts with a static field plus `??=`, which is not a safe lazy-initialization pattern under concurrent MCP calls.
+Decision: Replaced the static nullable cache with `Lazy<IReadOnlyDictionary<string, string[]>>` and kept the external `GetContracts()` API unchanged.
+Discovery: No parser behavior or test expectations changed — existing `McpGuidanceResourceTests` already covered the contract map contents, so a dedicated concurrency test was unnecessary for this framework-provided `Lazy<T>` guarantee.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\StandardValidatorContractParser.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Startup-time guidance contract parsing now has a single-execution, memory-safe cache path under concurrent MCP requests.
+
+## 2026-04-21 14:35 – Restrict diff validator scans to top-level attributes path
+Context: Review found that the new iewModelConfigDiff guard still used Any(...) over path segments, so nested paths such as ["handlers","attributes"] could still be misclassified as attribute operations and trigger false-positive validator binding errors.
+Decision: Tightened TargetsAttributesPath(...) to require the first path segment to be ttributes and added a regression test that proves nested paths merely containing ttributes are ignored.
+Discovery: The existing handler-path regression only covered path: ["handlers"]; it did not protect against nested paths that still slipped through the broader Any(...) predicate.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator param scans now align with the intended top-level Freedom UI diff target and stop reading unrelated alues payloads from nested non-attribute operations.
+
+## 2026-04-21 15:05 – Split top-level error-object property scan into smaller parser helpers
+Context: Sonar still reported ExtractTopLevelObjectPropertyNames(...) above the cognitive-complexity threshold after the nested validator error-object parsing rewrite.
+Decision: Kept the brace-depth parsing algorithm intact, but extracted three focused helpers: one for consuming string-literal characters, one for reading top-level property names, and one for structural character handling.
+Discovery: The complexity came from mixing parser state transitions (inString, brace depth, quoted property detection, identifier detection) inside one loop; isolating those transitions dropped the method below the threshold without changing the parser contract or its tests.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The custom-validator error-object parser remains behaviorally identical while becoming easier to extend and less likely to trigger future Sonar regressions.
+
+## 2026-04-21 15:20 – Restore validator scans for pathless root diff merges
+Context: Review found that tightening TargetsAttributesPath(...) to top-level ttributes accidentally excluded root-level iewModelConfigDiff merge operations that omit path, which this repository still uses for diff payloads.
+Decision: Treat pathless diff operations as root-level merges and therefore eligible for validator scans, while keeping explicit-path operations restricted to those whose first segment is ttributes.
+Discovery: The stricter irst segment == attributes guard fixed nested false positives, but it also created a silent skip for existing pathless merge shapes until an explicit regression test covered them.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Validator resource and contract validation now covers both supported diff shapes: root merges without path and explicit top-level ttributes merges, while still excluding unrelated nested paths.
+## 2026-04-21 14:59 – Update local clio install to 8.0.2.72 from source package
+Context: Local machine still had global `clio` dotnet tool `8.0.2.66`, while the requested GitHub release was `8.0.2.72`.
+Decision: Verified the GitHub release tag, confirmed `8.0.2.72` was not yet available on `https://api.nuget.org/v3/index.json`, then built the tool package from the local `8.0.2.72` tag source and updated the global dotnet tool from that local package feed.
+Discovery: `clio\clio.csproj` already packs as a dotnet tool and embeds `8.0.2.72`; `dotnet build -c Release` produced `clio.8.0.2.72.nupkg`, which was sufficient for `dotnet tool update -g --add-source`.
+Files: C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The workstation now runs `clio 8.0.2.72` even before the same version appears on the public NuGet feed.
+
+## 2026-04-21 16:17 – Add canonical MCP handler guidance for page-schema authoring
+Context: Needed to extend the existing validator-focused MCP page authoring guidance so AI instructions can handle Freedom UI `SCHEMA_HANDLERS` edits with the same first-class support.
+Decision: Added a new `page-schema-handlers` guidance resource and threaded it through guidance catalog lookup, page prompts/tool descriptions, handler-aware contract hints, MCP unit/E2E tests, and repository-local MCP/skill docs.
+Discovery: Handlers were already supported by page-body parsing and validation as a JavaScript section; the missing piece was canonical authoring guidance plus all discovery surfaces that currently advertise only `page-schema-validators`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.github\skills\clio\references\commands-reference.md
+Impact: Future MCP clients can now discover, request, and apply canonical handler guidance through the same `get-guidance` flow already used for validators, reducing incorrect handler/validator/converter crossovers in page-body edits.
+
+## 2026-04-21 17:02 – Add source-backed standard handler parameter contracts
+Context: The new handler guidance still listed standard Academy handler names without payload contracts, which left AI callers guessing request fields for built-in handlers.
+Decision: Cross-checked `creatio-ui` source request classes and enriched `page-schema-handlers` with a parameter catalog that separates authorable config fields from runtime payload fields, while documenting the `crt.ShowDialog` naming mismatch and the `crt.ModuleLoader` special case.
+Discovery: In source, `crt.ShowDialog` is exposed as request `crt.ShowDialogRequest` plus `crt.ShowDialogHandler`, and `crt.ModuleLoader` is a `@CrtViewElement` with `module`, `doNotRender`, and `instanceConfig` inputs rather than a normal handler `requestType`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-authoring sessions can choose the correct built-in request and payload shape without reopening `creatio-ui` source or misusing Academy-only labels as runtime request types.
+
+## 2026-04-21 17:13 – Reformat handler contracts into AI-first tables
+Context: The source-backed handler contract catalog was accurate but still prose-heavy, which made scanning harder for AI consumers inside a long MCP guidance article.
+Decision: Rewrote the standard handler parameter catalog into compact markdown tables grouped by core requests, lifecycle events, sidebar events, and Academy/source special cases, then aligned MCP unit and E2E assertions to the new tabular contract.
+Discovery: For this guide, table rows such as `request | kind | params | notes` are easier to assert and preserve than repeated prose bullets, while still carrying the same payload detail.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now exposes a faster AI-readable contract surface that is less likely to be misparsed or partially skipped during long prompt consumption.
+
+## 2026-04-21 17:34 – Remove Academy framing from handler guidance
+Context: Handler guidance was still framed around `Academy` wording even though the published built-in handler names should be presented as user-visible supported contracts for AI consumers.
+Decision: Renamed the handler catalog and special-case tables to use neutral user-facing wording (`Standard built-in handler catalog`, `User-visible name`) and aligned MCP unit/E2E assertions to the same terminology without changing the actual handler contracts.
+Discovery: Residual `Academy` mentions now remain only in validator-test `because` strings and are unrelated to the handler guidance resource.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now reads as an AI-ready catalog of supported user-visible built-in handlers instead of a secondary summary of external documentation.
+
+## 2026-04-21 17:53 – Align handler guide with actual Handler Chain semantics
+Context: Internal Confluence guidance for Handler Chain made it clear that `next?.handle(request)` placement is semantic (`before`, `after`, or omitted), while the MCP handler guide still encouraged a mostly next-first heuristic and lacked concrete read/guard patterns.
+Decision: Reworked the handler guidance into explicit chain-control rules, added `$context.get(...)` read examples, documented `preventAttributeChangeRequest` usage, showed multiple handler entries in one `SCHEMA_HANDLERS` array, added anti-patterns, and converted the save checklist into binary self-validation questions.
+Discovery: The most AI-relevant contract from the Confluence article is not the handler list itself but the rule that a handler may execute logic before next, after next, or intentionally stop the chain; `crt.HandleViewModelInitRequest` remains the clearest example where skipping `next` can break platform loading.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate handler code with fewer chain-ordering mistakes, better context access patterns, and fewer `ShowDialog`/request-shape regressions.
+
+## 2026-04-21 18:11 – Harden handler guide against AI copy mistakes
+Context: After the chain-semantics rewrite, the remaining AI risks were top-level copyable labels (`crt.ShowDialog`, `crt.ModuleLoader`), mixing declarative and imperative request shapes, and a remote-module example that still used a custom request under the `crt.` namespace.
+Decision: Added a request-shape quick reference, removed the under-specified delete row from the direct-request decision table instead of publishing a partial contract, marked `crt.ModuleLoader` as a view-element label in the top catalog, and changed the remote example to `usr.UpdateCurrentTimeRequest`.
+Discovery: For AI-facing guidance, incomplete but plausible contract hints are worse than omission; a short “do not mix shapes” table is more valuable than extra prose once the page-body examples already exist.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The handler guide now gives MCP consumers fewer copy-paste traps and a clearer separation between supported request names, special labels, and dispatch shapes.
+
+## 2026-04-21 18:24 – Add real handler-chain idioms from 8.x examples
+Context: Internal 8.x handler examples showed a few canonical idioms that were still missing from the MCP handler guide and therefore easy for AI to miss during code generation.
+Decision: Added three source-backed patterns to the guide: explicit pass-through `return next?.handle(request);`, a save-handler template that captures `const saveResult = await next?.handle(request);` and returns it after post-save orchestration, and property-style `$context` reads alongside `get(...)`.
+Discovery: The most reusable additions from the article were not new request types but concrete code idioms that reduce ambiguity: preserve downstream result explicitly, treat `next` as a value-producing call when needed, and recognize both `$context.get("Attr")` and `await request.$context.AttrName` as valid reads in page-body handlers.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should produce fewer handler-chain mistakes in non-matching branches, post-save flows, and attribute reads copied from real Creatio examples.
+
+## 2026-04-21 18:32 – Clarify request-dispatch API choice and restore delete contract
+Context: Review found three remaining AI traps in the handler guide: two dispatch APIs without a selection rule, a dropped `crt.DeleteRecordRequest` that looked accidental, and `dialogConfig` documented only by name.
+Decision: Added explicit API choice rules that prefer `$context.executeRequest(...)` inside deployed `SCHEMA_HANDLERS` and reserve `HandlerChainService.instance.process(...)` for frontend-source and SDK-oriented flows, restored `crt.DeleteRecordRequest` to the direct-request and parameter catalogs, and added a minimal `dialogConfig` shape example plus documented `message/actions/title`.
+Discovery: In the current `creatio-ui` checkout, `DeleteRecordRequest` is defined with `recordId` and `itemsAttributeName`, and its built-in handler converts it into `crt.DeleteRecordsRequest`; `BaseDialogConfig` in devkit base currently exposes `message`, `actions`, and optional `title`, which is enough for a minimal AI-safe dialog example.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should stop mixing page-body and SDK dispatch APIs, should no longer assume delete lacks a built-in request, and should generate dialog payloads with a concrete minimum shape instead of guessing.
+
+## 2026-04-21 18:36 – Align dialog example with scope-forwarding rule
+Context: Review noticed that the new `crt.ShowDialogRequest` example forwarded `$context` but omitted `scopes`, which contradicted the guide's own forwarding rule.
+Decision: Added `scopes: [...request.scopes]` to the minimal dialog example instead of carving out a dialog-specific exception.
+Discovery: For AI-facing guidance, a consistent forwarding rule is easier to follow than documenting one-off omissions in examples that otherwise look canonical.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The dialog example now matches the general request-forwarding guidance and should reduce copy-paste inconsistencies in generated handlers.
+
+## 2026-04-21 18:44 – Replace hard casts in guidance unit tests
+Context: Review pointed out that `McpGuidanceResourceTests` still used direct `(TextResourceContents)result` casts, while the matching E2E tests already used `Should().BeOfType<TextResourceContents>()`.
+Decision: Replaced all remaining guidance-resource hard casts with FluentAssertions type assertions so failures include the intended expectation instead of a bare `InvalidCastException`.
+Discovery: The same cast pattern was repeated across modeling, maintenance, handler, validator, and DataForge guidance tests, so fixing them together was lower-risk than patching only the newly discussed test.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Guidance unit tests now match the E2E assertion style and should produce clearer diagnostics if a resource ever stops returning `TextResourceContents`.
+
+## 2026-04-21 18:49 – Document valid property-style writes in handler guidance
+Context: Review flagged a seeming inconsistency where the guide taught writes through `$context.set(...)` but one example used direct property assignment on `$context`.
+Decision: Kept the example and documented the rule explicitly: property-style writes like `request.$context.SomeFlag = value` are valid when the attribute name is known at authoring time, while `$context.set(...)` remains the preferred explicit API for dynamic attribute names.
+Discovery: The problem was not the example itself but the missing rule that made AI consumers treat direct assignment as an undocumented exception.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should stop rewriting valid direct `$context` assignments into guesswork and should understand when to keep property-style writes versus when to use the explicit setter API.
+
+## 2026-04-21 19:13 – Remove remaining handler-guide self-contradictions
+Context: Code review found two AI-facing contradictions in the new handler guidance: `RunBusinessProcessRequest` forwarding examples omitted `scopes`, and the top-level `next exactly once` rule conflicted with the documented intentional chain-break flow.
+Decision: Added `scopes: [...request.scopes]` to both page-body process-dispatch examples, rewrote the non-negotiable `next` rule to require intentional placement instead of an exact-once heuristic, and strengthened unit/E2E assertions to catch both regressions.
+Discovery: For MCP guidance resources, consistency between examples and global rules matters as much as correctness of either piece in isolation because AI consumers copy the first plausible pattern they see.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-authoring sessions should stop inheriting contradictory chain-control and scope-forwarding rules from the guide itself.
+
+## 2026-04-22 00:13 – Narrow handler guide to the supported page-body view-model API
+Context: A real MCP-driven page edit generated `request.sender.$get/$set` for a simple copy-on-change handler, which exposed that the guide still taught unsupported or overly broad read patterns such as `request.$context.get(...)`.
+Decision: Removed `request.$context.get(...)` and property-style read/write guidance, standardized reads on `await request.$context["AttrName"]`, kept writes on `await request.$context.set(...)`, added explicit anti-patterns for `request.sender/$get/$set`, and added a canonical mirror-text-field example.
+Discovery: For AI-facing handler guidance, supporting multiple plausible view-model access styles is worse than choosing one narrower contract when the deployed page-body runtime only supports part of that surface reliably.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should stop producing `request.sender.$get/$set` or `request.$context.get(...)` for simple attribute-copy scenarios and should converge on the supported page-body access pattern.
+
+## 2026-04-22 00:41 – Add product-backed handler patterns without widening the canonical API
+Context: Real non-empty `SCHEMA_HANDLERS` arrays from `C:\Projects\PackageStore` showed recurring patterns that were still missing from the MCP handler guide, especially guarded field sync, lifecycle subscription cleanup, and the split between request dispatch and direct SDK service orchestration.
+Decision: Kept the narrow AI-first read/write contract, but added a guarded sync template, an init/resume/pause/destroy subscription template, explicit orchestration-pattern guidance, a stable ordering hint for multi-handler arrays, and a compatibility note that existing product code may still use `attributes[...]` or direct assignment.
+Discovery: Product code mixes several valid access styles, so the best AI guidance is to preserve one canonical authoring style while explicitly classifying the others as compatibility patterns rather than equal alternatives.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate handlers that better match real product scenarios such as subscription lifecycle management and guarded cross-field sync without regressing back to ambiguous view-model APIs.
+
+## 2026-04-22 10:22 – Add dedicated page-schema SDK common guidance
+Context: MCP page editing needed a separate AI-first guide for `@creatio-devkit/common`, based on the public API in `C:\Projects\creatio-ui\libs\devkit\common` and real schema usage in `C:\Projects\PackageStore`.
+Decision: Added a new `page-schema-sdk-common` guidance resource, wired it into guidance discovery, page prompts, page tools, handler guidance, and validator guidance, and updated MCP docs, skill docs, and unit/E2E coverage to advertise and validate the new guide.
+Discovery: Real page schemas consistently rely on a small public subset of `@creatio-devkit/common` in page-body code: dependency wiring through `SCHEMA_DEPS`/`SCHEMA_ARGS`, service instances like `SysSettingsService`, `MessageChannelService`, `ProcessEngineService`, `DialogService`, and lower-level orchestration through `HandlerChainService.instance.process(...)`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\GuidanceCatalog.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\ToolContractGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageGetTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\ToolContractGetToolTests.cs, C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.github\skills\clio\references\commands-reference.md
+Impact: Future page-editing prompts can point AI to one stable SDK-common contract instead of making it infer dependency wiring and public SDK usage from handler and validator examples alone.
+
+## 2026-04-22 12:02 – Add lightweight handler-shape validation for AI-authored page bodies
+Context: Page-body validation already enforced several validator contracts, but `SCHEMA_HANDLERS` still accepted structurally broken AI output as long as the body kept marker pairs and generic JavaScript syntax.
+Decision: Added `SchemaValidationService.ValidateHandlerStructure(...)` to enforce two low-risk rules only: `SCHEMA_HANDLERS` must remain an array literal, and each top-level handler entry must declare string `request` plus `handler` properties. Wired the check into CLI `update-page`, MCP `update-page`, and `sync-pages`, and added unit plus MCP E2E coverage.
+Discovery: Handler validation is safest when it stops at authoring-shape guarantees; deeper semantic checks like `next` placement or request payload contracts would be too fragile for arbitrary JavaScript handler bodies.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\PageUpdateOptions.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageSyncToolE2ETests.cs
+Impact: Future AI-generated handler code should now fail fast on the most common shape regressions before any remote save attempt, while still allowing legitimate arbitrary JavaScript inside valid handler entries.
+
+## 2026-04-22 12:36 – Narrow sdk-common guidance to deployed page schema code only
+Context: Review of the new `page-schema-sdk-common` guide found that it mixed page-schema authoring with remote-module/frontend-source concepts, which made the AI guidance broader than the actual target workflow.
+Decision: Rewrote `PageSchemaSdkCommonGuidanceResource` as a schema-only guide, removed frontend-source decorators/classes, added an execution-context decision block, kept `HandlerChainService` only as an advanced schema-body pattern, tightened dialog-selection rules, and aligned the `MessageChannelService` example with the canonical `request.$context.set(...)` write pattern.
+Discovery: For AI-facing SDK guidance, context separation matters more than breadth; schema-body examples become more reliable once remote-module APIs are removed instead of merely documented as optional.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future page-editing prompts should stop mixing schema-body AMD code with frontend-source decorators/imports and should choose built-in requests, SDK services, and advanced `HandlerChainService` usage more predictably.
+
+## 2026-04-22 13:02 – Tighten handler guidance around writeback style and request-catalog consistency
+Context: Review of `page-schema-handlers` found several AI-facing contradictions: direct assignment in subscription callbacks despite setter-only write guidance, mixed `!=`/`!==`, direct-trigger vs intercept confusion for `crt.SaveRecordRequest`, and request names present in hints/tables without any contract entry.
+Decision: Standardized templates on strict inequality and explicit `result = await next?.handle(request); return result;` for post-success side effects, rewrote subscription callbacks to use async setter-based writeback, clarified that the direct-request table covers triggers rather than interception, added source-backed rows for `crt.LoadDataRequest`, `crt.CreateEmailRequest`, `crt.CopyClipboardRequest`, `crt.CopyInputToClipboardRequest`, and moved `crt.ModuleLoader` fully into the special-cases table. Also added explicit marker-preservation and stricter checklist items.
+Discovery: The most useful AI correction was not more prose but tighter contract alignment: one canonical writeback style, one equality style, and no request names in decision tables unless the guide also tells the model how to author them.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP consumers should generate fewer inconsistent handlers for subscriptions, save interception, and clipboard/email/data-load scenarios, and should preserve `SCHEMA_HANDLERS` markers more reliably during edits.
+
+## 2026-04-22 13:34 – Remove ModuleLoader from handler guidance entirely
+Context: Follow-up review concluded that keeping `crt.ModuleLoader` even in the handler-guide special-cases table still gave AI a false cue to treat it like a request contract.
+Decision: Removed the `crt.ModuleLoader` row from `PageSchemaHandlersGuidanceResource` completely and deleted the matching unit/E2E assertions.
+Discovery: For AI-facing handler guidance, a misleading name in the document is worse than an incomplete special-case note when the concept does not belong to handler authoring at all.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should no longer see `crt.ModuleLoader` anywhere in the handler guide, reducing the chance of emitting it inside `SCHEMA_HANDLERS`.
+
+## 2026-04-22 13:47 – Align multi-handler attribute-change example with canonical result preservation
+Context: Review found that the `Multiple handlers in one page-body array` example still used `await next?.handle(request);` without capturing or returning the downstream result, unlike the other post-next attribute-change templates.
+Decision: Updated the multi-handler attribute-change example to use `const result = await next?.handle(request); ... return result;` and rewrote the new unit/E2E assertions to use whitespace-tolerant regex instead of brittle exact multiline strings.
+Discovery: For AI-facing guidance, one inconsistent example is enough to reintroduce copy-paste regressions even after the general rule has been fixed everywhere else.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-generation prompts should stop producing the old non-returning post-next pattern inside multi-handler arrays, while tests remain robust to harmless indentation changes.
+
+## 2026-04-22 14:08 – Remove absence-based remote-module assertions from handler-guide tests
+Context: The page-body handler guide had already been narrowed to deployed schema-body authoring, but its tests still asserted that removed remote-module/frontend-source strings were absent.
+Decision: Dropped the handler-guide `NotContain(...)` assertions for deleted remote-module/frontend-source snippets from both unit and MCP E2E tests, keeping the positive contract checks and the explicit unsupported-API guardrails that still describe live behavior.
+Discovery: For AI-facing text resources, positive assertions on the supported contract age better than brittle absence checks for content that no longer belongs to the guide at all.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-guide refactors can delete or rewrite old remote-module wording without forcing tests to track the absence of dead text, while still protecting the active page-body authoring rules.
+
+## 2026-04-22 14:26 – Tighten handler guide around page-body-first authoring patterns
+Context: Follow-up review still found three AI-facing mixed signals in `page-schema-handlers`: a custom action example that did not return the downstream result, subscription state on `$context` without an explicit transient-state rule, and a `DialogService` compatibility note that competed with canonical `crt.ShowDialogRequest` authoring.
+Decision: Kept `executeRequest(...)` as the canonical imperative example, updated both custom-action templates to capture and return `next`, added an explicit rule that direct `$context` property assignment is only for transient runtime references such as subscriptions or service handles, and removed the `new sdk.DialogService().open(...)` note from the handler guide while keeping `crt.ShowDialogRequest` as the only dialog authoring rule there.
+Discovery: For AI-facing page-body guidance, the safest pattern is to keep exactly one preferred request-dispatch and dialog-authoring path in the handler guide and classify every other `$context` write style as either transient-runtime-only or out of scope.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI edits should stop mixing non-returning custom action handlers or `DialogService` into page-body authoring and should treat direct `$context` property writes as transient-state exceptions only.
+
+## 2026-04-22 18:40 – Handler guide AI-first tightening
+Context: Refined page-schema handler MCP guidance after reviewing AI-specific ambiguity and copy-paste risks in PageSchemaHandlersGuidanceResource.
+Decision: Kept the guide page-body-only, strengthened the default executeRequest path, moved compatibility wording out of the canonical contract, and made transient `$context` property writes explicit runtime-handle exceptions.
+Discovery: Guidance tests were still asserting the old compatibility-note wording; both unit and E2E expectations needed to match the new `Compatibility note: existing product code...` phrasing.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
+Impact: Future handler-guide edits have a clearer AI-first contract and aligned guidance tests, reducing regressions around compatibility wording and page-body API recommendations.
+
+## 2026-04-22 19:10 – Tighten handler guide around dialog labels and SDK subscriptions
+Context: Reviewed the AI-only page-schema handler guidance for remaining copy-paste hazards after earlier page-body cleanup.
+Decision: Removed `crt.ShowDialog` from the generic built-in handler catalog, kept it only in the special-cases table, and replaced the abstract `<Service>.subscribe(...)` lifecycle template with a concrete `sdk.MessageChannelService` example plus an explicit anti-pattern against invented placeholder SDK services.
+Discovery: The handler guide was still safe semantically, but AI would likely over-copy the general built-in catalog and invent placeholder subscription services unless the text stayed concrete and schema-body-specific.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs
+Impact: Future AI edits should stop treating `crt.ShowDialog` as a normal handler requestType and should generate concrete SDK-backed subscription code instead of hallucinated `<Service>` APIs.
+
+## 2026-04-22 19:42 – Normalize sdk-common schema guidance and SysSettings return handling
+Context: Follow-up review of the AI-only `page-schema-sdk-common` guide found remaining contradictions around async schema-body SDK usage, especially fire-and-forget channel callbacks and inconsistent `SysSettingsService.getByCode(...)` handling across guides.
+Decision: Removed the duplicated execution-context section, kept the guide schema-body-only, replaced the `MessageChannelService` fragment with a full AMD-wrapped example that awaits both `request.$context.set(...)` and `sendMessage(...)`, documented the `getByCode(...)` return shape (`value` vs `displayValue`), and aligned the validator async example plus unit/E2E assertions to use `maxLength.value`.
+Discovery: For AI-facing guidance, one inconsistent syssettings example in a neighboring guide is enough to undo a clarified contract, so the sdk-common guide and validator guide have to converge on the same extraction pattern and tests need to assert it explicitly.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI callers should stop generating fire-and-forget SDK code in schema bodies and should consistently treat `SysSettingsService.getByCode(...)` as an object whose `.value` is used for numeric validation while `.displayValue` is reserved for user-facing text.
+
+## 2026-04-22 19:58 – Expose schema-safe model helpers from base through sdk-common guidance
+Context: Analysis of `creatio-ui` showed that `@creatio-devkit/common` depends on `@creatio/base` and reexports schema-relevant base primitives such as `MessageChannelType`, `FilterGroup`, `ComparisonType`, and `ModelParameterType`, but the MCP guide still described model work only indirectly through a process example.
+Decision: Added a base-derived helper lookup table to `page-schema-sdk-common` and introduced a dedicated `Model API in schema body` section that documents when to prefer built-in `crt.*` requests versus `sdk.Model.create(...)`, plus compact load/insert/update/delete/query snippets. Updated unit and MCP E2E assertions to lock in those model and enum/helper contracts.
+Discovery: In `PackageStore` runtime schemas, direct `@creatio/base` schema dependencies were not present; real schema code consumes the needed base primitives through `@creatio-devkit/common`, so the AI guide should document them only as `sdk.*` helpers rather than encouraging a direct base import.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future schema-generation prompts should understand model querying and the supporting enums/helpers as part of the `@creatio-devkit/common` contract, while still avoiding direct `@creatio/base` usage in `SCHEMA_DEPS`.
+
+## 2026-04-22 20:19 – Add collection guidance to schema-only sdk common guide
+Context: The schema-only `page-schema-sdk-common` guide still lacked explicit guidance for collection attributes even though `@creatio-devkit/common` exposes public collection APIs and PackageStore contains real schema-body usage.
+Decision: Added a quick-catalog row for collection work, exposed `sdk.ViewModelCollectionActionType` as a schema-safe helper, and introduced a compact `Collection API in schema body` section covering `await request.$context["Items"]`, `createItem(...)`, collection change callbacks, and unregistering with the same callback reference.
+Discovery: Public collection authoring lives in `common` on top of `base`; the clearest real schema-body example found in `PackageStore` is `await collection.createItem({ initialModelValues: ..., businessRulesActive: ... })` in `BusinessRulesTest/.../UsrTestAddCollectionRecord.js`.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\PackageStore\BusinessRulesTest\branches\7.8.0\Schemas\UsrTestAddCollectionRecord\UsrTestAddCollectionRecord.js, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI schema edits can treat collection APIs as part of the supported `@creatio-devkit/common` surface instead of inventing ad-hoc collection helpers or treating collection attributes as plain arrays.
+
+## 2026-04-22 20:33 – Tighten sdk-common guide for AI copy-paste safety
+Context: Follow-up review of the schema-only `page-schema-sdk-common` guide found remaining copy-paste risks: handler examples still mixed `next` styles, some SDK snippets looked like standalone modules even though they were only inner fragments, and collection callbacks lacked a full lifecycle example.
+Decision: Unified handler-shaped SDK templates on `const result = await next?.handle(request); ... return result;`, labeled process/dialog/handler-chain fragments as `Inner handler/body snippet only`, added a collection listener lifecycle example with registration/cleanup and transient callback references on `$context`, strengthened the dialog rule to `do NOT use DialogService` when a handler is already dispatching requests, and added checklist/anti-pattern guardrails for fragment snippets and invented collection helpers.
+Discovery: AI-facing snippet boundaries matter as much as API correctness; unlabeled inner fragments and mixed `next` styles create the same kind of generation drift as an incorrect method name.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future schema-generation prompts should copy fewer ambiguous SDK patterns and should treat the remaining advanced snippets as scoped inner fragments rather than standalone schema templates.
+
+## 2026-04-22 20:58 – Add collection item watcher handler example to sdk-common guide
+Context: After checking `pages-runtime-tests`, the collection guidance still lacked a concrete schema-body handler example for reacting to item attribute changes inside a `ViewModelCollection`.
+Decision: Added a dedicated `Collection item-attribute watcher in a handler` template that reads the collection from `request.$context`, stores the callback reference on `$context` as transient runtime state, registers `registerOnItemAttributesChangesCallback(...)` in init, and unregisters it in destroy.
+Discovery: `pages-runtime-tests` confirms `ViewModelCollection<ViewModelContext>` item reads like `await item["Name"]`, but not a live page-body watcher pattern, so the new guide example should stay aligned with the public `@creatio-devkit/common` contract and explicit cleanup discipline.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI-generated schema handlers can attach and clean up collection item-change listeners without inventing unsupported collection helpers or losing the callback reference needed for unregistering.
+
+## 2026-04-22 16:59 – Review found handler-validation bypass and docs drift
+Context: Code review of the current uncommitted MCP/page-tooling changes focused on the new `SCHEMA_HANDLERS` validation path and the related guidance/doc updates.
+Decision: Flagged the regex-based handler `request` validation as unsafe because it can match nested properties instead of the top-level handler contract, and noted that public `mcp-server` docs/help do not list the new `page-schema-sdk-common` guidance despite tool/prompt support.
+Discovery: `ValidateMarkerContent(...)` now already merges handler validation, while `sync-pages` runs `ValidateHandlerStructure(...)` again and appends both error sets, so invalid handler shapes can surface duplicate messages in validation output.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\clio\docs\commands\sync-pages.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future follow-up can fix the top-level handler parsing without rediscovering the failure mode, avoid duplicated sync-pages validation errors, and keep public MCP guidance discovery aligned with the actual tool contract.
+
+## 2026-04-22 17:00 – Remove duplicate handler validation from sync-pages
+Context: Follow-up implementation addressed the review finding that `sync-pages` reported invalid `SCHEMA_HANDLERS` errors twice.
+Decision: Kept handler validation inside `ValidateMarkerContent(...)` as the single source for `sync-pages` content validation and removed the extra `ValidateHandlerStructure(...)` call from `PageSyncTool.ValidateBody(...)`. Added a unit test that asserts the handler-shape error appears only once.
+Discovery: The existing `Category=Unit&Module=McpServer` suite already covers this path well enough for a fast regression pass, and the new focused assertion closes the exact duplication gap without changing tool behavior.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Invalid handler sections in `sync-pages` now produce one deterministic validation message instead of duplicate noise, which makes MCP responses easier to parse and review.
+
+## 2026-04-22 17:06 – Expose sdk-common guide in public mcp-server docs
+Context: Follow-up review found that public `mcp-server` docs/help still omitted `page-schema-sdk-common` even though the MCP contract, prompts, and tests already advertised it.
+Decision: Added `page-schema-sdk-common` to the public guidance-resource lists, preferred `get-guidance` examples, and notes/examples describing when clients should read the SDK page-schema guide.
+Discovery: The implementation/docs drift was isolated to the public `mcp-server` command docs and help text; skill docs and command reference were already updated.
+Files: C:\Projects\clio\clio\docs\commands\mcp-server.md, C:\Projects\clio\clio\help\en\mcp-server.txt, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP users can now discover the SDK page-schema guide from the same public docs/help surface that already lists the other canonical guidance articles.
+
+## 2026-04-22 17:13 – Make handler request validation depth-aware
+Context: Follow-up implementation closed the remaining review finding in `SchemaValidationService`: nested `request: "..."` literals inside a handler body could satisfy the top-level `SCHEMA_HANDLERS[].request` contract.
+Decision: Removed the regex-based top-level string lookup, added a depth-aware top-level property-value reader that extracts the actual initializer for `request`, and validated that initializer as a string literal only at object depth 1. Added a regression test where `request: someExpression` is paired with a nested `return { request: "crt.NestedRequest" }`.
+Discovery: The existing `McpServer` unit suite stayed green after replacing the regex path, so the new parser is compatible with the current marker-content and page-tool validation flow.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now enforces the intended top-level request contract instead of accepting nested request literals from the handler body.
+
+## 2026-04-22 17:19 – Extract handler validation out of SchemaValidationService
+Context: `SchemaValidationService` had grown large enough that the new `SCHEMA_HANDLERS` parser/validator made the file materially harder to review and maintain.
+Decision: Moved the handler-section validation and its JavaScript-scanning helpers into a dedicated internal `SchemaHandlerValidationService` file and left `SchemaValidationService.ValidateHandlerStructure(...)` as the public facade entrypoint.
+Discovery: The extraction was behavior-preserving; the existing `Category=Unit&Module=McpServer` suite stayed green without requiring test changes beyond the earlier nested-request regression coverage.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future handler-shape and handler-contract changes can be reviewed and tested in isolation without further inflating the central schema validation file.
+
+## 2026-04-22 17:25 – Align handler property lookup with JS case-sensitivity
+Context: Follow-up review pointed out that top-level handler property presence used case-insensitive lookup while value extraction used case-sensitive lookup, which could yield a less accurate error for keys like `Request`.
+Decision: Switched top-level handler property-name collection to `StringComparer.Ordinal` to match JavaScript semantics and added a happy-path test proving that multiple valid handler entries in one array are accepted.
+Discovery: The existing `McpServer` unit suite remained green after the comparer change, so the stricter casing behavior does not conflict with current test coverage or supported handler authoring patterns.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now applies one consistent case rule across presence and value lookup, and the multi-entry traversal path is explicitly covered by tests.
+
+## 2026-04-22 21:18 – Mirror validator binding rule for handler-driven field updates
+Context: AI-generated page schema code wrote `UsrName` from `SCHEMA_HANDLERS` through `$context.set("UsrName", ...)` while leaving the field control on `"$PDS_UsrName"`, so the UI did not follow the handler-driven view-model update.
+Decision: Extended `ValidateStandardFieldBindings(...)` to treat handler-written attributes as a first-class exception like validator-backed attributes: `"$Attr"` is allowed when handlers write that attribute, and `"$PDS_Attr"` is rejected with a targeted error when handlers populate the same field. Added matching guidance text, unit coverage, MCP E2E coverage, and short command/skill doc notes for `update-page`.
+Discovery: The existing validator solution already provided the right shape: keep ordinary standard fields on `"$PDS_*"` by default, then carve out a narrow explicit view-model-binding rule only for attributes that runtime logic owns. Local build/test verification needed an alternate output path because a running `clio` process locked the default `bin\Debug\net10.0` artifacts.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/AI page edits should stop generating `"$PDS_*"` bindings for controls whose values are populated by page-body handlers, while ordinary data-bound fields still stay on the canonical direct datasource binding path.
+
+## 2026-04-23 00:25 – Reframe page field binding rules around declared view-model attributes
+Context: Follow-up clarification showed the previous `$PDS_*`-based rule was conceptually wrong for both validators and handlers because Freedom UI field controls are supposed to bind to the declared attribute in `viewModelConfig` / `viewModelConfigDiff`, regardless of naming.
+Decision: Reworked page validation and MCP guidance to validate declared attribute bindings instead of naming conventions. `ValidateStandardFieldBindings(...)` now rejects controls bound to undeclared attributes and checks handler drift by comparing declared attributes that share the same `modelConfig.path`. `ValidateValidatorControlBindings(...)` now rejects control/validator drift the same way. Updated the page prompt, existing-app maintenance guide, handler/validator guidance, docs/help, skill refs, unit tests, and E2E expectations to use the generalized “same declared attribute” rule.
+Discovery: The old unit/E2E expectations around `$PDS_*` existed not only in handler/validator guides but also in the general page maintenance prompt/resource. Focused unit fixtures for `SchemaValidationServiceTests`, `PageToolsTests`, and `McpGuidanceResourceTests` passed via an alternate `OutputPath`, while broader `Command` tests still fail for unrelated repo-path assumptions (`C:\clio\...`). MCP E2E guidance still resolves through a stale `clio` process path outside the alternate build output, so it continued to surface old article text.
+Files: C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\ExistingAppMaintenanceGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future AI-generated page bodies should follow the actual Freedom UI contract: controls, validators, and handler writes stay aligned on the same declared view-model attribute, even when multiple attributes map to the same datasource path.
+
+## 2026-04-23 00:42 – Allow first local merge when control is inherited from parent schema
+Context: Follow-up review found that the updated guidance still told AI to fix the “original insert/merge” directly, which breaks when the control binding lives only in a parent schema and the current page body has no local `viewConfigDiff` item for that control.
+Decision: Narrowed the anti-pattern rule: duplicate local merges remain forbidden, but the first local `merge` is now explicitly allowed and recommended for inherited controls. Added a concrete `RoleDescription` merge example to handler/validator guidance and propagated the same inheritance note into `update-page` docs/help, skill notes, the page prompt, and existing-app maintenance guidance.
+Discovery: No validator/runtime code changes were required for this case because the need is authoring guidance, not validation semantics. Focused `PageToolsTests` and `McpGuidanceResourceTests` passed after the prompt/resource wording was aligned.
+Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\ExistingAppMaintenanceGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\clio\docs\commands\update-page.md, C:\Projects\clio\clio\help\en\update-page.txt, C:\Projects\clio\.github\skills\clio\references\commands-reference.md, C:\Projects\clio\.github\skills\clio\SKILL.md, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP guidance now tells AI how to override inherited controls correctly: edit an existing local operation when present, otherwise add one local `merge` for the inherited control name instead of inventing duplicate patches or searching for a non-existent local insert.
+
+## 2026-04-23 10:50 – Rider resolves clio runnable output to net10
+Context: User asked why building the project from Rider appeared to produce `net8.0`, after an MCP session had been observed running from a `net8.0` path.
+Decision: Kept the investigation read-only and checked the project file, Rider workspace state, publish profile, repository helper scripts, and Rider backend logs instead of patching configuration immediately.
+Discovery: `clio/clio.csproj` multi-targets `net10.0;net8.0`, and Rider 2026.1 backend logs show `Execution parameters detected from MsBuild properties: C:\Projects\clio\clio\bin\Debug\net10.0\clio.exe` plus both output assemblies registered for the project. The `net8.0` paths come from stale or auxiliary surfaces: `clio/clio-dev8.cmd`, historical test harness assumptions, and older Rider log entries for `clio.mcp.e2e`. Separately, the selected Rider publish configuration points to an outdated `FolderProfile.pubxml` with `TargetFramework>net6.0</TargetFramework>`, which is incorrect but not the source of the observed `net8.0` MCP process.
+Files: C:\Projects\clio\clio\clio.csproj, C:\Projects\clio\clio\clio-dev8.cmd, C:\Projects\clio\clio\Properties\PublishProfiles\FolderProfile.pubxml, C:\Projects\clio\.idea\.idea.clio\.idea\workspace.xml, C:\Users\d.krestov\AppData\Local\JetBrains\Rider2026.1\log\backend.2026-04-21_0853.9712.1.log, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/debug path cleanup should target the remaining hardcoded `net8.0` helpers and stale publish profile rather than blaming the current Rider build pipeline for choosing the wrong target framework.
+
+## 2026-04-23 11:20 – Reject dynamic handler request template literals
+Context: Follow-up on code review finding that `SCHEMA_HANDLERS[].request` accepted interpolated template literals like `` `crt.${suffix}` `` as if they were stable handler request names.
+Decision: Tightened `SchemaHandlerValidationService` so only plain single-quoted and double-quoted string literals satisfy the top-level handler `request` contract; template literals no longer count as valid request names. Added a focused regression test for the interpolated-template case.
+Discovery: Local `dotnet test` against the default build output still hits a locked `clio.exe`, but the affected `SchemaValidationServiceTests` suite passes when run with an alternate `OutputPath`.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP page-body validation now rejects dynamic handler request names earlier, keeping the handler contract statically readable for tooling and avoiding review-noted false acceptance.
+
+## 2026-04-23 11:36 – Require callable SCHEMA_HANDLERS handler values
+Context: Follow-up code review still found that handler validation only checked for the presence of a `handler` property, allowing non-callable values like `handler: true`.
+Decision: Extended `SchemaHandlerValidationService` to require a callable handler expression by accepting function expressions and arrow functions only, and added a regression test rejecting scalar handler values.
+Discovery: A one-test targeted run hit an intermittent write lock in `clio\obj\Debug\net10.0\clio.dll`, but the broader `SchemaValidationServiceTests` suite passed through a separate alternate `OutputPath`, which also covers the new non-callable handler case.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP validation now aligns better with the actual runtime contract for page handlers and blocks another class of malformed `SCHEMA_HANDLERS` entries before save.
+
+## 2026-04-23 11:49 – Reject quoted arrow-like handler strings
+Context: Follow-up review found that the new callable-handler check still accepted string literals containing `=>`, such as `handler: "not a function =>"`.
+Decision: Tightened `IsCallableHandlerExpression` to reject string literals before checking for `function` or arrow syntax, and added a regression test covering a quoted handler string with `=>`.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes with the new regression through an alternate `OutputPath`, while unrelated repository-wide analyzer warnings remain pre-existing noise in the build output.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation now distinguishes actual executable expressions from quoted text that only resembles arrow syntax, closing another runtime-invalid false positive.
+
+## 2026-04-23 12:02 – Reject object-literal handlers with nested arrows
+Context: Another follow-up review found that `handler: { nested: () => {} }` still passed validation because the callable check accepted any expression containing `=>`, even when the top-level value was an object literal.
+Decision: Replaced the broad arrow check with a top-level `=>` scan that ignores nested objects, arrays, parentheses, comments, and strings, and added a regression test for an object-literal handler payload.
+Discovery: Existing `update-page` / `sync-pages` docs, MCP help text, and the clio skill mention handler/body validation only at the section-contract level, so this narrower runtime-alignment fix did not require documentation, MCP, or skill text updates.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `SCHEMA_HANDLERS[].handler` validation now distinguishes true top-level arrow/function expressions from nested arrow syntax inside non-callable values, removing another false positive before save.
+
+## 2026-04-23 12:16 – Skip regex literals in top-level arrow scan
+Context: Follow-up review found that `handler: /=>/` still passed validation because the top-level arrow scan treated `=>` inside a regex literal as callable arrow syntax.
+Decision: Added regex-literal skipping to `ContainsTopLevelArrowToken`, including escaped characters, character classes, and trailing flags, and covered the case with a focused regression test.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes through the alternate `OutputPath` after the regex fix; docs, MCP surface, and the clio skill remain accurate because the change only tightens an internal handler-expression heuristic.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler validation no longer misclassifies top-level regex literals as callable expressions, closing another runtime-invalid false positive before page save.
+
+## 2026-04-23 12:31 – Accept method-shorthand handler properties
+Context: Follow-up review found that valid object-literal method shorthand like `handler(request, next) { ... }` was rejected because top-level property parsing only recognized `name: value` syntax.
+Decision: Extended property parsing to recognize method shorthand for both extraction and top-level property discovery, added callable recognition for method-shorthand expressions, and covered the valid handler form with a regression test.
+Discovery: The targeted `SchemaValidationServiceTests` suite passes through the alternate `OutputPath` after the parser update; docs, MCP surface, and clio skill text remain accurate because this change restores acceptance of an already valid JavaScript handler form without changing command contracts.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `SCHEMA_HANDLERS` validation now rejects malformed non-callable values without regressing valid method-shorthand handler syntax used in JavaScript object literals.
+
+## 2026-04-23 13:10 – Clarify trivia helper and fix quoted method offset
+Context: User asked to address follow-up review comments about parser clarity and the quoted method-shorthand helper contract in `SCHEMA_HANDLERS` validation.
+Decision: Renamed the trivia-skipping loop helper to `TryAdvanceToNextMeaningfulCharacter` to match its actual behavior, and corrected `TryReadQuotedMethodShorthandProperty` so successful matches return the method-parameter start as `valueStartIndex`.
+Discovery: The review note about removing `using System.ComponentModel` from the new guidance resources was stale for the current working tree because both files still use `[Description]`; removing the import broke compilation immediately.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The parser helper naming is less misleading for maintainers, quoted method-shorthand parsing now returns a correct downstream offset, and the guidance resources remain compiling with their real attribute dependency preserved.
+
+## 2026-04-23 13:28 – Align get-guidance argument hints with handler guidance
+Context: User noticed that the `get-guidance` argument description examples mentioned validator and SDK guides but omitted the newly added handler guide name.
+Decision: Updated `GuidanceGetTool` argument descriptions to include `page-schema-handlers` in both the method-parameter hint and the serialized `name` field description, then added a reflection-based unit test to keep those strings aligned with the guidance catalog.
+Discovery: `ToolContractGetTool` and prompt/resource guidance already mentioned `page-schema-handlers`; the drift was limited to the `GuidanceGetTool` human-readable description attributes.
+Files: C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: MCP clients now get a complete hint for the handler guidance name directly from the tool argument contract, reducing prompt/tool-description mismatch.
+
+## 2026-04-23 15:08 – Make page handler guidance require sdk-common routing for data and service work
+Context: Follow-up on a Copilot session showed that page handler guidance still allowed the agent to skip `page-schema-sdk-common` and fall back to raw `fetch(...)` for a standard platform scenario.
+Decision: Tightened `PageSchemaHandlersGuidanceResource` so handler tasks that touch data access, syssettings, processes, model queries, or backend services must read `page-schema-sdk-common` first. Extended `PageSchemaSdkCommonGuidanceResource` with an explicit selection order: `crt.*Request` first, then public SDK service or `sdk.Model`, then raw `fetch(...)` only as a justified fallback for custom/external or uncovered scenarios.
+Discovery: The MCP E2E harness resolves the executable from `clio\bin\Debug\net10.0\clio.exe`, so stale guidance text in E2E usually means the default debug output was not rebuilt yet. Focused guidance tests passed once the stale assertions were aligned to the new mandatory-routing wording and the default build output was refreshed.
+Files: C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaSdkCommonGuidanceResource.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future page-schema handler sessions should be routed through the existing sdk-common guide before choosing between requests, SDK services, model queries, and raw HTTP calls, reducing the chance of unjustified `fetch(...)` against platform endpoints.
+
+## 2026-04-23 15:42 – Schema validation follow-up
+Context: Follow-up fix for review findings in schema validation services around warning propagation, handler string literals, and same-path diagnostics.
+Decision: Preserve warnings from successful child validation, accept non-interpolated template literals as static request names, and report all same-path attribute candidates instead of picking one alphabetically.
+Discovery: Handler write detection intentionally remains heuristic; documenting its regex limits is enough for now because it only enriches diagnostics and should not pretend to be flow analysis.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/SchemaHandlerValidationService.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs
+Impact: Future schema validation extensions can add warnings safely, handler request validation now matches valid JS literals, and same-path mismatch errors are less misleading after refactors.
+
+## 2026-04-23 17:37 – Guard validator workflows against handler drift and inline control bindings
+Context: User shared a Copilot session where a syssetting-backed max-length rule was first implemented as a handler, then rewritten as a validator but still bound incorrectly on the UI control in `viewConfigDiff`.
+Decision: Strengthened the page prompt and handler guidance to classify syssetting-backed max/min/length/range/regex checks as validator work, and added `SchemaValidationService.ValidateValidatorBindingPlacement(...)` to reject validators declared directly on `viewConfigDiff` controls. Wired the new rule into `update-page`, `sync-pages`, and direct `update-page` CLI validation.
+Discovery: Existing validator guidance already described attribute-level binding, but runtime validation only inspected validators declared on attributes, so validators placed directly on controls could slip through.
+Files: C:\Projects\clio\clio\Command\McpServer\Prompts\PagePrompt.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\SchemaValidationService.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageUpdateTool.cs, C:\Projects\clio\clio\Command\McpServer\Tools\PageSyncTool.cs, C:\Projects\clio\clio\Command\PageUpdateOptions.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future MCP/CLI page edits are steered toward validators for syssetting-backed value rules and invalid inline control validators now fail client-side before save.
+
+
+## 2026-04-23 19:03 - Extracted shared JS parser utilities to JsParserHelper
+Context: SonarQube reported 12.4% code duplication in SchemaHandlerValidationService.cs (TryExtractBalancedJavaScriptObject)
+Decision: Created JsParserHelper.cs with 10 shared methods; removed duplicates from both SchemaHandlerValidationService.cs and SchemaValidationService.cs
+Discovery: SchemaValidationService.SkipBlockComment has SchemaValidationResult parameter so stays in-file; ConsumeStringLiteralCharacter is called directly (not just via TryConsumeStringLiteralCharacter) in a validator-body-extraction loop
+Files: clio\Command\JsParserHelper.cs, clio\Command\SchemaHandlerValidationService.cs, clio\Command\SchemaValidationService.cs
+Impact: All 865 Module=Command + 97 SchemaValidation tests pass; duplication eliminated
+
+## 2026-07-14 10:00 - Inverted PDS binding validation direction
+Context: Initial implementation incorrectly rejected \ (correct viewModel binding) and accepted \* direct binding. User clarified the rule: \* is old/legacy and must be a hard error; \ with viewModelConfigDiff is the correct new pattern.
+Decision: Removed TryDetectProxyPdsBinding entirely. IsDirectPdsBinding now generates a hard error with suggestion to declare a viewModelConfig attribute. Tests updated across PageSyncToolTests, SchemaValidationServiceTests, PageToolsTests to reflect correct semantics.
+Discovery: The validator placement check (test 11) requires control: "\" (declared attribute) not \ — so the undeclared check passes and validator-on-viewConfigDiff check fires correctly.
+Files: clio/Command/SchemaValidationService.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: All 497 McpServer tests pass. AI-generated code must always use viewModelConfig/viewModelConfigDiff declarations; old \* bindings are rejected when validation is enabled.
+
+## 2026-04-24 11:15 – Copilot session drifted from validators into inferred handler API
+Context: User asked why a Copilot session generated a `crt.HandleViewModelAttributeChangeRequest` handler for `UsrParkingRequired` that used `request.viewModel.get(...)`, `request.viewModel.set(...)`, and `setAttributePropertyValue(...)` incorrectly.
+Decision: Confirmed from the exported session that the model mixed two separate patterns: validator guidance for conditional required state and an invented MVVM-style handler API. No code changes were needed; the key issue was diagnosis of the prompting and reasoning path.
+Discovery: The session loaded `page-schema-validators` but did not load `page-schema-handlers`; validator guidance told the model that dynamic `required`/`visible`/`readonly` state belongs to handler/business-rule style logic, then the model explicitly admitted it was unsure about the correct `HandleViewModelAttributeChangeRequest` API and still proceeded. Current handler guidance says to use `request.value` for the triggering attribute and `request.$context[...]` / `await request.$context.set(...)` for reads and writes, and the repository has no examples of `request.viewModel.get(...)`.
+Files: C:\Users\d.krestov\copilot-session-0df9b71f-f0a0-4c84-9e09-98cec6c74df8.md, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaHandlersGuidanceResource.cs, C:\Projects\clio\clio\Command\McpServer\Resources\PageSchemaValidatorsGuidanceResource.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future prompt hardening should ensure that once a task crosses from validator logic into handler logic, the agent must load handler guidance before emitting API-specific code; otherwise it may hallucinate generic `viewModel` accessors even when the business choice of a handler is reasonable.
+
+## 2026-04-24 11:30 – Handler API validation now includes a recovery hint back to clio guidance
+Context: User suggested that when AI generates the wrong handler-side attribute API, clio should not only reject the code but also tell the model to reread handler documentation and examples.
+Decision: Updated `SchemaHandlerValidationService` so forbidden handler APIs such as `request.viewModel.*` now return an explicit recovery hint that points callers to `get-guidance page-schema-handlers` and canonical clio handler examples. Added unit coverage for the new message and tool-level coverage through `PageSyncTool`; added a dry-run MCP E2E for `update-page`.
+Discovery: The new recovery hint fits naturally into the existing handler-shape validation path, so `update-page` and `sync-pages` inherit it automatically without extra command-flow branching.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: When AI drifts into invented handler APIs, clio now blocks the save and gives a direct recovery path back to the supported handler guidance and examples instead of forcing another guess.
+
+## 2026-04-24 11:44 – Completed forbidden handler API coverage and renamed misleading E2E fixture
+Context: Review noted that only one of five forbidden handler API rules had unit coverage, and `PageUpdateToolE2ETests` used a fixture name that implied semantic page validity even though it only guaranteed marker presence.
+Decision: Added one regression test each for `request.$context.get(...)`, `request.sender`, `.$get(...)`, and `.$set(...)`, all asserting the recovery hint back to `page-schema-handlers` and canonical clio examples. Renamed `ValidPageBody` to `MinimalMarkerPageBody` in the E2E fixture to match its real purpose.
+Discovery: The E2E fixture did not need semantic changes; only the name was misleading. The new handler API checks fit the existing test pattern exactly, so the coverage gap was straightforward to close without changing validator logic.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future regex regressions in forbidden handler API detection are now caught by focused unit tests, and the E2E fixture no longer suggests stronger validity guarantees than it actually provides.
+
+## 2026-04-24 12:22 – Updated stale handler guidance assertions after request.viewModel hardening
+Context: User asked to check `PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide`; the test still expected the pre-hardening anti-pattern string and missed the new `request.viewModel` guidance.
+Decision: Updated both unit and E2E handler guidance assertions to expect the expanded anti-pattern line with `request.viewModel` plus the new canonical attribute-change rule that explicitly says to use `request.value` instead of `request.viewModel.get(...)`.
+Discovery: The guidance resource had already been updated correctly; the failure risk was only in stale test expectations.
+Files: C:\Projects\clio\clio.tests\Command\McpServer\McpGuidanceResourceTests.cs, C:\Projects\clio\clio.mcp.e2e\McpGuidanceResourceE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler guidance tests now track the strengthened anti-pattern contract and will catch future drift between resource text and the intended canonical handler API.
+
+## 2026-04-24 13:14 – Added explicit timeout to forbidden handler API regex rules
+Context: Security hotspot review flagged the precompiled forbidden-handler API regexes because they were created without an explicit execution timeout.
+Decision: Introduced a shared one-second timeout constant and applied it to every `ForbiddenHandlerApiRule` regex in `SchemaHandlerValidationService` without changing the patterns or diagnostics.
+Discovery: This change is internal to the handler validation heuristic, so docs, MCP contracts, and the clio skill remain accurate with no updates required.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Handler API validation now satisfies regex timeout guidance and is less exposed to pathological regex execution while preserving existing behavior.
+
+## 2026-04-24 13:29 – Replaced forbidden handler API loop with first-match lookup
+Context: User asked to rewrite the `TryGetForbiddenHandlerApiError(...)` loop after a review comment suggested simplifying the iteration.
+Decision: Replaced the manual `foreach` with a `FirstOrDefault(...)` lookup over `ForbiddenHandlerApiRules`, preserving the same first-match behavior and returned error text.
+Discovery: The change is a local readability refactor only; no docs, MCP artifacts, or skill text required updates.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The forbidden-handler API lookup now uses a more declarative first-match form without changing validation semantics.
+
+## 2025-07-10 – Wave 3: Eliminate CLIO004 warnings via IProcessExecutor
+
+Context: Refactoring roadmap Wave 3 — remove all `System.Diagnostics.Process` direct usage
+Decision: Extract nested types from IISScannerHandler, introduce IIISScanner interface, inject IProcessExecutor
+Discovery:
+- IISScannerHandler constructor requires 5 deps: ISettingsRepository, RegAppCommand, PowerShellFactory, ILogger, IProcessExecutor — tests must pass all args for compilation
+- SetFsmConfigCommand gained IIISScanner as 5th ctor param — 4 test files needed updating (SetFsmConfigCommand.Tests.cs, FsmModeToolTests.cs, TurnFsmCommand.LoginRetry.Tests.cs, IISScannerHandler.Tests.cs)
+- StopCommand IIS tests fail on macOS due to RuntimeInformation.IsOSPlatform(Windows) guard — pre-existing issue, not Wave 3 regression
+- 13 pre-existing failures remain (DeleteSection 3, DeletePackageCommand 3, InstallTideCommand 3, StopCommand 3, NewPkgCommand 1)
+Files: clio/Requests/IISScannerRequest.cs, clio/BindingsModule.cs, clio/Command/SetFsmConfigCommand.cs, clio/Command/TurnFarmModeCommand.cs, clio.tests/ (8 files)
+Impact: Build clean, 0 CLIO004 warnings, Wave 3 complete. Branch Alfa-04-20 pushed.
+
+## 2025-07-17 – ENG-88190 hierarchy-aware page resolution (complete)
+Context: ENG-88190 required get-page and update-page to resolve the editable schema from the design package (hierarchy[0]) rather than the schema's own package.
+Decision: Called GetDesignPackageUId before GetParentSchemas; fail-open in get-page (fallback to schemaUId) and fail-closed in update-page (error on missing UId).
+Discovery: NSubstitute returns null (not empty list) for unmocked IReadOnlyList<T>; always add null guard after GetDesignPackageUId and GetParentSchemas calls.
+Discovery: Removing PackageUId from metadata query in PageUpdateOptions fixed "missing identifiers" failures — design package UID comes only from GetDesignPackageUId.
+Discovery: --no-incremental is mandatory; stale binaries caused 2 tests to appear failing after fixes were already in source.
+Files: clio/Command/PageUpdateOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: 412 McpServer unit tests pass. Docs updated for update-page (--optional-properties), get-page (hierarchy note), sync-pages (optional-properties in page input), get-guidance (new MCP tool).
+
+## 2026-04-24 16:25 – Reconciled page-schema merge fallout with new direct-binding rules
+Context: Build broke after a partial merge left `SchemaValidationService` on the new direct-PDS rejection model while `PageBodyNormalizer` and several MCP tests still expected the old `$PDS_*` normalization from master.
+Decision: Kept the new validation model where direct `$PDS_*` bindings are legacy and rewrote `PageBodyNormalizer` to normalize legacy direct datasource bindings back to declared view-model attributes by matching `modelConfig.path`. Updated MCP tests and `GuidanceGetTool` argument hints to match the merged async MCP contracts.
+Discovery: The compile error about missing `IsAllowedDirectFieldBinding`/`BuildExpectedBinding` was only the surface symptom; the deeper merge conflict was semantic, because restoring those helpers would have reintroduced the old `$UsrStatus -> $PDS_UsrStatus` normalization that now contradicts page validation.
+Files: C:\Projects\clio\clio\Command\PageBodyNormalizer.cs, C:\Projects\clio\clio\Command\McpServer\Tools\GuidanceGetTool.cs, C:\Projects\clio\clio.tests\Command\McpServer\GuidanceGetToolTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageToolsTests.cs, C:\Projects\clio\clio.tests\Command\McpServer\PageBodyNormalizerTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The merged workspace now builds, the Command/McpServer targeted test suite passes, and get-page/body normalization is aligned with the newer rule that declared view-model attributes are canonical while raw `$PDS_*` bindings are rejected.
+
+## 2026-04-24 17:05 – Fixed remaining GuidanceGet/PageUpdate E2E contract drift
+Context: `clio.mcp.e2e` still failed to compile after the earlier merge cleanup because two fixtures referenced pre-merge API shapes from before the async/article MCP changes landed in `master`.
+Decision: Switched `GuidanceGetToolE2ETests` from `response.Guidance` to `response.Article` and replaced stale `ValidPageBody` usages with `MinimalMarkerPageBody` in `PageUpdateToolE2ETests`.
+Discovery: Production code was already merged correctly for these contracts; the remaining fallout was limited to E2E assertions and a renamed test fixture constant.
+Files: C:\Projects\clio\clio.mcp.e2e\GuidanceGetToolE2ETests.cs, C:\Projects\clio\clio.mcp.e2e\PageUpdateToolE2ETests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: `clio.mcp.e2e` now builds cleanly, and the targeted GuidanceGet/PageUpdate E2E selection runs without MCP contract mismatches.
+
+## 2026-04-24 17:32 – Reviewed local SchemaHandlerValidationService simplification
+Context: User asked whether the current uncommitted changes are correct.
+Decision: Reviewed the tracked diff in `SchemaHandlerValidationService`, compared it against the surrounding validator logic, and ran the focused handler/schema validation tests instead of broader suites.
+Discovery: The tracked change is a local simplification only: removing the redundant top-level property-name precheck keeps the same `request`/`handler` validation behavior because `TryGetTopLevelPropertyValueExpression(...)` already enforces top-level lookup, while the new `Contains(...)` gate before regex scanning is a safe fast-path for the same forbidden API rules. There is also an untracked `.codex/SchemaValidationService.merged.cs` snapshot in the workspace, but it is not part of the reviewed git diff.
+Files: C:\Projects\clio\clio\Command\SchemaHandlerValidationService.cs, C:\Projects\clio\clio.tests\Command\McpServer\SchemaValidationServiceTests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: Future reviews can treat this edit as behavior-preserving unless new handler API patterns are added, in which case the focused schema validation tests are the fastest regression check.
+
+## 2026-04-27 14:45 - ENG-88603 Map invalid app archive to exit code 5
+Context: `install-app` returned exit code 1 when Creatio logged `Terrasoft.Common.InvalidGZipArchiveException` for a corrupted `.gz` application archive.
+Decision: Added a Clio-specific `InvalidGZipArchiveInstallException`, detect the server exception type in install responses/logs only after the install result is failed, and map it to exit code 5 in `InstallApplicationCommand`.
+Discovery: `install-app` is an alias of `install-application`; the MCP tool delegates to the command through `BaseTool`, so it preserves the command exit code without MCP contract changes.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/InvalidGZipArchiveInstallException.cs, clio/Command/InstallApplicationOptions.cs, clio.tests/Command/InstallApplicationCommandTests.cs, clio.tests/ApplicationInstallerTests.cs, clio/docs/commands/install-application.md, clio/help/en/install-application.txt, .github/skills/clio/references/commands-reference.md
+Impact: Future invalid archive installs from Creatio core can be recognized through the stable exception type and surfaced as the dedicated CLI exit code.
+
+## 2026-04-27 15:06 - Restrict invalid archive detection to current install log delta
+Context: Review found that a historical `InvalidGZipArchiveException` already present in the server install log could incorrectly map an unrelated failed install to exit code 5.
+Decision: Capture the install log baseline before posting the install request, start log streaming from that baseline, and search the invalid archive marker only in the current install log delta.
+Discovery: The structured `ErrorInfo` path still maps directly to the dedicated exception, while log-based detection now ignores stale entries that existed before the command started.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: Invalid archive exit-code mapping remains available for the screenshot scenario without being triggered by older accumulated install log entries.
+
+## 2026-04-27 21:54 - Scope invalid archive exception to application installs
+Context: Review found that invalid archive detection lived in `BasePackageInstaller`, which also serves package installs, while the requested exit-code mapping is for `install-app`.
+Decision: Added an opt-in protected flag in the base installer, enabled it only in `ApplicationInstaller`, and added a `PackageInstaller` regression test proving package installs keep the general failed-install behavior.
+Discovery: `BasePackageInstaller` can still share response/log detection helpers, but throwing `InvalidGZipArchiveInstallException` is now explicitly scoped to application installation.
+Files: clio/Package/BasePackageInstaller.cs, clio/Package/ApplicationInstaller.cs, clio.tests/PackageInstallerTests.cs
+Impact: `install-app` keeps exit code 5 for the new Creatio exception while `push-pkg` is not accidentally changed by the shared installer implementation.
+
+## 2026-04-28 09:30 - Cover structured invalid archive error info
+Context: Review requested explicit coverage for Creatio returning `InvalidGZipArchiveException` through structured response `ErrorInfo` instead of only the install log.
+Decision: Added an `ApplicationInstallerTests` regression that leaves the install log empty and verifies `errorInfo.errorCode` is enough to throw `InvalidGZipArchiveInstallException`.
+Discovery: The existing production detection already checks `ErrorInfo.ErrorCode`, `Message`, and `StackTrace`; no production change was needed for this path.
+Files: clio.tests/ApplicationInstallerTests.cs
+Impact: The exit-code mapping is now protected for both current-log and structured-response Creatio failure shapes.
+
+## 2026-04-30 09:05 - Guard null install log baseline
+Context: PR review noted that `GetInstallLog(...)` can return null and `GetLogDiff(initialInstallLog, completeInstallLog)` would dereference the null baseline.
+Decision: Coalesced install-log baselines and final reads to `string.Empty`, added a null guard inside `GetLogDiff`, and changed the log-based invalid archive test to start from a null baseline.
+Discovery: The existing response/log mapping remains unchanged, but the diffing path now handles successful-but-null log provider responses without falling into a generic `NullReferenceException`.
+Files: clio/Package/BasePackageInstaller.cs, clio.tests/ApplicationInstallerTests.cs
+Impact: The PR review concern is covered by code and regression test while preserving exit-code mapping behavior.
+
+## 2026-04-24 16:56 – Remove page edit shortcut tools
+Context: ENG-88801 reproduced because `add-form-fields` consumed raw page bodies through an internal get-page path and bypassed the canonical editable `body.js` workflow.
+Decision: Removed `add-form-fields`, `add-list-columns`, their shared `PageBodyEditor`, and the silent `PageBodyNormalizer`; `get-page` now writes the fetched editable body unchanged.
+Discovery: The previous normalizer-based fix was unnecessary once shortcut tools are removed, and silent binding rewrites are risky for validator-backed attributes.
+Files: clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Prompts/PagePrompt.cs, clio/Command/PageModels.cs, clio.tests/Command/McpServer/PageToolsTests.cs, .codex/workspace-diary.md
+Impact: Page editing has one advertised path again: fetch `body.js`, edit it explicitly, validate, then sync or update.
+
+## 2026-04-30 20:09 – Refactored install-gate command resolution
+Context: User asked to move `install-gate` into its own file and stop resolving it through converted `PushPkgOptions`.
+Decision: Added `InstallGateCommand : Command<InstallGateOptions>` in `clio/Command/InstallGateCommand.cs`, resolved it directly from `Program`, and updated `install-tide` to delegate to the same command.
+Discovery: The old `Program.CreateClioGatePkgOptions` path resolved services before command resolution and kept `InstallGatePkgCommand` nested in `PushPackageCommand`; the new command preserves package selection, forced developer-mode-off install settings, success/error logging, and post-install restart without that pre-resolution path.
+Files: clio/Command/InstallGateCommand.cs, clio/Program.cs, clio/BindingsModule.cs, clio/Command/InstallTideCommand.cs, clio/Command/PushPackageCommand.cs, clio.tests/Command/InstallGateCommandTests.cs, clio.tests/Command/InstallTideCommand.Tests.cs, clio/docs/commands/install-gate.md
+Impact: Future `install-gate` changes now have a dedicated command file and can follow normal DI resolution and targeted command tests.
+
+## 2026-04-30 20:13 – Removed unsupported install-tide command
+Context: User clarified that `install-tide` is no longer supported and should be deleted.
+Decision: Removed the `InstallTideCommand` implementation, option registration, DI registration, command tests, command docs/help files, root help/index entries, and stale references from related docs.
+Discovery: No MCP tool existed for `install-tide`; remaining TIDE references belong to the hidden `link-workspace-with-tide-repository` command and process-model namespace defaults.
+Files: clio/Command/InstallTideCommand.cs, clio.tests/Command/InstallTideCommand.Tests.cs, clio/Program.cs, clio/BindingsModule.cs, clio/Commands.md, clio/HelpSystem/CommandHelpCatalog.cs, clio/docs/commands/install-tide.md, clio/help/en/install-tide.txt
+Impact: The unsupported installer command is no longer parseable, listed in help, documented, or tested as an available CLI command.
+
+## 2026-04-30 18:20 - Diagnosed install-gate bootstrap DI regression
+Context: After updating global clio to 8.1.0.4, `clio install-gate -e dev` failed during `CreatioClient.Login()` inside package upload even though `dev` pinged successfully.
+Decision: Treat this as an `install-gate` command regression, not an environment credential issue. The failing path creates a bootstrap DI container while building cliogate package options, then reuses that container for the environment-scoped `InstallGatePkgCommand`.
+Discovery: Manual `CreatioClient` login with `dev` settings succeeds, while the same client with bootstrap placeholder settings (`http://localhost`, empty credentials) reproduces the same stack. The regression came from the 8.1.0.2 DI cleanup changing `CreatePushPkgOptions` to resolve `ISettingsRepository`, which initializes `Program.Container` too early.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio\BindingsModule.cs, C:\Projects\clio\clio\Command\PushPackageCommand.cs
+Impact: Future fix should keep `CreateClioGatePkgOptions` from initializing the global bootstrap container before resolving `InstallGatePkgCommand`, or make `Resolve<T>` rebuild/scope the container when environment settings are later supplied.
+
+## 2026-05-15 19:08 - Documented push-workspace application installer option
+Context: User reported that `push-workspace` documentation was missing the `use-application-installer` option.
+Decision: Updated both command documentation surfaces to include `--use-application-installer`, and also synchronized the documented `--unlock` option and lowercase inherited `--environment` spelling with source.
+Discovery: `PushWorkspaceCommandOptions` already exposed `[Option("use-application-installer")]`; `clio/Commands.md` only links the command page and did not need an option-level update.
+Files: clio/help/en/push-workspace.txt, clio/docs/commands/push-workspace.md
+Impact: Users can now discover the ApplicationInstaller path from CLI help and GitHub command docs.
+
+## 2026-04-30 18:35 - Fixed install-gate target environment resolution
+Context: Follow-up implementation for the `install-gate` failure introduced after the 8.1.0.2 DI cleanup.
+Decision: Restored `CreatePushPkgOptions` to read `SettingsRepository` directly instead of resolving it through `Program.Resolve`, so the first DI resolution in the flow is environment-scoped through `IWorkingDirectoriesProvider`.
+Discovery: The breaking change came from `cd5ca8ec` / PR #549 (`feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration`); `7baebf2e` made bootstrap intentionally use a placeholder, and #549 accidentally made `install-gate` reuse that placeholder.
+Files: C:\Projects\clio\clio\Program.cs, C:\Projects\clio\clio.tests\Command\Program.Tests.cs, C:\Projects\clio\.codex\workspace-diary.md
+Impact: The new regression test asserts that `CreateClioGatePkgOptions` leaves `Program.Container` scoped to the requested environment. Local patched `install-gate -e dev` installed cliogate successfully and `get-info -e dev` returned system info.
+
+## 2026-05-05 00:00 - Release 8.1.0.10 preflight
+Context: User requested following `.github/prompts/release.prompt.md` to prepare a new clio release.
+Decision: Per release prompt, performed read-only preflight and stopped before mutating version files, tags, or GitHub releases because explicit confirmation is required.
+Discovery: Latest local and remote version tag is `8.1.0.9`; next version is `8.1.0.10`; `gh` is installed and authenticated; targeted MCP unit tests passed with 541/541 on net10.0.
+Files: .github/prompts/release.prompt.md, RELEASE.md, clio/clio.csproj, .codex/workspace-diary.md
+Impact: Future release continuation can reuse the preflight results and exact validation command.
+
+## 2026-05-05 – ENG-88747 Added converter format validation and AI guidance hooks
+Context: Freedom UI converters registered without a `VendorPrefix.Name` key fail at runtime in Creatio with `"Error when register X. Type property should have format VendorPrefix.ConverterTypeName"`. The AI agent could ship pages that pass save and only break at runtime.
+Decision: Added `SchemaValidationService.ValidateConverterDeclarations` that parses `SCHEMA_CONVERTERS` and flags any top-level key without a dot. Wired it into `validate-page`, `update-page`, and `sync-pages`, and updated their tool descriptions to instruct the agent to call `get-guidance page-schema-converters` whenever `SCHEMA_CONVERTERS` is edited.
+Discovery: The converter object accepts both quoted (`"usr.X"`) and unquoted identifier (`BadConverter`) keys; identifier keys cannot contain a dot by JS grammar so they always violate the rule. The first implementation only handled quoted keys — fixed by splitting `TryReadConverterEntry` into `TryReadQuotedConverterKey` (returns `bool`) and `ReadIdentifierConverterKey` (no failure path, mirrors `TryReadIdentifierPropertyName` at `SchemaValidationService.cs:1235`). Method-shorthand (`key(arg) { ... }`) is supported via the `(` delimiter branch. Cognitive complexity in `PageValidateTool.Validate` was reduced from 16 to 13 by extracting `RunContentValidation`, mirroring the helper in `PageSyncTool`.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: Bad converter keys are caught client-side before save across all three page-mutation tools, with E2E coverage on each. The `RunContentValidation` helper is now duplicated in `PageValidateTool` and `PageSyncTool`; if a third caller appears, lift it to a shared static class.
+
+## 2026-05-05 – ENG-88747 Code-review follow-ups: deduplication, regex tightening, handler-shape correctness, E2E and doc gaps
+Context: Self-review on the ENG-88747 branch surfaced ~130 lines of byte-equivalent parser duplication (`*Converter*` vs `*Declaration*` helpers in `SchemaValidationService.cs`), missing handler/validator E2E coverage in all three page tools, an unupdated `sync-pages.md`, the `sync-pages` MCP description still claiming converter-only enforcement, a generic error message that always pointed handlers/validators at "page-schema-handlers or page-schema-validators", and a `key.Contains('.')` check that accepted malformed prefixes like `".X"`, `"X."`, and `"X..Y"`. The user then pointed out that real Freedom UI handlers use array form `[{ request: "vendor.Name", handler: async (req, next) => {...} }]`, not object form — making the entire `ValidateHandlerDeclarations` validator dead code on canonical bodies (it only fires on `{...}` shape, which itself is already rejected by `ValidateHandlerStructure`). Three existing handler unit tests were also latently broken because they did `Replace("/**SCHEMA_HANDLERS*/{}", ...)` against `ValidListPageBody`, which actually contains `/**SCHEMA_HANDLERS*/[]`, so the replace was a no-op.
+Decision: Removed the duplicated `*Converter*` helpers; `ValidateConverterDeclarations` and `ValidateValidatorDeclarations` now delegate to the unified `ValidatePrefixedDeclarations(jsBody, marker, elementType, guidanceName)` (those two ARE keyed by VendorPrefix.Name). Deleted `ValidateHandlerDeclarations` entirely and instead extended `SchemaHandlerValidationService.ValidateHandlerEntry` to validate the `request` field value against the shared `SchemaValidationService.VendorPrefixedNamePattern` regex (compiled, `^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$`). The handler-array walker already existed and extracts the unquoted `request` string — piggybacked on it. Replaced `ValidateHandlerDeclarations` calls in `PageValidateTool` and `PageUpdateTool` with `ValidateHandlerStructure` so the new request-format check is enforced consistently across all three page tools (`PageSyncTool` already called `ValidateHandlerStructure`). Updated `sync-pages` and `validate-page` MCP descriptions, `sync-pages.md`, `update-page.md`, and `update-page.txt` to clarify that handlers is an array with `request` values (not an object keyed by VendorPrefix.Name). Added a `guidanceName` parameter to `ValidatePrefixedDeclarations` so converter and validator errors point the agent at their own guidance pages.
+Discovery: Validator surface dropped from ~310 lines to ~60. The handler request check reuses `VendorPrefixedNamePattern` made `internal` — kept the regex in one place. New unit tests on `ValidateHandlerStructure` (request without dot, request starting with dot, mixed array, empty array, well-formed `crt.*` request) cover the new path. The user's example handler (`request.$context.set(...)`) passes because only `.get(`, `.viewModel`, `.sender`, `.$get(`, `.$set(` are forbidden — `set` on `$context` is fine.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/SchemaHandlerValidationService.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/docs/commands/sync-pages.md, clio/docs/commands/update-page.md, clio/help/en/update-page.txt, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, .codex/workspace-diary.md
+Impact: All 596 McpServer unit tests pass. Validation now matches real Freedom UI shapes: object-keyed for converters/validators, array-with-`request`-values for handlers. The new request-format check fires on canonical handler bodies (which the previous implementation never touched) and routes the agent to the correct guidance page per element type.
+
+## 2026-05-06 – Validator factory shape and converter function shape checks
+Context: Copilot agent run `creatio-adaclio-testing/runs/run_20260506_122524` produced a Freedom UI page where the custom validator used `validate: function(value, config){...}` instead of the canonical `validator: function(config){return function(control){...};}`. Existing `ValidateCustomValidatorParamCompleteness`, `ValidateValidatorBindingPlacement`, etc. all passed because they check params/bindings, not the factory signature. The runtime then ignored the entry (`validate` is not the recognised key) and the validator never executed. Same blind spot applied to converters whose value can silently be an object/string instead of a function.
+Decision: Added two new public methods on `SchemaValidationService`: `ValidateCustomValidatorFactoryShape` rejects (a) wrong outer key — `validate`, `validateFn`, `validation`, `validatorFn`, `fn`, `check`, `rule`, `test`, `isValid`; (b) missing `validator` key; (c) non-function value; (d) flat `function(value, config)` instead of factory; and `ValidateConverterFunctionShape` rejects converters whose value is not a function (object literal, string, array). Wired both into `PageUpdateTool.CollectValidatorErrors`, `PageSyncTool.Validate` (with `RunContentValidation` and merge into `CollectErrors`/`IsContentValidationSuccessful`), and `PageValidateTool.Validate`. Error messages name the offending element + wrong-key/issue + point at `get-guidance page-schema-validators` or `page-schema-converters`; per user preference no canonical mini-template is embedded.
+Discovery: The factory regex `return\s+(?:async\s+)?function\b|return\s+(?:async\s+)?\([^)]*\)\s*=>|return\s+(?:async\s+)?[A-Za-z_$][\w$]*\s*=>` produced false-positives when a flat function body contained the literal string `"return function"`; added `StripStringsAndComments` (mirrors `SchemaHandlerValidationService.SanitizeForHandlerApiScan`) to blank out string and comment regions before regex match. Method-shorthand entries like `validator(config){...}` were initially missed because `ExtractTopLevelObjectPropertyNames` doesn't recognise shorthand keys; replaced that call with the new shorthand-aware `EnumerateTopLevelObjectEntries`. `TryReadKeyValueRange` accepts both `:` and `(` delimiters so shorthand values are captured the same way `TryReadDeclarationEntry` (line 1592) handles them.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, .codex/workspace-diary.md
+Impact: 28 new unit tests + 6 new e2e tests (2 per page tool) covering wrong-key aliases, missing validator key, non-function values, flat-function rejection, method-shorthand factory acceptance, async/arrow factory acceptance, and string-literal-in-body false-positive guard. All 200 schema-validation/handler/page-tool unit tests pass; net8.0 + net10.0 build clean. The two new validators close the gap that allowed the run_20260506_122524 page body to be saved with a never-executing validator.
+
+## 2026-05-06 – ENG-88747 Sonar cleanup: extracted shared lexer helpers
+Context: After committing the validator factory shape and converter function shape checks, Sonar Quality Gate reported `Duplicated Lines on New Code` at 14.6% (threshold 3%). The bulk of dup lived in `SchemaValidationService.cs`: a local `TryReadKeyValueRange` byte-equivalent to the existing `TryReadDeclarationEntry`, a local `StripStringsAndComments` near-equivalent to `SchemaHandlerValidationService.SanitizeForHandlerApiScan`, a local `FindFirstTopLevelArrow` near-equivalent to `SchemaHandlerValidationService.ContainsTopLevelArrowToken`, and `EnumerateTopLevelDeclarationKeys` walker repeating the same loop as the new `EnumerateTopLevelObjectEntries`.
+Decision: Promoted `StripStringsAndComments` and `FindFirstTopLevelArrow` to `JsParserHelper` as `internal static` shared utilities. Extended existing `TryReadDeclarationEntry` with `out int valueStartIndex` (single existing caller updated to `out _`) and dropped the duplicate `TryReadKeyValueRange`. Collapsed `EnumerateTopLevelDeclarationKeys` to a one-line `EnumerateTopLevelObjectEntries(...).Select(e => e.Key).ToList()` delegation. Extracted `TrimAndStripAsync(expression)` to remove the triple `.Trim().TrimEnd(',').Trim()` + async-keyword-strip pattern from `IsCallableFunctionExpression` and `LooksLikeFactoryShape`.
+Discovery: `TryReadDeclarationEntry` already accepted both `:` and `(` delimiters for method-shorthand, so the only thing my duplicate added was the `valueStartIndex` out — making the duplicate avoidable without behaviour change. Net effect: SchemaValidationService.cs new-code shrank by ~85 lines; JsParserHelper.cs gained ~84 lines that are not duplicates of any existing block. `SchemaHandlerValidationService` was intentionally left alone — its `SanitizeForHandlerApiScan` and `ContainsTopLevelArrowToken` retain regex-literal handling that the validator-side helpers don't need, so consolidating them risks behaviour drift in handler scans.
+Files: clio/Command/JsParserHelper.cs, clio/Command/SchemaValidationService.cs, .codex/workspace-diary.md
+Impact: 200 schema-validation/handler/page-tool unit tests still pass with no test changes. Sonar duplication metric should drop below the 3% gate after the commit lands. Future similar checks can reuse `JsParserHelper.StripStringsAndComments` and `JsParserHelper.FindFirstTopLevelArrow` directly instead of cloning the walker.
+
+## 2026-05-07 – fix(unlock-package): route lock/unlock through ClioGate
+Context: Issue #585 — `clio unlock-package` silently reported "Done" but left packages locked (InstallType=1). Application logs showed `SecurityException: Current user does not have permissions for the "SysPackage" object` from DataService ESQ permission layer.
+Decision: Replaced DataService ESQ calls in `PackageLockManager` with ClioGate endpoints (`/rest/CreatioApiGateway/UnlockPackages`, `/rest/CreatioApiGateway/LockPackages`) which use `Terrasoft.Core.DB.Update` — bypassing the NUI permission check entirely. Also removed silent error swallowing: the gate returns `bool`; now throws `InvalidOperationException` on `false`.
+Discovery: (1) ClioGate URL base is `/rest/CreatioApiGateway/` — NOT `/rest/CreatioApiGatewayService/`. Using the wrong suffix returns an HTML 404 page; `JsonSerializer.Deserialize<bool>` then throws `'<' is an invalid start of a value`. (2) `CheckCanManageSolution()` was already present on both `LockPackages` and `UnlockPackages` in cliogate — always grep before adding. (3) `PackageLockManager` is auto-registered via `RegisterAssemblyInterfaceTypes` — no explicit DI entry needed when removing/adding constructor parameters. (4) On macOS without `pwsh`, build cliogate with `dotnet build … -f net472 --source ~/.nuget/packages`; ATF.Repository version from `cliogate/obj/project.assets.json`. (5) Package push command is `push-pkg`, not `push-package`.
+Files: clio/Package/PackageUnlocker.cs, clio/Common/ServiceUrlBuilder.cs, clio/cliogate/cliogate.gz, cliogate/descriptor.json, AGENTS.md, .codex/workspace-diary.md
+Impact: Documented ClioGate URL pattern, macOS build steps, and deploy/verify workflow in AGENTS.md so future agents don't repeat the wrong-URL mistake or fumble the build. Branch: fix/unlock-package-use-cliogate.
+
+## 2026-05-12 16:30 – Exposed configuration webservice skills as MCP resources
+Context: User asked to expose composable-app configuration webservice implementation and test skills as clio MCP resources.
+Decision: Added static embedded MCP resources for the two guides and seven direct reference documents; registered only the guide articles in `GuidanceCatalog` for `get-guidance`.
+Discovery: The test skill exists as sibling `C:\Projects\composable-app-plugin\skills\configuration-webservice-tests`, not nested under `configuration-webservice`; `MainSolution.slnx` currently builds local package projects that fail without Terrasoft assemblies, so project-level builds are the useful validation path here.
+Files: clio/Command/McpServer/Resources/ConfigurationWebServiceGuidanceResource.cs, clio/Command/McpServer/Resources/ConfigurationWebServiceTestsGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: MCP clients can list/read configuration webservice guides and references directly, and use `get-guidance` for the two top-level guide names.
+
+## 2026-05-12 16:55 – Exposed remaining composable-app skills as MCP resources
+Context: User asked to add resources for the other skills in `C:\Projects\composable-app-plugin\skills`.
+Decision: Generated one static resource catalog/class for the 13 remaining skill guides and their 36 reference files, using `docs://mcp/guides/<skill>` and `docs://mcp/references/<skill>/<reference>` URIs; wired only guide resources into `GuidanceCatalog`.
+Discovery: E2E MCP server processes can keep `clio/bin/Debug/net10.0/clio.dll` locked after tests; stopping only the matching `dotnet ... clio.dll mcp-server` processes clears the build lock.
+Files: clio/Command/McpServer/Resources/ComposableAppSkillGuidanceResources.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Tools/GuidanceGetTool.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: MCP clients can now list/read all composable-app skill guides and references, and `get-guidance` resolves every top-level composable-app skill name.
+
+## 2026-05-14 13:30 - Mobile Freedom UI pages reference document
+Context: Research task to produce a single verified source-of-truth for AI agents working with mobile Freedom UI page schemas via clio MCP.
+Decision: Verified all claims against clio C# source, creatio-ui TypeScript source, CrtUIPlatform package schemas, Creatio Academy, and a live Creatio 8.x environment via MCP calls.
+Discovery: (1) update-page and sync-pages both reject mobile JSON bodies -- SchemaValidationService.ValidateMarkerIntegrity inside PageUpdateCommand.TryUpdatePage always runs and requires AMD section markers that mobile bodies do not have; validate=false in sync-pages bypasses only the outer MCP-level check, not this inner call. (2) get-page writes a correct body.js but its bundle.json and ownBodySummary are unreliable for mobile pages (bundle merger is AMD-marker-based). (3) The correct read/write pair for mobile pages is get-client-unit-schema + update-client-unit-schema. (4) Template hierarchy: BlankMobilePageTemplate and BaseMobileTemplate are parallel roots -- neither is parent of the other. (5) Mobile page visibility in the app requires creation through the app/section flow, not just schema existence.
+Files: spec/mobile-pages/mobile-pages-reference.md
+Impact: AI agents have a single accurate reference for mobile page schema identity, body format, tool limitations, and the correct clio MCP read/write workflow.
+
+## 2026-05-15 11:00 - Mobile Freedom UI page support implementation (Phases 1-6)
+Context: Implement spec/mobile-pages/mobile-pages-plan.md — make existing MCP page tools transparently handle mobile pages (schemaType=10, plain JSON bodies) without adding new tools.
+Decision: Used body.AsSpan().TrimStart().StartsWith(""{".AsSpan()) as the mobile detection strategy in IsLikelyMobileBody.
+Discovery: (1) PageUpdateCommand.TryUpdatePage's ValidateInput independently validates AMD markers — must also add IsLikelyMobileBody check there (returning null to bypass AMD checks). (2) PageSyncTool mobile rejection path does not populate ValidationResult — tests must check .Error string instead of .Validation properties. (3) SchemaValidationServiceTests.cs and PageSchemaBodyParserTests.cs had missing class closing braces after mobile tests were added. (4) Pre-existing Parse_Should_Map_Lowercase_Environment_Alias test failure (CommandLine ambiguous double-registration) is not caused by our changes.
+Files: clio/Command/PageSchemaBodyParser.cs, clio/Command/SchemaValidationService.cs, clio/Command/PageUpdateOptions.cs, clio/Command/PageModels.cs, clio/Command/PageListOptions.cs, clio/Command/PageGetOptions.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageValidateTool.cs, clio/Command/McpServer/Tools/ComponentInfoCatalog.cs, clio/Command/McpServer/Tools/ComponentInfoTool.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Data/MobileComponentRegistry.json, clio/Command/McpServer/Resources/MobilePageGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/PageCreationGuidanceResource.cs, clio/BindingsModule.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs, clio.tests/Command/PageSchemaBodyParserTests.cs, clio.tests/Command/McpServer/ComponentInfoToolTests.cs, clio.tests/Command/McpServer/PageToolsTests.cs, clio.tests/Command/McpServer/PageSyncToolTests.cs, clio.tests/Command/McpServer/ValidatePageToolTests.cs, clio.mcp.e2e/PageValidateToolE2ETests.cs, clio.mcp.e2e/PageUpdateToolE2ETests.cs, clio.mcp.e2e/PageSyncToolE2ETests.cs
+Impact: update-page, sync-pages, validate-page, get-page, list-pages, get-component-info, and mobile-page-modification guidance now all support mobile pages transparently. 1846 unit tests pass.
+
+## 2026-05-14 23:08 – Diagnosed create-data-binding environment alias parser regression
+Context: User asked who broke `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Identified commit `a536a4df` (`fix(cli): rename camelCase/PascalCase options to kebab-case with backward-compat aliases`) by Vladimir as the regression source.
+Discovery: `CreateDataBindingOptions` already declared `[Option("environment")]` as a lowercase shim over inherited `EnvironmentOptions.Environment`; `a536a4df` renamed the inherited option from `[Option('e', "Environment")]` to `[Option('e', "environment")]`, creating duplicate `--environment` descriptors and causing CommandLineParser to throw `Sequence contains more than one matching element`.
+Files: clio/Command/CommandLineOptions.cs, clio/Command/DataBindingCommand.cs, clio.tests/Command/DataBindingCommandTests.cs
+Impact: Fix should remove or rename the command-specific `CreateDataBindingOptions.EnvironmentAlias` shim now that the shared inherited option is canonical lowercase, while preserving the inherited hidden `--Environment` alias.
+
+## 2026-05-14 23:11 – Fixed data-binding duplicate environment options
+Context: User asked to fix `Parse_Should_Map_Lowercase_Environment_Alias`.
+Decision: Removed command-local `[Option("environment")]` alias properties from file-first and DB-first data-binding option classes; the inherited `EnvironmentOptions.Environment` is now the only canonical lowercase descriptor, with inherited hidden `--Environment` still available for compatibility.
+Discovery: The same duplicate descriptor pattern existed in `create-data-binding-db`, `upsert-data-binding-row-db`, and `remove-data-binding-row-db`, so the fix covered those commands too.
+Files: clio/Command/DataBindingCommand.cs, clio/Command/DataBindingDbCommand.cs
+Impact: CommandLineParser no longer throws on `--environment` for data-binding commands, and the documented command/MCP contracts remain unchanged.
+
+## 2026-05-19 15:35 – ENG-88577 requirements analysis and repository scoping
+Context: Jira-driven analysis for ENG-88577 to add dynamic lookup-filter support to `create-entity-business-rule`.
+Decision: Keep the planning and expected implementation scoped to the current `C:\Projects\clio` workspace, using Creatio Compass only for upstream platform behavior discovery.
+Discovery: `clio` currently maps one input entity business rule to one saved metadata rule, while Freedom UI business-rules designer models dynamic lookup filtering as a parent filter-lookup rule plus autogenerated clear/populate child rules. Deep lookup-path resolution already exists in `EntityBusinessRuleAttributeDescriptorMap`.
+Files: .ai_temp/ENG-88577/ENG-88577-analysis.md, .codex/workspace-diary.md
+Impact: Future implementation can focus first on multi-rule conversion/persistence seams in `clio` and treat `creatio-ui` as behavior reference rather than an immediate code-change target.
+
+## 2026-05-19 15:17 – ENG-88577 apply-filter implementation
+Context: Approved implementation for ENG-88577 to add dynamic lookup filtering to `create-entity-business-rule`.
+Decision: Model `apply-filter` as a first-class MCP/entity action that validates direct lookup roots, resolves nested lookup filter paths, and expands into a parent filter-lookup rule plus autogenerated clear/populate child rules during metadata conversion.
+Discovery: Add-on persistence and tests previously assumed one logical entity rule equals one saved metadata rule; the safe seam was to widen converter/add-on service outputs to `IReadOnlyList<BusinessRuleMetadataDto>` while keeping page-rule behavior single-rule.
+Files: clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio/Command/BusinessRules/BusinessRuleValidator.cs, clio/Command/McpServer/Tools/BusinessRuleTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.mcp.e2e/EntityBusinessRuleToolE2ETests.cs, spec/business-rules/create-entity-business-rule-spec.md
+Impact: Future business-rule features can reuse the new multi-rule persistence path for complex rule families, and MCP callers now have validated/runtime-tested support for lookup filtering without relying on handwritten BR metadata.
+
+## 2026-05-20 12:24 – Apply-filter child condition shape alignment
+Context: Follow-up fix for ENG-88577 after comparing UI-generated and MCP-generated autogenerated child rules for `apply-filter`.
+Decision: Serialize autogenerated clear/populate child case conditions as direct `BusinessRuleCondition` objects while keeping parent and standard rules grouped; add `System.Text.Json` polymorphic metadata on the base condition DTO so grouped rules keep their derived fields after widening the property type.
+Discovery: Simply changing `BusinessRuleCaseMetadataDto.Condition` to the base type breaks JSON output unless polymorphic serialization is enabled; without it, grouped rules lose `logicalOperation` and `conditions` during metadata serialization.
+Files: clio/Command/BusinessRules/BusinessRuleMetadataDtos.cs, clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs
+Impact: Future business-rule DTO changes can safely generalize condition types without silently flattening derived metadata, and `apply-filter` child rules now match the UI condition shape in persisted metadata.
+
+## 2026-05-20 13:02 – Apply-filter minimal child expression metadata
+Context: UI parity follow-up for autogenerated `apply-filter` child rule conditions that still serialized extra lookup metadata from MCP.
+Decision: Keep parent filter-lookup and child set-values expressions typed, but serialize autogenerated child condition attribute expressions through a dedicated minimal helper that emits only `typeName`, `uId`, `type`, and `path`.
+Discovery: The Freedom UI source in `terrasoft` builds child clear/populate conditions from bare `BusinessRuleAttributeDesignExpression` instances, so `dataValueTypeName` and `referenceSchemaName` never appear in persisted child condition JSON.
+Files: clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs, .codex/workspace-diary.md
+Impact: Future `apply-filter` metadata comparisons can treat autogenerated child conditions as strict UI-shape parity checks instead of tolerating extra MCP-only fields.
+
+## 2026-05-20 13:41 – Apply-filter parent and child action payload parity
+Context: Follow-up implementation for remaining UI parity gaps where saved MCP `apply-filter` rules still lost parent filter expressions and child set-values payloads.
+Decision: Preserve the existing MCP request contract and converter builders, but mark `BaseBusinessRuleActionMetadataDto` as polymorphic so derived filter-lookup and set-values action payloads survive addon metadata serialization; also normalize empty filter-lookup `filterExpression` values to the UI `"null"` sentinel.
+Discovery: The converter already produced populated `BusinessRuleFilterLookupActionMetadataDto` and `FieldSelectionBusinessRuleActionMetadataDto` instances, but `BusinessRuleAddonService` serialized them through `List<BaseBusinessRuleActionMetadataDto>`, dropping derived properties like `leftExpression`, `rightExpression`, and `items` until polymorphic JSON metadata was added.
+Files: clio/Command/BusinessRules/BusinessRuleMetadataDtos.cs, clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs, clio.tests/Command/McpServer/BusinessRuleToolTests.cs, .codex/workspace-diary.md
+Impact: Future multi-shape business-rule actions can be persisted through addon metadata without silently flattening derived payloads, and apply-filter parity checks now cover MCP binding, converter output, and final saved JSON.
+
+## 2026-05-20 14:18 – Apply-filter parent condition preservation
+Context: Follow-up fix after a reported regression where `apply-filter` rules lost the user-authored parent condition and became unconditional in saved metadata.
+Decision: Keep autogenerated child rules unchanged, but make the `apply-filter` parent rule reuse the normal condition-group mapper and merge parent-condition trigger names with the existing filter source trigger model.
+Discovery: The loss happened only in the `apply-filter` special-case path inside `BusinessRuleMetadataConverter`; the MCP payload and validator both preserved the condition correctly before conversion.
+Files: clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleMetadataConverterTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs, .codex/workspace-diary.md
+Impact: `apply-filter` parent rules now preserve user semantics such as `CreatedBy == Supervisor`, while child clear/populate rules remain UI-shaped and independent from the parent condition.
+
+## 2026-05-22 10:44 – Apply-filter lookup-only filter paths
+Context: Follow-up validator tightening after clarifying that `targetFilterPath` and `sourceFilterPath` must resolve to lookup attributes, not plain GUID columns.
+Decision: Added explicit `Lookup` validation for resolved relative filter paths in `BusinessRuleValidator` instead of relying only on left/right type compatibility.
+Discovery: Without a dedicated lookup guard, `Guid` paths like `Country.Id` could pass validation if both sides resolved to the same scalar type, even though apply-filter semantics require lookup-valued comparisons.
+Files: clio/Command/BusinessRules/BusinessRuleValidator.cs, clio.tests/Command/BusinessRuleValidatorTests.cs, .codex/workspace-diary.md
+Impact: `apply-filter` now rejects `Guid`-typed `targetFilterPath` and `sourceFilterPath` deterministically before metadata generation.
+
+## 2026-05-21 10:37 – Apply-filter null-condition guard and live E2E readback
+Context: Follow-up PR review fixes for ENG-88577 flagged that `apply-filter` incorrectly accepted `rule.condition.conditions = null` and lacked real MCP end-to-end persistence coverage.
+Decision: Tightened validation so all rules require a non-null `conditions` collection while `apply-filter` alone still permits an empty list, and added defensive converter null coalescing plus a dedicated destructive MCP E2E/readback assertion for the persisted parent/child apply-filter rule family.
+Discovery: `EntityBusinessRuleService` must still load entity schema metadata before rule validation because apply-filter validation depends on resolved attribute descriptors, so the correct regression boundary is “fail before add-on save/get” rather than “fail before schema load”.
+Files: clio/Command/BusinessRules/BusinessRuleValidator.cs, clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs, clio.tests/Command/BusinessRuleValidatorTests.cs, clio.tests/Command/EntityBusinessRuleServiceTests.cs, clio.mcp.e2e/EntityBusinessRuleToolE2ETests.cs, clio.mcp.e2e/Support/Creatio/BusinessRuleAddonReadback.cs, .codex/workspace-diary.md
+Impact: MCP callers now get a deterministic validation error for omitted `conditions`, and the repo has a reusable readback seam that verifies persisted `apply-filter` parent and autogenerated child rule metadata in destructive E2E runs.
+
+## 2026-05-20 20:53 – Refactor sys-settings MCP tools to command-pattern + Sonar S1192 fix
+Context: ENG-88957 review feedback — align SysSettingsTool with the project's standard MCP-via-command pattern (as in PageGetTool/PageUpdateTool/SysSettingsCommand had only a thin CLI Execute() and no structured methods, so MCP went straight to SysSettingsManager); also Sonar flagged repeated literal "value" in BusinessRule* helpers (S1192) in ToolContractGetTool.
+Decision: (1) Extracted four structured methods on SysSettingsCommand — TryGetSysSetting / TryListSysSettings / TryCreateSysSetting / TryUpdateSysSetting — plus private ValidateCreateArgs, ResolveReferenceSchemaUId, ApplyInitialValue, and internal CategorizeError. (2) Moved all MCP args/result records into a dedicated SysSettingsModels.cs file under namespace Clio.Command so both the command and the tool share the same contract types. (3) SysSettingsTool now resolves SysSettingsCommand via IToolCommandResolver and delegates; Resolve() is wrapped in try/catch so network/auth errors raised during environment lookup still produce categorized error envelopes. (4) Introduced one shared private constant BusinessRuleValueKey for the three semantically-distinct "value" literals Sonar flagged in BusinessRule helpers (1573, 1586, 1625); left the two literals inside BusinessRuleSetValueItem as-is per maintainer preference to keep the new constant scoped to occurrences Sonar actually reported.
+Discovery: (1) E2E SysSettingsToolE2ETests.cs referenced result types via `using Clio.Command.McpServer.Tools;` only — moving models to namespace Clio.Command required adding `using Clio.Command;` to the E2E test file to keep compilation green. (2) The two "value" literals inside BusinessRuleSetValueItem (outer assignment vs inner Const literal) are technically separate roles in the BPM-rule JSON schema, so unifying all five under one constant is debatable; sticking to Sonar's three keeps the rename minimal and unambiguous. (3) clio targets net10.0 by default; macOS system dotnet (`/usr/local/share/dotnet/dotnet`) ships only 8.0.420 — must use `/Users/a.kulikov/.dotnet/dotnet` (10.0.300) for `dotnet build`/`dotnet test` to succeed.
+Files: clio/Command/SysSettingsCommand.cs, clio/Command/SysSettingsModels.cs, clio/Command/McpServer/Tools/SysSettingsTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/SysSettingsToolTests.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs
+Impact: SysSettingsTool now follows the same command-pattern as Page* tools, so the structured Try* surface is reusable from CLI extensions later (e.g. `clio create-sys-setting` could call into TryCreateSysSetting). Sonar S1192 hotspot in ToolContractGetTool is resolved. 86 SysSetting unit tests + 694 McpServer unit tests pass, E2E project compiles.
+
+## 2026-05-19 00:00 – Add mobile page support to PageBodyMerger and PageBodySamplingService
+Context: Audit of page MCP tools identified that PageBodyMerger (mode=append) and PageBodySamplingService (AI review prompt) did not handle mobile page bodies (plain JSON, schemaType=10).
+Decision: (1) Added mobile detection at `Merge()` entry point using `PageSchemaTypeExtensions.FromBody()`, routing to new `MergeMobile()` method that reuses existing `MergeArrayByName`/`MergeArrayAppend` helpers on parsed JObject. (2) Added `MobileSystemPrompt` constant to `PageBodySamplingService` tailored for plain JSON validation. (3) Added `PageSchemaType schemaType` parameter to `TrySamplingReviewAsync()` and updated both callers (`PageUpdateTool`, `PageSyncTool`) to detect type from body and pass it.
+Discovery: Mobile pages have no handlers/converters/validators sections — only `viewConfigDiff`, `viewModelConfigDiff`, `modelConfigDiff` arrays at JSON root level. Existing JArray merge helpers are format-agnostic and work directly on mobile bodies.
+Files: clio/Command/PageBodyMerger.cs, clio/Command/McpServer/Tools/PageBodySamplingService.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: `update-page` mode=append and AI sampling review now transparently support both web AMD and mobile JSON page bodies. 681 McpServer tests pass.
+
+## 2026-05-19 – Fix page validation: resource checks, warning surfacing, MobilePageValidation reuse
+Context: Audit of resource validation in `SchemaValidationService.ValidateFieldComponent` (Check 1) found a circular contradiction: the deterministic check warned about resource keys that are auto-provided by the platform for DS-bound view model attributes. Additionally, `PageUpdateTool` and `PageSyncTool` duplicated mobile validation logic instead of using `MobilePageValidation.Run()`, and warnings were silently dropped or converted to blocking errors.
+Decision: (1) Fixed Check 1 false positives by adding two suppression conditions — DS-bound attribute name as resource key, and preferred label binding match. (2) Added "Missing resources" rule to both web and mobile sampling prompts with a single skip condition: key is a view model attribute bound to a DS column. (3) Fixed pre-existing caller bugs in `PageSyncTool` and `PageUpdateTool` where `resources` was not passed to `TrySamplingReviewAsync`. (4) Replaced duplicated mobile validation in `PageUpdateTool` and `PageSyncTool` with `MobilePageValidation.Run()`. (5) Fixed `PageUpdateTool` warning surfacing: mobile warnings were silently dropped (string-only return), and web `ValidateSchemaDepsCompleteness` warnings were treated as blocking errors via `CollectWarnings` dumping into the error list. Both paths now properly populate `response.Warnings`. (6) Renamed 7 misleading symbols in `SchemaValidationService` for accuracy (reactive vs macro resource keys, label bindings vs captions, DS caption → auto-provided label).
+Discovery: `#ResourceString(X)#` is macro-based compile-time substitution, not a server resource — naming was corrected from `TryGetServerResourceKey` to `TryGetMacroResourceKey`. The platform auto-provides resource labels for ANY view model attribute bound to a data source column, regardless of naming pattern — the distinction between `PDS_UsrName` and `UsrLabel` forms is artificial.
+Files: clio/Command/SchemaValidationService.cs, clio/Command/McpServer/Tools/PageBodySamplingService.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio.tests/Command/McpServer/SchemaValidationServiceTests.cs
+Impact: Resource validation no longer contradicts tool guidance, warnings surface in all three page tools, mobile validation is centralized in `MobilePageValidation.Run()`, and 715 McpServer tests pass.

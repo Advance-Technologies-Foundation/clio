@@ -31,7 +31,8 @@ public interface IApplicationListService
 /// </summary>
 public sealed class ApplicationListService(
 	ISettingsRepository settingsRepository,
-	IApplicationClientFactory applicationClientFactory)
+	IApplicationClientFactory applicationClientFactory,
+	IServiceUrlBuilderFactory serviceUrlBuilderFactory)
 	: IApplicationListService
 {
 	private const int GuidDataValueType = 0;
@@ -57,7 +58,7 @@ public sealed class ApplicationListService(
 			?? throw new InvalidOperationException(
 				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-		ServiceUrlBuilder serviceUrlBuilder = new(environmentSettings);
+		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 			JsonSerializer.Serialize(BuildInstalledApplicationsQuery(appId, appCode)));

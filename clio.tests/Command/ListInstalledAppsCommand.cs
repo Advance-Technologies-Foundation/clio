@@ -15,6 +15,7 @@ namespace Clio.Tests.Command;
 
 [Author("Kirill Krylov", "k.krylov@creatio.com")]
 [TestFixture]
+[Property("Module", "Command")]
 public class ListInstalledAppsCommandTests : BaseCommandTests<ListInstalledAppsOptions> {
 	[Test]
 	[Description("Renders the existing CLI table output for installed applications without changing get-app-list behavior.")]

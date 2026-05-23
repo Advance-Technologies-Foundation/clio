@@ -13,6 +13,7 @@ namespace Clio.Tests;
 
 [TestFixture]
 [NonParallelizable]
+[Property("Module", "Core")]
 internal class CommonProgramTest : BaseClioModuleTests{
 	private TextWriter _originalConsoleError;
 	private TextWriter _originalConsoleOut;
@@ -249,9 +250,9 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "the rendered suggestion list should now be sorted alphabetically for easier scanning");
 		suggestionLines.Should().Contain("  clio get-app-list",
-			because: "the closest visible list command should be suggested");
+			because: "the closest visible list alias should be suggested when it beats the canonical name on token overlap");
 		suggestionLines.Should().Contain("  clio get-pkg-list",
-			because: "commands sharing the same get/list intent should be suggested");
+			because: "the alias sharing the same get/list intent should be suggested over its canonical name");
 		outputLines.Should().Contain("See all commands: clio help",
 			because: "the user should get a generic recovery path after an unknown command");
 		outputLines.Should().Contain("See command help: clio <command> --help",
@@ -259,8 +260,8 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
-	[Description("Uses aliases for ranking but prints the canonical command name in suggestions.")]
-	public void ExecuteCommands_WithAliasLikeInput_ShouldSuggestCanonicalCommandName() {
+	[Description("Surfaces the shortest matching alias instead of the canonical name when the alias is a closer fit.")]
+	public void ExecuteCommands_WithAliasLikeInput_ShouldSuggestShortestMatchingAlias() {
 		StringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
@@ -273,12 +274,35 @@ internal class CommonProgramTest : BaseClioModuleTests{
 			.Where(line => line.StartsWith("  clio ", StringComparison.Ordinal))
 			.ToArray();
 
-		suggestionLines.Should().Contain("  clio show-web-app-list",
-			because: "alias similarity should still surface the environment listing command while output stays canonical");
+		suggestionLines.Should().Contain("  clio envs",
+			because: "the shortest alias that best matches the typo should be surfaced so the user can pick the concise form");
+		suggestionLines.Should().NotContain("  clio list-environments",
+			because: "when an alias beats the canonical name on similarity, only the closer alias should be displayed");
 		suggestionLines.Should().Equal(suggestionLines.OrderBy(line => line, StringComparer.Ordinal).ToArray(),
 			because: "alias-driven suggestions should follow the same alphabetical rendering as every other unknown command");
-		outputLines.Should().NotContain("  clio envs",
-			because: "the CLI should display canonical command names instead of aliases in suggestion output");
+	}
+
+	[Test]
+	[Description("Reflects the alias closest to a typo such as 'encvs' instead of forcing the user to read the canonical name.")]
+	public void ExecuteCommands_WithTypoNearShortAlias_ShouldSuggestThatAlias() {
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+		string[] args = ["encvs"];
+
+		Program.ExecuteCommands(args);
+		string[] outputLines = consoleOutput.ToString()
+			.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+		string[] suggestionLines = outputLines
+			.Where(line => line.StartsWith("  clio ", StringComparison.Ordinal))
+			.ToArray();
+
+		outputLines.Should().Contain("Maybe you meant:",
+			because: "an unknown verb that is one edit away from a known alias should still produce a suggestion block");
+		suggestionLines.Should().Contain("  clio envs",
+			because: "the alias 'envs' is one character away from 'encvs' and should be the surfaced suggestion");
+		suggestionLines.Should().NotContain("  clio list-environments",
+			because: "the user is closer to the short alias and should not be redirected to the longer canonical form");
 	}
 
 	[Test]

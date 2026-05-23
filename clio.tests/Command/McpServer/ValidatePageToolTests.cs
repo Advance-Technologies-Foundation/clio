@@ -1,0 +1,184 @@
+using System.Linq;
+using Clio.Command;
+using Clio.Command.McpServer.Tools;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.McpServer;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
+public sealed class ValidatePageToolTests {
+
+	private static PageValidateTool CreateTool() => new(Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>());
+
+	[Test]
+	[Description("Advertises the stable MCP tool name for validate-page.")]
+	public void PageValidateTool_Should_Advertise_Stable_Tool_Name() {
+		// Arrange
+
+		// Act
+		string toolName = PageValidateTool.ToolName;
+
+		// Assert
+		toolName.Should().Be("validate-page",
+			because: "the MCP tool name must stay centralized on the production type");
+	}
+
+	[Test]
+	[Description("Returns valid for a well-formed mobile JSON body (plain JSON starting with '{') without AMD markers.")]
+	public void ValidatePage_WhenBodyIsValidMobileJson_ReturnsValid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageValidateArgs args = new(mobileBody, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a well-formed mobile JSON body with no disallowed keys should pass validation");
+		response.Validation.MarkersOk.Should().BeTrue(
+			because: "mobile pages have no AMD markers — MarkersOk should default to true");
+		response.Validation.JsSyntaxOk.Should().BeTrue(
+			because: "mobile pages have no JS syntax — JsSyntaxOk should default to true");
+		response.Validation.ContentOk.Should().BeTrue(
+			because: "a mobile body with no disallowed sections should pass content validation");
+	}
+
+	[Test]
+	[Description("Returns invalid for a mobile JSON body that contains a 'validators' section.")]
+	public void ValidatePage_WhenMobileBodyContainsValidators_ReturnsInvalid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBodyWithValidators = """
+			{
+			  "viewConfigDiff": [],
+			  "validators": {}
+			}
+			""";
+		PageValidateArgs args = new(mobileBodyWithValidators, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "mobile pages do not support validators — validate-page must reject the body");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "the 'validators' key is disallowed in mobile page bodies");
+		response.Validation.Errors.Should().ContainSingle(e => e.Contains("validators"),
+			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("Returns invalid for a mobile JSON body that contains a 'handlers' section.")]
+	public void ValidatePage_WhenMobileBodyContainsHandlers_ReturnsInvalid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBodyWithHandlers = """
+			{
+			  "viewConfigDiff": [],
+			  "handlers": []
+			}
+			""";
+		PageValidateArgs args = new(mobileBodyWithHandlers, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "mobile pages do not support handlers — validate-page must reject the body");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "the 'handlers' key is disallowed in mobile page bodies");
+		response.Validation.Errors.Should().ContainSingle(e => e.Contains("handlers"),
+			because: "the error should identify the disallowed 'handlers' key");
+	}
+
+	[Test]
+	[Description("Returns invalid for a mobile JSON body that contains a 'converters' section.")]
+	public void ValidatePage_WhenMobileBodyContainsConverters_ReturnsInvalid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBodyWithConverters = """
+			{
+			  "viewConfigDiff": [],
+			  "converters": {}
+			}
+			""";
+		PageValidateArgs args = new(mobileBodyWithConverters, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "mobile pages do not support custom converters — validate-page must reject the body");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "the 'converters' key is disallowed in mobile page bodies");
+		response.Validation.Errors.Should().ContainSingle(e => e.Contains("converters"),
+			because: "the error should identify the disallowed 'converters' key");
+	}
+
+	[Test]
+	[Description("Returns all errors when mobile body contains multiple disallowed sections.")]
+	public void ValidatePage_WhenMobileBodyContainsMultipleDisallowedSections_ReturnsAllErrors() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBodyWithMultiple = """
+			{
+			  "viewConfigDiff": [],
+			  "handlers": [],
+			  "validators": {}
+			}
+			""";
+		PageValidateArgs args = new(mobileBodyWithMultiple, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "both 'handlers' and 'validators' are disallowed in mobile pages");
+		response.Validation.Errors!.Count.Should().Be(2,
+			because: "each disallowed key should produce a distinct validation error");
+	}
+
+	[Test]
+	[Description("Routes AMD bodies through AMD validation (not mobile path) when body starts with 'define('.")]
+	public void ValidatePage_WhenBodyIsAmd_UsesAmdValidation() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string amdBody =
+			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageValidateArgs args = new(amdBody, null);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a well-formed AMD body should pass all AMD validations");
+		response.Validation.MarkersOk.Should().BeTrue(
+			because: "the AMD body has all required markers in correct order");
+		response.Validation.JsSyntaxOk.Should().BeTrue(
+			because: "the AMD body is syntactically valid JavaScript");
+	}
+}

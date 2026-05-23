@@ -9,6 +9,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class RegAppCommandAutoDetectionTests {
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 

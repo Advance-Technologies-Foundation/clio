@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Package.NuGet;
 
 [TestFixture]
+[Property("Module", "Package")]
 public class NugetPackagesProviderTests : BaseClioModuleTests{
 	#region Fields: Private
 

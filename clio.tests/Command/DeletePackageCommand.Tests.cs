@@ -13,6 +13,7 @@ using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
+[Property("Module", "Command")]
 internal class DeletePackageCommandTests : BaseCommandTests<DeletePkgOptions>
 {
 

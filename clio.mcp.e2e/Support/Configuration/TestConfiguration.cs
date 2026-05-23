@@ -111,7 +111,7 @@ internal static class TestConfiguration {
 	}
 
 	private static string? ResolveRepositoryProcessPath(string repositoryRoot) {
-		string repositoryOutputDirectory = Path.Combine(repositoryRoot, "clio", "bin", "Debug", "net8.0");
+		string repositoryOutputDirectory = Path.Combine(repositoryRoot, "clio", "bin", "Debug", "net10.0");
 		string repositoryExecutablePath = Path.Combine(
 			repositoryOutputDirectory,
 			OperatingSystem.IsWindows() ? "clio.exe" : "clio.dll");

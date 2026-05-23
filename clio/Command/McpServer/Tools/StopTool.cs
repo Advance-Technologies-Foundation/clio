@@ -15,7 +15,8 @@ public class StopTool(
 
 	private RequestContext<CallToolRequestParams> _requestContext;
 
-	[McpServerTool(Name = "stop-creatio"), Description("Stops Creatio instance by environment name")]
+	[McpServerTool(Name = "stop-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
+	 Description("Stops Creatio instance by environment name")]
 	public CommandExecutionResult StopCreatioByName(
 		RequestContext<CallToolRequestParams> requestContext,
 		[Description("Target Environment name")] [Required] string environmentName
@@ -30,7 +31,8 @@ public class StopTool(
 		});
 	}
 
-	[McpServerTool(Name = "StopAllCreatio"), Description("Stops all Creatio instances")]
+	[McpServerTool(Name = "stop-all-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
+	 Description("Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatio(
 		RequestContext<CallToolRequestParams> requestContext
 	) {
@@ -41,6 +43,17 @@ public class StopTool(
 		};
 		return InternalExecute(options);
 	}
+
+	/// <summary>
+	/// Deprecated PascalCase alias preserved for backwards compatibility with clients
+	/// that were configured against the original tool name. New clients should use
+	/// <c>stop-all-creatio</c>.
+	/// </summary>
+	[McpServerTool(Name = "StopAllCreatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
+	 Description("[Deprecated: use stop-all-creatio] Stops all Creatio instances")]
+	public CommandExecutionResult StopAllCreatioLegacy(
+		RequestContext<CallToolRequestParams> requestContext
+	) => StopAllCreatio(requestContext);
 
 	private void OnStatusChanged(object sender, ProgressNotificationValue args) {
 		ProgressToken? progressToken = _requestContext.Params?.ProgressToken;

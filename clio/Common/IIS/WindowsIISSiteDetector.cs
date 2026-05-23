@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -20,11 +20,12 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 	#endregion
 
 	private static bool _debugMode;
+	private readonly IProcessExecutor _processExecutor;
 
 	#region Constructors: Public
 
-	public WindowsIISSiteDetector() {
-		// Enable debug mode if environment variable is set
+	public WindowsIISSiteDetector(IProcessExecutor processExecutor) {
+		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
 		string debugEnv = Environment.GetEnvironmentVariable("CLIO_DEBUG_IIS");
 		_debugMode = !string.IsNullOrWhiteSpace(debugEnv) &&
 					 debugEnv.Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -36,9 +37,8 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 
 	private static void DebugLog(string message) {
 		if (_debugMode) {
-			Console.WriteLine($"[DEBUG IIS] {message}");
+			ConsoleLogger.Instance.WriteDebug($"[DEBUG IIS] {message}");
 		}
-
 		Debug.WriteLine(message);
 	}
 
@@ -50,23 +50,7 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 			if (!File.Exists(AppCmdPath)) {
 				return string.Empty;
 			}
-
-			using Process process = new() {
-				StartInfo = new ProcessStartInfo {
-					FileName = AppCmdPath,
-					Arguments = arguments,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			string output = process.StandardOutput.ReadToEnd();
-			process.WaitForExit();
-
-			return output;
+			return _processExecutor.Execute(AppCmdPath, arguments, waitForExit: true);
 		}
 		catch {
 			return string.Empty;
@@ -78,27 +62,13 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 	/// </summary>
 	private string GetProcessCommandLine(int processId) {
 		try {
-			using Process process = new() {
-				StartInfo = new ProcessStartInfo {
-					FileName = "wmic",
-					Arguments = $"process where ProcessId={processId} get CommandLine /format:list",
-					RedirectStandardOutput = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-
-			process.Start();
-			string output = process.StandardOutput.ReadToEnd();
-			process.WaitForExit();
-
-			// Parse output (format: CommandLine=<value>)
+			string output = _processExecutor.Execute("wmic",
+				$"process where ProcessId={processId} get CommandLine /format:list", waitForExit: true);
 			foreach (string line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
 				if (line.StartsWith("CommandLine=", StringComparison.OrdinalIgnoreCase)) {
 					return line.Substring("CommandLine=".Length).Trim();
 				}
 			}
-
 			return string.Empty;
 		}
 		catch {
@@ -130,12 +100,9 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 
 			DebugLog($"[PID] Looking for PID for site: {siteName}");
 
-			// Get app pool name for the site
 			string appXml = ExecuteAppCmd($"list app \"{siteName}/\" /xml");
 			if (string.IsNullOrWhiteSpace(appXml)) {
 				DebugLog("[PID] No app found with trailing slash, trying without...");
-
-				// Try without trailing slash for nested apps
 				appXml = ExecuteAppCmd($"list app \"{siteName}\" /xml");
 				if (string.IsNullOrWhiteSpace(appXml)) {
 					DebugLog($"[PID] No app found for site: {siteName}");
@@ -162,7 +129,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				return null;
 			}
 
-			// Method 1: Try using appcmd to list worker processes
 			DebugLog("[PID] Method 1: Trying appcmd list wp...");
 			try {
 				string wpXml = ExecuteAppCmd($"list wp /apppool.name:\"{appPoolName}\" /xml");
@@ -191,33 +157,16 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				DebugLog($"[PID] Method 1 failed: {ex.Message}");
 			}
 
-			// Method 2: Use PowerShell to get w3wp process by app pool name
 			DebugLog("[PID] Method 2: Trying PowerShell WMI...");
 			try {
 				string psCommand
 					= $@"Get-WmiObject Win32_Process -Filter ""Name='w3wp.exe'"" | Where-Object {{$_.CommandLine -like '*{appPoolName}*'}} | Select-Object -First 1 -ExpandProperty ProcessId";
 				DebugLog($"[PID] Method 2 PS command: {psCommand}");
 
-				using Process process = new() {
-					StartInfo = new ProcessStartInfo {
-						FileName = "powershell.exe",
-						Arguments = $"-NoProfile -NonInteractive -Command \"{psCommand}\"",
-						RedirectStandardOutput = true,
-						RedirectStandardError = true,
-						UseShellExecute = false,
-						CreateNoWindow = true
-					}
-				};
-
-				process.Start();
-				string output = process.StandardOutput.ReadToEnd();
-				string errorOutput = process.StandardError.ReadToEnd();
-				process.WaitForExit();
+				string output = _processExecutor.Execute("powershell.exe",
+					$"-NoProfile -NonInteractive -Command \"{psCommand}\"", waitForExit: true);
 
 				DebugLog($"[PID] Method 2 output: '{output.Trim()}'");
-				if (!string.IsNullOrWhiteSpace(errorOutput)) {
-					DebugLog($"[PID] Method 2 error: {errorOutput}");
-				}
 
 				if (!string.IsNullOrWhiteSpace(output) && int.TryParse(output.Trim(), out int pid)) {
 					DebugLog($"[PID] Method 2 SUCCESS: PID = {pid}");
@@ -228,9 +177,9 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				DebugLog($"[PID] Method 2 failed: {ex.Message}");
 			}
 
-			// Method 3: Manual process enumeration with command line check
 			DebugLog("[PID] Method 3: Trying manual enumeration...");
 			try {
+#pragma warning disable CLIO004
 				Process[] processes = Process.GetProcessesByName("w3wp");
 				DebugLog($"[PID] Method 3: Found {processes.Length} w3wp processes");
 
@@ -254,6 +203,7 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 						proc.Dispose();
 					}
 				}
+#pragma warning restore CLIO004
 			}
 			catch (Exception ex) {
 				DebugLog($"[PID] Method 3 failed: {ex.Message}");
@@ -274,7 +224,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 
 			string normalizedEnvPath = NormalizePath(environmentPath);
 
-			// Get all sites
 			string sitesXml = ExecuteAppCmd("list sites /xml");
 			if (string.IsNullOrWhiteSpace(sitesXml)) {
 				return sites;
@@ -289,14 +238,10 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 					continue;
 				}
 
-				// Get physical path for the site
 				string physicalPath = ExecuteAppCmd($"list vdir \"{siteName}/\" /text:physicalPath").Trim();
 
-				// Check if this site matches the environment path
 				string normalizedPhysicalPath = NormalizePath(physicalPath);
 
-				// Match if paths are equal, or if physical path is within environment path
-				// (for cases like environmentPath = "C:\App" and physicalPath = "C:\App\Terrasoft.WebApp")
 				bool isMatch = normalizedPhysicalPath == normalizedEnvPath ||
 							   normalizedPhysicalPath.StartsWith(normalizedEnvPath + Path.DirectorySeparatorChar) ||
 							   normalizedEnvPath.StartsWith(normalizedPhysicalPath + Path.DirectorySeparatorChar);
@@ -305,7 +250,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 					continue;
 				}
 
-				// Get app pool name for this site
 				string appPoolXml = ExecuteAppCmd($"list app \"{siteName}/\" /xml");
 				string appPoolName = string.Empty;
 				string appPoolState = string.Empty;
@@ -323,7 +267,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 					}
 				}
 
-				// Get app pool state
 				if (!string.IsNullOrWhiteSpace(appPoolName)) {
 					string appPoolInfoXml = ExecuteAppCmd($"list apppool \"{appPoolName}\" /xml");
 					if (!string.IsNullOrWhiteSpace(appPoolInfoXml)) {
@@ -349,19 +292,16 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				});
 			}
 
-			// Also check for nested applications
 			string appsXml = ExecuteAppCmd("list app /xml");
 			if (!string.IsNullOrWhiteSpace(appsXml)) {
 				XElement appsRoot = XElement.Parse(appsXml);
 				foreach (XElement appElement in appsRoot.Elements("APP")) {
 					string appName = appElement.Attribute("APP.NAME")?.Value ?? string.Empty;
 
-					// Skip root applications (already handled above)
 					if (string.IsNullOrEmpty(appName) || !appName.Contains("/") || appName.EndsWith("/")) {
 						continue;
 					}
 
-					// Get physical path for this application
 					string[] parts = appName.Split('/', 2);
 					string siteName = parts.Length > 0 ? parts[0] : string.Empty;
 					string appPath = parts.Length > 1 ? "/" + parts[1] : string.Empty;
@@ -382,12 +322,10 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 						continue;
 					}
 
-					// Skip if we already have this site
 					if (sites.Any(s => s.SiteName == appName)) {
 						continue;
 					}
 
-					// Get site state
 					string siteState = "Unknown";
 					string siteXml = ExecuteAppCmd($"list site \"{siteName}\" /xml");
 					if (!string.IsNullOrWhiteSpace(siteXml)) {
@@ -403,7 +341,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 						}
 					}
 
-					// Get app pool info
 					string appPoolName = appElement.Attribute("APPPOOL.NAME")?.Value ?? "Unknown";
 					string appPoolState = "Unknown";
 
@@ -443,7 +380,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				return false;
 			}
 
-			// Check site state
 			string siteXml = ExecuteAppCmd($"list site \"{siteName}\" /xml");
 			if (string.IsNullOrWhiteSpace(siteXml)) {
 				return false;
@@ -463,7 +399,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				return false;
 			}
 
-			// Get app pool name
 			string appXml = ExecuteAppCmd($"list app \"{siteName}/\" /xml");
 			if (!string.IsNullOrWhiteSpace(appXml)) {
 				try {
@@ -478,7 +413,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				}
 			}
 
-			// Check app pool state
 			string appPoolState = "Unknown";
 			if (!string.IsNullOrWhiteSpace(appPoolName)) {
 				string appPoolXml = ExecuteAppCmd($"list apppool \"{appPoolName}\" /xml");
@@ -496,7 +430,6 @@ public class WindowsIISSiteDetector : IIISSiteDetector{
 				}
 			}
 
-			// Both site and app pool must be started
 			return siteState == "Started" && appPoolState == "Started";
 		});
 	}

@@ -323,7 +323,7 @@ clio env-ui
     Configuration:
         reg-web-app         Register/update environment (CLI)
         unreg-web-app       Remove environment (CLI)
-        show-web-app-list   List environments (non-interactive)
+        list-environments   List environments (non-interactive)
 
     Environment Testing:
         ping                Test environment connection

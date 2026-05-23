@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -20,11 +21,11 @@ using NUnit.Framework;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the page-sync composite MCP tool.
+/// End-to-end tests for the sync-pages composite MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("page-sync")]
+[AllureFeature("sync-pages")]
 [NonParallelizable]
 public sealed class PageSyncToolE2ETests {
 
@@ -39,10 +40,10 @@ public sealed class PageSyncToolE2ETests {
 		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
-	[Description("Advertises page-sync MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Advertises sync-pages MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that page-sync appears in the MCP server tool manifest.")]
+	[AllureName("sync-pages tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that sync-pages appears in the MCP server tool manifest.")]
 	public async Task PageSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
@@ -53,17 +54,17 @@ public sealed class PageSyncToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "page-sync must be advertised so MCP clients can discover the composite tool");
+			because: "sync-pages must be advertised so MCP clients can discover the composite tool");
 	}
 
 	[Test]
-	[Description("Reports readable failures when page-sync is called with an invalid environment name.")]
+	[Description("Reports readable failures when sync-pages is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync reports invalid environment failures")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-sync with an unknown environment name, and verifies that the failure stays human-readable.")]
+	[AllureName("sync-pages reports invalid environment failures")]
+	[AllureDescription("Starts the real clio MCP server, invokes sync-pages with an unknown environment name, and verifies that the failure stays human-readable.")]
 	public async Task PageSyncTool_Should_Report_Invalid_Environment_Failure() {
 		await using ArrangeContext context = await ArrangeAsync();
-		string invalidEnvironmentName = $"missing-page-sync-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-sync-pages-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
@@ -89,7 +90,7 @@ public sealed class PageSyncToolE2ETests {
 		});
 
 		(callResult.IsError == true || structuredFailure).Should().BeTrue(
-			because: "page-sync should fail when the requested environment does not exist");
+			because: "sync-pages should fail when the requested environment does not exist");
 		serializedCallResult.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should explain that the requested environment is missing");
@@ -98,19 +99,12 @@ public sealed class PageSyncToolE2ETests {
 	[Test]
 	[Description("Rejects an invalid page body through the real MCP server before any remote save is attempted.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync rejects invalid body during client-side validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends an invalid page body through page-sync, and verifies that validation fails without requiring a real page save.")]
+	[AllureName("sync-pages rejects invalid body during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends an invalid page body through sync-pages, and verifies that validation fails without requiring a real page save.")]
 	public async Task PageSyncTool_Should_Reject_Invalid_Page_Body_When_Validation_Is_Enabled() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -149,18 +143,12 @@ public sealed class PageSyncToolE2ETests {
 	[Test]
 	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync ignores handler JavaScript during content validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
+	[AllureName("sync-pages ignores handler JavaScript during content validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with JavaScript handlers plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of the handler block.")]
 	public async Task PageSyncTool_Should_Not_Report_Handler_Marker_As_Invalid_Json() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync validation E2E.");
-		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		string bodyWithHandlerAndBrokenJson = ValidPageBody
@@ -192,7 +180,7 @@ public sealed class PageSyncToolE2ETests {
 		response.Success.Should().BeFalse(
 			because: "the malformed JSON-backed marker should still fail validation");
 		response.Pages[0].Validation.Should().NotBeNull(
-			because: "page-sync should return validation details for the rejected body");
+			because: "sync-pages should return validation details for the rejected body");
 		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
 			because: "viewConfigDiff contains invalid JSON-like content");
 		response.Pages[0].Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
@@ -202,20 +190,74 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
+	[Description("Keeps JavaScript converters and validators out of JSON content validation failures.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-sync rejects proxy field bindings during semantic validation")]
-	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
-	public async Task PageSyncTool_Should_Reject_Proxy_Field_Bindings_Before_Save() {
+	[AllureName("sync-pages ignores converter and validator JavaScript during content validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with function-based converters and validators plus a malformed JSON-backed marker, and verifies that validation reports the real JSON marker instead of SCHEMA_CONVERTERS or SCHEMA_VALIDATORS.")]
+	public async Task PageSyncTool_Should_Not_Report_Converter_Or_Validator_Markers_As_Invalid_Json() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-sync semantic validation E2E.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-sync semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
 		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithConverterValidatorAndBrokenJson = ValidPageBody
+			.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\"},,]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+				"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? \"\"; } }/**SCHEMA_CONVERTERS*/")
+			.Replace(
+				"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+				"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterValidatorValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithConverterValidatorAndBrokenJson
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should stay in the structured response");
+		response.Success.Should().BeFalse(
+			because: "the malformed JSON-backed marker should still fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "sync-pages should return validation details for the rejected body");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "viewConfigDiff contains invalid JSON-like content");
+		response.Pages[0].Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the malformed JSON-backed marker should be identified in the validation error");
+		response.Pages[0].Error.Should().NotContain("SCHEMA_CONVERTERS",
+			because: "converter blocks may contain JavaScript functions and should not be parsed as JSON");
+		response.Pages[0].Error.Should().NotContain("SCHEMA_VALIDATORS",
+			because: "validator blocks may contain JavaScript functions and should not be parsed as JSON");
+	}
+
+	[Test]
+	[Description("Rejects proxy standard field bindings through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects proxy field bindings during semantic validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a standard field bound through a proxy Usr attribute, and verifies that semantic validation blocks the save with a structured response.")]
+	public async Task PageSyncTool_Should_Reject_Proxy_Field_Bindings_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 
 		await using ArrangeContext context = await ArrangeAsync();
 		string bodyWithProxyBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -260,6 +302,451 @@ public sealed class PageSyncToolE2ETests {
 				because: "the failure should explain both the rejected proxy binding and the expected datasource binding");
 	}
 
+	[Test]
+	[Description("Rejects non-array handlers through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects non-array handlers during semantic validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with SCHEMA_HANDLERS authored as an object instead of an array, and verifies that client-side validation blocks the save with a structured response.")]
+	public async Task PageSyncTool_Should_Reject_NonArray_Handlers_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithNonArrayHandlers = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrInvalidHandlers_{Guid.NewGuid():N}",
+							["body"] = bodyWithNonArrayHandlers
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "sync-pages should reject schemas where SCHEMA_HANDLERS is no longer an array literal");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail handler-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "handler-shape validation contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("SCHEMA_HANDLERS")
+			.And.Contain("array literal",
+				because: "the failure should explain that the handlers section must stay an array");
+	}
+
+	[Test]
+	[Description("Deferred positive coverage for sync-pages save-and-verify when the E2E environment has a known editable page.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages saves and verifies a real page with structured read-back")]
+	[AllureDescription("Placeholder for a future seeded-data E2E that saves and verifies a known editable page through sync-pages.")]
+	public void PageSyncTool_Should_Save_And_Verify_Real_Page_With_NoOp_Body() {
+		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this positive sync-pages save-and-verify scenario.");
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		const string fallbackEnvironmentName = "d2";
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+			return fallbackEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+		return string.Empty;
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose key is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects converter key without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a converter key that has no dot, and verifies that client-side validation blocks the save with a structured response naming the key and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Converter_Key_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterKeyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadConverter
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter key validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a converter key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side converter key validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "converter key format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("UsrBadConverter")
+			.And.Contain("VendorPrefix",
+				because: "the error must name the offending key and reference the VendorPrefix.Name format requirement");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_VALIDATORS entry that uses 'validate' alias instead of the canonical 'validator' factory key before any remote save.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects validator with 'validate' key alias during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body where SCHEMA_VALIDATORS uses the misleading 'validate' key alias, and verifies that client-side validation blocks the save with a factory-shape error.")]
+	public async Task PageSyncTool_Should_Reject_Validator_With_Validate_Key_Alias_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithValidateAlias = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
+			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrValidatorFactoryShape_{Guid.NewGuid():N}",
+							["body"] = bodyWithValidateAlias
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator factory-shape failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "the runtime ignores any key other than 'validator', so the validator never executes and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side validator factory-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator factory shape failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("usr.PhoneFormatValidator")
+			.And.Contain("'validate'")
+			.And.Contain("'validator'")
+			.And.Contain("page-schema-validators",
+				because: "the error must name the offending validator and the wrong key, and direct the agent at the validator guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_CONVERTERS entry whose value is an object literal instead of a callable function expression before any remote save.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects converter with object literal value during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body where a SCHEMA_CONVERTERS entry has an object literal in place of a function value, and verifies that client-side validation blocks the save with a function-shape error.")]
+	public async Task PageSyncTool_Should_Reject_Converter_With_Object_Literal_Value_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithObjectConverter = ValidPageBody.Replace(
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"/**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrConverterFunctionShape_{Guid.NewGuid():N}",
+							["body"] = bodyWithObjectConverter
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "converter function-shape failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "an object-literal converter silently fails to apply at the binding site and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side converter function-shape validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "converter function shape failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("usr.WrongShape")
+			.And.Contain("not callable")
+			.And.Contain("page-schema-converters",
+				because: "the error must name the offending converter and direct the agent at the converter guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_HANDLERS entry whose request value is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects handler request value without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a SCHEMA_HANDLERS array entry whose request value has no dot, and verifies that client-side validation blocks the save with a structured response naming the value and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Handler_Request_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadHandler = ValidPageBody.Replace(
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
+			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrHandlerRequestValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadHandler
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "handler request validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a handler request value without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side handler request validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "handler request format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("BadHandlerRequest")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-handlers",
+				because: "the error must name the offending request value and direct the agent at the handler guidance");
+	}
+
+	[Test]
+	[Description("Rejects a SCHEMA_VALIDATORS entry whose key is missing the required dot separator before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects validator key without dot during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a page body with a validator key that has no dot, and verifies that client-side validation blocks the save with a structured response naming the key and the VendorPrefix requirement.")]
+	public async Task PageSyncTool_Should_Reject_Validator_Key_Without_Dot_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithBadValidator = ValidPageBody.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrValidatorKeyValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithBadValidator
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validator key validation failures should be reported as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "a validator key without a dot causes a Creatio runtime error and must be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail client-side validator key validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator key format failure is a content-level error");
+		response.Pages[0].Error.Should().Contain("BadValidator")
+			.And.Contain("VendorPrefix")
+			.And.Contain("page-schema-validators",
+				because: "the error must name the offending key and direct the agent at the validator guidance");
+	}
+
+	[Test]
+	[Description("Rejects obvious custom max-length validators through the real MCP server before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects obvious custom max-length validators during semantic validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with a custom usr.NameMaxLength validator, and verifies that semantic validation blocks the save and recommends crt.MaxLength.")]
+	public async Task PageSyncTool_Should_Reject_Obvious_Custom_MaxLength_Validators_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithCustomMaxLengthValidator = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"usr.NameMaxLength\",\"params\":{\"message\":\"#ResourceString(UsrNameMaxLength_Message)#\"}}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.NameMaxLength\":{\"validator\":function(config){return function(control){if (control.value && control.value.length >= 5) { return {\"usr.NameMaxLength\": { message: config.message }}; } return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrCustomMaxLengthValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithCustomMaxLengthValidator
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "semantic validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "obvious custom max-length validators should be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "standard-validator enforcement contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("usr.NameMaxLength")
+			.And.Contain("crt.MaxLength",
+				because: "the failure should identify the rejected custom validator and the built-in replacement");
+	}
+
+	[Test]
+	[Description("Rejects built-in crt.MaxLength bindings that use max instead of maxLength before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects invalid built-in validator param names during semantic validation")]
+	[AllureDescription("Uses a reachable sandbox environment, sends a page body with crt.MaxLength configured through params.max, and verifies that semantic validation blocks the save and requires maxLength.")]
+	public async Task PageSyncTool_Should_Reject_BuiltIn_MaxLength_With_Wrong_Param_Name_Before_Save() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
+		}
+		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		}
+
+		await using ArrangeContext context = await ArrangeAsync();
+		string bodyWithWrongBuiltInParam = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrBuiltInMaxLengthValidation_{Guid.NewGuid():N}",
+							["body"] = bodyWithWrongBuiltInParam
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "semantic validation failures should stay in the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "crt.MaxLength with params.max should be rejected before save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the page should fail semantic validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned for the rejected page");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "validator-param contract enforcement contributes to the content-ok decision");
+		response.Pages[0].Error.Should().Contain("crt.MaxLength")
+			.And.Contain("max")
+			.And.Contain("maxLength",
+				because: "the failure should identify both the wrong param and the required param name");
+	}
+
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,
@@ -270,7 +757,7 @@ public sealed class PageSyncToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-page-sync-e2e-{Guid.NewGuid():N}");
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-pages-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
@@ -291,6 +778,100 @@ public sealed class PageSyncToolE2ETests {
 		catch (InvalidOperationException) {
 			response = null;
 			return false;
+		}
+	}
+
+	[Test]
+	[Description("Rejects a mobile JSON body containing a 'converters' section when validate=true is requested.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects mobile body with 'converters' key when validate=true")]
+	[AllureDescription("Verifies that sync-pages returns a per-page validation failure for a mobile body containing the 'converters' key when validate mode is enabled.")]
+	public async Task PageSyncTool_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBodyWithConverters = """
+			{
+			  "viewConfigDiff": [],
+			  "converters": {}
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "dev",
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrMobile_FormPage",
+							["body"] = mobileBodyWithConverters
+						}
+					},
+					["validate"] = true,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "sync-pages mobile validation failures should be surfaced as structured tool results");
+
+		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
+			response.Pages.Should().ContainSingle(
+				because: "one page was submitted");
+			PageSyncPageResult page = response.Pages[0];
+			page.Validation!.ContentOk.Should().BeFalse(
+				because: "a mobile body containing 'converters' must fail mobile content validation");
+		}
+	}
+
+	[Test]
+	[Description("Accepts a valid mobile JSON body through sync-pages without AMD marker checks.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages accepts a valid mobile JSON body")]
+	[AllureDescription("Verifies that sync-pages does not trigger AMD marker validation for plain-JSON mobile bodies — only mobile-specific validation runs.")]
+	public async Task PageSyncTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Marker_Errors() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "dev",
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrMobile_FormPage",
+							["body"] = mobileBody
+						}
+					},
+					["validate"] = true,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid mobile body must not raise a protocol-level error");
+
+		if (TryExtractFailure(callResult, out PageSyncResponse? response) && response is not null) {
+			foreach (PageSyncPageResult page in response.Pages) {
+				if (page.Validation is not null) {
+					page.Validation.Errors.Should().NotContain(e => e.Contains("SCHEMA_"),
+						because: "AMD marker errors must not appear when the body is a mobile JSON object");
+				}
+			}
 		}
 	}
 

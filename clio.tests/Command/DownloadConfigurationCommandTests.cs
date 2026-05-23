@@ -20,6 +20,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Description("Tests for DownloadConfigurationCommand and DownloadConfigurationCommandOptionsValidator")]
+[Property("Module", "Command")]
 public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfigurationCommandOptions>{
 	#region Fields: Private
 
@@ -57,6 +58,7 @@ public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfig
 	public void Teardown() {
 		_applicationDownloaderMock.ClearReceivedCalls();
 		_zipBasedApplicationDownloaderMock.ClearReceivedCalls();
+		Program.IsDebugMode = false;
 	}
 	
 	

@@ -10,19 +10,24 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
 public sealed class ApplicationInfoServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
 	private IApplicationClient _applicationClient = null!;
+	private IServiceUrlBuilderFactory _serviceUrlBuilderFactory = null!;
+	private ISysSettingsManager _sysSettingsManager = null!;
 	private ApplicationInfoService _sut = null!;
 	private EnvironmentSettings _environment = null!;
 
 	[SetUp]
 	public void SetUp() {
-		// Arrange
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilderFactory = new ServiceUrlBuilderFactory();
+		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_environment = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -31,7 +36,12 @@ public sealed class ApplicationInfoServiceTests {
 		};
 		_settingsRepository.FindEnvironment("sandbox").Returns(_environment);
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
-		_sut = new ApplicationInfoService(_settingsRepository, _applicationClientFactory);
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
+		_sut = new ApplicationInfoService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilderFactory,
+			_ => _sysSettingsManager);
 	}
 
 	[Test]
@@ -167,6 +177,84 @@ public sealed class ApplicationInfoServiceTests {
 	}
 
 	[Test]
+	[Description("Falls back to the installed application name for the canonical main entity when runtime metadata reports Base object and the design caption cannot be read.")]
+	public void GetApplicationInfo_Should_Fall_Back_To_Application_Name_For_Canonical_Main_Entity_When_Design_Caption_Is_Unavailable() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"Todo List","Version":"1.0"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetApplicationPackages", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":true,"packages":[{"uId":"11111111-1111-1111-1111-111111111111","name":"UsrTodo","isApplicationPrimaryPackage":true}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationEntity\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"UId":"entity-a","Name":"UsrTodo","Caption":"Base object"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrTodo","caption":{"en-US":"Base object"},"columns":{"Items":{}}}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"name\":\"UsrTodo\"", StringComparison.Ordinal)))
+			.Returns("""{"success":false,"schema":null}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities.Should().ContainSingle(
+			because: "the regression scenario still resolves the canonical main entity");
+		result.Entities[0].Caption.Should().Be("Todo List",
+			because: "the canonical main entity should fall back to the installed application display name instead of leaking the generic Base object caption");
+	}
+
+	[Test]
+	[Description("Keeps the generic Base object caption for non-canonical entities so the canonical fallback does not bleed into unrelated entity reads.")]
+	public void GetApplicationInfo_Should_Not_Use_Application_Name_Fallback_For_NonCanonical_Entities() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"Todo List","Version":"1.0"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetApplicationPackages", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":true,"packages":[{"uId":"11111111-1111-1111-1111-111111111111","name":"UsrTodo","isApplicationPrimaryPackage":true}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationEntity\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"UId":"entity-b","Name":"UsrTodoDetail","Caption":"Base object"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-b\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"schema":{"uId":"entity-b","name":"UsrTodoDetail","caption":{"en-US":"Base object"},"columns":{"Items":{}}}}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetSchemaDesignItem", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"name\":\"UsrTodoDetail\"", StringComparison.Ordinal)))
+			.Returns("""{"success":false,"schema":null}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities.Should().ContainSingle(
+			because: "the guard scenario only resolves the related non-canonical entity");
+		result.Entities[0].Caption.Should().Be("Base object",
+			because: "the application-name fallback must stay limited to the canonical main entity");
+	}
+
+	[Test]
 	[Description("Returns a readable not-found failure when the installed-application lookup matches no rows.")]
 	public void GetApplicationInfo_Should_Throw_When_Application_Is_Not_Found() {
 		// Arrange
@@ -243,6 +331,53 @@ public sealed class ApplicationInfoServiceTests {
 			"environment-sensitive reads should fail clearly when the environment key is unknown");
 		exception.Message.Should().Match("*not found*",
 			"environment-sensitive reads should fail clearly when the environment key is unknown");
+	}
+
+	[Test]
+	[Description("Reads SchemaNamePrefix system setting and surfaces it in the result so agents working with an existing app always have the active prefix.")]
+	public void GetApplicationInfo_Should_Return_SchemaNamePrefix_From_System_Settings() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Test");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.SchemaNamePrefix.Should().Be("Test",
+			because: "the active SchemaNamePrefix must be surfaced in the response so agents use the correct prefix for all new schema codes in the session");
+	}
+
+	[Test]
+	[Description("Returns empty string when SchemaNamePrefix is configured as empty, meaning no prefix is active for the environment.")]
+	public void GetApplicationInfo_Should_Return_Empty_SchemaNamePrefix_When_Setting_Is_Empty() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns(string.Empty);
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.SchemaNamePrefix.Should().BeEmpty(
+			because: "an empty SchemaNamePrefix setting means the environment uses no prefix — agents must not add one");
+	}
+
+	[Test]
+	[Description("Propagates the exception when the SchemaNamePrefix system setting cannot be read, so the caller gets an explicit failure instead of silently incorrect schema names.")]
+	public void GetApplicationInfo_Should_Throw_When_SchemaNamePrefix_Read_Fails() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix")
+			.Returns(_ => throw new InvalidOperationException("connection refused"));
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*connection refused*",
+				because: "a read failure must propagate so the caller knows the prefix could not be determined rather than receiving silently wrong schema names");
 	}
 
 	private void ConfigureHappyPathResponses() {

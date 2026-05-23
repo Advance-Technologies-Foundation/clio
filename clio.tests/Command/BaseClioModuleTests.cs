@@ -5,7 +5,8 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-[TestFixture(Category = "UnitTests")]
+[TestFixture]
+[Category("Unit")]
 public abstract class BaseClioModuleTests {
 	#region Fields: Private
 

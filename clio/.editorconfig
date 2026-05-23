@@ -5,7 +5,7 @@ root = true
 # CLIO001-CLIO099 are treated as warnings
 dotnet_diagnostic.CLIO001.severity = warning
 dotnet_diagnostic.CLIO002.severity = warning
-dotnet_diagnostic.CLIO003.severity = warning
+dotnet_diagnostic.CLIO003.severity = suggestion
 dotnet_diagnostic.CLIO004.severity = warning
 dotnet_diagnostic.CLIO005.severity = warning
 dotnet_diagnostic.CLIO006.severity = warning

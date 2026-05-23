@@ -99,9 +99,9 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	#region Properties: Private
 
-	private IEnumerable<IISScannerHandler.UnregisteredSite> AllSites { get; set; }
+	private IEnumerable<UnregisteredSite> AllSites { get; set; }
 
-	private Action<IEnumerable<IISScannerHandler.UnregisteredSite>> OnAllSitesRequestCompleted =>
+	private Action<IEnumerable<UnregisteredSite>> OnAllSitesRequestCompleted =>
 		sites => { AllSites = sites; };
 
 	#endregion

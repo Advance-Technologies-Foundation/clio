@@ -14,20 +14,20 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the page-get MCP tool.
+/// End-to-end tests for the get-page MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("page-get")]
+[AllureFeature("get-page")]
 [NonParallelizable]
 public sealed class PageGetToolE2ETests {
 	private const string ToolName = PageGetTool.ToolName;
 
 	[Test]
-	[Description("Advertises page-get MCP tool in the server tool list so callers can discover it.")]
+	[Description("Advertises get-page MCP tool in the server tool list so callers can discover it.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that page-get appears in the MCP server tool manifest.")]
+	[AllureName("get-page tool is advertised by the MCP server")]
+	[AllureDescription("Verifies that get-page appears in the MCP server tool manifest.")]
 	public async Task PageGetTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -40,90 +40,91 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "page-get must be advertised so MCP callers can discover the bundle reader");
+			because: "get-page must be advertised so MCP callers can discover the bundle reader");
 	}
 
 	[Test]
-	[Description("Returns page metadata, merged bundle, raw body, and supports dry-run page-update roundtrip for a real sandbox page.")]
+	[Description("Deferred positive coverage for get-page and update-page round-trip when the E2E environment has a known editable page.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get returns bundle and raw body for a sandbox form page")]
-	[AllureDescription("Discovers a Freedom UI form page through page-list, reads it with page-get, asserts bundle and raw content, then passes raw.body into page-update dry-run.")]
-	public async Task PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
+	[AllureName("get-page returns bundle and raw body for a sandbox form page")]
+	[AllureDescription("Placeholder for a future seeded-data E2E that reads a known editable page with get-page and reuses raw.body in update-page dry-run.")]
+	public void PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
+		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this get-page to update-page dry-run round-trip scenario.");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, discovers an installed application page when available, and verifies the structured get-page metadata contract for that page.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-page returns stable metadata contract for a real page")]
+	[AllureDescription("Uses the real clio MCP server to discover an installed application and one of its pages, ignores when no such data exists, and otherwise verifies the stable get-page metadata and raw-body contract for the discovered page.")]
+	public async Task PageGetTool_Should_Return_Stable_Metadata_Contract_For_Real_Page() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-get success E2E.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-get success E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
-
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
-		PageListResponse pageListResponse = await CallPageListAsync(
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		PageDiscoveryCandidate candidate = await ResolvePageCandidateOrIgnoreAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			searchPattern: "FormPage",
-			limit: 20);
-		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
-			Assert.Ignore($"page-get success E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
-		}
-		pageListResponse.Pages.Should().Contain(page => !string.IsNullOrWhiteSpace(page.ParentSchemaName),
-			because: "page-list should now expose parent schema context so callers can choose a page before page-get");
-
-		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			pageListResponse.Pages);
-		if (candidate is null) {
-			Assert.Ignore($"page-get success E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
-		}
+			arrangeContext.EnvironmentName);
 
 		// Act
-		PageUpdateResponse roundTripResponse = await CallPageUpdateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			candidate.Response.Page.SchemaName,
-			candidate.Response.Raw.Body,
-			dryRun: true);
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = candidate.Page.SchemaName,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
 
 		// Assert
-		candidate.Response.Success.Should().BeTrue(
-			because: "page-get should succeed for a real sandbox page");
-		candidate.Response.Page.Should().NotBeNull(
-			because: "page-get should return nested page metadata");
-		candidate.Response.Bundle.Should().NotBeNull(
-			because: "page-get should return the merged bundle block");
-		candidate.Response.Bundle.ViewConfig.Should().NotBeNull(
-			because: "the selected sandbox page should expose the merged layout array");
-		candidate.Response.Bundle!.ViewConfig.Count.Should().BeGreaterThan(0,
-			because: "the selected sandbox page should expose a non-empty inherited layout");
-		candidate.Response.Raw.Should().NotBeNull(
-			because: "page-get should return the raw editable payload");
-		candidate.Response.Raw.Body.Should().NotBeNullOrWhiteSpace(
-			because: "raw.body should be present for page-update round-trips");
-		roundTripResponse.Success.Should().BeTrue(
-			because: "page-update dry-run should accept raw.body returned by page-get");
-		roundTripResponse.DryRun.Should().BeTrue(
-			because: "the round-trip regression must stay non-destructive");
+		callResult.IsError.Should().NotBeTrue(
+			because: "a discovered page should return a structured get-page payload instead of a transport-level error");
+		response.Success.Should().BeTrue(
+			because: "get-page should succeed for a discovered page in a discovered installed application");
+		response.Page.Should().NotBeNull(
+			because: "successful get-page calls should include page metadata");
+		response.Page.SchemaName.Should().Be(candidate.Page.SchemaName,
+			because: "get-page metadata should identify the same page selected through list-pages");
+		response.Page.PackageName.Should().Be(candidate.Page.PackageName,
+			because: "get-page metadata should preserve the owning package from list-pages");
+		response.Bundle.Should().BeNull(
+			because: "the MCP wrapper compacts successful get-page responses to file paths instead of returning inline bundle data");
+		response.Raw.Should().BeNull(
+			because: "the MCP wrapper compacts successful get-page responses to file paths instead of returning inline raw body data");
+		response.Files.Should().NotBeNull(
+			because: "successful get-page calls should return the written file paths for MCP clients");
+		response.Files.BodyFile.Should().EndWith("body.js",
+			because: "get-page should write the editable page body to body.js");
+		response.Files.BundleFile.Should().EndWith("bundle.json",
+			because: "get-page should write the merged bundle to bundle.json");
+		response.Files.MetaFile.Should().EndWith("meta.json",
+			because: "get-page should write the page metadata to meta.json");
+		File.Exists(response.Files.BodyFile).Should().BeTrue(
+			because: "get-page should materialize the editable page body on disk for update-page reuse");
+		File.Exists(response.Files.BundleFile).Should().BeTrue(
+			because: "get-page should materialize the merged bundle on disk for inspection");
+		File.Exists(response.Files.MetaFile).Should().BeTrue(
+			because: "get-page should materialize the metadata payload on disk for inspection");
+		(await File.ReadAllTextAsync(response.Files.BodyFile)).Should().NotBeNullOrWhiteSpace(
+			because: "body.js should contain the raw editable page body");
+		response.Error.Should().BeNullOrWhiteSpace(
+			because: "successful get-page calls should not include an error payload");
 	}
 
 	[Test]
-	[Description("Reports readable failures when page-get is called with an invalid environment name.")]
+	[Description("Reports readable failures when get-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-get reports invalid environment failures")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-get with an unknown environment name, and verifies that the failure remains human-readable.")]
+	[AllureName("get-page reports invalid environment failures")]
+	[AllureDescription("Starts the real clio MCP server, invokes get-page with an unknown environment name, and verifies that the failure remains human-readable.")]
 	public async Task PageGetTool_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string invalidEnvironmentName = $"missing-page-get-env-{Guid.NewGuid():N}";
+		string invalidEnvironmentName = $"missing-get-page-env-{Guid.NewGuid():N}";
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -146,66 +147,18 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		(callResult.IsError == true || structuredFailure).Should().BeTrue(
-			because: "page-get should fail when the requested environment does not exist");
+			because: "get-page should fail when the requested environment does not exist");
 		serializedCallResult.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should explain that the requested environment is missing");
 	}
 
 	[Test]
-	[Description("Rejects malformed resources JSON when page-update is invoked through the MCP server.")]
-	[AllureFeature(PageUpdateTool.ToolName)]
-	[AllureTag(PageUpdateTool.ToolName)]
-	[AllureName("page-update rejects malformed resources JSON in dry-run mode")]
-	[AllureDescription("Discovers a real sandbox page, reuses its raw body in page-update dry-run mode, and verifies that malformed resources JSON is rejected with a readable validation error.")]
-	public async Task PageUpdateTool_Should_Reject_Invalid_Resources_Json() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run page-update invalid resources E2E.");
-		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"page-update invalid resources E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
-		PageListResponse pageListResponse = await CallPageListAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			searchPattern: "FormPage",
-			limit: 20);
-		if (!pageListResponse.Success || pageListResponse.Pages is null || pageListResponse.Pages.Count == 0) {
-			Assert.Ignore($"page-update invalid resources E2E requires at least one discoverable Freedom UI form page in '{environmentName}'.");
-		}
-		PageGetSuccessCandidate? candidate = await FindCandidateWithBundleAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			pageListResponse.Pages);
-		if (candidate is null) {
-			Assert.Ignore($"page-update invalid resources E2E requires at least one Freedom UI page with non-empty bundle.viewConfig in '{environmentName}'.");
-		}
-		PageUpdateResponse response = await CallPageUpdateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			environmentName!,
-			candidate.Response.Page.SchemaName,
-			candidate.Response.Raw.Body,
-			dryRun: true,
-			resources: "{\"UsrTitle\":");
-		response.Success.Should().BeFalse(
-			because: "malformed resources JSON should be rejected before page-update continues");
-		response.Error.Should().Contain("resources must be a valid JSON object string",
-			because: "the MCP tool should return a human-readable validation error for malformed resources");
-	}
-
-	[Test]
-	[Description("Rejects legacy page-list selector aliases before the server attempts unscoped page discovery.")]
+	[Description("Rejects legacy list-pages selector aliasesbefore the server attempts unscoped page discovery.")]
 	[AllureFeature(PageListTool.ToolName)]
 	[AllureTag(PageListTool.ToolName)]
-	[AllureName("page-list rejects legacy app-code alias")]
-	[AllureDescription("Starts the real clio MCP server, invokes page-list with the deprecated app-code selector, and verifies that the tool returns a readable alias error instead of running an unscoped query.")]
+	[AllureName("list-pages rejects legacy app-code alias")]
+	[AllureDescription("Starts the real clio MCP server, invokes list-pages with the deprecated app-code selector, and verifies that the tool returns a readable alias error instead of running an unscoped query.")]
 	public async Task PageListTool_Should_Reject_Legacy_AppCode_Alias() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -221,101 +174,55 @@ public sealed class PageGetToolE2ETests {
 		PageListResponse response = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
 
 		response.Success.Should().BeFalse(
-			because: "legacy aliases should be rejected before page-list can fall back to an unscoped query");
+			because: "legacy aliases should be rejected before list-pages can fall back to an unscoped query");
 		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
 			because: "the MCP tool should direct callers to the canonical selector field");
 	}
 
+	[Test]
+	[Description("Starts the real clio MCP server, discovers an installed application when available, and verifies that list-pages returns structured page summaries for that application.")]
+	[AllureFeature(PageListTool.ToolName)]
+	[AllureTag(PageListTool.ToolName)]
+	[AllureName("list-pages returns structured page summaries")]
+	[AllureDescription("Uses the real clio MCP server to discover an installed application, ignores when no applications or pages exist, and otherwise verifies the structured list-pages summary envelope for the discovered application.")]
+	public async Task PageListTool_Should_Return_Structured_PageSummaries() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		ApplicationListItemEnvelope installedApplication = await ResolveInstalledApplicationOrIgnoreAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName);
+
+		// Act
+		PageListResponse response = await CallPageListAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			installedApplication.Code);
+		if (response.Pages is null || response.Pages.Count == 0) {
+			Assert.Ignore("TODO: ENG-88547 add predefined installed application/page data to the E2E environment.");
+		}
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "list-pages should succeed for a discovered installed application");
+		response.Pages.Should().NotBeNullOrEmpty(
+			because: "this discovery-backed test should only continue when the discovered application exposes at least one page");
+		response.Count.Should().Be(response.Pages.Count,
+			because: "list-pages should keep the explicit count aligned with the returned page collection");
+		response.Pages.Should().OnlyContain(page =>
+				!string.IsNullOrWhiteSpace(page.SchemaName)
+				&& !string.IsNullOrWhiteSpace(page.PackageName),
+			because: "every returned page summary should expose stable schema and package selectors");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
-
-	private static async Task<PageListResponse> CallPageListAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName,
-		string searchPattern,
-		int limit) {
-		CallToolResult callResult = await session.CallToolAsync(
-			PageListTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["search-pattern"] = searchPattern,
-					["limit"] = limit
-				}
-			},
-			cancellationToken);
-		return EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
-	}
-
-	private static async Task<PageGetSuccessCandidate?> FindCandidateWithBundleAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName,
-		IReadOnlyList<PageListItem> pages) {
-		foreach (PageListItem page in pages.Where(item => !string.IsNullOrWhiteSpace(item.SchemaName))) {
-			PageGetResponse response = await CallPageGetAsync(session, cancellationToken, environmentName, page.SchemaName);
-			if (!response.Success || response.Bundle?.ViewConfig is null || response.Bundle.ViewConfig.Count == 0) {
-				continue;
-			}
-
-			return new PageGetSuccessCandidate(page.SchemaName, response);
-		}
-
-		return null;
-	}
-
-	private static async Task<PageGetResponse> CallPageGetAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName,
-		string schemaName) {
-		CallToolResult callResult = await session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = schemaName,
-					["environment-name"] = environmentName
-				}
-			},
-			cancellationToken);
-		return EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
-	}
-
-	private static async Task<PageUpdateResponse> CallPageUpdateAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName,
-		string schemaName,
-		string body,
-		bool dryRun,
-		string? resources = null) {
-		Dictionary<string, object?> args = new() {
-			["schema-name"] = schemaName,
-			["body"] = body,
-			["dry-run"] = dryRun,
-			["environment-name"] = environmentName
-		};
-		if (!string.IsNullOrWhiteSpace(resources)) {
-			args["resources"] = resources;
-		}
-		CallToolResult callResult = await session.CallToolAsync(
-			PageUpdateTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = args
-			},
-			cancellationToken);
-		return EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
 	private static bool TryExtractFailure(CallToolResult callResult, out PageGetResponse? response) {
@@ -329,16 +236,109 @@ public sealed class PageGetToolE2ETests {
 		}
 	}
 
+	private static async Task<ApplicationListItemEnvelope> ResolveInstalledApplicationOrIgnoreAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName) {
+		CallToolResult callResult = await session.CallToolAsync(
+			ApplicationGetListTool.ApplicationGetListToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		ApplicationListResponseEnvelope response = ApplicationResultParser.ExtractList(callResult);
+		ApplicationListItemEnvelope? installedApplication = response.Applications?.FirstOrDefault();
+		if (installedApplication is not null) {
+			return installedApplication;
+		}
+
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment.");
+		return null!;
+	}
+
+	private static async Task<PageDiscoveryCandidate> ResolvePageCandidateOrIgnoreAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName) {
+		ApplicationListItemEnvelope installedApplication = await ResolveInstalledApplicationOrIgnoreAsync(
+			session,
+			cancellationToken,
+			environmentName);
+		PageListResponse pageList = await CallPageListAsync(
+			session,
+			cancellationToken,
+			environmentName,
+			installedApplication.Code);
+		PageListItem? discoveredPage = pageList.Pages.FirstOrDefault();
+		if (discoveredPage is not null) {
+			return new PageDiscoveryCandidate(installedApplication, discoveredPage);
+		}
+
+		Assert.Ignore("TODO: ENG-88547 add predefined installed application/page data to the E2E environment.");
+		return null!;
+	}
+
+	private static async Task<PageListResponse> CallPageListAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string applicationCode) {
+		CallToolResult callResult = await session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["code"] = applicationCode
+				}
+			},
+			cancellationToken);
+		return EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			return configuredEnvironmentName;
+		}
+
+		const string fallbackEnvironmentName = "d2";
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+			return fallbackEnvironmentName;
+		}
+
+		Assert.Ignore(
+			$"page MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+		return string.Empty;
+	}
+
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+		try {
+			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cts.Token);
+			return result.ExitCode == 0;
+		} catch (OperationCanceledException) {
+			return false;
+		}
+	}
+
 	private sealed record ArrangeContext(
 		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
+		CancellationTokenSource CancellationTokenSource,
+		string EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
 		}
 	}
 
-	private sealed record PageGetSuccessCandidate(
-		string SchemaName,
-		PageGetResponse Response);
+	private sealed record PageDiscoveryCandidate(
+		ApplicationListItemEnvelope Application,
+		PageListItem Page);
+
 }

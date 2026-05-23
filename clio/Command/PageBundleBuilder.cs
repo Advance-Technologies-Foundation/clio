@@ -19,6 +19,8 @@ public interface IPageBundleBuilder {
 }
 
 internal sealed class PageBundleBuilder : IPageBundleBuilder {
+	private const string PathSeparator = "/";
+
 	private readonly IPageJsonDiffApplier _jsonDiffApplier;
 	private readonly IPageJsonPathDiffApplier _jsonPathDiffApplier;
 
@@ -63,8 +65,43 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 			Parameters = BuildParameters(mergeOrder, currentPart.Schema.UId),
 			Deps = currentPart.ParsedBody.Deps,
 			Args = currentPart.ParsedBody.Args,
-			OptionalProperties = BuildOptionalProperties(mergeOrder)
+			OptionalProperties = BuildOptionalProperties(mergeOrder),
+			Containers = ExtractContainers(viewConfig)
 		};
+	}
+
+	private static List<PageContainerInfo> ExtractContainers(JArray viewConfig) {
+		var result = new List<PageContainerInfo>();
+		CollectContainersRecursive(viewConfig, string.Empty, result);
+		return result;
+	}
+
+	private static void CollectContainersRecursive(JToken node, string parentPath, List<PageContainerInfo> sink) {
+		switch (node) {
+			case JArray array:
+				foreach (JToken item in array) {
+					CollectContainersRecursive(item, parentPath, sink);
+				}
+				break;
+			case JObject obj:
+				string name = obj["name"]?.ToString();
+				string type = obj["type"]?.ToString();
+				JArray items = obj["items"] as JArray;
+				if (items != null && !string.IsNullOrWhiteSpace(name)) {
+					string path = string.IsNullOrEmpty(parentPath) ? name : parentPath + PathSeparator + name;
+					sink.Add(new PageContainerInfo {
+						Name = name,
+						Type = type,
+						ChildCount = items.Count,
+						Path = path
+					});
+					CollectContainersRecursive(items, path, sink);
+				}
+				else if (items != null) {
+					CollectContainersRecursive(items, parentPath, sink);
+				}
+				break;
+		}
 	}
 
 	private JObject BuildConfig(

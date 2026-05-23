@@ -1,0 +1,287 @@
+role: Sales
+question: A new lead arrived. What should you do first?
+left: Open the lead and check the details
+right: Delete it without reading
+correct: left
+
+role: Sales
+question: A client is interested in a demo. What makes sense next?
+left: Schedule the next sales step
+right: Close the opportunity now
+correct: left
+
+role: Sales
+question: A lead answered your email. What should happen?
+left: Continue the conversation
+right: Ignore the response
+correct: left
+
+role: Sales
+question: A lead has no phone number. What is a good action?
+left: Ask for more contact data
+right: Mark the client as won
+correct: left
+
+role: Sales
+question: The client wants pricing. What should the team do?
+left: Prepare a relevant offer
+right: Remove the account
+correct: left
+
+role: Sales
+question: A lead is not ready to buy yet. What is reasonable?
+left: Keep a follow-up task
+right: Forget the lead forever
+correct: left
+
+role: Sales
+question: A sales call is planned for tomorrow. What should be in the system?
+left: A task or activity
+right: An empty record only
+correct: left
+
+role: Sales
+question: The client asked for a callback. What is the best next step?
+left: Create the callback action
+right: Close the case as solved
+correct: left
+
+role: Sales
+question: A lead became qualified. What usually comes next?
+left: Create an opportunity
+right: Reset the whole process
+correct: left
+
+role: Sales
+question: A sales manager needs to remember a promise to a client. What helps most?
+left: Add a task in the process
+right: Do nothing and hope to remember
+correct: left
+
+role: Sales
+question: The prospect asked for product details. What should happen next?
+left: Send useful information
+right: Block the contact
+correct: left
+
+role: Sales
+question: A meeting with a prospect is confirmed. What is the right step?
+left: Record the activity
+right: Delete the lead history
+correct: left
+
+role: Service
+question: A client reports a problem. What should happen first?
+left: Register the case
+right: Close the issue immediately
+correct: left
+
+role: Service
+question: A support case needs attention. What helps the team most?
+left: Assign it to someone
+right: Leave it ownerless
+correct: left
+
+role: Service
+question: A customer wrote back with more details. What is the good next step?
+left: Update the case
+right: Ignore the new message
+correct: left
+
+role: Service
+question: The issue is solved. What should happen in the system?
+left: Resolve the case
+right: Start a marketing campaign
+correct: left
+
+role: Service
+question: A high-priority case arrived. What is reasonable?
+left: Process it quickly
+right: Hide it from the queue
+correct: left
+
+role: Service
+question: A customer is waiting for an answer. What helps service quality?
+left: Respond with an update
+right: Keep silent for days
+correct: left
+
+role: Service
+question: A case needs another team. What should be done?
+left: Route or reassign it
+right: Delete the request
+correct: left
+
+role: Service
+question: A support agent solved the problem by phone. What is next?
+left: Log the result
+right: Remove the contact record
+correct: left
+
+role: Service
+question: A client says the issue is still open. What should happen?
+left: Continue working the case
+right: Mark it won in sales
+correct: left
+
+role: Service
+question: A case is missing key information. What is the right action?
+left: Ask the client for details
+right: Guess and close it
+correct: left
+
+role: Service
+question: A service queue is growing. What is useful?
+left: Prioritize and assign work
+right: Stop tracking cases
+correct: left
+
+role: Service
+question: A support process reached the final answer. What is appropriate?
+left: Close the resolved case
+right: Start from zero for no reason
+correct: left
+
+role: Marketing
+question: You want to send a campaign to the right audience. What comes first?
+left: Choose a segment
+right: Send to nobody and finish
+correct: left
+
+role: Marketing
+question: A marketer prepares an email campaign. What is useful?
+left: Define the audience
+right: Delete all contacts
+correct: left
+
+role: Marketing
+question: A campaign is live. What should the team watch?
+left: Results and responses
+right: Nothing at all
+correct: left
+
+role: Marketing
+question: A form collected new contacts. What is a good next step?
+left: Add them to the process
+right: Throw the data away
+correct: left
+
+role: Marketing
+question: A contact clicked an email link. What can marketing do?
+left: Track engagement
+right: Close the service queue
+correct: left
+
+role: Marketing
+question: A webinar campaign is planned. What should be prepared?
+left: A target audience and message
+right: An empty case list
+correct: left
+
+role: Marketing
+question: A campaign performs badly. What is sensible?
+left: Review and improve it
+right: Never look at it again
+correct: left
+
+role: Marketing
+question: Marketing wants better results next month. What helps?
+left: Use the data from this month
+right: Ignore all previous outcomes
+correct: left
+
+role: Marketing
+question: A contact unsubscribed. What should the system respect?
+left: The unsubscribe choice
+right: Keep sending more emails
+correct: left
+
+role: Marketing
+question: A campaign needs a clear message. What should happen?
+left: Prepare content first
+right: Launch with blank text
+correct: left
+
+role: Marketing
+question: A new campaign target is selected. What is next?
+left: Build the audience list
+right: Archive the whole campaign
+correct: left
+
+role: Marketing
+question: A contact downloaded content. What can be useful next?
+left: Continue engagement
+right: Remove the contact immediately
+correct: left
+
+role: Studio
+question: A new employee joins the team. What should an admin often do?
+left: Give proper access
+right: Delete the workspace
+correct: left
+
+role: Studio
+question: A user cannot open a page. What is a reasonable check?
+left: Review permissions
+right: Close every user account
+correct: left
+
+role: Studio
+question: A field should be visible only for some users. What matters?
+left: Roles and permissions
+right: Random luck
+correct: left
+
+role: Studio
+question: A team needs a new process step. What is useful?
+left: Configure it carefully
+right: Remove all records
+correct: left
+
+role: Studio
+question: A page layout needs improvement. What should an admin do?
+left: Update the setup
+right: Ignore the business need
+correct: left
+
+role: Studio
+question: A user asked for help with access. What is the best next step?
+left: Check the role settings
+right: Restart the whole company
+correct: left
+
+role: Studio
+question: New data should be captured in the system. What helps?
+left: Add a proper field
+right: Write it on paper only
+correct: left
+
+role: Studio
+question: A process should notify the team automatically. What is useful?
+left: Configure the notification step
+right: Hope people remember manually
+correct: left
+
+role: Studio
+question: A page is too cluttered for users. What is sensible?
+left: Simplify the configuration
+right: Add random extra fields
+correct: left
+
+role: Studio
+question: A team needs a new queue or lookup. What should happen?
+left: Configure it in the system
+right: Avoid any setup forever
+correct: left
+
+role: Studio
+question: A process should run the same way each time. What helps?
+left: Set clear automation rules
+right: Change the logic every hour
+correct: left
+
+role: Studio
+question: A user reports missing access after a role change. What is the next step?
+left: Recheck role membership
+right: Delete the user history
+correct: left

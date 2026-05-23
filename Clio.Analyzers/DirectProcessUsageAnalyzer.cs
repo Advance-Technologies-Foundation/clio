@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -44,6 +45,10 @@ public sealed class DirectProcessUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsProcessExecutorImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, invocation.GetLocation(), methodSymbol.ContainingType.Name));
 	}
 
@@ -61,6 +66,10 @@ public sealed class DirectProcessUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsProcessExecutorImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, memberAccess.GetLocation(), symbol.ContainingType.Name));
 	}
 
@@ -75,7 +84,20 @@ public sealed class DirectProcessUsageAnalyzer : DiagnosticAnalyzer {
 			return;
 		}
 
+		if (IsProcessExecutorImplementation(context)) {
+			return;
+		}
+
 		context.ReportDiagnostic(Diagnostic.Create(Rule, context.Node.GetLocation(), namedType.Name));
+	}
+
+	private static bool IsProcessExecutorImplementation(SyntaxNodeAnalysisContext context) {
+		INamedTypeSymbol? containingClass = context.ContainingSymbol?.ContainingType;
+		return containingClass is not null
+			&& containingClass.ContainingNamespace.ToDisplayString().StartsWith("Clio", StringComparison.Ordinal)
+			&& containingClass.AllInterfaces.Any(i =>
+				i.Name == "IProcessExecutor"
+				&& i.ContainingNamespace.ToDisplayString().StartsWith("Clio", StringComparison.Ordinal));
 	}
 
 	private static bool IsForbiddenType(ITypeSymbol? typeSymbol) {

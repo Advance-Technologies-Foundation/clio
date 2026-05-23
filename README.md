@@ -97,6 +97,9 @@ docker run -it --rm clio reg-web-app -help
 ## Commands Reference
 [Explore clio commands](clio/Commands.md)
 
+## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build setup, test targets, code style, and PR workflow.
+
 ## MCP Server
 
 Clio supports Model Context Protocol (MCP) for integration with AI assistants.
@@ -116,17 +119,17 @@ This opens a browser interface to test MCP tools.
 
 ### Available MCP Tools
 
-**page-list** - List Freedom UI pages
+**list-pages** - List Freedom UI pages
 - `packageName` (optional) - Filter by package
 - `searchPattern` (optional) - Filter by name pattern
 - `limit` (optional) - Max results (default: 50)
 - `environmentName` / `uri+login+password` - Connection
 
-**page-get** - Get page schema body
+**get-page** - Get page schema body
 - `schemaName` (required) - Page schema name
 - `environmentName` / `uri+login+password` - Connection
 
-**page-update** - Update page body (Destructive)
+**update-page** - Update page body (Destructive)
 - `schemaName` (required) - Page schema name
 - `body` (required) - New JSON body
 - `dryRun` (optional) - Validate only
