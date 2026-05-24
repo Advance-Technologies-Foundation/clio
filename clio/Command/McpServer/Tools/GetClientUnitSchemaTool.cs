@@ -33,7 +33,7 @@ public sealed class GetClientUnitSchemaTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			GetClientUnitSchemaCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetClientUnitSchemaCommand>(options);
@@ -43,7 +43,7 @@ public sealed class GetClientUnitSchemaTool(
 			}
 			resolvedCommand.TryGetSchema(options, out GetClientUnitSchemaResponse response);
 			return response;
-		}
+		});
 	}
 }
 

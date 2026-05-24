@@ -44,7 +44,7 @@ public sealed class PageGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			PageGetCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageGetCommand>(options);
@@ -56,7 +56,7 @@ public sealed class PageGetTool(
 				return WriteFilesAndCompact(response, args.SchemaName);
 			}
 			return response;
-		}
+		});
 	}
 
 	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {
