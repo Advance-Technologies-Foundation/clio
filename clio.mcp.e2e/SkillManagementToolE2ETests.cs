@@ -360,14 +360,12 @@ public async Task DeleteSkill_ShouldDeleteManagedUserScopeSkill() {
 		string toolName,
 		Dictionary<string, object?> arguments) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(toolName),
 			because: "the requested workspace skill management MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> {
-				["args"] = arguments
-			},
+			ClioRunRoutingHelper.Resolve(toolName, arguments as IReadOnlyDictionary<string, object?> ?? new Dictionary<string, object?>()).ToolName,
+			ClioRunRoutingHelper.Resolve(toolName, arguments as IReadOnlyDictionary<string, object?> ?? new Dictionary<string, object?>()).Arguments,
 			arrangeContext.CancellationTokenSource.Token);
 
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);

@@ -109,14 +109,14 @@ public sealed class PackageHotfixToolE2ETests {
 		string toolName,
 		string packageName,
 		string environmentName) {
+		var originalArgs = new Dictionary<string, object?> {
+			["package-name"] = packageName,
+			["environment-name"] = environmentName
+		};
+		var routed = ClioRunRoutingHelper.Resolve(toolName, originalArgs);
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["package-name"] = packageName,
-					["environment-name"] = environmentName
-				}
-			},
+			routed.ToolName,
+			routed.Arguments,
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new CommandExecutionActResult(callResult, execution);
@@ -124,8 +124,9 @@ public sealed class PackageHotfixToolE2ETests {
 
 	[AllureStep("Assert tool is advertised by MCP server")]
 	private static void AssertToolIsAdvertised(IList<McpClientTool> tools, string toolName) {
-		tools.Select(t => t.Name).Should().Contain(toolName,
-			because: $"the {toolName} MCP tool must be advertised by the clio mcp-server process");
+		string advertised = ClioRunRoutingHelper.ResolveAdvertisedName(toolName);
+		tools.Select(t => t.Name).Should().Contain(advertised,
+			because: $"the {advertised} MCP tool must be advertised by the clio mcp-server process for routing {toolName}");
 	}
 
 	[AllureStep("Assert command-oriented MCP tool failed")]
