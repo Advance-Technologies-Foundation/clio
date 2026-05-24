@@ -65,22 +65,6 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 	}
 
 	[Test]
-	public void Execute_ReturnsFailure_WhenSchemaNameIsTooLong()
-	{
-		var options = new CreateEntitySchemaOptions {
-			Package = "UsrPkg",
-			SchemaName = "UsrCodexEntitySchemaTest0307",
-			Title = "Vehicle"
-		};
-
-		var result = _command.Execute(options);
-
-		result.Should().Be(1);
-		_creator.DidNotReceiveWithAnyArgs().Create(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must not exceed 22 characters")));
-	}
-
-	[Test]
 	[Description("Preserves semicolons inside structured JSON --column payloads so valid captions and defaults are not split by the command-line parser.")]
 	public void Parse_Should_Preserve_Semicolons_In_Json_Column_Payload() {
 		// Arrange

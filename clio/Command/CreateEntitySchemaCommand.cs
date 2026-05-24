@@ -71,9 +71,6 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new InvalidOperationException("Schema name is required.");
 		}
-		if (options.SchemaName.Trim().Length > 22) {
-			throw new InvalidOperationException("Schema name must not exceed 22 characters.");
-		}
 		if (string.IsNullOrWhiteSpace(options.Title)) {
 			throw new InvalidOperationException("Schema title is required.");
 		}

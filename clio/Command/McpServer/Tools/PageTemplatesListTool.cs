@@ -28,17 +28,16 @@ public sealed class PageTemplatesListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageTemplateListResponse response;
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			PageTemplatesListCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageTemplatesListCommand>(options);
 			} catch (Exception ex) {
 				return new PageTemplateListResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryListTemplates(options, out response);
-		}
-		return response;
+			resolvedCommand.TryListTemplates(options, out PageTemplateListResponse response);
+			return response;
+		});
 	}
 }
 

@@ -24,8 +24,11 @@ This command must be executed from a workspace directory unless `--remote` is se
 ### Remote mode (`--remote`)
 
 Use `--remote` to delete the schema directly from the target environment by name
-without requiring a local workspace. The schema is resolved from SysSchema by name
-(any ManagerName) and deleted via `WorkspaceExplorerService.svc/Delete`.
+without requiring a local workspace. The schema is resolved by name through
+`WorkspaceExplorerService.svc/GetWorkspaceItems` and deleted via
+`WorkspaceExplorerService.svc/Delete` using the platform-computed item type
+(`WorkspaceExplorerItemType`), so classic .NET Framework Creatio dispatches the
+correct `SchemaManager` for every supported workspace item.
 
 ## Synopsis
 
