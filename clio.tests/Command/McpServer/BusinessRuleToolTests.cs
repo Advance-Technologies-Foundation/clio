@@ -20,6 +20,7 @@ public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for create-entity-business-rule.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void BusinessRuleCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
@@ -641,6 +642,7 @@ public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for create-page-business-rule.")]
+	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
 	public void PageBusinessRuleCreate_Should_Advertise_Stable_Tool_Name() {
 		// Arrange
 
