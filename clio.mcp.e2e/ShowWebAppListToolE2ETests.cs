@@ -57,7 +57,7 @@ public sealed class ShowWebAppListToolE2ETests
 	private static async Task<ShowWebAppListActResult> ActAsync(ShowWebAppListArrangeContext arrangeContext)
 	{
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the show-webApp-list MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

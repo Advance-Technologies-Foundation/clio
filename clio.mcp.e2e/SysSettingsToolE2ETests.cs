@@ -283,7 +283,7 @@ public sealed class SysSettingsToolE2ETests {
 		string toolName,
 		Dictionary<string, object?> args) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(toolName),
 			because: $"the {toolName} tool must be advertised by the clio MCP server before the call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 		ClioRunTool.ToolName,

@@ -41,7 +41,10 @@ public sealed class AppSectionTool(
 						Description = args.Description,
 						EntitySchemaName = args.EntitySchemaName,
 						IconBackground = args.IconBackground!,
-						WithMobilePages = args.WithMobilePages ?? false
+						// Preserve the Phase-0 contract: omitted `with-mobile-pages` means "create mobile pages too".
+						// The flat ApplicationSectionCreateArgs defaulted this field to `true`; mirror that
+						// here so existing callers that don't set the flag keep getting mobile pages.
+						WithMobilePages = args.WithMobilePages ?? true
 					},
 					server,
 					cancellationToken);

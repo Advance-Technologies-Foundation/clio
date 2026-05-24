@@ -131,7 +131,7 @@ public sealed class ClearRedisToolE2ETests {
 	[AllureDescription("Act by discovering the clear-redis-db MCP tool and invoking it with mode='environment' and the configured sandbox environment name")]
 	private static async Task<ClearRedisActResult> ActAsync(ClearRedisArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the sandbox test path depends on the consolidated clear-redis-db tool being advertised by the MCP server");
 
 		return await ActWithEnvironmentNameAsync(arrangeContext, arrangeContext.SandboxContext.EnvironmentName);
@@ -164,7 +164,7 @@ public sealed class ClearRedisToolE2ETests {
 		string? url = null,
 		bool? isNetCore = null) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the consolidated clear-redis-db tool must be advertised by the MCP server for the credentials-path end-to-end coverage");
 
 		Dictionary<string, object?> argsObject = new() {

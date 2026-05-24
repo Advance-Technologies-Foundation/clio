@@ -462,7 +462,7 @@ public sealed class ApplicationToolE2ETests {
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(CreateToolName),
 			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = BuildCreateArgs(
@@ -846,7 +846,7 @@ public sealed class ApplicationToolE2ETests {
 		CancellationToken cancellationToken,
 		string environmentName) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(AppsToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(AppsToolName),
 			because: "the consolidated apps MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -866,7 +866,7 @@ public sealed class ApplicationToolE2ETests {
 		string? id,
 		string? code) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(AppsToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(AppsToolName),
 			because: "the consolidated apps MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
@@ -902,7 +902,7 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(CreateToolName),
 			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -929,7 +929,7 @@ public sealed class ApplicationToolE2ETests {
 		string schemaName,
 		string addedColumnName) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(SchemaSyncToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(SchemaSyncToolName),
 			because: "the sync-schemas MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
 
 		return await session.CallToolAsync(

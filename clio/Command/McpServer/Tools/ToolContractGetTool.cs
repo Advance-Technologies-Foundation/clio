@@ -285,8 +285,25 @@ internal static class ToolContractCatalog {
 		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
 	]);
 
-	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
-		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
+	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts = BuildContracts();
+
+	/// <summary>
+	/// Builds the tool-contract catalog. Entries fall into three groups:
+	/// <list type="bullet">
+	/// <item><description>Legacy per-command contracts kept by their historical name (e.g. <c>create-app-section</c>,
+	///   <c>list-apps</c>, <c>create-entity-schema</c>). They document the original wire shape and are still served
+	///   so AI agents that integrated before Phase 2 keep getting answers, and so the call-history examples in the
+	///   contract notes (which reference these names) stay link-correct.</description></item>
+	/// <item><description>New advertised names registered by Phase 2 (<c>clio-run</c>, <c>apps</c>, <c>sys-setting</c>,
+	///   <c>dataforge-find</c>, <c>get-schema</c>, <c>list-schemas</c>) — these are what surfaces in <c>tools/list</c>.
+	///   Aliases reuse the closest legacy contract so callers asking for the new names get a useful response.</description></item>
+	/// <item><description>Minimal contracts for the small read-only utilities that never had a documented contract
+	///   before but are now part of the advertised 24 (<c>assert-infrastructure</c>, <c>find-empty-iis-port</c>,
+	///   <c>get-fsm-mode</c>, <c>list-environments</c>, <c>list-packages</c>, <c>show-passing-infrastructure</c>).</description></item>
+	/// </list>
+	/// </summary>
+	private static IReadOnlyDictionary<string, ToolContractDefinition> BuildContracts() {
+		var dict = new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
@@ -335,49 +352,162 @@ internal static class ToolContractCatalog {
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
 		};
+		// ENG-90312 Phase 2 — entries for the new advertised tool names so callers asking for them by their
+		// tools/list-visible name get a useful contract instead of a "tool-not-found" error. Where the new
+		// advertised tool is a flat consolidation of older tools (apps replaces list-apps + get-app-info, etc.),
+		// reuse the closest legacy contract; where there's no good analogue (clio-run, the small read-only
+		// utilities), publish a minimal contract.
+		dict[ClioRunTool.ToolName] = BuildClioRun();
+		// Aliases reuse the legacy contract body but re-key the Name field so callers that ask for the
+		// advertised name get back a contract whose Name matches what they asked for (the schemas were
+		// otherwise renamed transparently — list-apps's payload still documents the apps tool).
+		dict[AppsTool.ToolName] = dict[ApplicationGetListTool.ApplicationGetListToolName] with { Name = AppsTool.ToolName };
+		dict[SysSettingTool.ToolName] = dict[SysSettingGetTool.GetSysSettingToolName] with { Name = SysSettingTool.ToolName };
+		dict[DataForgeTool.DataForgeFindToolName] = dict[DataForgeTool.DataForgeFindTablesToolName] with { Name = DataForgeTool.DataForgeFindToolName };
+		dict[GetSchemaTool.ToolName] = dict[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] with { Name = GetSchemaTool.ToolName };
+		dict[SchemaListTool.ToolName] = dict[FindEntitySchemaTool.FindEntitySchemaToolName] with { Name = SchemaListTool.ToolName };
+		dict[AssertInfrastructureTool.AssertInfrastructureToolName] =
+			BuildMinimalReadOnly(AssertInfrastructureTool.AssertInfrastructureToolName,
+				"Asserts that the local clio infrastructure (.config files, IIS bindings, registry) is in a known-good state.");
+		dict[FindEmptyIisPortTool.FindEmptyIisPortToolName] =
+			BuildMinimalReadOnly(FindEmptyIisPortTool.FindEmptyIisPortToolName,
+				"Returns the first unused port the local IIS instance can host a new Creatio site on.");
+		dict[FsmModeTool.GetFsmModeToolName] =
+			BuildMinimalReadOnly(FsmModeTool.GetFsmModeToolName,
+				"Returns the current file-system-development-mode (FSDM) flag for the target environment.");
+		dict[ShowWebAppListTool.ShowWebAppListToolName] =
+			BuildMinimalReadOnly(ShowWebAppListTool.ShowWebAppListToolName,
+				"Lists the clio environment registrations available on the local machine.");
+		dict[GetPkgListTool.GetPkgListToolName] =
+			BuildMinimalReadOnly(GetPkgListTool.GetPkgListToolName,
+				"Lists the packages installed on the target Creatio environment.");
+		dict[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] =
+			BuildMinimalReadOnly(ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+				"Returns the most recent clio infrastructure health snapshot from the local machine.");
+		dict[PageTemplatesListTool.ToolName] =
+			BuildMinimalReadOnly(PageTemplatesListTool.ToolName,
+				"Lists the page templates available in the target Creatio environment.");
+		return dict;
+	}
 
+	private static ToolContractDefinition BuildClioRun() {
+		return new ToolContractDefinition(
+			ClioRunTool.ToolName,
+			"Single dispatcher tool that routes every non-read-only clio MCP operation. " +
+			"Pick the operation with 'command'; the rest of 'args' carries that command's specific fields. " +
+			"The published JSON Schema for 'args' is an anyOf union over all supported commands (52 branches as of ENG-90312 Phase 2). " +
+			"Read-only operations (apps, sys-setting, get-schema, dataforge-find, list-environments, etc.) keep their own top-level tool — do NOT route those through clio-run.",
+			new ToolInputSchemaContract(
+				["command"],
+				[
+					Field("command", StringType,
+						"Operation to execute. One of the 52 ClioRunArgs discriminator values: " +
+						"restart-creatio, clear-redis-db, restore-db, download-configuration, link-from-repository, " +
+						"create-schema, update-schema, delete-schema, install-sql-schema, sync-schemas, modify-entity-schema-column, " +
+						"create-page, update-page, sync-pages, get-page, " +
+						"app-section, create-app, delete-app, install-application, " +
+						"add-package, push-workspace, restore-workspace, create-workspace, new-test-project, pkg-mode, " +
+						"data-binding-row, data-binding-row-db, create-data-binding, create-data-binding-db, " +
+						"dataforge-initialize, dataforge-update, " +
+						"create-entity-business-rule, create-page-business-rule, " +
+						"add-item-model, generate-process-model, generate-source-code, " +
+						"create-user-task, modify-user-task-parameters, " +
+						"delete-skill, install-skills, update-skill, " +
+						"finish-hotfix, unlock-for-hotfix, " +
+						"reg-web-app, start-creatio, stop-creatio, stop-all-creatio, uninstall-creatio, " +
+						"deploy-creatio, compile-creatio, " +
+						"set-fsm-mode, upsert-sys-setting."),
+					Field("...command-specific fields", ObjectType,
+						"All remaining args are the fields of the per-command record (e.g. mode + environment-name for restart-creatio; schema-type + schema-name + package-name + title-localizations for create-schema). See the tools/list anyOf schema for the per-command field shape.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the dispatched command succeeded."),
+				Field(ErrorFieldName, ObjectType, "Structured error envelope when the command, validation, or routing fails.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Restart a Creatio environment by registered name",
+					new Dictionary<string, object?> {
+						["command"] = "restart-creatio",
+						["mode"] = "environment",
+						["environment-name"] = "dev"
+					}),
+				Example("Create an entity schema",
+					new Dictionary<string, object?> {
+						["command"] = "create-schema",
+						["schema-type"] = "entity",
+						["schema-name"] = "UsrVehicle",
+						["package-name"] = "UsrPkg",
+						["environment-name"] = "dev",
+						["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Vehicle" }
+					}),
+				Example("Delete an application section",
+					new Dictionary<string, object?> {
+						["command"] = "app-section",
+						["action"] = "delete",
+						["environment-name"] = "dev",
+						["application-code"] = "UsrApp",
+						["section-code"] = "UsrOrders"
+					})
+			],
+			Flow([ClioRunTool.ToolName],
+				"Use clio-run for any state-changing clio MCP operation. For read-only inspection (apps, sys-setting, get-schema, dataforge-find, list-*), prefer the dedicated top-level tools — they're auto-approved by the host."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildMinimalReadOnly(string toolName, string description) {
+		return new ToolContractDefinition(
+			toolName,
+			description,
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the operation succeeded."),
+				Field(ErrorFieldName, ObjectType, "Structured error payload when the operation fails.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[],
+			Flow([toolName], "Read-only utility — inspect the per-tool schema published in tools/list for the precise input shape."),
+			[],
+			[]);
+	}
+
+	// ENG-90312 Phase 2 — default discovery surface mirrors the advertised tools/list (23 read-only flat + clio-run).
+	// Legacy names (create-app-section, list-apps, create-entity-schema, …) remain reachable as documentation
+	// via Contracts but are no longer returned by the default no-argument get-tool-contract call.
 	private static readonly string[] CanonicalToolNames = [
-		GuidanceGetTool.ToolName,
+		ClioRunTool.ToolName,
+		AppsTool.ToolName,
+		AssertInfrastructureTool.AssertInfrastructureToolName,
 		SettingsHealthTool.ToolName,
-		ApplicationCreateTool.ApplicationCreateToolName,
-		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
-		ApplicationGetInfoTool.ApplicationGetInfoToolName,
-		ApplicationGetListTool.ApplicationGetListToolName,
-		DataForgeTool.DataForgeStatusToolName,
-		DataForgeTool.DataForgeFindTablesToolName,
-		DataForgeTool.DataForgeFindLookupsToolName,
+		DataForgeTool.DataForgeContextToolName,
+		DataForgeTool.DataForgeFindToolName,
 		DataForgeTool.DataForgeGetRelationsToolName,
 		DataForgeTool.DataForgeGetTableColumnsToolName,
-		DataForgeTool.DataForgeContextToolName,
-		SchemaSyncTool.ToolName,
-		PageSyncTool.ToolName,
-		PageListTool.ToolName,
-		PageGetTool.ToolName,
-		CreateLookupTool.CreateLookupToolName,
-		CreateEntitySchemaTool.CreateEntitySchemaToolName,
-		UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
-		CreateDataBindingDbTool.CreateDataBindingDbToolName,
-		UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
-		RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
-		FindEntitySchemaTool.FindEntitySchemaToolName,
-		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+		DataForgeTool.DataForgeStatusToolName,
+		FindEmptyIisPortTool.FindEmptyIisPortToolName,
 		ComponentInfoTool.ToolName,
-		PageUpdateTool.ToolName,
-		PageValidateTool.ToolName,
-		ApplicationDeleteTool.ToolName,
+		FsmModeTool.GetFsmModeToolName,
+		GuidanceGetTool.ToolName,
+		GetSchemaTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
-		CompileCreatioTool.CompileCreatioToolName,
-		SysSettingGetTool.GetSysSettingToolName,
-		SysSettingsListTool.ListSysSettingsToolName,
-		SysSettingCreateTool.CreateSysSettingToolName,
-		SysSettingUpdateTool.UpdateSysSettingToolName
+		// get-tool-contract intentionally excluded — callers reach it directly via tools/list; it doesn't need self-discovery.
+		ShowWebAppListTool.ShowWebAppListToolName,
+		GetPkgListTool.GetPkgListToolName,
+		PageTemplatesListTool.ToolName,
+		PageListTool.ToolName,
+		SchemaListTool.ToolName,
+		ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+		SysSettingTool.ToolName,
+		PageValidateTool.ToolName
 	];
 
 	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {

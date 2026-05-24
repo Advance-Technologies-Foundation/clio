@@ -97,7 +97,7 @@ public sealed class FsmModeToolE2ETests
 	private static async Task<CallToolResult> ActGetAsync(FsmModeArrangeContext arrangeContext, string environmentName)
 	{
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(GetToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(GetToolName),
 			because: "the get-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await arrangeContext.Session.CallToolAsync(
@@ -113,7 +113,7 @@ public sealed class FsmModeToolE2ETests
 		string mode)
 	{
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SetToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(SetToolName),
 			because: "the set-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

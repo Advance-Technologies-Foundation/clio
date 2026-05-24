@@ -20,13 +20,17 @@ public sealed record GetSysSettingArgs(
 /// <summary>
 /// Structured response of the get-sys-setting MCP tool: echoes the requested code, returns the All-Users
 /// default value (empty when the setting is unknown or has no All-Users row), and carries an optional
-/// error message on failure.
+/// error message on failure. <see cref="Exists"/> distinguishes "setting not found" from "found but
+/// empty" so consumers (e.g. <c>upsert-sys-setting</c>) can pick create vs. update reliably; it is
+/// independent of <see cref="Success"/>, which signals only whether the probe itself completed without
+/// network/auth errors.
 /// </summary>
 public sealed record SysSettingGetResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("value")] string Value,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("exists")] bool Exists = false);
 
 /// <summary>
 /// Request payload for the list-sys-settings MCP tool: identifies the environment whose sys-setting catalog should be returned.

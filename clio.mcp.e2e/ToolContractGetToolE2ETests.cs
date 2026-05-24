@@ -29,7 +29,7 @@ public sealed class ToolContractGetToolE2ETests {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolContractGetTool.ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolContractGetTool.ToolName),
 			because: "the MCP server should advertise get-tool-contract as the bootstrap contract entry point");
 	}
 

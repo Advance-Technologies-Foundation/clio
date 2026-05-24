@@ -330,4 +330,75 @@ public sealed class SysSettingsToolTests {
 	}
 
 	#endregion
+
+	#region upsert-sys-setting
+
+	[Test]
+	[Category("Unit")]
+	[Description("upsert-sys-setting probes the environment first; when the setting row is missing (GetAllUsersDefaultWithType returns null type-name), it creates instead of updating.")]
+	public void UpsertSysSetting_Should_Create_When_Setting_Does_Not_Exist() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		// Phase-0 behaviour: missing setting yields (string.Empty, null).
+		manager.GetAllUsersDefaultWithType("UsrBrandNewFlag").Returns((string.Empty, (string)null!));
+		manager.InsertSysSetting("UsrBrandNewFlag", "UsrBrandNewFlag", "Boolean", Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>())
+			.Returns(new SysSettingsManager.InsertSysSettingResponse(
+				new SysSettingsManager.ResponseStatus(string.Empty, string.Empty, Array.Empty<object>()),
+				Guid.NewGuid(), 1, false, true));
+		SysSettingUpsertTool tool = new(BuildResolver(manager));
+
+		object result = tool.Upsert(new UpsertSysSettingRunArgs("local", "UsrBrandNewFlag") {
+			ValueTypeName = "Boolean",
+			Value = "true"
+		});
+
+		result.Should().BeOfType<SysSettingCreateResult>(
+			because: "the probe returned typeName=null (setting does not exist), so upsert must create rather than update");
+		((SysSettingCreateResult)result).Success.Should().BeTrue();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("upsert-sys-setting routes through update when the probe reports the setting exists on the environment (non-null type-name).")]
+	public void UpsertSysSetting_Should_Update_When_Setting_Exists() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("MaxFileSize").Returns(("10485760", "Integer"));
+		manager.UpdateSysSetting("MaxFileSize", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
+		SysSettingUpsertTool tool = new(BuildResolver(manager));
+
+		object result = tool.Upsert(new UpsertSysSettingRunArgs("local", "MaxFileSize") {
+			Value = "20971520",
+			ValueTypeName = "Integer"
+		});
+
+		result.Should().BeOfType<SysSettingUpdateResult>(
+			because: "the probe returned a real typeName (setting exists), so upsert must update rather than create");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("upsert-sys-setting refuses to write when the probe itself failed (network/auth) — otherwise a transient read failure could overwrite an existing setting via create.")]
+	public void UpsertSysSetting_Should_Refuse_When_Probe_Fails() {
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("UsrSomething")
+			.Returns<(string, string)>(_ => throw new HttpRequestException("Connection refused"));
+		manager.InsertSysSetting(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>())
+			.Returns(new SysSettingsManager.InsertSysSettingResponse(
+				new SysSettingsManager.ResponseStatus(string.Empty, string.Empty, Array.Empty<object>()),
+				Guid.NewGuid(), 1, false, true));
+		manager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(true);
+		SysSettingUpsertTool tool = new(BuildResolver(manager));
+
+		object result = tool.Upsert(new UpsertSysSettingRunArgs("local", "UsrSomething") {
+			ValueTypeName = "Boolean",
+			Value = "true"
+		});
+
+		result.Should().BeOfType<SysSettingUpdateResult>(
+			because: "upsert-sys-setting must report a failure envelope, not silently create or update under transient read errors");
+		((SysSettingUpdateResult)result).Success.Should().BeFalse();
+		manager.DidNotReceive().InsertSysSetting(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>());
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
+	#endregion
 }

@@ -58,7 +58,7 @@ public sealed class GetPkgListToolE2ETests {
 	[AllureStep("Act by invoking list-packages through MCP")]
 	private static async Task<GetPkgListActResult> ActAsync(GetPkgListArrangeContext arrangeContext, string environmentName) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

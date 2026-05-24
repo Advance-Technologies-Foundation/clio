@@ -78,9 +78,20 @@ public sealed class SysSettingUpsertTool(IToolCommandResolver commandResolver) {
 				SysSettingsCommand.CategorizeError(ex, "upserting sys-setting"));
 		}
 
-		// Probe existing setting: if reachable, prefer update; otherwise create.
+		// Probe existing setting. Three-state outcome:
+		//   - Success && Exists  → setting present on the environment → update.
+		//   - Success && !Exists → probe reached the environment, setting row is missing → create
+		//                          (requires value-type-name).
+		//   - !Success           → network/auth/validation failure reading the setting → surface
+		//                          the read error instead of guessing whether to create or update;
+		//                          create-on-unknown would silently overwrite an existing setting
+		//                          when the environment is temporarily unreachable.
 		SysSettingGetResult existing = command.TryGetSysSetting(new GetSysSettingArgs(args.EnvironmentName, args.Code));
-		if (existing.Success) {
+		if (!existing.Success) {
+			return new SysSettingUpdateResult(false, args.Code, null,
+				$"upsert-sys-setting: failed to probe existing setting '{args.Code}': {existing.Error ?? "unknown read error"}");
+		}
+		if (existing.Exists) {
 			return command.TryUpdateSysSetting(new UpdateSysSettingArgs(
 				args.EnvironmentName,
 				args.Code,

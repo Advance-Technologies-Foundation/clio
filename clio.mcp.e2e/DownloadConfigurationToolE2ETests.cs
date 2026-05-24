@@ -95,7 +95,7 @@ public sealed class DownloadConfigurationToolE2ETests {
 	[AllureStep("Act by invoking download-configuration with source='build'")]
 	private static async Task<DownloadConfigurationActResult> ActBuildAsync(DownloadConfigurationArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -117,7 +117,7 @@ public sealed class DownloadConfigurationToolE2ETests {
 	[AllureStep("Act by invoking download-configuration with source='environment'")]
 	private static async Task<DownloadConfigurationActResult> ActEnvironmentFailureAsync(DownloadConfigurationArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the consolidated download-configuration MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

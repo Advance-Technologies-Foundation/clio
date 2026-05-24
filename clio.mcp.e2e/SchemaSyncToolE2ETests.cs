@@ -204,7 +204,7 @@ public sealed class SchemaSyncToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "sync-schemas must be advertised before the validation scenario can be invoked");
 
 		// Act
@@ -449,7 +449,7 @@ public sealed class SchemaSyncToolE2ETests {
 		string lookupColumnName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "sync-schemas must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -517,7 +517,7 @@ public sealed class SchemaSyncToolE2ETests {
 		string columnName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "sync-schemas must be advertised before the structured default-value scenario can be executed");
 
 		return await session.CallToolAsync(
@@ -566,7 +566,7 @@ public sealed class SchemaSyncToolE2ETests {
 		string schemaName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ReadSchemaToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ReadSchemaToolName),
 			because: "the consolidated get-schema MCP tool must be advertised before readback verification");
 
 		CallToolResult callResult = await session.CallToolAsync(
@@ -591,7 +591,7 @@ public sealed class SchemaSyncToolE2ETests {
 		string columnName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ReadColumnToolName),
 			because: "the consolidated get-schema MCP tool (with column arg) must be advertised before column readback verification");
 
 		CallToolResult callResult = await session.CallToolAsync(
@@ -739,7 +739,7 @@ public sealed class SchemaSyncToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string missingEnv = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "sync-schemas must be advertised before the flat seed-rows validation scenario can be invoked");
 
 		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)

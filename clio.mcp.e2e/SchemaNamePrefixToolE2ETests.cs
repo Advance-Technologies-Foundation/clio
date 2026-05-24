@@ -56,7 +56,7 @@ public sealed class SchemaNamePrefixToolE2ETests {
 		string toolName,
 		Dictionary<string, object?> args) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(toolName),
 			because: "the get-schema-name-prefix tool must be advertised by the clio MCP server before the end-to-end call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,

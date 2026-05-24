@@ -227,7 +227,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		string toolName,
 		string workspacePath) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(toolName),
 			because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -250,7 +250,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		WorkspaceSyncArrangeContext arrangeContext,
 		string filter) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(PackageListToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(PackageListToolName),
 			because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

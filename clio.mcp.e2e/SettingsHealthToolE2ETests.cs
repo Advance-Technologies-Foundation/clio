@@ -39,7 +39,7 @@ public sealed class SettingsHealthToolE2ETests {
 		SettingsHealthResult result = EntitySchemaStructuredResultParser.Extract<SettingsHealthResult>(callResult);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(SettingsHealthTool.ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(SettingsHealthTool.ToolName),
 			because: "the repaired bootstrap server should advertise the check-settings-health diagnostics tool");
 		callResult.IsError.Should().NotBeTrue(
 			because: "check-settings-health should return a normal MCP tool result envelope");

@@ -31,7 +31,7 @@ public sealed class GuidanceGetToolE2ETests {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(GuidanceGetTool.ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(GuidanceGetTool.ToolName),
 			because: "the MCP server should advertise get-guidance as the tool-native way to read canonical guidance");
 	}
 

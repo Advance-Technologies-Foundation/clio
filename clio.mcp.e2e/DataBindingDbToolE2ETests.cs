@@ -366,7 +366,7 @@ public sealed class DataBindingDbToolE2ETests {
 		string toolName,
 		Dictionary<string, object?> args) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(toolName),
 			because: "the requested DB-first data-binding MCP tool must be advertised before the end-to-end call");
 
 		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

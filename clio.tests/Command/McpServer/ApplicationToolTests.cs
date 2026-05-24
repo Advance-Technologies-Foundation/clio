@@ -1672,4 +1672,38 @@ public sealed class ApplicationToolTests {
 			because: "unrecognised free-form names must not smuggle invalid colors into SaveSchema");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves the Phase-0 default that omitted with-mobile-pages means 'create mobile pages too' — the AppSectionTool adapter must not silently flip it to false when callers leave the flag unset.")]
+	public void AppSectionTool_Should_Default_WithMobilePages_To_True_When_Omitted() {
+		// Arrange — capture the request that ApplicationSectionCreateTool forwards to the inner service.
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(new ApplicationSectionCreateResult(
+				"pkg-uid", "UsrOrdersApp", "app-id", "Orders App", "UsrOrdersApp", "8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id", "UsrOrders", "Orders", null, "UsrOrder", "pkg-uid", "section-schema-uid",
+					"icon-id", "#A6DE00", null),
+				new ApplicationEntityInfoResult("entity-uid", "UsrOrder", "Order", []),
+				[]));
+		ApplicationSectionCreateTool createTool = new(applicationSectionCreateService);
+		ApplicationSectionUpdateTool updateTool = new(Substitute.For<IApplicationSectionUpdateService>());
+		ApplicationSectionDeleteTool deleteTool = new(Substitute.For<IApplicationSectionDeleteService>());
+		ApplicationSectionGetListTool listTool = new(Substitute.For<IApplicationSectionGetListService>());
+		AppSectionTool tool = new(createTool, updateTool, deleteTool, listTool);
+
+		// Act — omit with-mobile-pages entirely.
+		_ = tool.Apply(new AppSectionRunArgs(
+			Action: AppSectionTool.ActionCreate,
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp") {
+			Caption = "Orders"
+		}, null!, CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert — the request that reaches the inner service must carry WithMobilePages=true.
+		applicationSectionCreateService.Received(1).CreateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionCreateRequest>(request => request.WithMobilePages));
+	}
+
 }

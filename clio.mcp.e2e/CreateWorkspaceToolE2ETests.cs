@@ -139,7 +139,7 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureDescription("Act by discovering the create-workspace MCP tool and invoking it with the arranged workspace name and directory")]
 	private static async Task<CreateWorkspaceActResult> ActAsync(CreateWorkspaceArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -161,7 +161,7 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureDescription("Act by discovering the create-workspace MCP tool and invoking it with only the arranged workspace name so clio uses the configured workspaces-root setting")]
 	private static async Task<CreateWorkspaceActResult> ActWithoutDirectoryAsync(CreateWorkspaceArrangeContext arrangeContext) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

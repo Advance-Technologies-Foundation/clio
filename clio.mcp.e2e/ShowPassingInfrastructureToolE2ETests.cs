@@ -63,7 +63,7 @@ public sealed class ShowPassingInfrastructureToolE2ETests
 	private static async Task<ActResult> ActAsync(ArrangeContext arrangeContext)
 	{
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the show-passing-infrastructure MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

@@ -96,7 +96,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(SectionCreateToolName),
 			because: "create-app-section must be advertised before the end-to-end validation calls can run");
 
 		// Act

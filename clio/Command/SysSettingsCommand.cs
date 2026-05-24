@@ -137,11 +137,14 @@ namespace Clio.Command
 					throw new ArgumentException("code is required.");
 				}
 				(string value, string typeName) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
+				// GetAllUsersDefaultWithType returns (string.Empty, null) when the setting row itself is missing.
+				// Distinguish "not found" from "found but empty" so upsert can pick create vs. update reliably.
+				bool exists = !string.IsNullOrEmpty(typeName);
 				string maskedValue = ApplySecureTextMask(typeName, value ?? string.Empty);
-				return new SysSettingGetResult(true, args.Code, maskedValue);
+				return new SysSettingGetResult(true, args.Code, maskedValue, Exists: exists);
 			} catch (Exception ex) {
 				string message = CategorizeError(ex, "reading sys-setting");
-				return new SysSettingGetResult(false, args.Code, string.Empty, message);
+				return new SysSettingGetResult(false, args.Code, string.Empty, message, Exists: false);
 			}
 		}
 

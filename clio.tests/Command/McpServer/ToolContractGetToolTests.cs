@@ -45,26 +45,36 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful bootstrap lookup should not return a structured error");
 		result.Tools.Should().NotBeNull(
 			because: "the bootstrap response should include the canonical contract set");
+		// ENG-90312 Phase 2: the canonical (default-discovery) set must match the 23 read-only flat tools that
+		// are advertised in tools/list plus the clio-run dispatcher. Legacy names like create-app-section,
+		// list-apps, create-entity-business-rule, update-page, modify-entity-schema-column, sync-pages are
+		// reachable as documentation by explicit name but are not in the bootstrap set anymore — they're
+		// routed through clio-run.
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
+				ClioRunTool.ToolName,
 				GuidanceGetTool.ToolName,
 				SettingsHealthTool.ToolName,
-				ApplicationGetListTool.ApplicationGetListToolName,
-				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-				ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-				CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+				AppsTool.ToolName,
 				DataForgeTool.DataForgeContextToolName,
-				PageSyncTool.ToolName,
+				DataForgeTool.DataForgeFindToolName,
+				GetSchemaTool.ToolName,
+				SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+				ShowWebAppListTool.ShowWebAppListToolName,
+				GetPkgListTool.GetPkgListToolName,
+				SysSettingTool.ToolName,
+				SchemaListTool.ToolName,
+				PageValidateTool.ToolName
+			],
+			because: "the canonical contract set should include the clio-run dispatcher, bootstrap diagnostics, read-only Data Forge discovery/context tools, and the 23 flat read-only tools advertised in tools/list");
+		result.Tools!.Select(contract => contract.Name).Should().NotContain([
+				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 				PageUpdateTool.ToolName,
 				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
-				SchemaNamePrefixTool.GetSchemaNamePrefixToolName
-			],
-			because: "the canonical contract set should include bootstrap diagnostics, read-only Data Forge discovery/context tools, the key existing-app discovery and page mutation tools, and the prefix discovery tool");
-		result.Tools!.Select(contract => contract.Name).Should().NotContain([
 				DataForgeTool.DataForgeInitializeToolName,
 				DataForgeTool.DataForgeUpdateToolName
 			],
-			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
+			because: "Phase-2 non-read-only commands are routed through clio-run; they remain reachable as documentation by explicit name but must not appear in the bootstrap discovery set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
 	}

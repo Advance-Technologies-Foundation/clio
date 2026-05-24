@@ -981,7 +981,7 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(CreateToolName),
 			because: "the consolidated create-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -1007,7 +1007,7 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateLookupToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(CreateLookupToolName),
 			because: "the consolidated create-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -1033,7 +1033,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string? searchPattern = null,
 		string? uid = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ListSchemasToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ListSchemasToolName),
 			because: "the consolidated list-schemas MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
@@ -1057,7 +1057,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string schemaName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ReadSchemaToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ReadSchemaToolName),
 			because: "the consolidated get-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -1081,7 +1081,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string columnName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ReadColumnToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ReadColumnToolName),
 			because: "the consolidated get-schema MCP tool (with column arg) must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
@@ -1113,7 +1113,7 @@ public sealed class EntitySchemaToolE2ETests {
 		string? defaultValue = null,
 		Dictionary<string, object?>? defaultValueConfig = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ModifyToolName),
 			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
@@ -1156,7 +1156,7 @@ public sealed class EntitySchemaToolE2ETests {
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>> operations) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(UpdateToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(UpdateToolName),
 			because: "the consolidated update-schema MCP tool must be advertised before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(

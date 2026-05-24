@@ -149,7 +149,7 @@ public sealed class AddItemModelToolE2ETests {
 		string environmentName,
 		string folder) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the add-item-model MCP tool must be advertised before the end-to-end call can be executed");
 
 		CallToolResult callResult = await session.CallToolAsync(

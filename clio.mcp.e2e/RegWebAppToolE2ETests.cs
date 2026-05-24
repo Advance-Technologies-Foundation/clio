@@ -72,7 +72,7 @@ public sealed class RegWebAppToolE2ETests {
 	private static async Task<RegWebAppActResult> ActAsync(ArrangeContext context) {
 		string environmentName = $"runtime-auto-{Guid.NewGuid():N}";
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
+		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
 			because: "the real MCP server must advertise reg-web-app before the test can invoke it");
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
