@@ -392,7 +392,7 @@ internal static class ToolContractCatalog {
 
 	private const string ClioRunCommandFieldName = "command";
 	private const string ClioRunExampleEnvironmentName = "dev";
-	private const string ClioRunExampleSectionCode = "UsrOrders";
+	private const string ExampleSectionCode = "UsrOrders";
 
 	private static ToolContractDefinition BuildClioRun() {
 		return new ToolContractDefinition(
@@ -455,7 +455,7 @@ internal static class ToolContractCatalog {
 						["action"] = "delete",
 						[EnvironmentNameFieldName] = ClioRunExampleEnvironmentName,
 						["application-code"] = "UsrApp",
-						["section-code"] = ClioRunExampleSectionCode
+						["section-code"] = ExampleSectionCode
 					})
 			],
 			Flow([ClioRunTool.ToolName],
@@ -953,13 +953,13 @@ internal static class ToolContractCatalog {
 				Example("Update a broken section heading with a plain-text caption", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleSectionCode,
 					[CaptionFieldName] = "Orders"
 				}),
 				Example("Update section description and icon metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleSectionCode,
 					[DescriptionFieldName] = "Order processing workspace",
 					[IconIdFieldName] = "11111111-1111-1111-1111-111111111111",
 					[IconBackgroundFieldName] = "#1F5F8B"
@@ -1022,7 +1022,7 @@ internal static class ToolContractCatalog {
 				Example("Delete a section from an existing app", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders"
+					[SectionCodeFieldName] = ExampleSectionCode
 				})
 			],
 			Flow(
