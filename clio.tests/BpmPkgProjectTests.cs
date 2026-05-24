@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NUnit.Framework;
+using System.IO;
 using System.Xml.Linq;
 
 namespace Clio.Tests;
@@ -8,9 +9,28 @@ namespace Clio.Tests;
 [Property("Module", "Core")]
 public class CreatioPkgProjectTests
 {
+	private string _previousDirectory = null!;
+
 	[SetUp]
 	public void Setup()
 	{
+		// On CI (Windows runner) tests run with the working directory set to a `TestResult\`
+		// subfolder of bin/Debug, while the XML fixtures used by the tests below are copied
+		// next to the test assembly via <CopyToOutputDirectory>Always</CopyToOutputDirectory>.
+		// Point Environment.CurrentDirectory at the test binary directory so the relative
+		// XElement.Load / CreatioPkgProject.LoadFromFile calls resolve consistently across
+		// developer machines and CI.
+		_previousDirectory = Directory.GetCurrentDirectory();
+		Directory.SetCurrentDirectory(TestContext.CurrentContext.TestDirectory);
+	}
+
+	[TearDown]
+	public void TearDown()
+	{
+		if (!string.IsNullOrEmpty(_previousDirectory))
+		{
+			Directory.SetCurrentDirectory(_previousDirectory);
+		}
 	}
 
 	[Test]
