@@ -80,7 +80,7 @@ public sealed class ClioRunTool {
 			RestoreWorkspaceRunArgs a => _sp.GetRequiredService<RestoreWorkspaceTool>().RestoreWorkspace(a),
 			SetFsmModeRunArgs a => _sp.GetRequiredService<FsmModeTool>().SetFsmMode(a),
 			StartCreatioRunArgs a => _sp.GetRequiredService<StartTool>().StartCreatioByName(requestContext, a.EnvironmentName),
-			StopAllCreatioRunArgs a => _sp.GetRequiredService<StopTool>().StopAllCreatio(requestContext),
+			StopAllCreatioRunArgs => _sp.GetRequiredService<StopTool>().StopAllCreatio(requestContext),
 			StopCreatioRunArgs a => _sp.GetRequiredService<StopTool>().StopCreatioByName(requestContext, a.EnvironmentName),
 			PageSyncRunArgs a => await _sp.GetRequiredService<PageSyncTool>().SyncPages(a, server, cancellationToken),
 			SchemaSyncRunArgs a => await _sp.GetRequiredService<SchemaSyncTool>().SchemaSync(a),

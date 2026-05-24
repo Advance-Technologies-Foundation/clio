@@ -390,6 +390,10 @@ internal static class ToolContractCatalog {
 		return dict;
 	}
 
+	private const string ClioRunCommandFieldName = "command";
+	private const string ClioRunExampleEnvironmentName = "dev";
+	private const string ClioRunExampleSectionCode = "UsrOrders";
+
 	private static ToolContractDefinition BuildClioRun() {
 		return new ToolContractDefinition(
 			ClioRunTool.ToolName,
@@ -398,9 +402,9 @@ internal static class ToolContractCatalog {
 			"The published JSON Schema for 'args' is an anyOf union over all supported commands (52 branches as of ENG-90312 Phase 2). " +
 			"Read-only operations (apps, sys-setting, get-schema, dataforge-find, list-environments, etc.) keep their own top-level tool — do NOT route those through clio-run.",
 			new ToolInputSchemaContract(
-				["command"],
+				[ClioRunCommandFieldName],
 				[
-					Field("command", StringType,
+					Field(ClioRunCommandFieldName, StringType,
 						"Operation to execute. One of the 52 ClioRunArgs discriminator values: " +
 						"restart-creatio, clear-redis-db, restore-db, download-configuration, link-from-repository, " +
 						"create-schema, update-schema, delete-schema, install-sql-schema, sync-schemas, modify-entity-schema-column, " +
@@ -432,26 +436,26 @@ internal static class ToolContractCatalog {
 			[
 				Example("Restart a Creatio environment by registered name",
 					new Dictionary<string, object?> {
-						["command"] = "restart-creatio",
+						[ClioRunCommandFieldName] = "restart-creatio",
 						["mode"] = "environment",
-						["environment-name"] = "dev"
+						[EnvironmentNameFieldName] = ClioRunExampleEnvironmentName
 					}),
 				Example("Create an entity schema",
 					new Dictionary<string, object?> {
-						["command"] = "create-schema",
+						[ClioRunCommandFieldName] = "create-schema",
 						["schema-type"] = "entity",
 						["schema-name"] = "UsrVehicle",
 						["package-name"] = "UsrPkg",
-						["environment-name"] = "dev",
+						[EnvironmentNameFieldName] = ClioRunExampleEnvironmentName,
 						["title-localizations"] = new Dictionary<string, object?> { ["en-US"] = "Vehicle" }
 					}),
 				Example("Delete an application section",
 					new Dictionary<string, object?> {
-						["command"] = "app-section",
+						[ClioRunCommandFieldName] = "app-section",
 						["action"] = "delete",
-						["environment-name"] = "dev",
+						[EnvironmentNameFieldName] = ClioRunExampleEnvironmentName,
 						["application-code"] = "UsrApp",
-						["section-code"] = "UsrOrders"
+						["section-code"] = ClioRunExampleSectionCode
 					})
 			],
 			Flow([ClioRunTool.ToolName],
