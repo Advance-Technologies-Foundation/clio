@@ -881,7 +881,7 @@ public sealed class BusinessRuleValidatorTests {
 			};
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
 
 		// Assert
 		act.Should().NotThrow(
@@ -914,7 +914,7 @@ public sealed class BusinessRuleValidatorTests {
 			};
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -940,7 +940,7 @@ public sealed class BusinessRuleValidatorTests {
 			CreateColumn("Owner", 10, "Contact"));
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, columnMap);
+		Action act = () => CreateValidator().Validate(rule, columnMap);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -974,7 +974,7 @@ public sealed class BusinessRuleValidatorTests {
 			};
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1008,7 +1008,7 @@ public sealed class BusinessRuleValidatorTests {
 			};
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1042,7 +1042,7 @@ public sealed class BusinessRuleValidatorTests {
 			};
 
 		// Act
-		Action act = () => BusinessRuleValidator.Validate(rule, attributeMap);
+		Action act = () => CreateValidator().Validate(rule, attributeMap);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()

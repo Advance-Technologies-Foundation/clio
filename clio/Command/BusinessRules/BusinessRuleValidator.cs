@@ -86,6 +86,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 		ValidateAllConditions(rule.Condition.Conditions, attributeMap);
 		ValidateAllActions(rule.Actions, attributeMap, validateAction);
+		lookupReferenceValidator.Validate(rule, attributeMap);
 	}
 
 	private static void ValidateNoMixedApplyFilter(BusinessRule rule, bool isApplyFilterRule) {
@@ -131,8 +132,6 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 			validateAction(action, attributeMap);
 		}
-
-		lookupReferenceValidator.Validate(rule, attributeMap);
 	}
 
 	private static void ValidateCondition(
