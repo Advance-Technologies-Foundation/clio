@@ -1377,7 +1377,7 @@
       "name": "ActiveToggle",
       "values": {
         "type": "crt.Toggle",
-        "value": "$PDS_IsActive",
+        "control": "$PDS_IsActive",
         "label": "$Resources.Strings.ActiveToggle_label"
       },
       "parentName": "DetailsGrid",
