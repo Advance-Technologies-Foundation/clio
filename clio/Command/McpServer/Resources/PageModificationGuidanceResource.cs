@@ -118,6 +118,13 @@ public sealed class PageModificationGuidanceResource {
 		       - Verify is best-effort: if the read-back fails, the update response still reports `success: true`.
 		       - Use `verify: true` when you need page metadata (schema name, package, UId) in the same call as the save.
 
+		       Body formatting
+		       - clio does NOT normalize or re-indent page bodies — the string you pass is saved verbatim.
+		       - When adding new content, match the indentation style already present in the page body (tabs, 2 spaces, 4 spaces, etc.).
+		       - Do NOT reformat existing code returned by `get-page`. Preserve original whitespace and only modify targeted sections.
+		       - Single-line or dense JSON/JS in newly authored content is unacceptable: it blocks human review and produces unreadable diffs.
+		       - If the page body is empty or brand-new (no existing style to match), default to tab indentation.
+
 		       sync-pages optional-properties
 		       - Each page entry in `sync-pages` also accepts `optional-properties` with the same JSON array semantics.
 		       - Applies per-page; different pages in the same sync call may carry different optional-properties.
@@ -146,6 +153,7 @@ public sealed class PageModificationGuidanceResource {
 		                       "name": "UsrMyButton",
 		                       "values": {
 		                           "type": "crt.Button",
+		                           "visible": true,
 		                           "caption": "$Resources.Strings.UsrMyButton_caption",
 		                           "clicked": { "request": "usr.MyClickRequest" }
 		                       },
@@ -183,6 +191,7 @@ public sealed class PageModificationGuidanceResource {
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
 		       - `propertyName` is usually `items` for containers.
 		       - `index` is the insertion position within `parentName.items[]`.
+		       - `visible` is a view-engine property, not a component-specific one. It can appear in the `values` object of ANY view element alongside `type` and element-specific properties. Accepts `true`, `false`, or a binding expression (e.g. `"$SomeAttr | crt.InvertBooleanValue"`). Applies equally to web and mobile.
 		       - User-visible string values inside `values` (`label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button captions, tab/group titles — examples, not an exhaustive list; the rule covers ANY string-like property the runtime renders to the user) MUST be authored as `$Resources.Strings.<Key>` bindings, not inline string literals. Read `page-schema-resources` first to decide whether the key requires explicit registration via the `resources` parameter (DS-bound attributes auto-provide the caption; custom keys must be registered).
 		       - For entity-bound FormPage data-entry fields, match the column DataValueType to the control: `ShortText`/`MediumText`/`LongText` → `crt.Input`; `Lookup` → `crt.ComboBox`; `Boolean` → `crt.Checkbox`; `DateTime`/`Date`/`Time` → `crt.DateTimePicker`; `Integer`/`Float`/`Money` → `crt.NumberInput`; `Email` → `crt.EmailInput`; `PhoneNumber` → `crt.PhoneInput`; `WebLink` → `crt.WebInput`. Use `get-component-info` for full insert examples. For display-only transformations (email as mailto link, phone as tel link) read `page-schema-converters` first — do not select a component type for display tasks.
 

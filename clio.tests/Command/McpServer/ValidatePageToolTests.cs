@@ -155,6 +155,64 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
+	[Description("Mobile path: warns when a label references a $Resources.Strings key that is not DS-auto-provided and is not present in the supplied resources argument.")]
+	public void ValidatePage_WhenMobileLabelResourceKeyMissingFromSuppliedResources_ReturnsWarning() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    {"operation":"merge","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_UsrName","control":"$UsrName"}}
+			  ],
+			  "viewModelConfigDiff": [
+			    {"operation":"merge","path":["attributes"],"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+			  ]
+			}
+			""";
+		// Empty resources object — required to opt the page into label-resource validation (parity with web flow).
+		PageValidateArgs args = new(mobileBody, "{}");
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert — proves resources are threaded into mobile validation: the empty object opts in, the label-warning fires.
+		response.Valid.Should().BeTrue(
+			because: "missing label resources are warnings, not errors");
+		response.Validation.Warnings.Should().NotBeNull(
+			because: "the page validator must surface label-resource warnings on the mobile path when resources are supplied");
+		response.Validation.Warnings!.Should().Contain(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
+			because: "the platform auto-provides captions only under the attribute name 'UsrName', not under the path-with-underscores form 'PDS_UsrName'");
+	}
+
+	[Test]
+	[Description("Mobile path: suppresses the label-warning when the resources argument supplies the referenced key — proves that args.Resources is threaded into mobile validation.")]
+	public void ValidatePage_WhenMobileLabelResourceKeyDeclaredInResources_ReturnsNoWarning() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    {"operation":"merge","name":"UsrName","values":{"type":"crt.Input","label":"$Resources.Strings.PDS_UsrName","control":"$UsrName"}}
+			  ],
+			  "viewModelConfigDiff": [
+			    {"operation":"merge","path":["attributes"],"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+			  ]
+			}
+			""";
+		// Resources is a JSON object whose keys are resource names (matches PageValidateArgs.Resources contract used by web flow).
+		string resources = """{"PDS_UsrName":"Name"}""";
+		PageValidateArgs args = new(mobileBody, resources);
+
+		// Act
+		PageValidateResponse response = tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue();
+		(response.Validation.Warnings ?? []).Should().NotContain(w => w.Contains("PDS_UsrName"),
+			because: "the resource key is explicitly declared in args.Resources and must be honored on the mobile path");
+	}
+
+	[Test]
 	[Description("Routes AMD bodies through AMD validation (not mobile path) when body starts with 'define('.")]
 	public async System.Threading.Tasks.Task ValidatePage_WhenBodyIsAmd_UsesAmdValidation() {
 		// Arrange

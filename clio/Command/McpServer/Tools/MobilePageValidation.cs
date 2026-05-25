@@ -20,6 +20,7 @@ internal static class MobilePageValidation {
 		string body,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
+		IReadOnlyDictionary<string, string>? explicitResources = null,
 		CancellationToken cancellationToken = default) {
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries = await mobileCatalog
 			.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken)
@@ -35,7 +36,7 @@ internal static class MobilePageValidation {
 				.Where(t => !allowedMobile.Contains(t)),
 			StringComparer.OrdinalIgnoreCase);
 		(List<string> errors, List<string> warnings) =
-			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly);
+			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly, explicitResources);
 		bool valid = errors.Count == 0;
 		return new PageSyncValidationResult {
 			MarkersOk = true,

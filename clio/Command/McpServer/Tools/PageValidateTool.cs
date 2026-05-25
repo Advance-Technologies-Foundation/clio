@@ -30,8 +30,9 @@ public sealed class PageValidateTool(
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
+			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				args.Body, mobileComponentCatalog, webComponentCatalog, cancellationToken).ConfigureAwait(false);
+				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult
