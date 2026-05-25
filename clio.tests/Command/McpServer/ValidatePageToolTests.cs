@@ -156,7 +156,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Mobile path: warns when a label references a $Resources.Strings key that is not DS-auto-provided and is not present in the supplied resources argument.")]
-	public void ValidatePage_WhenMobileLabelResourceKeyMissingFromSuppliedResources_ReturnsWarning() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileLabelResourceKeyMissingFromSuppliedResources_ReturnsWarning() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBody = """
@@ -173,7 +173,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBody, "{}");
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert — proves resources are threaded into mobile validation: the empty object opts in, the label-warning fires.
 		response.Valid.Should().BeTrue(
@@ -186,7 +186,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Mobile path: suppresses the label-warning when the resources argument supplies the referenced key — proves that args.Resources is threaded into mobile validation.")]
-	public void ValidatePage_WhenMobileLabelResourceKeyDeclaredInResources_ReturnsNoWarning() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileLabelResourceKeyDeclaredInResources_ReturnsNoWarning() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBody = """
@@ -204,7 +204,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBody, resources);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeTrue();
