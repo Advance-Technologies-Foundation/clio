@@ -19,6 +19,24 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 	internal const string ToolName = "get-component-info";
 
 	/// <summary>
+	/// Canonical contract text returned for every data-source-bound field component type
+	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
+	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
+	/// three-part payload requirement next to the component's <c>example</c>.
+	/// </summary>
+	internal const string DataSourceBindingContractText =
+		"This is a data-source-bound field component. When inserting it via " +
+		"\"operation\":\"insert\" in viewConfigDiff, the SAME update-page call MUST also include " +
+		"both of the following — update-page validation rejects payloads that omit either part:\n" +
+		"  (1) viewModelConfigDiff entry that declares the control's binding attribute, e.g. " +
+		"{\"operation\":\"merge\",\"values\":{\"<bindingAttr>\":{\"modelConfig\":{\"path\":\"<DataSource>.<Column>\"}}}} " +
+		"— omit it and the control renders with no data source.\n" +
+		"  (2) Label resource — either pass {\"<labelKey>\":\"<Caption>\"} in the `resources` parameter, " +
+		"OR change the control's label to \"$Resources.Strings.<bindingAttr>\" so the platform " +
+		"auto-provides the caption from the DS-bound attribute. Omit both and the label renders blank.\n" +
+		"For `operation:\"merge\"` against an existing parent-provided control, this contract does NOT apply.";
+
+	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
@@ -60,7 +78,10 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 				ParentTypes = entry.ParentTypes,
 				Properties = entry.Properties,
 				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example
+				Example = entry.Example,
+				DataSourceBindingContract = SchemaValidationService.StandardFieldComponentTypes.Contains(entry.ComponentType)
+					? DataSourceBindingContractText
+					: null
 			};
 		}
 		catch (Exception ex) {
@@ -215,6 +236,16 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("example")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonElement? Example { get; init; }
+
+	/// <summary>
+	/// Gets or sets the data-source binding contract that surfaces only for standard field components
+	/// (text/number/checkbox/lookup/etc. inputs). Tells the agent the three-part payload required for
+	/// any <c>operation:"insert"</c> of this component type: viewConfigDiff entry, matching
+	/// viewModelConfigDiff attribute declaration, and a registered or auto-provided label resource.
+	/// </summary>
+	[JsonPropertyName("dataSourceBindingContract")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DataSourceBindingContract { get; init; }
 
 	/// <summary>
 	/// Gets or sets grouped component summaries for list responses.

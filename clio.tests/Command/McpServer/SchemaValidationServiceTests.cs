@@ -1296,8 +1296,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label using a sibling DS-bound attribute name that shares the same model path as the control does not warn — the platform auto-provides the caption under every attribute name bound to that path")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsNoWarning() {
+	[Description("Label using a sibling DS-bound attribute name that does NOT match the column code warns — production evidence (test-adaclio-2 todo-application-creation run) shows that the platform auto-provides captions ONLY when the resource key equals the entity column code (last segment of the DS path), not for arbitrary aliases sharing the same path.")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1330,14 +1330,15 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
 
-		result.IsValid.Should().BeTrue("because the resource key matches a sibling attribute bound to the same DS path");
+		result.IsValid.Should().BeTrue("because the missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().BeEmpty("because the platform auto-provides captions under every view-model attribute name sharing the control's DS path");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
+			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
 	}
 
 	[Test]
-	[Description("Label using attribute name as resource key does not warn when that attribute is DS-bound — the platform auto-provides captions for DS-bound attributes regardless of naming")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameAndDsBound_ReturnsNoWarning() {
+	[Description("Label using a DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by column code, not by arbitrary attribute name. Production evidence: PDS_UsrCompleted attribute bound to PDS.UsrCompleted column does NOT auto-provide caption because resource key 'PDS_UsrCompleted' differs from column code 'UsrCompleted'.")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameNotMatchingColumnCode_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1366,9 +1367,10 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["SomeOtherKey"] = "Other" });
 
-		result.IsValid.Should().BeTrue("because UsrLabel is a DS-bound attribute and the platform auto-provides its caption");
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().BeEmpty("because the resource key matches a DS-bound attribute name and the platform auto-provides the caption");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrLabel") && w.Contains("render blank"),
+			"because UsrLabel does not match the column code 'UsrFullName' so the platform does not auto-provide the caption");
 	}
 
 	[Test]
@@ -1476,6 +1478,204 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because without explicit resources the validator cannot determine if the key is registered on the site");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert of a new field control without a matching viewModelConfigDiff attribute fails — reproduces the clio MCP bug where Codex added field controls but no DS bindings, leaving the rendered field with no data source.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithoutViewModelAttribute_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the inserted control binds to an attribute that the body never declares — the field would have no data source at runtime");
+		result.Errors.Should().Contain(error =>
+			error.Contains("UsrEstimatedMinutes") &&
+			error.Contains("PDS_UsrEstimatedMinutes") &&
+			error.Contains("viewModelConfigDiff"),
+			"because the diagnostic should name the broken field, the missing attribute, and the section that needs to be updated");
+	}
+
+	[Test]
+	[Description("Insert of a new field control with a label resource that is neither auto-provided nor passed in 'resources' fails — reproduces the clio MCP bug where the field rendered with a blank caption.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithUnregisteredLabelResource_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrContactPhone",
+						"values":
+							{
+								"type":"crt.PhoneInput",
+								"label":"$Resources.Strings.PDS_UsrContactPhone",
+								"control":"$UsrContactPhone"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the label points to a resource key that is neither auto-provided (the binding attribute name differs) nor passed in 'resources'");
+		result.Errors.Should().Contain(error =>
+			error.Contains("UsrContactPhone") &&
+			error.Contains("PDS_UsrContactPhone") &&
+			error.Contains("render blank"),
+			"because the diagnostic should name the broken field, the missing resource key, and what will go wrong at runtime");
+	}
+
+	[Test]
+	[Description("Insert of a new field control with a label resource matching the DS-bound binding attribute name is accepted — the platform auto-provides the caption from the entity column.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithAutoProvidedLabel_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"control":"$UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the binding attribute is declared with a DS-bound model path and the label key matches the attribute name, so the platform auto-provides the caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when label resource is not registered — reproduces the production failure (test-adaclio-2 todo-application-creation) where labels rendered blank on screen despite the attribute being DS-bound. The platform auto-provides captions ONLY when the resource key matches the column code 'UsrCompleted', not the path-with-underscores form 'PDS_UsrCompleted'.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrCompleted",
+						"values":
+							{
+								"type":"crt.Checkbox",
+								"label":"$Resources.Strings.PDS_UsrCompleted",
+								"control":"$PDS_UsrCompleted"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"PDS_UsrCompleted":{"modelConfig":{"path":"PDS.UsrCompleted"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the resource key 'PDS_UsrCompleted' does not match the column code 'UsrCompleted', so the platform does not auto-provide the caption");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("UsrCompleted") &&
+			error.Contains("PDS_UsrCompleted") &&
+			error.Contains("render blank"),
+			"because the diagnostic should name the field, the unregistered resource key, and what will go wrong at runtime");
+	}
+
+	[Test]
+	[Description("Insert of a new field control with the label resource passed in 'resources' is accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithExplicitLabelResource_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrContactPhone",
+						"values":
+							{
+								"type":"crt.PhoneInput",
+								"label":"$Resources.Strings.PDS_UsrContactPhone",
+								"control":"$UsrContactPhone"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrContactPhone"] = "Contact phone" });
+
+		result.IsValid.Should().BeTrue("because the resource key is explicitly registered through the 'resources' parameter");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Merge (not insert) operations are tolerated — the validator only enforces self-consistency for newly inserted controls, because parent schemas may legitimately provide the attribute and resource for merge operations.")]
+	public void ValidateInsertedFieldSelfConsistency_MergeOperationWithoutDeclaration_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"merge",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.SomeUnrelatedResource",
+								"control":"$UsrInheritedField"
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the merge operation may target an existing field whose attribute and resource are provided by the parent schema");
+		result.Errors.Should().BeEmpty();
 	}
 
 	[Test]
@@ -5408,8 +5608,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Mobile: label using a sibling DS-bound attribute name that shares the same model path as the control does not warn — the platform auto-provides the caption under every attribute name bound to that path")]
-	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsNoWarning() {
+	[Description("Mobile: label using a sibling DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by entity column code (last segment of DS path), not by arbitrary alias.")]
+	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = """
 		              {
 		                "viewConfigDiff": [
@@ -5442,9 +5642,10 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
 
-		result.IsValid.Should().BeTrue("because the resource key matches a sibling attribute bound to the same DS path");
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().BeEmpty("because the platform auto-provides captions under every view-model attribute name sharing the control's DS path");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
+			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
 	}
 
 	#endregion

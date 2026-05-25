@@ -282,8 +282,8 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation passes when field binds to an attribute not in current schema — it may be declared in a parent schema")]
-	public async Task SyncPages_Should_Allow_Field_Bindings_To_Parent_Schema_Attributes() {
+	[Description("Client-side validation rejects a field insert whose binding attribute and label resource are not declared in the same body — reproduces the production clio MCP bug where Codex inserted controls without registering viewModelConfigDiff entries or resources, leaving fields with no data source and a blank caption.")]
+	public async Task SyncPages_Should_Reject_InsertedFields_Without_Matching_ViewModelOrResource() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
@@ -291,7 +291,7 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
-		string bodyWithParentAttributeBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		string bodyWithUndeclaredBindings = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -301,14 +301,14 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentAttributeBinding)],
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithUndeclaredBindings)],
 			Validate: true,
 			SkipSampling: true);
 
 		PageSyncResponse response = await tool.SyncPages(args, null);
 
-		response.Success.Should().BeTrue(
-			because: "sync-pages should allow bindings to attributes that may be declared in a parent schema");
+		response.Success.Should().BeFalse(
+			because: "sync-pages must surface insert operations that would render fields with no data source and a blank caption");
 	}
 
 	[Test]
