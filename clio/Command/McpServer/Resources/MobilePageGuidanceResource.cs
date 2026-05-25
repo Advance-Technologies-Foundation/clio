@@ -59,14 +59,24 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       BUSINESS RULES — mobile support boundary
 		       ─────────────────────────────────────────────────────────────
-		       Mobile Freedom UI pages do support business rules, but the mobile designer/runtime expose only a
-		       limited set of conditions and actions. Read `business-rules` for rule semantics; this guide adds
-		       only the mobile-specific boundary:
+		       Mobile Freedom UI pages do support business rules. Business rule generation works
+		       identically to web — mobile pages do not affect how rules are created or stored.
+		       The same `create-page-business-rule` / `create-entity-business-rule` tools produce
+		       valid rules for both web and mobile pages without any mobile-specific parameters.
+
+		       Read `business-rules` for rule semantics; this guide adds only the mobile-specific boundary:
 		         - Use `create-page-business-rule` for UI state changes on one mobile page.
 		         - Use `create-entity-business-rule` when the rule should apply everywhere the entity is used,
 		           or when the user needs validation-like enforcement that mobile page bodies cannot provide.
 		         - Business rules are separate artifacts. Do not implement business-rule logic in the mobile page
 		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
+
+		       OFFLINE LIMITATION:
+		         In offline mode, not all business rule conditions and actions are guaranteed to work.
+		         When creating or modifying business rules for a mobile page, always ask the user
+		         whether the page is used in offline mode. If yes, warn the user that some rules
+		         may not function correctly offline and recommend verifying each rule on a real
+		         device in offline mode after deployment.
 
 		       ─────────────────────────────────────────────────────────────
 		       WHEN A REQUEST CANNOT BE IMPLEMENTED ON MOBILE — NO INVENTION RULE
