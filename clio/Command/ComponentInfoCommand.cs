@@ -47,7 +47,8 @@ public sealed class ComponentInfoCommand {
 
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		WriteIndented = true,
-		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+		Converters = { new Clio.Command.McpServer.Tools.CompactPrimitiveArrayJsonElementConverter() }
 	};
 
 	private readonly IComponentInfoCatalog _catalog;
