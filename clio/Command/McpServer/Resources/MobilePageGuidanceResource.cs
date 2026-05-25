@@ -65,6 +65,8 @@ public sealed class MobilePageGuidanceResource {
 		         - Use `create-page-business-rule` for UI state changes on one mobile page.
 		         - Use `create-entity-business-rule` when the rule should apply everywhere the entity is used,
 		           or when the user needs validation-like enforcement that mobile page bodies cannot provide.
+		         - Do not use formulas in mobile business rules for now. If a requirement needs a formula,
+		           report the limitation and ask how to proceed instead of saving a formula-based rule.
 		         - Business rules are separate artifacts. Do not implement business-rule logic in the mobile page
 		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
 

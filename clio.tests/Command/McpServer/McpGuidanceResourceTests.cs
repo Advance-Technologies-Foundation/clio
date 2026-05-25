@@ -1403,6 +1403,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the mobile guide should explicitly document that mobile guidance covers entity-level business rules too");
 		article.Text.Should().Contain("limited set of conditions and actions",
 			because: "the mobile guide should warn callers that mobile business rules do not have full web parity");
+		article.Text.Should().Contain("Do not use formulas in mobile business rules",
+			because: "the mobile guide should document that mobile business rules do not support formulas for now");
 		article.Text.Should().Contain("separate artifacts",
 			because: "the guide should keep page-level business rules separate from mobile page body editing");
 		article.Text.Should().Contain("Read `business-rules` for rule semantics",
