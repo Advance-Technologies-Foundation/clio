@@ -237,7 +237,6 @@ internal static class ToolContractCatalog {
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string ResourcesFieldName = "resources";
-	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -1827,8 +1826,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PagesFieldName, ArrayType, "Page update requests built from `get-page.raw.body`. Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
 					Field("validate", BooleanType, "Run client-side validation before save."),
-					Field(VerifyFieldName, BooleanType, "Read the page back after save."),
-					Field(SkipSamplingFieldName, BooleanType, "Bypass the AI semantic review that runs before save for every page in the batch. Set true ONLY when the MCP host does not support sampling, or when the user explicitly asks to skip the review. NEVER set true to speed up calls, to silence a previously failing sampling check, or to bypass reported issues — fix the page body instead.")
+					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1842,8 +1840,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Default("validate", "true", "Client-side validation is enabled by default."),
-				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
-				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default. Keep the default unless the user explicitly asks to skip or the MCP host does not support sampling.")
+				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default.")
 			],
 			[
 				Example("Validate and save one page body copied from get-page raw.body", new Dictionary<string, object?> {
@@ -2586,7 +2583,6 @@ internal static class ToolContractCatalog {
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
-					Field(SkipSamplingFieldName, BooleanType, "Bypass the AI semantic review that runs before save. Set true ONLY when the MCP host does not support sampling, or when the user explicitly asks to skip the review. NEVER set true to speed up calls, to silence a previously failing sampling check, or to bypass reported issues — fix the page body instead."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
 					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
@@ -2612,7 +2608,6 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
-				Default(SkipSamplingFieldName, BooleanFalseLiteral, "AI semantic review runs by default. Keep the default unless the user explicitly asks to skip or the MCP host does not support sampling."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
