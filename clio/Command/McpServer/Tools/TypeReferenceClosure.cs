@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -53,52 +54,74 @@ internal static class TypeReferenceClosure {
 		IReadOnlyDictionary<string, JsonElement>? outputs,
 		IReadOnlyDictionary<string, JsonElement>? perComponentTypeDefinitions,
 		IReadOnlyDictionary<string, JsonElement>? globalTypeDefinitions) {
-		bool perComponentEmpty = perComponentTypeDefinitions is null || perComponentTypeDefinitions.Count == 0;
-		bool globalEmpty = globalTypeDefinitions is null || globalTypeDefinitions.Count == 0;
-		if (perComponentEmpty && globalEmpty) {
+		if (IsEmpty(perComponentTypeDefinitions) && IsEmpty(globalTypeDefinitions)) {
 			return null;
 		}
 
 		Dictionary<string, JsonElement> resolved = new(System.StringComparer.Ordinal);
 		Queue<string> queue = new();
+		Seed(resolved, queue, inputs, outputs, perComponentTypeDefinitions);
+		Walk(resolved, queue, perComponentTypeDefinitions, globalTypeDefinitions);
+		return resolved.Count == 0 ? null : resolved;
+	}
 
-		// Seed: every per-component typedef is already known to be relevant (the
-		// producer filtered them). Surface them verbatim and queue their inner
-		// references for the closure.
+	private static bool IsEmpty(IReadOnlyDictionary<string, JsonElement>? bag) =>
+		bag is null || bag.Count == 0;
+
+	/// <summary>
+	/// Populates the resolved set with every per-component typedef verbatim (the
+	/// producer already filtered them) and queues every identifier tokenised from
+	/// the per-component typedefs and the input/output binding surfaces.
+	/// </summary>
+	private static void Seed(
+		Dictionary<string, JsonElement> resolved,
+		Queue<string> queue,
+		IReadOnlyDictionary<string, JsonElement>? inputs,
+		IReadOnlyDictionary<string, JsonElement>? outputs,
+		IReadOnlyDictionary<string, JsonElement>? perComponentTypeDefinitions) {
 		if (perComponentTypeDefinitions is not null) {
 			foreach (KeyValuePair<string, JsonElement> typedef in perComponentTypeDefinitions) {
 				resolved[typedef.Key] = typedef.Value;
 				ExtractIdentifiers(typedef.Value, queue);
 			}
 		}
+		QueueIdentifiersFromBindings(queue, inputs);
+		QueueIdentifiersFromBindings(queue, outputs);
+	}
 
-		// Seed from the input/output surfaces — these are the AI-visible binding
-		// shapes that frame which globals AI actually needs to resolve.
-		if (inputs is not null) {
-			foreach (JsonElement value in inputs.Values) {
-				ExtractIdentifiers(value, queue);
-			}
+	private static void QueueIdentifiersFromBindings(
+		Queue<string> queue,
+		IReadOnlyDictionary<string, JsonElement>? bindings) {
+		if (bindings is null) {
+			return;
 		}
-		if (outputs is not null) {
-			foreach (JsonElement value in outputs.Values) {
-				ExtractIdentifiers(value, queue);
-			}
+		foreach (JsonElement value in bindings.Values) {
+			ExtractIdentifiers(value, queue);
 		}
+	}
 
+	/// <summary>
+	/// BFS over the queue. Each dequeued identifier is looked up first in the
+	/// per-component bag then in the global one; new typedefs contribute their own
+	/// inner type references to the queue. Identifiers that resolve to neither
+	/// bag are built-ins (or producer-side typos) and are silently skipped.
+	/// </summary>
+	private static void Walk(
+		Dictionary<string, JsonElement> resolved,
+		Queue<string> queue,
+		IReadOnlyDictionary<string, JsonElement>? perComponent,
+		IReadOnlyDictionary<string, JsonElement>? global) {
 		while (queue.Count > 0) {
 			string name = queue.Dequeue();
 			if (resolved.ContainsKey(name)) {
 				continue;
 			}
-			if (TryFind(name, perComponentTypeDefinitions, globalTypeDefinitions, out JsonElement element)) {
-				resolved[name] = element;
-				ExtractIdentifiers(element, queue);
+			if (!TryFind(name, perComponent, global, out JsonElement element)) {
+				continue;
 			}
-			// else: built-in or producer-side typo — silently skip, matches the
-			// loader's graceful-degradation posture.
+			resolved[name] = element;
+			ExtractIdentifiers(element, queue);
 		}
-
-		return resolved.Count == 0 ? null : resolved;
 	}
 
 	private static bool TryFind(
@@ -149,14 +172,14 @@ internal static class TypeReferenceClosure {
 		if (string.IsNullOrEmpty(typeString)) {
 			return;
 		}
-		foreach (Match match in IdentifierToken.Matches(typeString)) {
-			string token = match.Value;
-			// PascalCase filter weeds out built-ins (string, number, boolean, any,
-			// void, …) without an explicit allowlist. Producer-defined types are
-			// PascalCase by convention.
-			if (token.Length > 0 && char.IsUpper(token[0])) {
-				queue.Enqueue(token);
-			}
+		// PascalCase filter weeds out built-ins (string, number, boolean, any,
+		// void, …) without an explicit allowlist. Producer-defined types are
+		// PascalCase by convention.
+		IEnumerable<string> identifiers = IdentifierToken.Matches(typeString)
+			.Select(match => match.Value)
+			.Where(token => token.Length > 0 && char.IsUpper(token[0]));
+		foreach (string token in identifiers) {
+			queue.Enqueue(token);
 		}
 	}
 }
