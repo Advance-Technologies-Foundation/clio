@@ -1576,7 +1576,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run rejects field inserts whose binding attribute is not declared in the body — even when other unrelated attributes are declared. Prevents the production bug where Codex inserted controls without registering matching viewModelConfigDiff entries, leaving rendered fields with no data source.")]
+	[Description("TryUpdatePage dry-run rejects field inserts whose binding attribute is not declared in the body — even when other unrelated attributes are declared. An inserted control with an undeclared binding attribute has no data source after save, so update-page must reject the payload at validation time.")]
 	public void TryUpdatePage_WhenInsertedFieldBindingHasNoMatchingViewModelDeclaration_ReturnsValidationError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();

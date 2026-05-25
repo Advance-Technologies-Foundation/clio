@@ -282,7 +282,7 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation rejects a field insert whose binding attribute and label resource are not declared in the same body — reproduces the production clio MCP bug where Codex inserted controls without registering viewModelConfigDiff entries or resources, leaving fields with no data source and a blank caption.")]
+	[Description("Client-side validation rejects a field insert whose binding attribute is not declared in viewModelConfigDiff and whose label resource is neither registered in 'resources' nor auto-provided by a DS-bound attribute. Without rejection, the saved control would have no data source and a blank caption.")]
 	public async Task SyncPages_Should_Reject_InsertedFields_Without_Matching_ViewModelOrResource() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();

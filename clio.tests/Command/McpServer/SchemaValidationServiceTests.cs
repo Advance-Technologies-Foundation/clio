@@ -1296,7 +1296,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label using a sibling DS-bound attribute name that does NOT match the column code warns — production evidence (test-adaclio-2 todo-application-creation run) shows that the platform auto-provides captions ONLY when the resource key equals the entity column code (last segment of the DS path), not for arbitrary aliases sharing the same path.")]
+	[Description("Label using a sibling DS-bound attribute name that does NOT match the column code warns — the platform auto-provides captions only when the resource key equals the entity column code (last segment of the DS path), not for arbitrary aliases sharing the same path.")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1481,7 +1481,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field control without a matching viewModelConfigDiff attribute fails — reproduces the clio MCP bug where Codex added field controls but no DS bindings, leaving the rendered field with no data source.")]
+	[Description("Insert of a new field control without a matching viewModelConfigDiff attribute fails — without the attribute declaration the control has no data source at runtime.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithoutViewModelAttribute_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1511,7 +1511,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field control with a label resource that is neither auto-provided nor passed in 'resources' fails — reproduces the clio MCP bug where the field rendered with a blank caption.")]
+	[Description("Insert of a new field control with a label resource that is neither auto-provided nor passed in 'resources' fails — without a resolvable resource the field renders with a blank caption.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithUnregisteredLabelResource_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1581,7 +1581,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when label resource is not registered — reproduces the production failure (test-adaclio-2 todo-application-creation) where labels rendered blank on screen despite the attribute being DS-bound. The platform auto-provides captions ONLY when the resource key matches the column code 'UsrCompleted', not the path-with-underscores form 'PDS_UsrCompleted'.")]
+	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when the label resource is not registered. The platform auto-provides captions only when the resource key matches the entity column code (last segment of the DS path), so the path-with-underscores form is NOT auto-provided even when declared as a DS-bound attribute.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
