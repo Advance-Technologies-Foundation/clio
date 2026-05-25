@@ -1121,7 +1121,7 @@
   {
     "componentType": "crt.ImageInput",
     "category": "fields",
-    "description": "Image upload / preview field.",
+    "description": "Image upload / preview field. Binds the image attribute through the 'value' property — do NOT use 'control' (it won't work).",
     "container": false,
     "properties": {
       "type": {
@@ -1131,7 +1131,7 @@
       },
       "value": {
         "type": "string",
-        "description": "Bound view-model attribute (e.g. '$PDS_Photo') or empty string for unbound."
+        "description": "Bound view-model attribute (e.g. '$PDS_Photo') or empty string for unbound. Use this property instead of the 'control' property"
       },
       "label": {
         "type": "string",
