@@ -23,7 +23,7 @@ public sealed class ComponentInfoTool(
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
 	internal const string SchemaTypeMobile = "mobile";
-	internal const string DocumentationSeparator = "\n\n---\n\n";
+	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
@@ -196,31 +196,15 @@ public sealed class ComponentInfoTool(
 	}
 
 	/// <summary>
-	/// Fetches every documentation file referenced by the entry through the docs
-	/// pipeline (cache → CDN, no embedded tier) and concatenates them in registry order
-	/// with <see cref="DocumentationSeparator"/>. Partial-failure mode: a single missed
-	/// fetch is skipped and the remaining files are still concatenated, matching the
-	/// graceful-degradation posture of the registry chain itself.
+	/// Delegates to the shared <see cref="ComponentDocumentationLoader"/> so the MCP tool
+	/// and the CLI verb produce identical <c>documentation</c> payloads. See the loader
+	/// for the cache → CDN pipeline contract and the partial-failure semantics.
 	/// </summary>
-	private async Task<string?> LoadDocumentationAsync(
+	private Task<string?> LoadDocumentationAsync(
 		ComponentRegistryEntry entry,
 		string resolvedVersion,
-		CancellationToken cancellationToken) {
-		IReadOnlyList<string>? docs = entry.Content?.Docs;
-		if (docs is null || docs.Count == 0) {
-			return null;
-		}
-
-		List<string> blocks = new(capacity: docs.Count);
-		foreach (string docPath in docs) {
-			string? block = await docsClient.GetDocAsync(resolvedVersion, docPath, cancellationToken).ConfigureAwait(false);
-			if (!string.IsNullOrEmpty(block)) {
-				blocks.Add(block);
-			}
-		}
-
-		return blocks.Count == 0 ? null : string.Join(DocumentationSeparator, blocks);
-	}
+		CancellationToken cancellationToken) =>
+		ComponentDocumentationLoader.LoadAsync(docsClient, entry, resolvedVersion, cancellationToken);
 }
 
 /// <summary>

@@ -52,6 +52,7 @@ public sealed class ComponentInfoCommand {
 
 	private readonly IComponentInfoCatalog _catalog;
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
+	private readonly IComponentRegistryDocsClient _docsClient;
 	private readonly IPlatformVersionResolverFactory _resolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger _logger;
@@ -59,11 +60,13 @@ public sealed class ComponentInfoCommand {
 	public ComponentInfoCommand(
 		IComponentInfoCatalog catalog,
 		IMobileComponentInfoCatalog mobileCatalog,
+		IComponentRegistryDocsClient docsClient,
 		IPlatformVersionResolverFactory resolverFactory,
 		ISettingsRepository settingsRepository,
 		ILogger logger) {
 		_catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
 		_mobileCatalog = mobileCatalog ?? throw new ArgumentNullException(nameof(mobileCatalog));
+		_docsClient = docsClient ?? throw new ArgumentNullException(nameof(docsClient));
 		_resolverFactory = resolverFactory ?? throw new ArgumentNullException(nameof(resolverFactory));
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -91,7 +94,7 @@ public sealed class ComponentInfoCommand {
 			ComponentCatalogState state = isMobile
 				? await _mobileCatalog.LoadAsync(resolution.ResolvedVersion, cancellationToken).ConfigureAwait(false)
 				: await _catalog.LoadAsync(resolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			response = BuildResponse(options, state, resolution);
+			response = await BuildResponseAsync(options, state, resolution, cancellationToken).ConfigureAwait(false);
 		} catch (Exception ex) {
 			string flavor = isMobile ? "mobile " : string.Empty;
 			_logger.WriteError($"get-component-info: {flavor}catalog load failed: {ex.Message}");
@@ -109,17 +112,19 @@ public sealed class ComponentInfoCommand {
 	/// Builds the detail response for the CLI verb. Delegates to the MCP tool's
 	/// merger so both surfaces produce identical envelope-aware payloads —
 	/// baseInputs ∪ per-component inputs, global typeDefinitions ∪ per-component
-	/// typeDefinitions, per-component winning on key collision. The CLI never
-	/// fetches markdown documentation (the verb is not asynchronous over the docs
-	/// CDN); the documentation parameter is therefore always null here.
+	/// typeDefinitions, per-component winning on key collision. The
+	/// <paramref name="documentation"/> argument carries the concatenated
+	/// <c>content.docs[]</c> markdown fetched through <see cref="ComponentDocumentationLoader"/>
+	/// — same payload the MCP tool produces.
 	/// </summary>
 	private static ComponentInfoResponse BuildDetail(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
+		string? documentation,
 		RegistryGlobalContent globalContent) =>
 		ComponentInfoTool.CreateDetailResponse(
-			entry, resolvedTargetVersion, resolvedFrom, documentation: null, globalContent);
+			entry, resolvedTargetVersion, resolvedFrom, documentation, globalContent);
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {
 		string payload = pretty
@@ -163,10 +168,11 @@ public sealed class ComponentInfoCommand {
 		return _settingsRepository.GetEnvironment(options);
 	}
 
-	private static ComponentInfoResponse BuildResponse(
+	private async Task<ComponentInfoResponse> BuildResponseAsync(
 		ComponentInfoCommandOptions options,
 		ComponentCatalogState state,
-		PlatformVersionResolution resolution) {
+		PlatformVersionResolution resolution,
+		CancellationToken cancellationToken) {
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			resolution.Source, resolution.ResolvedVersion, state.ResolvedVersion);
 
@@ -187,7 +193,10 @@ public sealed class ComponentInfoCommand {
 		}
 
 		if (state.Lookup.TryGetValue(componentType!, out ComponentRegistryEntry entry)) {
-			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, state.GlobalContent);
+			string? documentation = await ComponentDocumentationLoader
+				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
+				.ConfigureAwait(false);
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalContent);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);

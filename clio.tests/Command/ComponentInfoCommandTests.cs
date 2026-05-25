@@ -140,7 +140,7 @@ public sealed class ComponentInfoCommandTests {
 		RecordingCatalog catalog = new(SampleRegistry, echoRequestedVersion: true);
 		StubResolverFactory factory = new(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
 		ISettingsRepository repository = StubSettingsRepository("dev");
-		ComponentInfoCommand command = new(catalog, StubMobileCatalog.Empty(), factory, repository, logger);
+		ComponentInfoCommand command = new(catalog, StubMobileCatalog.Empty(), new FakeDocsClient(), factory, repository, logger);
 
 		int exit = await command.ExecuteAsync(
 			new ComponentInfoCommandOptions { Environment = "dev" }, CancellationToken.None);
@@ -271,24 +271,158 @@ public sealed class ComponentInfoCommandTests {
 		logger.Captured.Should().Contain("clicked");
 	}
 
-	private static ComponentInfoCommand CreateCommand(CapturedLogger logger, string fallbackVersion = null, IMobileComponentInfoCatalog mobileCatalog = null) {
+	[Test]
+	[Description("Detail responses fetch every content.docs[] file through IComponentRegistryDocsClient and surface the concatenated markdown on response.documentation — same payload the MCP tool produces.")]
+	public async Task Returns_Detail_With_Documentation_When_Entry_Has_Docs() {
+		const string registry = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Button",
+		      "content": {
+		        "docs": ["docs/button.component.md", "docs/button.recipes.md"]
+		      }
+		    }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.Seed("latest", "docs/button.component.md", "# Button\nPrimary action element.")
+			.Seed("latest", "docs/button.recipes.md", "## Recipes\nUse `crt.Button` inside a toolbar.");
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(registry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button" }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("detail");
+		parsed.Documentation.Should().NotBeNullOrEmpty(
+			because: "the CLI verb must surface long-form docs the same way the MCP tool does");
+		parsed.Documentation!.Should().Contain("# Button");
+		parsed.Documentation.Should().Contain("## Recipes");
+		parsed.Documentation.Should().Contain("\n\n---\n\n",
+			because: "every successfully-fetched doc block is concatenated with the canonical separator");
+		docsClient.Requests.Should().HaveCount(2,
+			because: "each path under content.docs[] must hit the docs client exactly once");
+		docsClient.Requests.Should().Contain(("latest", "docs/button.component.md"));
+		docsClient.Requests.Should().Contain(("latest", "docs/button.recipes.md"));
+	}
+
+	[Test]
+	[Description("The --pretty renderer emits a 'documentation:' section when the entry has content.docs[] — operators reading stdout see the markdown the MCP tool would serve over JSON.")]
+	public async Task Pretty_Output_Renders_Documentation_Block_When_Entry_Has_Docs() {
+		const string registry = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Button",
+		      "content": { "docs": ["docs/button.component.md"] }
+		    }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.Seed("latest", "docs/button.component.md", "# Button\nPrimary action element.");
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(registry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("documentation:",
+			because: "the pretty renderer labels the docs block so operators can spot it on stdout");
+		logger.Captured.Should().Contain("# Button");
+		logger.Captured.Should().Contain("Primary action element.");
+	}
+
+	[Test]
+	[Description("When the matched entry has no content.docs[], the CLI does not touch the docs client and omits the documentation field — short-circuit identical to the MCP tool.")]
+	public async Task Skips_Docs_Client_When_Entry_Has_No_Docs() {
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new();
+		ComponentInfoCommand command = CreateCommand(logger, docsClient: docsClient);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.TabContainer" }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("detail");
+		parsed.Documentation.Should().BeNull(
+			because: "the sample registry does not declare content.docs[] for crt.TabContainer");
+		docsClient.Requests.Should().BeEmpty(
+			because: "no content.docs[] means the docs pipeline must not run at all (no wasted HTTP calls)");
+	}
+
+	private static ComponentInfoCommand CreateCommand(
+		CapturedLogger logger,
+		string fallbackVersion = null,
+		IMobileComponentInfoCatalog mobileCatalog = null,
+		IComponentRegistryDocsClient docsClient = null) {
 		IComponentInfoCatalog catalog = fallbackVersion is null
 			? new RecordingCatalog(SampleRegistry, echoRequestedVersion: true)
 			: new RecordingCatalog(SampleRegistry, echoRequestedVersion: false, fallbackVersion: fallbackVersion);
 		StubResolverFactory factory = new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
-		return new ComponentInfoCommand(catalog, mobileCatalog ?? StubMobileCatalog.Empty(), factory, repository, logger);
+		return new ComponentInfoCommand(
+			catalog,
+			mobileCatalog ?? StubMobileCatalog.Empty(),
+			docsClient ?? new FakeDocsClient(),
+			factory,
+			repository,
+			logger);
 	}
 
-	private static ComponentInfoCommand CreateCommandWith(RecordingCatalog catalog, CapturedLogger logger, int resolverFactoryProbeCount) {
+	private static ComponentInfoCommand CreateCommandWith(
+		RecordingCatalog catalog,
+		CapturedLogger logger,
+		int resolverFactoryProbeCount,
+		IComponentRegistryDocsClient docsClient = null) {
 		StubResolverFactory factory = new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
-		return new ComponentInfoCommand(catalog, StubMobileCatalog.Empty(), factory, repository, logger);
+		return new ComponentInfoCommand(
+			catalog,
+			StubMobileCatalog.Empty(),
+			docsClient ?? new FakeDocsClient(),
+			factory,
+			repository,
+			logger);
 	}
 
 	private static ComponentInfoResponse ParseJson(string output) {
 		string trimmed = output.Trim();
 		return JsonSerializer.Deserialize<ComponentInfoResponse>(trimmed, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+	}
+
+	/// <summary>
+	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
+	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// the contract that the real client uses to signal "skip this doc".
+	/// </summary>
+	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
+		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		public List<(string Version, string DocPath)> Requests { get; } = new();
+
+		public FakeDocsClient Seed(string version, string docPath, string content) {
+			_docs[(version, docPath)] = content;
+			return this;
+		}
+
+		public Task<string> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+			Requests.Add((version, docPath));
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out string value) ? value : null);
+		}
 	}
 
 	private static ISettingsRepository StubSettingsRepository(string activeEnv) {

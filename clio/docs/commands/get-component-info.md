@@ -39,9 +39,12 @@ of the default web one. The mobile catalog ships as static data inside
 clio.dll, has no CDN tier, and ignores `--version` / `--environment`; its
 responses omit `resolvedTargetVersion` and `resolvedFrom` accordingly.
 
-Output defaults to JSON (identical to the MCP tool's response shape) so the
-result pipes cleanly into `jq` and other scripting tools. Pass `--pretty`
-for a human-readable text rendering on stdout.
+Output defaults to JSON (identical to the MCP tool's response shape,
+including the long-form `documentation` field built from any
+`content.docs[]` markdown files) so the result pipes cleanly into `jq`
+and other scripting tools. Pass `--pretty` for a human-readable text
+rendering on stdout — the docs block surfaces under a `documentation:`
+section.
 
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
