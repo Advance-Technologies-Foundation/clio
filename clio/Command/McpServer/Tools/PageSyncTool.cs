@@ -373,7 +373,7 @@ public sealed record PageSyncArgs(
 	bool? Verify = null,
 
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("Bypass the AI semantic review that runs before save for every page in the batch. Set true ONLY when the MCP host does not support sampling, or when the user explicitly asks to skip the review. NEVER set true to speed up calls, to silence a previously failing sampling check, or to bypass reported issues — fix the page body instead. Default: false")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null
 );
 
