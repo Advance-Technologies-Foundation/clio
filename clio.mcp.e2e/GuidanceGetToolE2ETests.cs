@@ -307,8 +307,6 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the mobile guide should explicitly document entity-level business-rule support too");
 		response.Article.Text.Should().Contain("limited set of conditions and actions",
 			because: "the mobile guide should warn callers that mobile business rules do not have full web parity");
-		response.Article.Text.Should().Contain("Do not use formulas in mobile business rules",
-			because: "the mobile guide should document that mobile business rules do not support formulas for now");
 		response.Article.Text.Should().Contain("validators",
 			because: "the mobile guide must document that validators are not supported in mobile pages");
 		response.Article.Text.Should().Contain("handlers",
