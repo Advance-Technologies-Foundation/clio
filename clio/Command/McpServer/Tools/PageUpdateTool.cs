@@ -36,7 +36,7 @@ public sealed class PageUpdateTool(
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
 		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.")]
 	public async Task<PageUpdateResponse> UpdatePage(
-		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -75,8 +75,9 @@ public sealed class PageUpdateTool(
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				options.Body, mobileComponentCatalog, webComponentCatalog);
+				options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
@@ -102,7 +103,8 @@ public sealed class PageUpdateTool(
 		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 			return (new PageUpdateResponse {
 				Success = false,
-				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+					+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check.",
 				SamplingReview = samplingReview
 			}, samplingReview);
 		}
@@ -200,7 +202,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	[property: Description("Bypass the AI semantic review that runs before save. Set true ONLY when the MCP host does not support sampling, or when the user explicitly asks to skip the review. NEVER set true to speed up calls, to silence a previously failing sampling check, or to bypass reported issues — fix the page body instead. Default: false")]
 	bool? SkipSampling = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]

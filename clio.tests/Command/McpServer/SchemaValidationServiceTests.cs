@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Clio.Command;
@@ -14,24 +14,40 @@ public sealed class SchemaValidationServiceTests
 {
 
 	private const string ValidListPageBody =
-		"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-		"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"""
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+						modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+						handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
+		""";
 
 	private const string ValidFormPageBody =
-		"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-		"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
-		"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
-		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"""
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/,
+						modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/,
+						handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
+		""";
 
 	[Test]
 	[Description("Valid list page body passes marker integrity validation")]
@@ -85,7 +101,9 @@ public sealed class SchemaValidationServiceTests
 	[Test]
 	[Description("Body with only one marker occurrence (unpaired) fails validation")]
 	public void ValidateMarkerIntegrity_SingleMarkerOccurrence_ReportsError() {
-		string body = "define(\"Test\", /**SCHEMA_DEPS*/[]);";
+		string body = """
+			define("Test", /**SCHEMA_DEPS*/[]);
+		""";
 		var result = SchemaValidationService.ValidateMarkerIntegrity(body);
 		result.IsValid.Should().BeFalse("because markers must appear in pairs");
 	}
@@ -199,7 +217,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_DoubleComma_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"a\":1},,{\"b\":2}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			"""
+				/**SCHEMA_VIEW_CONFIG_DIFF*/[{"a":1},,{"b":2}]/**SCHEMA_VIEW_CONFIG_DIFF*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeFalse("because double comma is invalid JSON");
 		result.Errors.Should().ContainMatch("*SCHEMA_VIEW_CONFIG_DIFF*",
@@ -211,7 +231,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_TrailingComma_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"a\":1},{\"b\":2},]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			"""
+				/**SCHEMA_VIEW_CONFIG_DIFF*/[{"a":1},{"b":2},]/**SCHEMA_VIEW_CONFIG_DIFF*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeTrue("because Hjson tolerates trailing commas");
 		result.Errors.Should().BeEmpty("because Hjson parser does not treat trailing commas as errors");
@@ -222,7 +244,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_JavaScriptHandlers_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeTrue("because handlers can contain JavaScript and should not be parsed as JSON content");
 		result.Errors.Should().BeEmpty("because the JSON-backed markers remain valid");
@@ -234,7 +265,14 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					{
+						request: "crt.HandleViewModelInitRequest",
+						handler: async (request, next) => { await next?.handle(request); }
+					}
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -252,7 +290,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							handler: async (request, next) => {
+								await next?.handle(request);
+							}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -270,7 +318,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\" }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/[{ request: "crt.HandleViewModelInitRequest" }]/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -288,7 +338,19 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: true, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: true,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -306,7 +368,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: someExpression, handler: async (request, next) => { return { request: \"crt.NestedRequest\" }; } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: someExpression,
+							handler: async (request, next) => { return { request: "crt.NestedRequest" }; }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -324,7 +395,19 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: `crt.${suffix}`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: `crt.${suffix}`,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -342,7 +425,19 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: `crt.HandleViewModelInitRequest`, handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: `crt.HandleViewModelInitRequest`,
+							handler:
+								async (request, next) => {
+									await next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -360,7 +455,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: true }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: true
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -378,7 +482,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: \"not a function =>\" }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: "not a function =>"
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -396,7 +509,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: { nested: () => {} } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: { nested: () => {} }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -414,7 +536,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: /=>/ }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: /=>/
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -432,7 +563,16 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler(request, next) { return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler(request, next) { return next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -450,7 +590,21 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: async (request, next) => { const current = await request.viewModel.get(\"UsrParkingRequired\"); await request.viewModel.set(\"UsrVehicleNumber\", current ? \"A-01\" : null); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelAttributeChangeRequest",
+							handler:
+								async (request, next) => {
+									const current = await request.viewModel.get("UsrParkingRequired");
+									await request.viewModel.set("UsrVehicleNumber", current ? "A-01" : null);
+									return next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -471,7 +625,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler:
+								async (request, next) => {
+									const current = await request.$context.get("UsrParkingRequired");
+									return next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -492,7 +659,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const sender = request.sender; return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler:
+								async (request, next) => {
+									const sender = request.sender;
+									return next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -513,7 +693,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const current = await request.$context.$get(\"UsrParkingRequired\"); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler:
+								async (request, next) => {
+									const current = await request.$context.$get("UsrParkingRequired");
+									return next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -534,7 +727,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await request.$context.$set(\"UsrParkingRequired\", true); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler:
+								async (request, next) => {
+									await request.$context.$set("UsrParkingRequired", true);
+									return next?.handle(request);
+								}
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -555,10 +761,14 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[" +
-			"{ request: \"crt.HandleViewModelInitRequest\", handler: \"not-callable\" }, " +
-			"{ request: \"crt.HandleViewModelDestroyRequest\", handler: \"also-not-callable\" }" +
-			"]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{ request: "crt.HandleViewModelInitRequest", handler: "not-callable" },
+						{ request: "crt.HandleViewModelDestroyRequest", handler: "also-not-callable" }
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -576,10 +786,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[" +
-			"{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { return next?.handle(request); } }, " +
-			"{ request: \"crt.HandleViewModelDestroyRequest\", handler: async (request, next) => { return next?.handle(request); } }" +
-			"]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: async (request, next) => { return next?.handle(request); }
+						},
+						{
+							request: "crt.HandleViewModelDestroyRequest",
+							handler: async (request, next) => { return next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
@@ -596,7 +816,15 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_JavaScriptConverters_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? \"\"; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value) {
+							return value?.toUpperCase() ?? "";
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 
 		result.IsValid.Should().BeTrue("because converters are authored as JavaScript object sections and may contain functions");
@@ -608,15 +836,21 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_AsyncArrowFunctionConverter_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatPhoneNumber\": async (value) => {" +
-			"  if (!value) return \"\";" +
-			"  const svc = new sdk.SysSettingsService();" +
-			"  const setting = await svc.getByCode(\"UsrEnablePhoneFormatting\");" +
-			"  if (!Boolean(setting?.value)) return value;" +
-			"  const digits = String(value).replace(/\\D/g, \"\");" +
-			"  if (digits.length !== 11) return value;" +
-			"  return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;" +
-			"} }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatPhoneNumber": async (value) => {
+							if (!value) return "";
+							const svc = new sdk.SysSettingsService();
+							const setting = await svc.getByCode("UsrEnablePhoneFormatting");
+							if (!Boolean(setting?.value)) return value;
+							const digits = String(value).replace(/\D/g, "");
+							if (digits.length !== 11) return value;
+							return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9, 11)}`;
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 
 		result.IsValid.Should().BeTrue(
@@ -630,12 +864,17 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_ConverterWithNestedBraces_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatScore\": function(value) {" +
-			"  if (!value) { return \"\"; }" +
-			"  if (value >= 90) { return \"Excellent\"; }" +
-			"  if (value >= 70) { return \"Good\"; }" +
-			"  return \"Poor\";" +
-			"} }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatScore": function(value) {
+							if (!value) {
+								return "";
+							}  if (value >= 90) { return "Excellent"; }  if (value >= 70) { return "Good"; }  return "Poor";
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 
 		result.IsValid.Should().BeTrue(
@@ -649,7 +888,22 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_JavaScriptValidators_ReturnsValid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"usr.ValidateFieldValue\": { \"validator\": function(config) { return function(control) { return control.value !== config.invalidName ? null : { \"usr.ValidateFieldValue\": { message: config.message } }; }; }, \"params\": [{ \"name\": \"invalidName\" }, { \"name\": \"message\" }], \"async\": false } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.ValidateFieldValue": {
+							"validator":
+								function(config) {
+									return function(control) {
+										return control.value !== config.invalidName ? null : { "usr.ValidateFieldValue": { message: config.message } };
+									};
+								},
+							"params": [{ "name": "invalidName" }, { "name": "message" }],
+							"async": false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 
 		result.IsValid.Should().BeTrue("because validators are authored as JavaScript object sections and may contain functions");
@@ -661,7 +915,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_NonObjectConverters_ReturnsInvalid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/[\"usr.ToUpperCase\"]/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/["usr.ToUpperCase"]/**SCHEMA_CONVERTERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeFalse("because converters must remain an object-literal section");
 		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
@@ -673,7 +929,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_NonObjectValidators_ReturnsInvalid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/[\"usr.SomeValidator\"]/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/["usr.SomeValidator"]/**SCHEMA_VALIDATORS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeFalse("because validators must remain an object-literal section");
 		result.Errors.Should().ContainMatch("*SCHEMA_VALIDATORS*",
@@ -685,7 +943,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_InvalidJsSyntaxInConverters_ReturnsInvalid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.Bad\": function(value { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "usr.Bad": function(value { return value; } }/**SCHEMA_CONVERTERS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeFalse("because a syntax error inside a JavaScript object section must be caught");
 		result.Errors.Should().ContainMatch("*SCHEMA_CONVERTERS*",
@@ -697,7 +957,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateMarkerContent_InvalidJsSyntaxInValidators_ReturnsInvalid() {
 		string body = ValidFormPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"usr.Bad\": function(config { return null; } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{ "usr.Bad": function(config { return null; } }/**SCHEMA_VALIDATORS*/
+			""");
 		var result = SchemaValidationService.ValidateMarkerContent(body);
 		result.IsValid.Should().BeFalse("because a syntax error inside a JavaScript object section must be caught");
 		result.Errors.Should().ContainMatch("*SCHEMA_VALIDATORS*",
@@ -710,10 +972,14 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string bodyWithInvalidConverters = ValidFormPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.Bad\": function(value { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "usr.Bad": function(value { return value; } }/**SCHEMA_CONVERTERS*/
+			""");
 		string body = bodyWithInvalidConverters.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"usr.Bad\": function(config { return null; } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{ "usr.Bad": function(config { return null; } }/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		var result = SchemaValidationService.ValidateMarkerContent(body);
@@ -738,18 +1004,22 @@ public sealed class SchemaValidationServiceTests
 	[Description("ListPage with matching column bindings passes validation")]
 	public void ValidateColumnBindings_MatchingBindings_ReturnsValid() {
 		string body =
-			"define(\"Test\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\",\"values\":{\"columns\":[" +
-			"{\"code\":\"PDS_Name\"},{\"code\":\"PDS_UsrStatus\"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{" +
-			"\"PDS_Name\":{\"modelConfig\":{\"path\":\"PDS.Name\"}}," +
-			"\"PDS_UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}" +
-			"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"""
+				define(
+					"Test",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+						return {
+							viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{"name":"DataTable","values":{"columns":[{"code":"PDS_Name"},{"code":"PDS_UsrStatus"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+							viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","values":{"PDS_Name":{"modelConfig":{"path":"PDS.Name"}},"PDS_UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+							modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+							handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+							converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+							validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+						};
+					}
+				);
+			""";
 		var result = SchemaValidationService.ValidateColumnBindings(body);
 		result.IsValid.Should().BeTrue("because all DataTable columns have matching bindings");
 		result.Errors.Should().BeEmpty();
@@ -759,17 +1029,22 @@ public sealed class SchemaValidationServiceTests
 	[Description("ListPage with missing column bindings reports errors")]
 	public void ValidateColumnBindings_MissingBindings_ReturnsInvalid() {
 		string body =
-			"define(\"Test\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"name\":\"DataTable\",\"values\":{\"columns\":[" +
-			"{\"code\":\"PDS_Name\"},{\"code\":\"PDS_UsrStatus\"},{\"code\":\"PDS_UsrDueDate\"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{" +
-			"\"PDS_Name\":{\"modelConfig\":{\"path\":\"PDS.Name\"}}" +
-			"}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"""
+				define(
+					"Test",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+						return {
+							viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{"name":"DataTable","values":{"columns":[{"code":"PDS_Name"},{"code":"PDS_UsrStatus"},{"code":"PDS_UsrDueDate"}]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+							viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{"operation":"merge","values":{"PDS_Name":{"modelConfig":{"path":"PDS.Name"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+							modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+							handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+							converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+							validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+						};
+					}
+				);
+			""";
 		var result = SchemaValidationService.ValidateColumnBindings(body);
 		result.IsValid.Should().BeFalse("because PDS_UsrStatus and PDS_UsrDueDate have no matching bindings");
 		result.Errors.Should().HaveCount(2);
@@ -789,8 +1064,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field binding to attribute not in current schema is valid — attribute may be declared in a parent schema")]
 	public void ValidateStandardFieldBindings_BindingToAttributeNotInCurrentSchema_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"$Resources.Strings.PDS_UsrStatus",
+								"control":"$UsrStatusField"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -802,8 +1097,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field Usr label shortcuts without explicit resources are rejected")]
 	public void ValidateStandardFieldBindings_UsrLabelShortcutWithoutResources_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_label)#\",\"control\":\"$UsrStatus\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"#ResourceString(UsrStatus_label)#",
+								"control":"$UsrStatus"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -816,8 +1131,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field declared view-model binding with auto-provided label passes semantic validation")]
 	public void ValidateStandardFieldBindings_DeclaredAttributeBindingWithDatasourceCaption_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatus\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"$Resources.Strings.PDS_UsrStatus",
+								"control":"$UsrStatus"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -830,8 +1165,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Explicit custom resources on standard field shortcuts surface warnings instead of hard failures")]
 	public void ValidateStandardFieldBindings_UsrLabelShortcutWithExplicitResources_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"#ResourceString(UsrStatus_caption)#",
+								"control":"$UsrStatus"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -847,7 +1202,15 @@ public sealed class SchemaValidationServiceTests
 	[Description("Custom non-field UI elements may use explicit Usr caption resources")]
 	public void ValidateStandardFieldBindings_CustomStandaloneCaptionWithExplicitResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrStandaloneLabel\",\"values\":{\"type\":\"crt.Label\",\"caption\":\"#ResourceString(UsrStatus_caption)#\"}}]",
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStandaloneLabel",
+						"values":{"type":"crt.Label","caption":"#ResourceString(UsrStatus_caption)#"}
+					}
+				]
+			""",
 			"[]");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
@@ -860,27 +1223,144 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label referencing $Resources.Strings.KEY for a DS-bound attribute does not warn when KEY is absent — the platform auto-provides it")]
+	[Description("Label using attribute-name resource key for a DS-bound attribute does not warn when the key is absent from resources — the platform auto-provides captions under the attribute name")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyMissingButDsBound_ReturnsNoWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrName",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
 			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
 
-		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform");
+		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform under the view-model attribute name");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().BeEmpty("because the label matches the DS-bound attribute and the platform auto-provides it");
+		result.Warnings.Should().BeEmpty("because the label key equals the DS-bound attribute name and the platform auto-provides the caption");
+	}
+
+	[Test]
+	[Description("Label using path-with-underscores resource key warns when the key is missing from resources and is not the auto-provided attribute-name form")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsPathWithUnderscoresAndMissing_ReturnsWarning() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.PDS_UsrName",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
+
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().ContainSingle(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
+			"because the platform auto-provides captions under the attribute name 'UsrName', not under the path-with-underscores form 'PDS_UsrName'");
+	}
+
+	[Test]
+	[Description("Label using a sibling DS-bound attribute name that shares the same model path as the control does not warn — the platform auto-provides the caption under every attribute name bound to that path")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsNoWarning() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrNameAlias",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":
+							{
+								"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+								"UsrNameAlias":{"modelConfig":{"path":"PDS.UsrName"}}
+							}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
+
+		result.IsValid.Should().BeTrue("because the resource key matches a sibling attribute bound to the same DS path");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the platform auto-provides captions under every view-model attribute name sharing the control's DS path");
 	}
 
 	[Test]
 	[Description("Label using attribute name as resource key does not warn when that attribute is DS-bound — the platform auto-provides captions for DS-bound attributes regardless of naming")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameAndDsBound_ReturnsNoWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrLabel\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrLabel\",\"control\":\"$UsrLabel\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrLabel\":{\"modelConfig\":{\"path\":\"PDS.UsrFullName\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrLabel",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrLabel",
+								"control":"$UsrLabel"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrLabel":{"modelConfig":{"path":"PDS.UsrFullName"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -895,8 +1375,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Label referencing $Resources.Strings.KEY warns when KEY is absent and does not match any DS-bound attribute")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyMissingNotDsBound_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrCustomLabel\",\"control\":\"$UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.UsrCustomLabel",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -912,8 +1412,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Label referencing $Resources.Strings.KEY passes when KEY is present in explicit resources")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyPresentInExplicitResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.PDS_UsrName",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(
 			body,
@@ -928,8 +1448,28 @@ public sealed class SchemaValidationServiceTests
 	[Description("Label referencing $Resources.Strings.KEY is not warned when no explicit resources are provided")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyWithoutExplicitResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
-			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.PDS_UsrName\",\"control\":\"$UsrName\"}}]",
-			"[{\"operation\":\"merge\",\"values\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}]");
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.PDS_UsrName",
+								"control":"$UsrName"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+					}
+				]
+			""");
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
 
@@ -942,8 +1482,36 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field binding to the declared validator attribute is accepted")]
 	public void ValidateStandardFieldBindings_AttributeWithValidators_ViewModelBindingIsAllowed() {
 		// Arrange — UsrName has a validator in viewModelConfig; control binds to the same declared attribute.
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCase\",\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"UpperCase": {
+									"type":"usr.UpperCase",
+									"params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -959,8 +1527,23 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field binding to attribute not in current schema is valid even without validators — attribute may be declared in a parent schema")]
 	public void ValidateStandardFieldBindings_AttributeWithoutValidators_BindingToParentAttributeIsAllowed() {
 		// Arrange — UsrStatus declared in viewModelConfig; control binds to UsrStatusField which may be in parent schema.
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrStatus",
+					"values":
+						{
+							"type":"crt.ComboBox",
+							"label":"$Resources.Strings.PDS_UsrStatus",
+							"control":"$UsrStatusField"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{"attributes":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -975,9 +1558,36 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field populated by handlers may use view-model attribute binding $AttrName")]
 	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_ViewModelBindingIsAllowed() {
 		// Arrange — UsrName is populated from an init handler through $context.set("UsrName", ...).
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
-		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const result = await next?.handle(request); await request.$context.set(\"UsrName\", \"Primary currency\"); return result; } }]";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		""";
+		string handlers = """
+			[
+				{
+					request: "crt.HandleViewModelInitRequest",
+					handler:
+						async (request, next) => {
+							const result = await next?.handle(request);
+							await request.$context.set("UsrName", "Primary currency");
+							return result;
+						}
+				}
+			]
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
 
 		// Act
@@ -993,9 +1603,42 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field populated by handlers must bind to the same declared attribute they update")]
 	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_DifferentDeclaredAttributeIsRejected() {
 		// Arrange — handlers update UsrName but the control stays on UsrNameField for the same model path.
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrNameField\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameField\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
-		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const { $context } = request; const result = await next?.handle(request); await $context.set(\"UsrName\", \"Primary currency\"); return result; } }]";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrNameField"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+					"UsrNameField":{"modelConfig":{"path":"PDS.UsrName"}}
+				}
+			}
+		""";
+		string handlers = """
+			[
+				{
+					request: "crt.HandleViewModelInitRequest",
+					handler:
+						async (request, next) => {
+							const { $context } = request;
+							const result = await next?.handle(request);
+							await $context.set("UsrName", "Primary currency");
+							return result;
+						}
+				}
+			]
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
 
 		// Act
@@ -1011,9 +1654,43 @@ public sealed class SchemaValidationServiceTests
 	[Description("Standard field mismatch reports all handler-written candidates that share the same model path")]
 	public void ValidateStandardFieldBindings_AttributeWrittenByHandlers_MultipleDeclaredAlternatives_ReportsAllCandidates() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrNameField\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameField\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameSecondary\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
-		string handlers = "[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const result = await next?.handle(request); await request.$context.set(\"UsrName\", \"Primary currency\"); await request.$context.set(\"UsrNameSecondary\", \"Secondary currency\"); return result; } }]";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrNameField"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+					"UsrNameField":{"modelConfig":{"path":"PDS.UsrName"}},
+					"UsrNameSecondary":{"modelConfig":{"path":"PDS.UsrName"}}
+				}
+			}
+		""";
+		string handlers = """
+			[
+				{
+					request: "crt.HandleViewModelInitRequest",
+					handler:
+						async (request, next) => {
+							const result = await next?.handle(request);
+							await request.$context.set("UsrName", "Primary currency");
+							await request.$context.set("UsrNameSecondary", "Secondary currency");
+							return result;
+						}
+				}
+			]
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig, handlers);
 
 		// Act
@@ -1029,40 +1706,80 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
-		return
-			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-			$"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{viewConfigDiff}/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			$"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{viewModelConfigDiff}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		return $$"""
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{{viewModelConfigDiff}}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+						modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
+						handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
+			""";
 	}
 
 	private static string BuildStaticViewModelConfigPageBody(string viewConfigDiff, string viewModelConfig, string? handlers = null) {
-		return
-			"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
-			$"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{viewConfigDiff}/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			$"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{viewModelConfig}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
-			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
-			$"handlers: /**SCHEMA_HANDLERS*/{handlers ?? "[]"}/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		return $$"""
+			define(
+				"TestPage",
+				/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+				function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{
+					return {
+						viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{{viewConfigDiff}}/**SCHEMA_VIEW_CONFIG_DIFF*/,
+						viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{{viewModelConfig}}/**SCHEMA_VIEW_MODEL_CONFIG*/,
+						modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/,
+						handlers: /**SCHEMA_HANDLERS*/{{handlers ?? "[]"}}/**SCHEMA_HANDLERS*/,
+						converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
+						validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
+					};
+				}
+			);
+			""";
 	}
 
 	[Test]
 	[Description("Static viewModelConfig with validators on a different declared attribute is rejected")]
 	public void ValidateValidatorControlBindings_StaticViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
 		// Arrange — validators live on UsrNameForValidation but the control stays on UsrName for the same field path.
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-			"\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
-			"\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameForValidation\":{" +
-			"\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
-			"\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+					"UsrNameForValidation":
+						{
+							"modelConfig":{"path":"PDS.UsrName"},
+							"validators":
+								{
+									"UpperCase":
+										{
+											"type":"usr.UpperCaseValidator",
+											"params":{"message":"Must be uppercase"}
+										}
+								}
+						}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1080,11 +1797,45 @@ public sealed class SchemaValidationServiceTests
 	[Description("Validator binding mismatch reports all declared validator attributes on the same model path")]
 	public void ValidateValidatorControlBindings_StaticViewModelConfig_MultipleDeclaredAlternatives_ReportsAllCandidates() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"}}},\"UsrNameForValidationSecondary\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"MaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":5}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+					"UsrNameForValidation":
+						{
+							"modelConfig":{"path":"PDS.UsrName"},
+							"validators":{"UpperCase":{"type":"usr.UpperCaseValidator"}}
+						},
+					"UsrNameForValidationSecondary":
+						{
+							"modelConfig":{"path":"PDS.UsrName"},
+							"validators":{"MaxLength":{"type":"crt.MaxLength","params":{"maxLength":5}}}
+						}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(){return function(){return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							"validator":function(){return function(){return null;};},
+							"params":[],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
@@ -1123,13 +1874,37 @@ public sealed class SchemaValidationServiceTests
 	[Description("Static viewModelConfig with $AttrName control where attribute has validators passes validation")]
 	public void ValidateValidatorControlBindings_StaticViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
 		// Arrange — correct shape: validator on 'UsrName' and control = "$UsrName"
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-			"\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\"," +
-			"\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{" +
-			"\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\"," +
-			"\"params\":{\"message\":\"Must be uppercase\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":
+						{
+							"type":"crt.Input",
+							"label":"$Resources.Strings.UsrName",
+							"control":"$UsrName"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"UpperCase":
+									{
+										"type":"usr.UpperCaseValidator",
+										"params":{"message":"Must be uppercase"}
+									}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1146,11 +1921,32 @@ public sealed class SchemaValidationServiceTests
 	[Description("viewModelConfigDiff with validators on a different declared attribute is rejected")]
 	public void ValidateValidatorControlBindings_DiffViewModelConfig_DifferentDeclaredAttribute_WithValidators_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
-			"\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
-			"\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}},\"UsrEmailForValidation\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
-			"\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEmail",
+					"values":{"type":"crt.EmailInput","control":"$UsrEmail"}
+				}
+			]
+		""";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":["attributes"],
+					"values":
+						{
+							"UsrEmail":{"modelConfig":{"path":"PDS.UsrEmail"}},
+							"UsrEmailForValidation":
+								{
+									"modelConfig":{"path":"PDS.UsrEmail"},
+									"validators":{"EmailValidator":{"type":"usr.EmailValidator"}}
+								}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
 
 		// Act
@@ -1168,11 +1964,30 @@ public sealed class SchemaValidationServiceTests
 	[Description("viewModelConfigDiff with $AttrName control where attribute has validators passes validation")]
 	public void ValidateValidatorControlBindings_DiffViewModelConfig_AttrBinding_WithValidators_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrEmail\",\"values\":{" +
-			"\"type\":\"crt.EmailInput\",\"control\":\"$UsrEmail\"}}]";
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
-			"\"values\":{\"UsrEmail\":{\"modelConfig\":{\"path\":\"PDS.UsrEmail\"}," +
-			"\"validators\":{\"EmailValidator\":{\"type\":\"usr.EmailValidator\"}}}}}]";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEmail",
+					"values":{"type":"crt.EmailInput","control":"$UsrEmail"}
+				}
+			]
+		""";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":["attributes"],
+					"values":
+						{
+							"UsrEmail": {
+								"modelConfig":{"path":"PDS.UsrEmail"},
+								"validators":{"EmailValidator":{"type":"usr.EmailValidator"}}
+							}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody(viewConfigDiff, viewModelConfigDiff);
 
 		// Act
@@ -1189,9 +2004,18 @@ public sealed class SchemaValidationServiceTests
 	[Description("Declared attribute binding on attribute without validators is allowed")]
 	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasNoValidators_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-			"\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1208,10 +2032,25 @@ public sealed class SchemaValidationServiceTests
 	[Description("Attribute with empty validators object is not treated as having validators")]
 	public void ValidateValidatorControlBindings_DeclaredBinding_AttributeHasEmptyValidators_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{" +
-			"\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":{}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1228,13 +2067,42 @@ public sealed class SchemaValidationServiceTests
 	[Description("Validators declared directly on a viewConfigDiff control are rejected")]
 	public void ValidateValidatorBindingPlacement_ViewConfigDiffControlValidators_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrCode\",\"values\":{" +
-			"\"type\":\"crt.Input\",\"control\":\"$UsrCode\"," +
-			"\"validators\":[{\"id\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"Too long\"}}]}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrCode\":{\"modelConfig\":{\"path\":\"PDS.UsrCode\"}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrCode",
+					"values":
+						{
+							"type":"crt.Input",
+							"control":"$UsrCode",
+							"validators":
+								[
+									{
+										"id":"usr.MaxLengthFromSysSettingValidator",
+										"params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}
+									}
+								]
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.MaxLengthFromSysSettingValidator\":{\"validator\":function(config){return async function(control){return null;};},\"params\":[{\"name\":\"settingCode\"},{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MaxLengthFromSysSettingValidator": {
+							"validator":function(config){return async function(control){return null;};},
+							"params":[{"name":"settingCode"},{"name":"message"}],
+							"async":true
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingPlacement(body);
@@ -1253,11 +2121,48 @@ public sealed class SchemaValidationServiceTests
 	[Description("Attribute-level validator bindings remain valid when viewConfigDiff does not declare validators")]
 	public void ValidateValidatorBindingPlacement_AttributeLevelValidatorsWithoutInlineControlValidators_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrCode\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrCode\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrCode\":{\"modelConfig\":{\"path\":\"PDS.UsrCode\"},\"validators\":{\"CodeLength\":{\"type\":\"usr.MaxLengthFromSysSettingValidator\",\"params\":{\"settingCode\":\"MaxProcessLoopCount\",\"message\":\"#ResourceString(UsrCodeLength_Message)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrCode",
+					"values":{"type":"crt.Input","control":"$UsrCode"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrCode": {
+						"modelConfig":{"path":"PDS.UsrCode"},
+						"validators":
+							{
+								"CodeLength": {
+									"type":"usr.MaxLengthFromSysSettingValidator",
+									"params":
+										{
+											"settingCode":"MaxProcessLoopCount",
+											"message":"#ResourceString(UsrCodeLength_Message)#"
+										}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.MaxLengthFromSysSettingValidator\":{\"validator\":function(config){return async function(control){return null;};},\"params\":[{\"name\":\"settingCode\"},{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MaxLengthFromSysSettingValidator": {
+							"validator":function(config){return async function(control){return null;};},
+							"params":[{"name":"settingCode"},{"name":"message"}],
+							"async":true
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingPlacement(body);
@@ -1286,9 +2191,22 @@ public sealed class SchemaValidationServiceTests
 	[Description("$Resources.Strings. binding in validator params is rejected — use #ResourceString()# instead")]
 	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InValidatorParam_ReturnsInvalid() {
 		// Arrange
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
-			"\"params\":{\"message\":\"$Resources.Strings.UsrUpperCaseValidator_Message\"}}}}}}";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"AllUpperCase": {
+									"type":"usr.AllUpperCase",
+									"params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
 
 		// Act
@@ -1307,9 +2225,22 @@ public sealed class SchemaValidationServiceTests
 	[Description("#ResourceString()# binding in validator params is accepted")]
 	public void ValidateValidatorParamResourceBindings_ResourceStringMacro_InValidatorParam_ReturnsValid() {
 		// Arrange
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{\"AllUpperCase\":{\"type\":\"usr.AllUpperCase\"," +
-			"\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"AllUpperCase": {
+									"type":"usr.AllUpperCase",
+									"params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
 
 		// Act
@@ -1326,10 +2257,27 @@ public sealed class SchemaValidationServiceTests
 	[Description("$Resources.Strings. in viewModelConfigDiff validator params is also rejected")]
 	public void ValidateValidatorParamResourceBindings_ReactiveBinding_InDiffFormat_ReturnsInvalid() {
 		// Arrange — diff-backed format (viewModelConfigDiff)
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{" +
-			"\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}," +
-			"\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":["attributes"],
+					"values":
+						{
+							"UsrName": {
+								"modelConfig":{"path":"PDS.UsrName"},
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
+							}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1346,9 +2294,26 @@ public sealed class SchemaValidationServiceTests
 	[Description("viewModelConfigDiff operations outside the attributes path are ignored by validator param validation")]
 	public void ValidateValidatorParamResourceBindings_NonAttributeDiffOperationWithValidatorsLikeShape_ReturnsValid() {
 		// Arrange
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\"],\"values\":{" +
-			"\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":["handlers"],
+					"values":
+						{
+							"UsrPseudoHandler": {
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
+							}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1365,9 +2330,26 @@ public sealed class SchemaValidationServiceTests
 	[Description("Nested viewModelConfigDiff paths that merely contain attributes are ignored by validator param validation")]
 	public void ValidateValidatorParamResourceBindings_NestedAttributesPathOperation_ReturnsValid() {
 		// Arrange
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"path\":[\"handlers\",\"attributes\"],\"values\":{" +
-			"\"UsrPseudoHandler\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":["handlers","attributes"],
+					"values":
+						{
+							"UsrPseudoHandler": {
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
+							}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1384,9 +2366,25 @@ public sealed class SchemaValidationServiceTests
 	[Description("Root-level diff merge operations without path still participate in validator param validation")]
 	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithAttributeValidators_ReturnsInvalid() {
 		// Arrange
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
-			"\"UsrName\":{\"validators\":{\"Upper\":{\"type\":\"usr.Upper\"," +
-			"\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}}}]";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"values":
+						{
+							"UsrName": {
+								"validators":
+									{
+										"Upper": {
+											"type":"usr.Upper",
+											"params":{"message":"$Resources.Strings.UsrMsg"}
+										}
+									}
+							}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1403,8 +2401,21 @@ public sealed class SchemaValidationServiceTests
 	[Description("Root-level diff merge operations without validators do not produce validator param errors")]
 	public void ValidateValidatorParamResourceBindings_PathlessRootMergeWithoutValidators_ReturnsValid() {
 		// Arrange
-		string viewModelConfigDiff = "[{\"operation\":\"merge\",\"values\":{" +
-			"\"UsrPseudoHandler\":{\"request\":\"usr.DoSomething\",\"params\":{\"message\":\"$Resources.Strings.UsrMsg\"}}}}]";
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"values":
+						{
+							"UsrPseudoHandler":
+								{
+									"request":"usr.DoSomething",
+									"params":{"message":"$Resources.Strings.UsrMsg"}
+								}
+						}
+				}
+			]
+		""";
 		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
 
 		// Act
@@ -1421,11 +2432,51 @@ public sealed class SchemaValidationServiceTests
 	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
 	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"usr.NameMaxLength\",\"params\":{\"message\":\"#ResourceString(UsrNameMaxLength_Message)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"NameMaxLength": {
+									"type":"usr.NameMaxLength",
+									"params":{"message":"#ResourceString(UsrNameMaxLength_Message)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.NameMaxLength\":{\"validator\":function(config){return function(control){if (control.value && control.value.length >= 5) { return {\"usr.NameMaxLength\": { message: config.message }}; } return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.NameMaxLength": {
+							"validator":
+								function(config){
+									return function(control){
+										if (control.value && control.value.length >= 5) {
+											return {"usr.NameMaxLength": { message: config.message }};
+										} return null;
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
@@ -1441,11 +2492,52 @@ public sealed class SchemaValidationServiceTests
 	[Description("Non-standard custom validators remain allowed when no built-in validator obviously matches the rule.")]
 	public void ValidateStandardValidatorUsage_CustomDomainValidator_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"UpperCase\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrUpperCaseValidator_Message)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"UpperCase": {
+									"type":"usr.UpperCaseValidator",
+									"params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(config){return function(control){const value = control.value; if (!value || value === value.toUpperCase()) { return null; } return {\"usr.UpperCaseValidator\": { message: config.message }};};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							"validator":
+								function(config){
+									return function(control){
+										const value = control.value;
+										if (!value || value === value.toUpperCase()) {
+											return null;
+										} return {"usr.UpperCaseValidator": { message: config.message }};
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
@@ -1461,8 +2553,25 @@ public sealed class SchemaValidationServiceTests
 	[Description("Built-in crt.MaxLength validator must use maxLength instead of max in params.")]
 	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithWrongParamName_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1482,8 +2591,25 @@ public sealed class SchemaValidationServiceTests
 	[Description("Built-in crt.MaxLength validator with maxLength param passes validation.")]
 	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithCorrectParamName_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":4}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"maxLength":4}}}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1500,8 +2626,31 @@ public sealed class SchemaValidationServiceTests
 	[Description("Built-in crt.MaxLength with an optional message param passes validation because message is universally allowed via ValidatorParametersValues.")]
 	public void ValidateStandardValidatorUsage_BuiltInMaxLengthWithMessageParam_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"maxLength\":4,\"message\":\"#ResourceString(UsrNameTooLong)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"NameMaxLength": {
+									"type":"crt.MaxLength",
+									"params":{"maxLength":4,"message":"#ResourceString(UsrNameTooLong)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1518,8 +2667,32 @@ public sealed class SchemaValidationServiceTests
 	[Description("Built-in crt.Required with only a message param passes validation because message is universally allowed.")]
 	public void ValidateStandardValidatorUsage_BuiltInRequiredWithOnlyMessageParam_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Required\":{\"type\":\"crt.Required\",\"params\":{\"message\":\"#ResourceString(UsrRequired)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"Required":
+									{
+										"type":"crt.Required",
+										"params":{"message":"#ResourceString(UsrRequired)#"}
+									}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		// Act
@@ -1535,11 +2708,45 @@ public sealed class SchemaValidationServiceTests
 
 	public void ValidateStandardValidatorUsage_CustomValidatorWithEmptyParamsBindingParams_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NoParams\":{\"type\":\"usr.NoParamsValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"NoParams":
+									{
+										"type":"usr.NoParamsValidator",
+										"params":{"message":"#ResourceString(UsrMsg)#"}
+									}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.NoParamsValidator\":{\"validator\":function(){return function(){return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.NoParamsValidator": {
+							"validator":function(){return function(){return null;};},
+							"params":[],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
@@ -1557,11 +2764,45 @@ public sealed class SchemaValidationServiceTests
 	[Description("Custom validators without a params array still reject bound params instead of overriding built-in contracts.")]
 	public void ValidateStandardValidatorUsage_CustomValidatorWithoutParamsDeclarationBindingParams_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NoParams\":{\"type\":\"usr.NoParamsValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"NoParams":
+									{
+										"type":"usr.NoParamsValidator",
+										"params":{"message":"#ResourceString(UsrMsg)#"}
+									}
+							}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.NoParamsValidator\":{\"validator\":function(){return function(){return null;};},\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.NoParamsValidator":
+							{
+								"validator":function(){return function(){return null;};},
+								"async":false
+							}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
@@ -1579,11 +2820,38 @@ public sealed class SchemaValidationServiceTests
 	[Description("SCHEMA_VALIDATORS cannot override built-in crt.MaxLength param contracts.")]
 	public void ValidateStandardValidatorUsage_BuiltInContractCannotBeOverriddenFromSchemaValidators_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"NameMaxLength\":{\"type\":\"crt.MaxLength\",\"params\":{\"max\":4}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"crt.MaxLength\":{\"validator\":function(){return function(){return null;};},\"params\":[{\"name\":\"max\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"crt.MaxLength": {
+							"validator":function(){return function(){return null;};},
+							"params":[{"name":"max"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
@@ -1602,12 +2870,45 @@ public sealed class SchemaValidationServiceTests
 	[Description("Validator with unquoted params key (valid JS) must be parsed correctly — no false 'missing message' error.")]
 	public void ValidateCustomValidatorParamCompleteness_UnquotedParamsKey_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"Upper": {
+									"type":"usr.UpperCaseValidator",
+									"params":{"message":"#ResourceString(UsrMsg)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		// SCHEMA_VALIDATORS uses unquoted JS property: params: [{ "name": "message" }]
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							validator:function(config){return function(control){return null;};},
+							params:[{"name":"message"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1623,12 +2924,45 @@ public sealed class SchemaValidationServiceTests
 	[Description("Validator with both unquoted params key and unquoted name key (pure JS style) must be parsed correctly.")]
 	public void ValidateCustomValidatorParamCompleteness_FullyUnquotedParamEntry_ReturnsValid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"Upper": {
+									"type":"usr.UpperCaseValidator",
+									"params":{"message":"#ResourceString(UsrMsg)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		// SCHEMA_VALIDATORS uses fully unquoted JS properties: params: [{ name: "message" }]
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							validator:function(config){return function(control){return null;};},
+							params:[{name:"message"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1644,12 +2978,45 @@ public sealed class SchemaValidationServiceTests
 	[Description("Validator with unquoted params key that truly has no message param is still rejected.")]
 	public void ValidateCustomValidatorParamCompleteness_UnquotedParamsKeyMissingMessage_ReturnsInvalid() {
 		// Arrange
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"control\":\"$UsrName\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"},\"validators\":{\"Upper\":{\"type\":\"usr.UpperCaseValidator\",\"params\":{\"message\":\"#ResourceString(UsrMsg)#\"}}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrName",
+					"values":{"type":"crt.Input","control":"$UsrName"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrName": {
+						"modelConfig":{"path":"PDS.UsrName"},
+						"validators":
+							{
+								"Upper": {
+									"type":"usr.UpperCaseValidator",
+									"params":{"message":"#ResourceString(UsrMsg)#"}
+								}
+							}
+					}
+				}
+			}
+		""";
 		// params array exists but has no message param
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig).Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};},params:[{name:\"settingCode\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							validator:function(config){return function(control){return null;};},
+							params:[{name:"settingCode"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1665,7 +3032,9 @@ public sealed class SchemaValidationServiceTests
 	[Description("Attribute without validators passes param resource binding check without errors")]
 	public void ValidateValidatorParamResourceBindings_NoValidators_ReturnsValid() {
 		// Arrange
-		string viewModelConfig = "{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}";
+		string viewModelConfig = """
+			{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+		""";
 		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
 
 		// Act
@@ -1684,9 +3053,25 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{message:config.message}};}" +
-			"return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.OnlyDigits": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(v&&!/^\d+$/.test(v)){
+											return{"usr.OnlyDigits":{message:config.message}};
+										}return null;
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1704,9 +3089,23 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":true};}" +
-			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.OnlyDigits": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(v&&!/^\d+$/.test(v)){return{"usr.OnlyDigits":true};}return null;
+									};
+								},
+							"params":[],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1726,9 +3125,25 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{message:\"Only digits allowed\"}};}" +
-			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.OnlyDigits": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(v&&!/^\d+$/.test(v)){
+											return{"usr.OnlyDigits":{message:"Only digits allowed"}};
+										}return null;
+									};
+								},
+							"params":[],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1748,9 +3163,25 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{details:{field:\"UsrName\"},message:config.message}};}" +
-			"return null;};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.OnlyDigits": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(v&&!/^\d+$/.test(v)){
+											return{"usr.OnlyDigits":{details:{field:"UsrName"},message:config.message}};
+										}return null;
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1771,9 +3202,23 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.OnlyDigits\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(v&&!/^\\d+$/.test(v)){return{\"usr.OnlyDigits\":{}};}" +
-			"return null;};},\"params\":[],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.OnlyDigits": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(v&&!/^\d+$/.test(v)){return{"usr.OnlyDigits":{}};}return null;
+									};
+								},
+							"params":[],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorParamCompleteness(body);
@@ -1798,7 +3243,9 @@ public sealed class SchemaValidationServiceTests
 			"return function(control){var v=control.value;" +
 			"if(!v||v.length>0){return{\"usr.LongValidator\":{message:config.message}};}" +
 			"return null;};}" +
-			",\"params\":[{\"name\":\"message\"}],\"async\":false}}";
+			"""
+				,"params":[{"name":"message"}],"async":false}}
+			""";
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			$"/**SCHEMA_VALIDATORS*/{validatorsBlock}/**SCHEMA_VALIDATORS*/");
@@ -1820,11 +3267,21 @@ public sealed class SchemaValidationServiceTests
 		// These braces are balanced so brace-depth tracking works correctly.
 		// NOTE: regex literals with unbalanced braces (e.g. /{[a-z]+/) are a known ExtractValidatorBody limitation.
 		string validatorsBlock =
-			"{\"usr.PatternValidator\":{\"validator\":function(config){" +
-			"return function(control){var v=control.value;" +
-			"if(v&&!/^[{a-z}]+$/.test(v)){return{\"usr.PatternValidator\":{message:config.message}};}" +
-			"return null;};}" +
-			",\"params\":[{\"name\":\"message\"}],\"async\":false}}";
+			"""
+				{
+					"usr.PatternValidator": {
+						"validator":
+							function(config){
+								return function(control){
+									var v=control.value;
+									if(v&&!/^[{a-z}]+$/.test(v)){return{"usr.PatternValidator":{message:config.message}};}return null;
+								};
+							},
+						"params":[{"name":"message"}],
+						"async":false
+					}
+				}
+			""";
 		string body = BuildStaticViewModelConfigPageBody("[]", "{}").Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			$"/**SCHEMA_VALIDATORS*/{validatorsBlock}/**SCHEMA_VALIDATORS*/");
@@ -1842,8 +3299,23 @@ public sealed class SchemaValidationServiceTests
 	[Test]
 	[Description("Non-PDS data source direct binding passes validation")]
 	public void ValidateStandardFieldBindings_NonPdsDirectBinding_ReturnsValid() {
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.DS1_UsrStatus\",\"control\":\"$DS1_UsrStatus\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"DS1_UsrStatus\":{\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrStatus",
+					"values":
+						{
+							"type":"crt.ComboBox",
+							"label":"$Resources.Strings.DS1_UsrStatus",
+							"control":"$DS1_UsrStatus"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{"attributes":{"DS1_UsrStatus":{"modelConfig":{"path":"DS1.UsrStatus"}}}}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		var result = SchemaValidationService.ValidateStandardFieldBindings(body);
@@ -1864,11 +3336,25 @@ public sealed class SchemaValidationServiceTests
 	[Test]
 	[Description("Control bound to non-PDS datasource binding on attribute with validators is rejected")]
 	public void ValidateValidatorControlBindings_NonPdsBinding_AttributeHasValidators_ReturnsInvalid() {
-		string viewConfigDiff = "[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{" +
-			"\"type\":\"crt.ComboBox\",\"control\":\"$DS1_UsrStatus\"}}]";
-		string viewModelConfig = "{\"attributes\":{\"UsrStatus\":{" +
-			"\"modelConfig\":{\"path\":\"DS1.UsrStatus\"}," +
-			"\"validators\":{\"Required\":{\"type\":\"crt.Required\"}}}}}";
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrStatus",
+					"values":{"type":"crt.ComboBox","control":"$DS1_UsrStatus"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrStatus": {
+						"modelConfig":{"path":"DS1.UsrStatus"},
+						"validators":{"Required":{"type":"crt.Required"}}
+					}
+				}
+			}
+		""";
 		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
 
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorControlBindings(body);
@@ -1911,7 +3397,15 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_CorrectPrefixedKey_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value) {
+							return value?.toUpperCase() ?? '';
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.ToUpperCase' has the required VendorPrefix.Name dot-format");
 		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
@@ -1922,7 +3416,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_AsyncArrowConverterCorrectKey_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.FormatPhone\": async (value) => { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatPhone": async (value) => { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.FormatPhone' has the required dot-format");
 		result.Errors.Should().BeEmpty("because async arrow shape with a correct key produces no errors");
@@ -1933,7 +3433,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_KeyWithoutDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"UsrPhoneCallConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"UsrPhoneCallConverter": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'UsrPhoneCallConverter' is missing the required dot separator");
 		result.Errors.Should().ContainSingle(
@@ -1946,10 +3452,14 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_MixedKeys_ReportsOnlyBadOne() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ " +
-			"\"usr.ToUpperCase\": function(value) { return value?.toUpperCase() ?? ''; }, " +
-			"\"BadConverter\": function(value) { return value; } " +
-			"}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value) { return value?.toUpperCase() ?? ''; },
+						"BadConverter": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadConverter' is missing the dot");
 		result.Errors.Should().ContainSingle(e => e.Contains("BadConverter"),
@@ -1963,7 +3473,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_CrtPrefixedKey_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"crt.SomeConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"crt.SomeConverter": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue(
 			"because the dot-format check passes for 'crt.SomeConverter' — declaring crt.* is unnecessary but not a format error");
@@ -1974,7 +3490,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_NoParenArrowMissingDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"BadArrow\": value => value }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "BadArrow": value => value }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadArrow' is missing the required dot separator");
 		result.Errors.Should().ContainSingle(e => e.Contains("BadArrow") && e.Contains("VendorPrefix"),
@@ -1986,7 +3504,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_NoParenArrowCorrectKey_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.Trim\": value => value.trim() }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "usr.Trim": value => value.trim() }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.Trim' has the required dot-format");
 		result.Errors.Should().BeEmpty("because no-paren arrow shape with a correct key produces no errors");
@@ -1997,7 +3517,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_MethodShorthandMissingDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"BadShorthand\"(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "BadShorthand"(value) { return value; } }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadShorthand' is missing the required dot separator");
 		result.Errors.Should().ContainSingle(e => e.Contains("BadShorthand") && e.Contains("VendorPrefix"),
@@ -2009,8 +3531,15 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_NestedStringKey_DoesNotFalsePositive() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.Outer\": function(value) { " +
-			"return JSON.stringify({ \"nested_no_dot\": value }); } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.Outer": function(value) {
+							return JSON.stringify({ "nested_no_dot": value });
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeTrue(
 			"because 'nested_no_dot' lives inside the converter's body, not at the SCHEMA_CONVERTERS top level");
@@ -2022,7 +3551,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_ErrorMessage_MentionsVendorPrefixPlaceholder() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"PhoneCall\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "PhoneCall": function(value) { return value; } }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'PhoneCall' is missing the required dot separator");
 		result.Errors.Should().ContainSingle(
@@ -2035,7 +3566,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_IdentifierKeyMissingDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ BadConverter: value => value }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ BadConverter: value => value }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse(
 			"because identifier-key syntax cannot contain a dot, so 'BadConverter' violates the VendorPrefix.Name rule");
@@ -2049,7 +3582,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_IdentifierMethodShorthandMissingDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ BadShorthand(value) { return value; } }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ BadShorthand(value) { return value; } }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadShorthand' has no dot");
 		result.Errors.Should().ContainSingle(
@@ -2062,11 +3597,15 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_MixedQuotedAndIdentifierBadKeys_ReportsBoth() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ " +
-			"\"usr.Good\": function(value) { return value; }, " +
-			"BadIdent: value => value, " +
-			"\"BadQuoted\": function(value) { return value; } " +
-			"}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.Good": function(value) { return value; },
+						BadIdent: value => value,
+						"BadQuoted": function(value) { return value; }
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse("because two keys violate the dot-format rule");
 		result.Errors.Should().HaveCount(2,
@@ -2086,8 +3625,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_RequestWithCorrectVendorPrefix_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", " +
-			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeTrue(
 			"because 'crt.HandleViewModelInitRequest' is a well-formed VendorPrefix.HandlerName value");
@@ -2099,8 +3646,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_RequestWithoutDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
-			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "BadHandlerRequest",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeFalse(
 			"because 'BadHandlerRequest' violates the VendorPrefix.HandlerName format");
@@ -2114,8 +3669,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_RequestStartingWithDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \".LeadingDot\", " +
-			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: ".LeadingDot",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeFalse(
 			"because '.LeadingDot' has an empty vendor prefix and breaks Creatio's parser");
@@ -2129,10 +3692,20 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_MixedRequestValues_ReportsOnlyBadOne() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[" +
-			"{ request: \"crt.HandleViewModelInitRequest\", handler: async (req, next) => { await next?.handle(req); } }, " +
-			"{ request: \"BadRequest\", handler: async (req, next) => { await next?.handle(req); } }" +
-			"]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "crt.HandleViewModelInitRequest",
+							handler: async (req, next) => { await next?.handle(req); }
+						},
+						{
+							request: "BadRequest",
+							handler: async (req, next) => { await next?.handle(req); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeFalse("because 'BadRequest' violates the VendorPrefix.HandlerName format");
 		result.Errors.Should().ContainSingle(e => e.Contains("BadRequest"),
@@ -2154,8 +3727,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_RequestEndingWithDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"usr.\", " +
-			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "usr.",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeFalse(
 			"because 'usr.' has an empty handler name after the dot and breaks Creatio's parser");
@@ -2169,8 +3750,16 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateHandlerStructure_RequestWithMultipleDots_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
-			"/**SCHEMA_HANDLERS*/[{ request: \"usr.sub.HandleRequest\", " +
-			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+			"""
+				/**SCHEMA_HANDLERS*/
+					[
+						{
+							request: "usr.sub.HandleRequest",
+							handler: async (request, next) => { await next?.handle(request); }
+						}
+					]
+				/**SCHEMA_HANDLERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateHandlerStructure(body);
 		result.IsValid.Should().BeFalse(
 			"because Creatio expects exactly one dot between the vendor prefix and the handler name");
@@ -2212,7 +3801,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateValidatorDeclarations_CorrectPrefixedKey_ReturnsValid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"usr.RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{ "usr.RequiredValidator": { params: [] } }/**SCHEMA_VALIDATORS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
 		result.IsValid.Should().BeTrue("because 'usr.RequiredValidator' has the required VendorPrefix.Name dot-format");
 		result.Errors.Should().BeEmpty("because a correctly prefixed key produces no errors");
@@ -2223,7 +3814,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateValidatorDeclarations_KeyWithoutDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"RequiredValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{ "RequiredValidator": { params: [] } }/**SCHEMA_VALIDATORS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'RequiredValidator' lacks a dot and violates the VendorPrefix.ValidatorName format");
 		result.Errors.Should().Contain(error => error.Contains("RequiredValidator") && error.Contains("VendorPrefix.ValidatorName"),
@@ -2235,7 +3828,14 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateValidatorDeclarations_MixedKeys_ReportsOnlyBadOne() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"usr.GoodValidator\": { params: [] }, \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.GoodValidator": { params: [] },
+						"BadValidator": { params: [] }
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadValidator' lacks a dot");
 		result.Errors.Should().HaveCount(1, "because only 'BadValidator' fails the validation");
@@ -2251,7 +3851,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_KeyStartingWithDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \".LeadingDot\": value => value }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ ".LeadingDot": value => value }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse(
 			"because a leading dot leaves the prefix empty and breaks Creatio's VendorPrefix.Name parser");
@@ -2264,7 +3866,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_KeyEndingWithDot_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.\": value => value }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "usr.": value => value }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse(
 			"because an empty name after the dot breaks Creatio's VendorPrefix.Name parser");
@@ -2277,7 +3881,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateConverterDeclarations_KeyWithMultipleDots_ReturnsInvalid() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{ \"usr.sub.Name\": value => value }/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{ "usr.sub.Name": value => value }/**SCHEMA_CONVERTERS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterDeclarations(body);
 		result.IsValid.Should().BeFalse(
 			"because Creatio expects exactly one dot between prefix and name");
@@ -2290,7 +3896,9 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateValidatorDeclarations_ErrorMessage_ReferencesValidatorGuidance() {
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{ "BadValidator": { params: [] } }/**SCHEMA_VALIDATORS*/
+			""");
 		SchemaValidationResult result = SchemaValidationService.ValidateValidatorDeclarations(body);
 		result.IsValid.Should().BeFalse("because 'BadValidator' has no dot");
 		result.Errors.Should().ContainSingle(
@@ -2330,9 +3938,24 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{\"validator\":function(config){return function(control){" +
-			"var v=control.value;if(!v||v===v.toUpperCase())return null;return{\"usr.UpperCaseValidator\":{message:config.message}};" +
-			"};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							"validator":
+								function(config){
+									return function(control){
+										var v=control.value;
+										if(!v||v===v.toUpperCase())return null;
+										return{"usr.UpperCaseValidator":{message:config.message}};
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2348,8 +3971,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.UpperCaseValidator\":{validator:function(config){return function(control){return null;};}," +
-			"params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseValidator": {
+							validator:function(config){return function(control){return null;};},
+							params:[{name:"message"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2365,8 +3997,20 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.AsyncValidator\":{\"validator\":async function(config){return async function(control){return null;};}," +
-			"\"params\":[{\"name\":\"message\"}],\"async\":true}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.AsyncValidator": {
+							"validator":
+								async function(config){
+									return async function(control){return null;};
+								},
+							"params":[{"name":"message"}],
+							"async":true
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2382,8 +4026,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.ArrowValidator\":{\"validator\":(config) => (control) => null," +
-			"\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.ArrowValidator": {
+							"validator":(config) => (control) => null,
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2399,8 +4052,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.MixedValidator\":{\"validator\":function(config){return (control) => null;}," +
-			"\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MixedValidator": {
+							"validator":function(config){return (control) => null;},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2416,8 +4078,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.ShorthandValidator\":{validator(config){return function(control){return null;};}," +
-			"params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.ShorthandValidator": {
+							validator(config){return function(control){return null;};},
+							params:[{name:"message"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2433,7 +4104,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"crt.Required\":{}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{"crt.Required":{}}/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2449,7 +4122,15 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"BadName\":{validator:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"BadName": {
+							validator: function(c){return function(x){return null;};}
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2465,9 +4146,21 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.PhoneFormatValidator\":{async:false,params:[{\"name\":\"message\"}]," +
-			"validate:function(value,config){if(!value)return null;return{\"usr.PhoneFormatValidator\":{message:config.message}};}" +
-			"}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.PhoneFormatValidator": {
+							async:false,
+							params:[{"name":"message"}],
+							validate:
+								function(value,config){
+									if(!value)return null;
+									return{"usr.PhoneFormatValidator":{message:config.message}};
+								}
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2486,7 +4179,13 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.MyValidator\":{fn:function(c){return function(x){return null;};}}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MyValidator": {fn:function(c){return function(x){return null;};}}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2503,7 +4202,13 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.NoBody\":{params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.NoBody": {params:[{"name":"message"}],async:false}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2521,7 +4226,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.StringValidator\":{validator:\"not a function\"}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{"usr.StringValidator":{validator:"not a function"}}/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2538,7 +4245,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.ObjectValidator\":{validator:{check:true}}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/{"usr.ObjectValidator":{validator:{check:true}}}/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2554,8 +4263,21 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.FlatValidator\":{validator:function(value,config){if(!value)return null;" +
-			"return{\"usr.FlatValidator\":{message:config.message}};},params:[{\"name\":\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.FlatValidator": {
+							validator:
+								function(value,config){
+									if(!value)return null;
+									return{"usr.FlatValidator":{message:config.message}};
+								},
+							params:[{"name":"message"}],
+							async:false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2573,7 +4295,17 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.FlatArrowValidator\":{validator:(control) => null,params:[{\"name\":\"message\"}]}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.FlatArrowValidator":
+							{
+								validator:(control) => null,
+								params:[{"name":"message"}]
+							}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2589,9 +4321,21 @@ public sealed class SchemaValidationServiceTests
 		// Arrange — the string literal 'return function' must NOT be treated as a real factory return.
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
-			"/**SCHEMA_VALIDATORS*/{\"usr.MisleadingValidator\":{validator:function(value,config){" +
-			"var hint=\"return function(control){...}\";if(!value)return null;return null;}," +
-			"params:[{\"name\":\"message\"}]}}/**SCHEMA_VALIDATORS*/");
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.MisleadingValidator": {
+							validator:
+								function(value,config){
+									var hint="return function(control){...}";
+									if(!value)return null;
+									return null;
+								},
+							params:[{"name":"message"}]
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateCustomValidatorFactoryShape(body);
@@ -2634,7 +4378,15 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value && value.toUpperCase();}}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToUpperCase": function(value){
+							return value && value.toUpperCase();
+						}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2650,7 +4402,13 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.ToCallDisplay\":(value) => value ? \"Call: \" + value : \"\"}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.ToCallDisplay": (value) => value ? "Call: " + value : ""
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2666,7 +4424,13 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.FormatPhone\":async function(value){return value;}}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/
+					{
+						"usr.FormatPhone": async function(value){return value;}
+					}
+				/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2682,7 +4446,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.ShorthandConverter\"(value){return value;}}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{"usr.ShorthandConverter"(value){return value;}}/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2698,7 +4464,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"crt.ToBoolean\":{}}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{"crt.ToBoolean":{}}/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2714,7 +4482,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.WrongShape\":{transform:\"upper\"}}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{"usr.WrongShape":{transform:"upper"}}/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2732,7 +4502,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.StringConverter\":\"upperCase\"}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{"usr.StringConverter":"upperCase"}/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2748,7 +4520,9 @@ public sealed class SchemaValidationServiceTests
 		// Arrange
 		string body = ValidListPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
-			"/**SCHEMA_CONVERTERS*/{\"usr.ArrayConverter\":[1,2,3]}/**SCHEMA_CONVERTERS*/");
+			"""
+				/**SCHEMA_CONVERTERS*/{"usr.ArrayConverter":[1,2,3]}/**SCHEMA_CONVERTERS*/
+			""");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateConverterFunctionShape(body);
@@ -2875,6 +4649,163 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeFalse("because invalid JSON should fail mobile body validation");
 		result.Errors.Should().NotBeEmpty("because the JSON parse error should be reported");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body where a diff property is not a JSON array.")]
+	[TestCase("viewConfigDiff")]
+	[TestCase("viewModelConfigDiff")]
+	[TestCase("modelConfigDiff")]
+	public void ValidateMobileBody_WhenDiffPropertyIsNotArray_ReturnsError(string propertyName) {
+		// Arrange
+		string body = $$"""{ "{{propertyName}}": {} }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse($"because '{propertyName}' must be a JSON array");
+		result.Errors.Should().Contain(e => e.Contains(propertyName) && e.Contains("array"),
+			$"because the error must identify '{propertyName}' and the expected type");
+	}
+
+	[Test]
+	[Description("Accepts a mobile body where diff properties are valid JSON arrays.")]
+	public void ValidateMobileBody_WhenDiffPropertiesAreArrays_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because all diff properties are valid JSON arrays");
+		result.Errors.Should().BeEmpty("because no validation errors should be raised");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body where viewModelConfig is not a JSON object.")]
+	public void ValidateMobileBody_WhenViewModelConfigIsNotObject_ReturnsError() {
+		// Arrange
+		string body = """{ "viewModelConfig": [] }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'viewModelConfig' must be a JSON object");
+		result.Errors.Should().Contain(e => e.Contains("viewModelConfig") && e.Contains("object"),
+			"because the error must identify 'viewModelConfig' and the expected type");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body where modelConfig is not a JSON object.")]
+	public void ValidateMobileBody_WhenModelConfigIsNotObject_ReturnsError() {
+		// Arrange
+		string body = """{ "modelConfig": "string" }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'modelConfig' must be a JSON object");
+		result.Errors.Should().Contain(e => e.Contains("modelConfig") && e.Contains("object"),
+			"because the error must identify 'modelConfig' and the expected type");
+	}
+
+	[Test]
+	[Description("Accepts a mobile body where viewModelConfig and modelConfig are valid JSON objects.")]
+	public void ValidateMobileBody_WhenConfigPropertiesAreObjects_ReturnsValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "viewModelConfig": { "attributes": {} },
+		                "modelConfig": { "dataSources": {} }
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because config properties are valid JSON objects");
+		result.Errors.Should().BeEmpty("because no validation errors should be raised");
+	}
+
+	[Test]
+	[Description("Reports multiple errors when both diff and config properties have wrong types.")]
+	public void ValidateMobileBody_WhenMultiplePropertiesHaveWrongType_ReportsAllErrors() {
+		// Arrange
+		string body = """{ "viewConfigDiff": {}, "viewModelConfig": [] }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both properties have invalid types");
+		result.Errors.Should().HaveCount(2,
+			"because each property with the wrong type should produce a distinct error");
+	}
+
+	[Test]
+	[Description("Rejects a mobile body that contains an unknown root property.")]
+	public void ValidateMobileBody_WhenUnknownRootProperty_ReturnsError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [],
+		                "customProperty": true
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'customProperty' is not an allowed mobile root property");
+		result.Errors.Should().ContainSingle(e => e.Contains("customProperty") && e.Contains("Unknown"),
+			"because the error must identify the unknown property");
+	}
+
+	[Test]
+	[Description("Does not double-report disallowed keys (validators, handlers, converters) as unknown properties.")]
+	public void ValidateMobileBody_WhenDisallowedKeyPresent_DoesNotDoubleReport() {
+		// Arrange
+		string body = """{ "viewConfigDiff": [], "validators": {} }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because 'validators' is disallowed on mobile");
+		result.Errors.Should().HaveCount(1,
+			"because 'validators' should only be reported once by the disallowed-key check, not also by the unknown-property check");
+	}
+
+	[Test]
+	[Description("Reports both disallowed and unknown properties without cross-contamination.")]
+	public void ValidateMobileBody_WhenBothDisallowedAndUnknownProperties_ReportsSeparateErrors() {
+		// Arrange
+		string body = """{ "viewConfigDiff": [], "handlers": [], "foo": 42 }""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileBody(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because both disallowed and unknown properties are present");
+		result.Errors.Should().HaveCount(2,
+			"because 'handlers' gets one error and 'foo' gets one error");
+		result.Errors.Should().Contain(e => e.Contains("handlers"),
+			"because 'handlers' should be reported as disallowed");
+		result.Errors.Should().Contain(e => e.Contains("foo") && e.Contains("Unknown"),
+			"because 'foo' should be reported as unknown");
 	}
 
         #endregion
@@ -3304,7 +5235,11 @@ public sealed class SchemaValidationServiceTests
 		string body = """
 		              {
 		                "viewConfigDiff": [
-		                  {"operation":"merge","name":"F","values":{"value":"$UsrName | crt.InvertBooleanValue"}}
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"F",
+		                  	"values":{"value":"$UsrName | crt.InvertBooleanValue"}
+		                  }
 		                ],
 		                "viewModelConfigDiff": [
 		                  {"operation":"merge","path":["attributes"],"values":{"UsrName":{}}}
@@ -3375,7 +5310,11 @@ public sealed class SchemaValidationServiceTests
 		                ],
 		                "viewConfigDiff": [
 		                  { "operation": "insert", "name": "UsrField1", "values": { "type": "crt.Input", "label": "$UsrKnown" } },
-		                  { "operation": "insert", "name": "UsrField2", "values": { "type": "crt.Input", "label": "$UsrMissing" } }
+		                  {
+		                  	"operation": "insert",
+		                  	"name": "UsrField2",
+		                  	"values": { "type": "crt.Input", "label": "$UsrMissing" }
+		                  }
 		                ]
 		              }
 		              """;
@@ -3393,6 +5332,123 @@ public sealed class SchemaValidationServiceTests
 
 	#endregion
 
+	#region ValidateMobileStandardFieldBindings
+
+	[Test]
+	[Description("Mobile: label using attribute-name resource key for a DS-bound attribute does not warn when the key is absent from resources — the platform auto-provides captions under the attribute name")]
+	public void ValidateMobileStandardFieldBindings_LabelResourceKeyMissingButDsBound_ReturnsNoWarning() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.UsrName",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
+		                ],
+		                "viewModelConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+		                  }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
+
+		result.IsValid.Should().BeTrue("because DS-bound caption keys are auto-provided by the platform under the view-model attribute name");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the label key equals the DS-bound attribute name and the platform auto-provides the caption");
+	}
+
+	[Test]
+	[Description("Mobile: label using path-with-underscores resource key warns when the key is missing from resources and is not the auto-provided attribute-name form")]
+	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsPathWithUnderscoresAndMissing_ReturnsWarning() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.PDS_UsrName",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
+		                ],
+		                "viewModelConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}
+		                  }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrRequesterName"] = "Requester Name" });
+
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().ContainSingle(w => w.Contains("PDS_UsrName") && w.Contains("render blank"),
+			"because the platform auto-provides captions under the attribute name 'UsrName', not under the path-with-underscores form 'PDS_UsrName'");
+	}
+
+	[Test]
+	[Description("Mobile: label using a sibling DS-bound attribute name that shares the same model path as the control does not warn — the platform auto-provides the caption under every attribute name bound to that path")]
+	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsNoWarning() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"name":"UsrName",
+		                  	"values":
+		                  		{
+		                  			"type":"crt.Input",
+		                  			"label":"$Resources.Strings.UsrNameAlias",
+		                  			"control":"$UsrName"
+		                  		}
+		                  }
+		                ],
+		                "viewModelConfigDiff": [
+		                  {
+		                  	"operation":"merge",
+		                  	"path":["attributes"],
+		                  	"values":
+		                  		{
+		                  			"UsrName":{"modelConfig":{"path":"PDS.UsrName"}},
+		                  			"UsrNameAlias":{"modelConfig":{"path":"PDS.UsrName"}}
+		                  		}
+		                  }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
+
+		result.IsValid.Should().BeTrue("because the resource key matches a sibling attribute bound to the same DS path");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().BeEmpty("because the platform auto-provides captions under every view-model attribute name sharing the control's DS path");
+	}
+
+	#endregion
+
 	#region ValidateSchemaDepsCompleteness
 
 	[Test]
@@ -3400,10 +5456,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateSchemaDepsCompleteness_WhenSdkUsedButDepMissing_ReturnsWarning() {
 		// Arrange
 		string body =
-			"define(\"Module\", /**SCHEMA_DEPS*/[\"css!Module\"]/**SCHEMA_DEPS*/, " +
-			"/**SCHEMA_ARGS*/(css)/**SCHEMA_ARGS*/ => ({" +
-			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/" +
-			"}));";
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/["css!Module"]/**SCHEMA_DEPS*/,
+					/**SCHEMA_ARGS*/(css)/**SCHEMA_ARGS*/ => ({/**SCHEMA_HANDLERS*/[{request:"crt.HandleViewModelInitRequest",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/})
+				);
+			""";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
@@ -3419,10 +5478,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateSchemaDepsCompleteness_WhenSdkUsedAndDepPresent_ReturnsClean() {
 		// Arrange
 		string body =
-			"define(\"Module\", /**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/, " +
-			"/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/ => ({" +
-			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/" +
-			"}));";
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/["@creatio-devkit/common"]/**SCHEMA_DEPS*/,
+					/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/ => ({/**SCHEMA_HANDLERS*/[{request:"crt.HandleViewModelInitRequest",handler: async (request, next) => { sdk.HandlerChainService; }}]/**SCHEMA_HANDLERS*/})
+				);
+			""";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
@@ -3437,10 +5499,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateSchemaDepsCompleteness_WhenNoSdkUsage_ReturnsClean() {
 		// Arrange
 		string body =
-			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({" +
-			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { console.log(\"hello\"); }}]/**SCHEMA_HANDLERS*/" +
-			"}));";
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({/**SCHEMA_HANDLERS*/[{request:"crt.HandleViewModelInitRequest",handler: async (request, next) => { console.log("hello"); }}]/**SCHEMA_HANDLERS*/})
+				);
+			""";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
@@ -3455,8 +5520,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateSchemaDepsCompleteness_WhenNoHandlers_ReturnsClean() {
 		// Arrange
 		string body =
-			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({}));";
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({})
+				);
+			""";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
@@ -3471,10 +5541,13 @@ public sealed class SchemaValidationServiceTests
 	public void ValidateSchemaDepsCompleteness_WhenLocalVariableNamedSdk_DoesNotWarn() {
 		// Arrange — "sdk" appears but not as "sdk." or "sdk["
 		string body =
-			"define(\"Module\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
-			"/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({" +
-			"/**SCHEMA_HANDLERS*/[{request:\"crt.HandleViewModelInitRequest\",handler: async (request, next) => { const sdk = 42; return sdk + 1; }}]/**SCHEMA_HANDLERS*/" +
-			"}));";
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ => ({/**SCHEMA_HANDLERS*/[{request:"crt.HandleViewModelInitRequest",handler: async (request, next) => { const sdk = 42; return sdk + 1; }}]/**SCHEMA_HANDLERS*/})
+				);
+			""";
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
@@ -3577,7 +5650,11 @@ public sealed class SchemaValidationServiceTests
 		string body = """
 		              {
 		                "viewModelConfigDiff": [
-		                  { "operation": "merge", "path": ["attributes"], "values": { "UsrCaption": { "caption": "Hi" } } }
+		                  {
+		                  	"operation": "merge",
+		                  	"path": ["attributes"],
+		                  	"values": { "UsrCaption": { "caption": "Hi" } }
+		                  }
 		                ]
 		              }
 		              """;

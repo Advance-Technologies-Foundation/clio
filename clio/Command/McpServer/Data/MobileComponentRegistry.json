@@ -24,7 +24,7 @@
       },
       "floatAction": {
         "type": "object",
-        "description": "Single floating action button (crt.FloatingActionButton). Set to null when not needed."
+        "description": "Single floating action button config object. Set to null when not needed. Object shape: { name, type: 'crt.FloatingActionButton', icon, clicked: { request } }."
       },
       "items": {
         "type": "array",
@@ -62,7 +62,7 @@
   {
     "componentType": "crt.GridContainer",
     "category": "containers",
-    "description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large).",
+    "description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large). When used as a field-group container, always set \"color\": \"primary\" to provide the standard card-like surface.",
     "container": true,
     "properties": {
       "type": {
@@ -88,8 +88,15 @@
         "description": "Padding config: { top, right, bottom, left }."
       },
       "borderRadius": {
-        "type": "object",
-        "description": "Border radius config."
+        "type": "string",
+        "values": [
+          "none",
+          "extra-small",
+          "small",
+          "medium",
+          "large"
+        ],
+        "description": "Border radius preset."
       },
       "justifyItems": {
         "type": "string",
@@ -109,7 +116,7 @@
           "default",
           "primary"
         ],
-        "description": "Background color. Use 'primary' for profile/area highlight."
+        "description": "Background color. Accepts preset names ('default', 'primary') or any hex color string (e.g. '#523838'). Use 'primary' for field-group containers by convention."
       }
     },
     "example": {
@@ -118,6 +125,7 @@
       "values": {
         "type": "crt.GridContainer",
         "columns": "1fr",
+        "color": "primary",
         "adaptive": {
           "small": {
             "columns": "1fr"
@@ -148,7 +156,9 @@
         "type": "string",
         "values": [
           "row",
-          "column"
+          "row-reverse",
+          "column",
+          "column-reverse"
         ],
         "default": "column",
         "description": "Flex direction."
@@ -159,9 +169,9 @@
           "start",
           "end",
           "center",
-          "spaceBetween",
-          "spaceAround",
-          "spaceEvenly"
+          "space-between",
+          "space-around",
+          "space-evenly"
         ],
         "default": "start",
         "description": "Main axis alignment."
@@ -169,8 +179,8 @@
       "alignItems": {
         "type": "string",
         "values": [
-          "start",
-          "end",
+          "flex-start",
+          "flex-end",
           "center",
           "stretch"
         ],
@@ -180,32 +190,58 @@
       "wrap": {
         "type": "string",
         "values": [
-          "noWrap",
-          "wrap"
+          "nowrap",
+          "wrap",
+          "wrap-reverse"
         ],
-        "default": "noWrap",
+        "default": "nowrap",
         "description": "Flex wrapping behavior."
       },
       "gap": {
-        "type": "number",
-        "description": "Gap between items in pixels."
+        "type": "string",
+        "values": [
+          "none",
+          "default",
+          "small",
+          "medium",
+          "large"
+        ],
+        "default": "small",
+        "description": "Gap between items."
       },
       "padding": {
         "type": "object",
-        "description": "Padding config: { top, right, bottom, left }."
+        "description": "Padding config: { top, right, bottom, left }. Values: 'none', 'small', 'medium', 'large'."
       },
       "color": {
         "type": "string",
-        "description": "Background color."
+        "values": [
+          "primary",
+          "transparent"
+        ],
+        "description": "Background color. Also accepts hex color strings."
       },
       "borderRadius": {
-        "type": "object",
-        "description": "Border radius config."
+        "type": "string",
+        "values": [
+          "none",
+          "extra-small",
+          "small",
+          "medium",
+          "large"
+        ],
+        "default": "none",
+        "description": "Border radius preset."
       },
       "scrollable": {
         "type": "boolean",
         "default": false,
         "description": "Enable scrolling."
+      },
+      "fitContent": {
+        "type": "boolean",
+        "default": true,
+        "description": "Fit container to content size."
       },
       "items": {
         "type": "array",
@@ -240,10 +276,50 @@
         "type": "array",
         "description": "Child crt.TabContainer entries."
       },
-      "isScrollable": {
+      "mode": {
+        "type": "string",
+        "default": "tab",
+        "description": "Tab mode."
+      },
+      "scrollable": {
         "type": "boolean",
-        "default": true,
+        "default": false,
         "description": "Whether tabs are scrollable."
+      },
+      "allowToggleClose": {
+        "type": "boolean",
+        "default": false,
+        "description": "Allow toggling tabs closed."
+      },
+      "styleType": {
+        "type": "string",
+        "default": "default",
+        "description": "Visual style type."
+      },
+      "bodyBackgroundColor": {
+        "type": "string",
+        "default": "transparent",
+        "description": "Tab body background color."
+      },
+      "selectedTabTitleColor": {
+        "type": "string",
+        "default": "auto",
+        "description": "Color of the selected tab title."
+      },
+      "tabTitleColor": {
+        "type": "string",
+        "default": "auto",
+        "description": "Color of unselected tab titles."
+      },
+      "underlineSelectedTabColor": {
+        "type": "string",
+        "default": "auto",
+        "description": "Underline color for the selected tab."
+      },
+      "headerBackgroundColor": {
+        "type": "string",
+        "default": "auto",
+        "description": "Tab header background color."
       },
       "selectedTabName": {
         "type": "string",
@@ -282,6 +358,17 @@
       "caption": {
         "type": "string",
         "description": "Tab header caption (resource string or literal)."
+      },
+      "iconPosition": {
+        "type": "string",
+        "values": [
+          "only-text",
+          "left-icon",
+          "right-icon",
+          "only-icon"
+        ],
+        "default": "only-text",
+        "description": "Icon position relative to tab caption."
       },
       "items": {
         "type": "array",
@@ -324,6 +411,10 @@
         "type": "boolean",
         "description": "Whether the panel is expanded by default."
       },
+      "padding": {
+        "type": "object",
+        "description": "Padding config: { top, right, bottom, left }. Values: 'none', 'small', 'medium', 'large'."
+      },
       "items": {
         "type": "array",
         "description": "Panel body content."
@@ -360,18 +451,49 @@
       },
       "labelType": {
         "type": "string",
+        "values": [
+          "large-1",
+          "large-2",
+          "large-3",
+          "large-4",
+          "headline-1",
+          "headline-1-small",
+          "headline-2",
+          "headline-3",
+          "headline-4",
+          "body-large",
+          "body",
+          "caption-large",
+          "caption",
+          "placeholder-large",
+          "placeholder",
+          "button",
+          "button-small",
+          "blankslate"
+        ],
+        "default": "headline-1",
         "description": "Semantic type / heading level."
       },
       "labelThickness": {
         "type": "string",
+        "values": [
+          "light",
+          "normal",
+          "semibold",
+          "bold",
+          "default"
+        ],
+        "default": "default",
         "description": "Font weight."
       },
       "labelColor": {
         "type": "string",
-        "description": "Text color."
+        "default": "auto",
+        "description": "Text color. Use 'auto' for theme default or a hex color string."
       },
       "labelEllipsis": {
         "type": "boolean",
+        "default": false,
         "description": "Enable text overflow ellipsis."
       }
     },
@@ -412,15 +534,45 @@
       },
       "iconPosition": {
         "type": "string",
+        "values": [
+          "only-text",
+          "left-icon",
+          "right-icon",
+          "only-icon"
+        ],
+        "default": "only-text",
         "description": "Icon position relative to caption."
       },
       "color": {
         "type": "string",
+        "values": [
+          "primary",
+          "accent",
+          "warn",
+          "default",
+          "secondary",
+          "outlined"
+        ],
+        "default": "default",
         "description": "Color scheme."
       },
       "size": {
         "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large",
+          "extra-large",
+          "xxl",
+          "xxxl"
+        ],
+        "default": "large",
         "description": "Size variant."
+      },
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the button is disabled."
       },
       "menuItems": {
         "type": "array",
@@ -429,10 +581,6 @@
       "menuTitle": {
         "type": "string",
         "description": "Title shown on the menu picker."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding, e.g. '$CardState | crt.IsEqual : \\'edit\\''."
       }
     },
     "example": {
@@ -520,12 +668,9 @@
         "description": "Placeholder text."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       },
       "labelPosition": {
         "type": "string",
@@ -534,7 +679,7 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "multiline": {
@@ -575,6 +720,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
       "format": {
         "type": "object",
         "description": "Number format config: { decimalPrecision: N }. Use 0 for integers."
@@ -586,16 +735,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       }
     },
     "example": {
@@ -630,6 +776,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "caption": {
+        "type": "string",
+        "description": "Caption resource string."
+      },
       "labelPosition": {
         "type": "string",
         "values": [
@@ -637,16 +787,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       },
       "placeholder": {
         "type": "string",
@@ -685,6 +832,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "caption": {
+        "type": "string",
+        "description": "Caption resource string."
+      },
       "labelPosition": {
         "type": "string",
         "values": [
@@ -692,16 +843,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       },
       "placeholder": {
         "type": "string",
@@ -740,6 +888,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "caption": {
+        "type": "string",
+        "description": "Caption resource string."
+      },
       "labelPosition": {
         "type": "string",
         "values": [
@@ -747,16 +899,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       },
       "placeholder": {
         "type": "string",
@@ -787,13 +936,17 @@
         "required": true,
         "description": "Must be crt.Checkbox."
       },
-      "control": {
-        "type": "string",
-        "description": "Bound view-model attribute."
+      "value": {
+        "type": "boolean",
+        "description": "Current value or bound view-model attribute (e.g. '$PDS_IsActive')."
       },
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "ariaLabel": {
+        "type": "string",
+        "description": "Accessibility label."
       },
       "labelPosition": {
         "type": "string",
@@ -802,16 +955,22 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
-      "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the checkbox is disabled."
       },
-      "visible": {
+      "inversed": {
+        "type": "boolean",
+        "default": false,
+        "description": "Invert the visual state."
+      },
+      "tooltip": {
         "type": "string",
-        "description": "Visibility binding."
+        "description": "Tooltip text."
       }
     },
     "example": {
@@ -819,7 +978,7 @@
       "name": "ActiveCheckbox",
       "values": {
         "type": "crt.Checkbox",
-        "control": "$PDS_IsActive",
+        "value": "$PDS_IsActive",
         "label": "$Resources.Strings.ActiveCheckbox_label"
       },
       "parentName": "DetailsGrid",
@@ -846,6 +1005,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "ariaLabel": {
+        "type": "string",
+        "description": "Accessibility label."
+      },
       "labelPosition": {
         "type": "string",
         "values": [
@@ -853,16 +1016,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       },
       "placeholder": {
         "type": "string",
@@ -874,10 +1034,12 @@
       },
       "showValueAsLink": {
         "type": "boolean",
+        "default": true,
         "description": "Show selected value as a navigable link."
       },
       "isAddAllowed": {
         "type": "boolean",
+        "default": true,
         "description": "Allow creating new lookup records."
       }
     },
@@ -913,6 +1075,10 @@
         "type": "string",
         "description": "Field label."
       },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
       "pickerType": {
         "type": "string",
         "values": [
@@ -929,16 +1095,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       }
     },
     "example": {
@@ -958,7 +1121,7 @@
   {
     "componentType": "crt.ImageInput",
     "category": "fields",
-    "description": "Image upload / preview field.",
+    "description": "Image upload / preview field. Binds the image attribute through the 'value' property — do NOT use 'control' (it won't work).",
     "container": false,
     "properties": {
       "type": {
@@ -966,13 +1129,21 @@
         "required": true,
         "description": "Must be crt.ImageInput."
       },
-      "control": {
+      "value": {
         "type": "string",
-        "description": "Bound view-model attribute."
+        "description": "Bound view-model attribute (e.g. '$PDS_Photo') or empty string for unbound. Use this property instead of the 'control' property"
       },
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "ariaLabel": {
+        "type": "string",
+        "description": "Accessibility label."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
       },
       "size": {
         "type": "string",
@@ -986,10 +1157,12 @@
       },
       "borderRadius": {
         "type": "string",
+        "default": "medium",
         "description": "Border radius preset (e.g. 'medium')."
       },
       "positioning": {
         "type": "string",
+        "default": "cover",
         "description": "Image fill/fit mode (e.g. 'fill', 'cover')."
       },
       "maxFileSize": {
@@ -1003,16 +1176,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       }
     },
     "example": {
@@ -1020,7 +1190,7 @@
       "name": "PhotoInput",
       "values": {
         "type": "crt.ImageInput",
-        "control": "$PDS_Photo",
+        "value": "$PDS_Photo",
         "label": "$Resources.Strings.PhotoInput_label"
       },
       "parentName": "DetailsGrid",
@@ -1047,6 +1217,14 @@
         "type": "string",
         "description": "Field label."
       },
+      "caption": {
+        "type": "string",
+        "description": "Caption resource string."
+      },
+      "placeholder": {
+        "type": "string",
+        "description": "Placeholder text."
+      },
       "labelPosition": {
         "type": "string",
         "values": [
@@ -1054,16 +1232,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       }
     },
     "example": {
@@ -1096,18 +1271,22 @@
       },
       "minValue": {
         "type": "number",
+        "default": 0,
         "description": "Minimum value."
       },
       "maxValue": {
         "type": "number",
+        "default": 100,
         "description": "Maximum value."
       },
       "step": {
         "type": "number",
+        "default": 1,
         "description": "Step increment."
       },
       "color": {
         "type": "string",
+        "default": "primary",
         "description": "Color scheme."
       },
       "label": {
@@ -1121,16 +1300,13 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
       "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the field is read-only."
       }
     },
     "example": {
@@ -1160,13 +1336,17 @@
         "required": true,
         "description": "Must be crt.Toggle."
       },
-      "control": {
-        "type": "string",
-        "description": "Bound view-model attribute (Boolean)."
+      "value": {
+        "type": "boolean",
+        "description": "Current value or bound view-model attribute (e.g. '$PDS_IsActive')."
       },
       "label": {
         "type": "string",
         "description": "Field label."
+      },
+      "ariaLabel": {
+        "type": "string",
+        "description": "Accessibility label."
       },
       "labelPosition": {
         "type": "string",
@@ -1175,16 +1355,17 @@
           "auto",
           "hidden"
         ],
-        "default": "above",
+        "default": "auto",
         "description": "Label position."
       },
-      "readonly": {
-        "type": "string",
-        "description": "Readonly binding."
+      "disabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether the toggle is disabled."
       },
-      "visible": {
+      "tooltip": {
         "type": "string",
-        "description": "Visibility binding."
+        "description": "Tooltip text."
       },
       "valueChange": {
         "type": "object",
@@ -1196,7 +1377,7 @@
       "name": "ActiveToggle",
       "values": {
         "type": "crt.Toggle",
-        "control": "$PDS_IsActive",
+        "value": "$PDS_IsActive",
         "label": "$Resources.Strings.ActiveToggle_label"
       },
       "parentName": "DetailsGrid",
@@ -1263,8 +1444,9 @@
   {
     "componentType": "crt.List",
     "category": "interactive",
-    "description": "Scrollable record list. Used in list/section pages.",
-    "container": false,
+    "description": "Scrollable record list bound to a data source. The designer inserts a companion crt.ListItem child into the itemLayout property. Requires a viewModelConfigDiff attribute (isCollection: true, modelConfig.path pointing to the data source) and a modelConfigDiff data source entry (crt.EntityDataSource with scope 'viewElement').",
+    "container": true,
+    "childPropertyName": "itemLayout",
     "properties": {
       "type": {
         "type": "string",
@@ -1273,15 +1455,21 @@
       },
       "items": {
         "type": "string",
-        "description": "Data property attribute for the record collection, typically '$Items'."
+        "required": true,
+        "description": "Binding to the collection attribute, e.g. '$Items'."
       },
       "itemLayout": {
         "type": "object",
-        "description": "Item layout template (crt.ListItem config)."
+        "description": "Container property for a crt.ListItem child. In the insert diff the value is an empty object {}; the crt.ListItem is inserted as a separate viewConfigDiff operation with parentName pointing to this List and propertyName 'itemLayout'."
+      },
+      "itemPadding": {
+        "type": "object",
+        "description": "Padding around each list item. Shape: { top, bottom, left, right } with values 'none' | 'extra-small' | 'small' | 'medium' | 'large' or a number.",
+        "default": { "top": "medium", "bottom": "medium", "left": "medium", "right": "medium" }
       },
       "itemSelected": {
         "type": "object",
-        "description": "Request descriptor fired when an item is selected."
+        "description": "Request descriptor fired when an item is selected, e.g. { request: 'crt.OpenPageRequest' }."
       },
       "scrollable": {
         "type": "boolean",
@@ -1295,25 +1483,87 @@
       "enablePullToRefresh": {
         "type": "boolean",
         "description": "Enable pull-to-refresh."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
       }
     },
     "example": {
       "operation": "insert",
-      "name": "RecordList",
+      "name": "List1",
       "values": {
         "type": "crt.List",
         "items": "$Items",
-        "itemSelected": {
-          "request": "crt.OpenPageRequest"
-        },
-        "scrollable": true
+        "scrollable": true,
+        "itemLayout": {},
+        "itemPadding": {
+          "left": "medium",
+          "right": "medium",
+          "top": "medium",
+          "bottom": "medium"
+        }
       },
-      "parentName": "Scaffold",
+      "parentName": "GeneralInfoTab",
       "propertyName": "items",
+      "index": 1
+    }
+  },
+  {
+    "componentType": "crt.ListItem",
+    "category": "child-only",
+    "description": "Item layout template inserted as a child of crt.List via propertyName 'itemLayout'. Defines the title, subtitle, body columns, and icon for each row in the list. Body items are objects with a 'value' binding (e.g. { \"value\": \"$DataSource_ColumnName\" }); they render as labeled fields automatically.",
+    "container": false,
+    "parentTypes": ["crt.List"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.ListItem."
+      },
+      "title": {
+        "type": "string",
+        "description": "Binding to the primary display column, e.g. '$List1DS_Name'. Maps to the 'Title column' setting in the designer."
+      },
+      "subtitles": {
+        "type": "array",
+        "description": "Array of subtitle descriptors. Each entry is a LabeledStateProperty object.",
+        "default": []
+      },
+      "body": {
+        "type": "array",
+        "description": "Array of body field objects. Each item: { \"value\": \"$DataSource_Column\" }. Maps to the 'Columns' section in the designer."
+      },
+      "icon": {
+        "type": "string",
+        "description": "Binding to an image column or null. Maps to the 'Image' setting in the designer."
+      },
+      "iconSize": {
+        "type": "string",
+        "description": "Size of the icon. Accepted values: 'small' | 'medium' | 'large'."
+      },
+      "showEmptyValues": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether to display rows for body fields that have empty values."
+      },
+      "actions": {
+        "type": "array",
+        "description": "Array of action button configs shown on the list item."
+      }
+    },
+    "example": {
+      "operation": "insert",
+      "name": "ListItem1",
+      "values": {
+        "type": "crt.ListItem",
+        "subtitles": [],
+        "body": [
+          { "value": "$List1DS_Account" },
+          { "value": "$List1DS_Email" }
+        ],
+        "showEmptyValues": true,
+        "title": "$List1DS_Name",
+        "icon": null
+      },
+      "parentName": "List1",
+      "propertyName": "itemLayout",
       "index": 0
     }
   },
@@ -1425,7 +1675,15 @@
       },
       "itemConfig": {
         "type": "object",
-        "description": "Gallery item configuration."
+        "description": "Gallery item configuration. Example: { defaultSize: 'medium' }."
+      },
+      "selectionState": {
+        "type": "string",
+        "description": "Selection state attribute binding (e.g. '$Gallery_SelectionState')."
+      },
+      "_selectionOptions": {
+        "type": "object",
+        "description": "Internal selection options. Example: { attribute: 'Gallery_SelectionState' }."
       },
       "useSpecificPage": {
         "type": "boolean",
@@ -1451,8 +1709,11 @@
   {
     "componentType": "crt.Timeline",
     "category": "interactive",
-    "description": "Chronological timeline view for records.",
-    "container": false,
+    "description": "Chronological timeline view for records. Contains crt.TimelineTile children.",
+    "container": true,
+    "typicalChildren": [
+      "crt.TimelineTile"
+    ],
     "properties": {
       "type": {
         "type": "string",
@@ -1461,15 +1722,27 @@
       },
       "items": {
         "type": "array",
-        "description": "Timeline tile configurations."
+        "description": "Child crt.TimelineTile configurations."
       },
       "masterSchemaId": {
         "type": "string",
-        "description": "Master schema ID binding."
+        "description": "Master schema ID binding (e.g. '$Id')."
       },
-      "masterEntity": {
+      "masterEntitySchemaName": {
         "type": "string",
-        "description": "Master entity name binding."
+        "description": "Master entity schema name (e.g. 'Contact')."
+      },
+      "caption": {
+        "type": "string",
+        "description": "Timeline caption resource string."
+      },
+      "label": {
+        "type": "string",
+        "description": "Timeline label resource string."
+      },
+      "filterValues": {
+        "type": "string",
+        "description": "Filter values attribute binding."
       }
     },
     "example": {
@@ -1477,7 +1750,9 @@
       "name": "ActivityTimeline",
       "values": {
         "type": "crt.Timeline",
-        "masterEntity": "$PDS_Contact"
+        "masterEntitySchemaName": "Contact",
+        "masterSchemaId": "$Id",
+        "items": []
       },
       "parentName": "Scaffold",
       "propertyName": "items",
@@ -1485,58 +1760,41 @@
     }
   },
   {
-    "componentType": "crt.CommunicationOptions",
+    "componentType": "crt.TimelineTile",
     "category": "interactive",
-    "description": "Communication options widget (call, email, SMS links).",
+    "description": "Individual tile inside a crt.Timeline. Represents one entity type (e.g. SysFile, Feed) shown on the timeline.",
     "container": false,
+    "parentTypes": [
+      "crt.Timeline"
+    ],
     "properties": {
       "type": {
         "type": "string",
         "required": true,
-        "description": "Must be crt.CommunicationOptions."
+        "description": "Must be crt.TimelineTile."
       },
-      "items": {
+      "sortedByColumn": {
         "type": "string",
-        "description": "Data property attribute for communication options collection."
+        "default": "CreatedOn",
+        "description": "Column name used for chronological sorting."
       },
-      "typeColumnName": {
-        "type": "string",
-        "description": "Communication type column name."
-      },
-      "numberColumnName": {
-        "type": "string",
-        "description": "Number/value column name."
-      },
-      "masterRecordColumnName": {
-        "type": "string",
-        "description": "Master record column name."
-      },
-      "masterRecordColumnValue": {
-        "type": "string",
-        "description": "Master record column value binding."
-      },
-      "primaryColumnName": {
-        "type": "string",
-        "description": "Primary column name."
-      },
-      "readonly": {
-        "type": "boolean",
-        "description": "Read-only mode."
-      },
-      "visible": {
-        "type": "string",
-        "description": "Visibility binding."
+      "data": {
+        "type": "object",
+        "description": "Tile data configuration: { schemaType (entity schema type, e.g. 'SysFile', 'Feed'), columns (array of column configs) }."
       }
     },
     "example": {
       "operation": "insert",
-      "name": "CommOptions",
+      "name": "FilesTile",
       "values": {
-        "type": "crt.CommunicationOptions",
-        "masterRecordColumnValue": "$Id",
-        "masterRecordColumnName": "Contact"
+        "type": "crt.TimelineTile",
+        "sortedByColumn": "CreatedOn",
+        "data": {
+          "schemaType": "SysFile",
+          "columns": []
+        }
       },
-      "parentName": "DetailsGrid",
+      "parentName": "ActivityTimeline",
       "propertyName": "items",
       "index": 0
     }
@@ -1590,7 +1848,7 @@
       },
       "config": {
         "type": "object",
-        "description": "Full indicator configuration: { title, data: { providing, formatting }, text: { template, metricMacros, fontSizeMode }, layout: { color, border, icon }, theme, hideTitle }."
+        "description": "Full indicator configuration: { title, data: { providing, formatting }, text: { template, metricMacros, fontSizeMode, labelPosition }, layout: { color, border, icon }, theme, hideTitle }."
       }
     },
     "example": {
@@ -1660,6 +1918,7 @@
       },
       "color": {
         "type": "string",
+        "default": "secondary",
         "description": "Color scheme."
       },
       "size": {
@@ -1667,9 +1926,28 @@
         "values": [
           "small",
           "medium",
-          "large"
+          "large",
+          "extra-large",
+          "xxl",
+          "xxxl"
         ],
+        "default": "medium",
         "description": "Button size."
+      },
+      "iconPosition": {
+        "type": "string",
+        "values": [
+          "only-text",
+          "left-icon",
+          "right-icon",
+          "only-icon"
+        ],
+        "default": "left-icon",
+        "description": "Icon position relative to caption."
+      },
+      "_filterOptions": {
+        "type": "object",
+        "description": "Internal filter options. Example: { expose: [], from: ['..._active_folder_id', '..._active_folder_filter_data'] }."
       }
     },
     "example": {
@@ -1712,6 +1990,10 @@
       "valueChange": {
         "type": "object",
         "description": "Request descriptor fired when filter changes."
+      },
+      "_filterOptions": {
+        "type": "object",
+        "description": "Internal filter options. Example: { expose: [], from: 'QuickFilter_Value' }."
       }
     },
     "example": {
@@ -1739,6 +2021,10 @@
       "items": {
         "type": "array",
         "description": "Child crt.QuickFilter entries."
+      },
+      "_filterOptions": {
+        "type": "object",
+        "description": "Internal filter options. Example: { expose: [], from: 'QuickFilterGroup_Value' }."
       }
     },
     "typicalChildren": [
@@ -1786,13 +2072,17 @@
       "iconPosition": {
         "type": "string",
         "values": [
-          "left",
-          "right"
+          "only-text",
+          "left-icon",
+          "right-icon",
+          "only-icon"
         ],
+        "default": "left-icon",
         "description": "Icon position."
       },
       "color": {
         "type": "string",
+        "default": "secondary",
         "description": "Color scheme."
       },
       "size": {
@@ -1800,8 +2090,12 @@
         "values": [
           "small",
           "medium",
-          "large"
+          "large",
+          "extra-large",
+          "xxl",
+          "xxxl"
         ],
+        "default": "medium",
         "description": "Button size."
       }
     },
@@ -1814,6 +2108,82 @@
       "parentName": "HeaderContainer",
       "propertyName": "items",
       "index": 0
+    }
+  },
+  {
+    "componentType": "crt.MenuItem",
+    "category": "interactive",
+    "description": "Menu item inside a Button or FloatingActionButton dropdown menu. Added as a child in the parent's menuItems array.",
+    "container": false,
+    "parentTypes": [
+      "crt.Button",
+      "crt.FloatingActionButton"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.MenuItem."
+      },
+      "caption": {
+        "type": "string",
+        "required": true,
+        "description": "Display text for the menu item (localizable resource string)."
+      },
+      "clicked": {
+        "type": "object",
+        "description": "Request descriptor fired when the menu item is tapped."
+      },
+      "icon": {
+        "type": "string",
+        "description": "Icon identifier displayed next to the caption."
+      },
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether the menu item is enabled."
+      }
+    },
+    "example": {
+      "operation": "insert",
+      "name": "SaveMenuItem",
+      "values": {
+        "type": "crt.MenuItem",
+        "caption": "$Resources.Strings.SaveMenuItem_caption",
+        "clicked": {
+          "request": "crt.SaveRecordRequest"
+        }
+      },
+      "parentName": "ActionButton",
+      "propertyName": "menuItems",
+      "index": 0
+    }
+  },
+  {
+    "componentType": "crt.MenuSeparator",
+    "category": "interactive",
+    "description": "Visual separator between menu items in a Button or FloatingActionButton dropdown menu.",
+    "container": false,
+    "parentTypes": [
+      "crt.Button",
+      "crt.FloatingActionButton"
+    ],
+    "properties": {
+      "type": {
+        "type": "string",
+        "required": true,
+        "description": "Must be crt.MenuSeparator."
+      }
+    },
+    "example": {
+      "operation": "insert",
+      "name": "MenuSeparator1",
+      "values": {
+        "type": "crt.MenuSeparator"
+      },
+      "parentName": "ActionButton",
+      "propertyName": "menuItems",
+      "index": 2
     }
   }
 ]

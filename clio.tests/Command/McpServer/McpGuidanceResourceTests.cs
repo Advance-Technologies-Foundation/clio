@@ -1380,6 +1380,39 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents limited page-level business-rule support.")]
+	public void MobilePageGuidanceResource_Should_Return_Canonical_Mobile_Page_Guide() {
+		// Arrange
+		MobilePageGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the mobile page guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/mobile-page-modification",
+			because: "the resource should expose a stable MCP URI for mobile page guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the mobile page guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP mobile page modification guide",
+			because: "the article should identify itself as the dedicated mobile page guide");
+		article.Text.Should().Contain("create-page-business-rule",
+			because: "the mobile guide should explicitly document that mobile pages support page-level business rules");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the mobile guide should explicitly document that mobile guidance covers entity-level business rules too");
+		article.Text.Should().Contain("limited set of conditions and actions",
+			because: "the mobile guide should warn callers that mobile business rules do not have full web parity");
+		article.Text.Should().Contain("separate artifacts",
+			because: "the guide should keep page-level business rules separate from mobile page body editing");
+		article.Text.Should().Contain("Read `business-rules` for rule semantics",
+			because: "the guide should keep detailed business-rule semantics in the dedicated shared guidance instead of duplicating them here");
+		article.Text.Should().Contain("Mobile pages do not support validators at all",
+			because: "the guide should preserve the validator limitation while clarifying business-rule support");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes business-rules so AI callers can retrieve business-rule authoring guidance by name.")]
 	public void GuidanceCatalog_Should_Include_Business_Rules_Entry() {
 		// Act
