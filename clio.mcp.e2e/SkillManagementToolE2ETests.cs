@@ -17,7 +17,12 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for workspace-local skill management MCP tools.
 /// </summary>
 [TestFixture]
-[AllureNUnit]
+// [AllureNUnit] is intentionally omitted.
+// NUnit runs each async test on a single thread, and [AllureNUnit] adds
+// per-test bookkeeping that runs on that same thread. In tests with many
+// sequential awaits, that bookkeeping appears to block async continuations
+// from resuming — the test deadlocks with no timeout or error. Removing the
+// attribute restores normal execution.
 [AllureFeature("workspace-skill-management")]
 [NonParallelizable]
 public sealed class SkillManagementToolE2ETests {
