@@ -46,6 +46,22 @@ public sealed class BusinessRuleFiltersGuidanceResourceTests {
 			because: "the guide should enumerate the text-only CONTAIN token");
 		article.Text.Should().Contain("IS_NULL",
 			because: "the guide should enumerate the unary IS_NULL token");
+		article.Text.Should().Contain("Intent decomposition",
+			because: "the guide should teach LLM callers how to translate natural-language prompts into target + filters + backward references");
+		article.Text.Should().Contain("Creatio domain vocabulary",
+			because: "the guide should map domain nouns (Customer, Lead, Opportunity) to schemas and lookup values so the LLM stops conflating them");
+		article.Text.Should().Contain("Worked examples",
+			because: "the guide should include end-to-end natural-language -> payload mappings for the recurring prompt shapes");
+		article.Text.Should().Contain("Customer",
+			because: "the vocabulary section must call out that 'Customer' is an Account.Type value, not a schema name");
+		article.Text.Should().Contain("[Lead:QualifiedAccount]",
+			because: "the worked examples should include the canonical Account -> Lead backward reference path");
+		article.Text.Should().Contain("NOT_EXISTS",
+			because: "the guide should teach the 'without X' -> NOT_EXISTS mapping");
+		article.Text.Should().Contain("Lookup vs forward-text comparison",
+			because: "the guide must explicitly disambiguate EQUAL-on-Lookup-column from forward-into-text-column to keep the LLM off the wrong Type.Name pattern");
+		article.Text.Should().Contain("\"columnPath\": \"Type\"",
+			because: "the canonical example for 'Customer' must show the Lookup-column shape, not the forward Type.Name pattern");
 	}
 
 	[Test]

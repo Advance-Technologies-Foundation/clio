@@ -192,12 +192,23 @@ internal sealed class SerializableParameter {
 }
 
 /// <summary>
-/// Lookup parameter value shape required by the platform: contains the record Id (GUID) and
-/// optionally a display value. Display value is kept empty by clio because resolving display
-/// names would require an extra OData round-trip per filter leaf; the filter still matches
-/// records by Id correctly at runtime.
+/// Lookup parameter value shape required by the Creatio platform's Freedom UI business-rule
+/// editor: <c>{Name, Id, value, displayValue}</c>. <c>Id</c> and <c>value</c> are both the
+/// record GUID and are always populated; <c>Name</c> and <c>displayValue</c> carry the
+/// primary-display-column value so the rule editor renders the lookup record by name.
+/// When the display value is unknown (caller passed a raw GUID and no resolver round-trip was
+/// possible), only the GUID-bearing fields are written, keeping the filter functional at the
+/// SQL level even though the UI shows "&lt;?&gt;" in place of the name.
+/// Field declaration order matches the platform's expected JSON shape.
 /// </summary>
 internal sealed class LookupValueDto {
+	[JsonPropertyName("Name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Name { get; set; }
+
+	[JsonPropertyName("Id")]
+	public Guid Id { get; set; }
+
 	[JsonPropertyName("value")]
 	public Guid Value { get; set; }
 

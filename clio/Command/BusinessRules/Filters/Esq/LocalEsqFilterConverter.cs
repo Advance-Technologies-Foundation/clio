@@ -278,16 +278,22 @@ internal sealed class LocalEsqFilterConverter(
 
 	private SerializableFilter BuildLookupFilter(StaticFilterLeaf leaf, EntitySchemaColumnDto lookupColumn) {
 		string referenceSchemaName = lookupColumn.ReferenceSchema!.Name!;
-		Guid[] ids = ParseLookupGuids(leaf.Value, leaf.ColumnPath, referenceSchemaName);
+		LookupResolution[] resolutions = ParseLookupValues(leaf.Value, leaf.ColumnPath, referenceSchemaName);
 		string caption = ExtractCaption(lookupColumn);
-		SerializableExpression[] parameterExpressions = new SerializableExpression[ids.Length];
-		for (int i = 0; i < ids.Length; i++) {
+		SerializableExpression[] parameterExpressions = new SerializableExpression[resolutions.Length];
+		for (int i = 0; i < resolutions.Length; i++) {
+			LookupResolution resolution = resolutions[i];
 			parameterExpressions[i] = new SerializableExpression {
 				ExpressionType = EsqEntitySchemaQueryExpressionType.Parameter,
 				ClassName = EsqFilterClassNames.ParameterExpression,
 				Parameter = new SerializableParameter {
 					DataValueType = EsqDataValueType.Lookup,
-					Value = new LookupValueDto { Value = ids[i], DisplayValue = null },
+					Value = new LookupValueDto {
+						Name = resolution.DisplayValue,
+						Id = resolution.Id,
+						Value = resolution.Id,
+						DisplayValue = resolution.DisplayValue
+					},
 					ClassName = EsqFilterClassNames.Parameter
 				}
 			};
@@ -363,7 +369,7 @@ internal sealed class LocalEsqFilterConverter(
 		};
 	}
 
-	private Guid[] ParseLookupGuids(JsonElement? value, string columnPath, string referenceSchemaName) {
+	private LookupResolution[] ParseLookupValues(JsonElement? value, string columnPath, string referenceSchemaName) {
 		string fieldPath = "rule.actions[*].filter.filters[*].value";
 		if (value is null) {
 			throw new BusinessRuleFilterException(
@@ -380,7 +386,7 @@ internal sealed class LocalEsqFilterConverter(
 					fieldPath,
 					$"Lookup filter on '{columnPath}' requires a non-empty array of GUID strings.");
 			}
-			Guid[] result = new Guid[length];
+			LookupResolution[] result = new LookupResolution[length];
 			int i = 0;
 			foreach (JsonElement element in raw.EnumerateArray()) {
 				result[i] = ResolveSingleLookupValue(element, columnPath, referenceSchemaName,
@@ -392,7 +398,7 @@ internal sealed class LocalEsqFilterConverter(
 		return [ResolveSingleLookupValue(raw, columnPath, referenceSchemaName, fieldPath)];
 	}
 
-	private Guid ResolveSingleLookupValue(
+	private LookupResolution ResolveSingleLookupValue(
 		JsonElement element,
 		string columnPath,
 		string referenceSchemaName,
@@ -405,9 +411,15 @@ internal sealed class LocalEsqFilterConverter(
 		}
 		string text = element.GetString() ?? string.Empty;
 		if (Guid.TryParse(text, out Guid parsed)) {
-			return parsed;
+			// GUID input — try to enrich with the display name so the rule UI renders the
+			// lookup record by name. Enrichment is best-effort: when no resolver is wired
+			// or the lookup row cannot be fetched, DisplayValue stays null and only the
+			// GUID-bearing fields are serialized (filter still matches by Id at runtime).
+			string? displayName = lookupValueResolver?.TryResolveDisplayName(referenceSchemaName, parsed);
+			return new LookupResolution(parsed, displayName);
 		}
-		// Non-GUID string -> try display-name resolution when a resolver is wired; otherwise reject.
+		// Non-GUID string — must resolve through ILookupValueResolver against the lookup's
+		// primary display column. When no resolver is wired, surface a clear error.
 		if (lookupValueResolver is null) {
 			throw new BusinessRuleFilterException(
 				BusinessRuleFilterErrorCodes.LookupValueNotGuid,
