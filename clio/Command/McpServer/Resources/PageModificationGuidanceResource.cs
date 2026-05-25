@@ -193,19 +193,21 @@ public sealed class PageModificationGuidanceResource {
 		       ` resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'
 		       ```
 
-		       Note: passing `resources` is one of two valid options. The shorter alternative — rebinding the label to the auto-provided form — looks like this:
+		       Note: passing `resources` is one of two valid options. The shorter alternative is to rebind the label to the entity column code (the LAST segment of `modelConfig.path`), which the platform auto-provides from the column caption. Auto-provide is keyed by COLUMN CODE, not by view-model attribute name — so `PDS_UsrEstimatedMinutes` as the resource key is NOT auto-provided, but `UsrEstimatedMinutes` IS.
+
+		       Apply this single-line change to the canonical payload above (everything else stays the same — the attribute name `PDS_UsrEstimatedMinutes` keeps its `modelConfig.path: "PDS.UsrEstimatedMinutes"` declaration in viewModelConfigDiff):
 
 		       ```
-		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // ← change to:
-		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // unchanged form requires an explicit resources entry
+		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // ← before: requires `resources` parameter
+		       "label": "$Resources.Strings.UsrEstimatedMinutes"      // ← after:  auto-provided, omit `resources`
 		       ```
 
-		       Use the auto-provided form when the binding attribute name doubles as the label key. For DS-bound attributes whose `modelConfig.path` is set in step 2, the platform supplies the caption from the entity column automatically — the `resources` parameter can be omitted in that case.
+		       The control binding (`$PDS_UsrEstimatedMinutes`) does NOT change — it still references the view-model attribute. Only the label resource key changes to the column code form so the platform can resolve it from the entity column caption automatically.
 
 		       Common validation diagnostics
 
 		       - "Inserted field 'X' (type 'Y') binds to '$Z' but the body does not declare attribute 'Z' in viewModelConfigDiff." — Step 2 missing. Add the `viewModelConfigDiff` merge for attribute `Z` with the correct `modelConfig.path`. If `Z` is supposed to come from a parent schema, change `operation:"insert"` to `operation:"merge"` on the `viewConfigDiff` entry instead.
-		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or rebind the label to `$Resources.Strings.<bindingAttr>` (auto-provided when the binding attribute has a DS-bound `modelConfig.path`).
+		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or rebind the label to `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (auto-provided from the entity column caption). The binding attribute name itself (e.g. `PDS_<columnCode>`) is NOT a valid auto-provide key — only the column code is.
 
 		       Adding a button with a click handler
 		       Body structure for `update-page` (preserve all marker pairs — do not remove or reorder them):

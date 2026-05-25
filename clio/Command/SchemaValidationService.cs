@@ -983,9 +983,16 @@ public static class SchemaValidationService
 		if (hasExplicit || isAutoProvided) {
 			return;
 		}
-		string suggestion = modelPaths.TryGetValue(bindingAttribute, out string boundPath) && boundPath.Contains('.', StringComparison.Ordinal)
-			? $"or change the label to '$Resources.Strings.{bindingAttribute}' so the platform auto-provides the caption from the DS-bound attribute"
-			: $"or declare the binding attribute with a DS-bound modelConfig.path so the label is auto-provided";
+		string suggestion;
+		if (modelPaths.TryGetValue(bindingAttribute, out string boundPath) && boundPath.Contains('.', StringComparison.Ordinal)) {
+			int lastDot = boundPath.LastIndexOf('.');
+			string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
+				? boundPath[(lastDot + 1)..]
+				: boundPath;
+			suggestion = $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+		} else {
+			suggestion = "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		}
 		result.Errors.Add(
 			$"Inserted field '{displayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
 			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +

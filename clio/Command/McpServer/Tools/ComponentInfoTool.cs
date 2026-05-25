@@ -29,11 +29,14 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 		"\"operation\":\"insert\" in viewConfigDiff, the SAME update-page call MUST also include " +
 		"both of the following — update-page validation rejects payloads that omit either part:\n" +
 		"  (1) viewModelConfigDiff entry that declares the control's binding attribute, e.g. " +
-		"{\"operation\":\"merge\",\"values\":{\"<bindingAttr>\":{\"modelConfig\":{\"path\":\"<DataSource>.<Column>\"}}}} " +
+		"{\"operation\":\"merge\",\"values\":{\"<bindingAttr>\":{\"modelConfig\":{\"path\":\"<DataSource>.<columnCode>\"}}}} " +
 		"— omit it and the control renders with no data source.\n" +
 		"  (2) Label resource — either pass {\"<labelKey>\":\"<Caption>\"} in the `resources` parameter, " +
-		"OR change the control's label to \"$Resources.Strings.<bindingAttr>\" so the platform " +
-		"auto-provides the caption from the DS-bound attribute. Omit both and the label renders blank.\n" +
+		"OR set the control's label to \"$Resources.Strings.<columnCode>\" where <columnCode> is the LAST " +
+		"segment of the binding attribute's modelConfig.path (e.g. \"UsrCompleted\" for path \"PDS.UsrCompleted\"). " +
+		"Auto-provide is keyed by COLUMN CODE, not by view-model attribute name — the path-with-underscores " +
+		"form (e.g. \"PDS_UsrCompleted\") is NOT auto-provided even when declared as a DS-bound attribute. " +
+		"Omit both options and the label renders blank.\n" +
 		"For `operation:\"merge\"` against an existing parent-provided control, this contract does NOT apply.";
 
 	/// <summary>
