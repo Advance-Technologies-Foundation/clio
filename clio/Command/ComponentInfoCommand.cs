@@ -47,6 +47,10 @@ public sealed class ComponentInfoCommand {
 
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		WriteIndented = true,
+		// Pin LF so the verb produces identical bytes on Windows and Unix runners —
+		// AI clients diff output across hosts, and the CRLF default of Utf8JsonWriter
+		// on Windows would otherwise change every line. Pipe-friendly for `jq`.
+		NewLine = "\n",
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		Converters = { new Clio.Command.McpServer.Tools.CompactPrimitiveArrayJsonElementConverter() }
 	};

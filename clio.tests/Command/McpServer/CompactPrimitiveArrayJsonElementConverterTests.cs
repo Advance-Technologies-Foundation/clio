@@ -14,6 +14,10 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class CompactPrimitiveArrayJsonElementConverterTests {
 	private static readonly JsonSerializerOptions IndentedWithConverter = new() {
 		WriteIndented = true,
+		// Pin LF so the assertions below — which compare against literal "\n" — match
+		// on both Unix and Windows runners. Mirrors the production setup in
+		// ComponentInfoCommand.JsonOptions.
+		NewLine = "\n",
 		Converters = { new CompactPrimitiveArrayJsonElementConverter() }
 	};
 
