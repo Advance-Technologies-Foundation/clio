@@ -145,22 +145,26 @@ public sealed class ComponentInfoTool(
 	}
 
 	/// <summary>
-	/// Lifts the registry entry's <c>content</c> block into the wire shape exposed on
-	/// the detail response, merging the producer's global <c>typeDefinitions</c> (from
-	/// the wrapped envelope) with the per-component <c>typeDefinitions</c>. The
-	/// per-component definition wins on a key collision — a component that re-defines
-	/// a global type has explicitly overridden it (rare but legitimate). Raw
-	/// <c>docs</c> paths are intentionally not surfaced here; the docs CDN/cache
-	/// pipeline consumes them and the result lands on
-	/// <see cref="ComponentInfoResponse.Documentation"/> instead.
+	/// Lifts the registry entry's <c>references</c> block into the wire shape exposed
+	/// on the detail response. The producer publishes a shared <c>root.references.typeDefinitions</c>
+	/// bag (~190 keys), of which any one component only references a handful — we
+	/// resolve the transitive closure starting from the component's
+	/// inputs/outputs/per-component typedefs (see <see cref="TypeReferenceClosure"/>)
+	/// so AI receives only the schemas it actually needs to interpret this
+	/// component, not the whole global dictionary. Raw <c>docs</c> paths are
+	/// intentionally not surfaced here; the docs CDN/cache pipeline consumes them
+	/// and the result lands on <see cref="ComponentInfoResponse.Documentation"/>
+	/// instead.
 	/// </summary>
 	private static ComponentReferencesResponse? BuildReferencesResponse(
 		ComponentRegistryEntry entry,
 		RegistryGlobalReferences? globalReferences) {
-		IReadOnlyDictionary<string, JsonElement>? perComponent = entry.References?.TypeDefinitions;
-		IReadOnlyDictionary<string, JsonElement>? global = globalReferences?.TypeDefinitions;
-		IReadOnlyDictionary<string, JsonElement>? merged = MergeBindings(global, perComponent);
-		return merged is null ? null : new ComponentReferencesResponse { TypeDefinitions = merged };
+		IReadOnlyDictionary<string, JsonElement>? resolved = TypeReferenceClosure.Resolve(
+			entry.Inputs,
+			entry.Outputs,
+			entry.References?.TypeDefinitions,
+			globalReferences?.TypeDefinitions);
+		return resolved is null ? null : new ComponentReferencesResponse { TypeDefinitions = resolved };
 	}
 
 	/// <summary>

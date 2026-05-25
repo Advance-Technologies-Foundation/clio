@@ -191,18 +191,28 @@ metadata shared across every component:
   `RequestBindingConfig`, `CrtMenuItemViewElementConfig`,
   `ViewElementConfig`, `LocalizableStringModel`).
 
-`ComponentInfoTool.CreateDetailResponse` merges both into the
-per-component surface before serialising:
+`ComponentInfoTool.CreateDetailResponse` folds both into the per-component
+surface before serialising, but with two different rules:
 
 - `response.inputs` = `root.references.baseInputs` ∪ `entry.inputs` —
-  per-component overrides win on a key collision.
-- `response.references.typeDefinitions` = `root.references.typeDefinitions` ∪
-  `entry.references.typeDefinitions` — per-component overrides win.
+  every component unconditionally inherits the base inputs (per-component
+  override wins on a key collision). This is a flat union; AI never needs
+  to look at `baseInputs` separately.
+- `response.references.typeDefinitions` = **transitive closure** of every
+  type identifier tokenised from `entry.inputs`/`entry.outputs`/per-component
+  typedefs, looked up first in `entry.references.typeDefinitions` then in
+  `root.references.typeDefinitions`. The producer's global bag carries
+  ~190 types but any one component references only a handful; the closure
+  filter (see `TypeReferenceClosure.cs`) drops every global a component does
+  not reach, so a `crt.Button` detail response carries ~5 typedefs instead
+  of ~190. Identifiers that resolve to neither bag are built-ins (`string`,
+  `Record`, `Promise`, …) and are silently skipped.
 
-So an AI consumer reads a single flat per-component view without having
-to dereference globals separately. The merge is also exercised by
-`Live_Snapshot_Detail_Should_Merge_Global_Content_Into_Inputs_And_TypeDefinitions`
-in `ComponentRegistrySnapshotTests`.
+So an AI consumer reads a single flat per-component view, with every
+referenced type definition inlined and nothing irrelevant. The closure
+filter is exercised by `Live_Snapshot_Detail_Should_Resolve_Referenced_References_Into_Inputs_And_TypeDefinitions`
+in `ComponentRegistrySnapshotTests` (real producer payload) and by
+`TypeReferenceClosureTests` (hermetic depth/edge cases).
 
 ### Mobile flavor (`schema-type=mobile`)
 

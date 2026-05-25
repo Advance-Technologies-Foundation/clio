@@ -61,8 +61,8 @@ public sealed class ComponentRegistrySnapshotTests {
 	}
 
 	[Test]
-	[Description("Detail responses against the live snapshot must merge baseInputs into per-component inputs and global typeDefinitions into per-component typeDefinitions — proving the producer's globals reach AI.")]
-	public void Live_Snapshot_Detail_Should_Merge_Global_References_Into_Inputs_And_TypeDefinitions() {
+	[Description("Detail responses against the live snapshot must merge baseInputs into per-component inputs and resolve the transitive closure of typeDefinitions referenced from the component's inputs/outputs — proving AI receives the relevant globals but is not buried under the full ~190-key dictionary.")]
+	public void Live_Snapshot_Detail_Should_Resolve_Referenced_References_Into_Inputs_And_TypeDefinitions() {
 		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
 		using FileStream stream = File.OpenRead(snapshotPath);
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
@@ -94,9 +94,20 @@ public sealed class ComponentRegistrySnapshotTests {
 		detail.References!.TypeDefinitions.Should().NotBeNull();
 		detail.References.TypeDefinitions!.Should().ContainKey("RequestBindingConfig",
 			because: "crt.Button.outputs.clicked.type references 'RequestBindingConfig' — without the global definition AI cannot resolve it");
-		// Per-component typeDefinition still surfaces alongside the globals.
+		// Per-component typeDefinitions still surface alongside the relevant globals.
 		detail.References.TypeDefinitions.Should().ContainKey("ButtonIcon",
-			because: "the per-component definition must survive the merge with the globals");
+			because: "the per-component definition must survive the transitive-closure resolution");
+		detail.References.TypeDefinitions.Should().ContainKey("ButtonAnimatedIcon",
+			because: "the per-component definition must survive the transitive-closure resolution");
+
+		// Closure filter — the global bag has ~190 keys, but AI must only receive
+		// the ones crt.Button actually needs. Unrelated types must be filtered out;
+		// 'ActivityColumnBinding' lives in root.references.typeDefinitions but no
+		// crt.Button input/output/per-component typedef references it.
+		detail.References.TypeDefinitions.Should().NotContainKey("ActivityColumnBinding",
+			because: "the transitive-closure filter must drop globals that no crt.Button binding references");
+		detail.References.TypeDefinitions.Count.Should().BeLessThan(20,
+			because: "crt.Button only needs a handful of typedefs reachable from its inputs/outputs/per-component typedefs — surfacing the full ~190-key global bag would defeat the closure filter");
 	}
 
 	[Test]
