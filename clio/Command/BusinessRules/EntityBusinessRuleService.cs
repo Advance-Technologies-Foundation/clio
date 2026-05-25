@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -30,8 +32,11 @@ public sealed record EntityBusinessRuleCreateRequest(
 internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
 	IEntityBusinessRuleAttributeProvider attributeProvider,
+	IEntityBusinessRuleSchemaProvider entitySchemaProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
-	IBusinessRuleFormulaValidationService formulaValidationService)
+	IBusinessRuleFormulaValidationService formulaValidationService,
+	IApplicationClient applicationClient,
+	IServiceUrlBuilder serviceUrlBuilder)
 	: IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
@@ -42,17 +47,42 @@ internal sealed class EntityBusinessRuleService(
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-		BusinessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
+
+		FilterSchemaProvider? filterSchemaProvider = null;
+		LookupValueResolver? lookupValueResolver = null;
+		if (RequiresStaticFilterScope(request.Rule)) {
+			filterSchemaProvider = new FilterSchemaProvider(entitySchemaProvider);
+			filterSchemaProvider.Initialize(packageUId, attributeContext.EntitySchema);
+			lookupValueResolver = new LookupValueResolver(filterSchemaProvider, applicationClient, serviceUrlBuilder);
+		}
+
+		BusinessRuleValidator.ValidateEntity(request.Rule, attributeContext.Attributes, filterSchemaProvider);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules = BusinessRuleMetadataConverter.ToEntityMetadata(
 			attributeContext.Attributes,
 			request.Rule,
-			attributeContext.EntitySchema.Name);
+			attributeContext.EntitySchema.Name,
+			filterSchemaProvider,
+			lookupValueResolver);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,
 			createdRules);
+	}
+
+	private static bool RequiresStaticFilterScope(BusinessRule rule) {
+		if (rule?.Actions is null) {
+			return false;
+		}
+
+		foreach (BusinessRuleAction action in rule.Actions) {
+			if (string.Equals(action?.ActionType, ApplyStaticFilterActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private void ValidateFormulas(

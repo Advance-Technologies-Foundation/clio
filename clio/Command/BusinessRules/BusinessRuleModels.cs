@@ -134,6 +134,7 @@ public sealed record BusinessRuleExpression
 [JsonDerivedType(typeof(MakeOptionalBusinessRuleAction), "make-optional")]
 [JsonDerivedType(typeof(SetValuesBusinessRuleAction), "set-values")]
 [JsonDerivedType(typeof(ApplyFilterBusinessRuleAction), "apply-filter")]
+[JsonDerivedType(typeof(ApplyStaticFilterBusinessRuleAction), "apply-static-filter")]
 [JsonDerivedType(typeof(HideElementBusinessRuleAction), "hide-element")]
 [JsonDerivedType(typeof(ShowElementBusinessRuleAction), "show-element")]
 public abstract record BusinessRuleAction
@@ -369,6 +370,38 @@ public sealed record ApplyFilterBusinessRuleAction : BusinessRuleAction
     public bool PopulateValue { get; init; }
 
     [JsonIgnore] public override string ActionType => BusinessRuleConstants.ApplyFilterActionTypeName;
+
+    [JsonIgnore] public override List<string> FieldSelectionItems => [];
+
+    [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => [];
+}
+
+/// <summary>
+/// Applies a static ESQ filter to a lookup attribute on the entity. Single-action-per-rule.
+/// </summary>
+public sealed record ApplyStaticFilterBusinessRuleAction : BusinessRuleAction
+{
+    public ApplyStaticFilterBusinessRuleAction()
+    {
+    }
+
+    public ApplyStaticFilterBusinessRuleAction(string targetAttribute, JsonElement filter)
+    {
+        TargetAttribute = targetAttribute;
+        Filter = filter;
+    }
+
+    [JsonPropertyName("targetAttribute")]
+    [Description("Target lookup attribute on the root entity. The lookup's reference schema is used as the filter root.")]
+    [Required]
+    public string TargetAttribute { get; init; } = string.Empty;
+
+    [JsonPropertyName("filter")]
+    [Description("Friendly filter definition for apply-static-filter. Use get-guidance name=business-rules for the full contract.")]
+    [Required]
+    public JsonElement Filter { get; init; }
+
+    [JsonIgnore] public override string ActionType => BusinessRuleConstants.ApplyStaticFilterActionTypeName;
 
     [JsonIgnore] public override List<string> FieldSelectionItems => [];
 

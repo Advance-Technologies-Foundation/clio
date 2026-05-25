@@ -6,6 +6,7 @@ using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
@@ -46,11 +47,15 @@ public sealed class EntityBusinessRuleServiceTests {
 		_addonSchemaDesignerClient
 			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => _savedAddonSchema = callInfo.Arg<AddonSchemaDto>());
+		EntityBusinessRuleSchemaProvider schemaProvider = new(_entitySchemaDesignerClient);
 		_service = new EntityBusinessRuleService(
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
-			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
+			new EntityBusinessRuleAttributeProvider(schemaProvider),
+			schemaProvider,
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
-			_formulaValidationService);
+			_formulaValidationService,
+			Substitute.For<IApplicationClient>(),
+			Substitute.For<IServiceUrlBuilder>());
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]

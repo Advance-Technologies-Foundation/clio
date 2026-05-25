@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
@@ -22,12 +24,24 @@ internal static class BusinessRuleValidator {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
 		Validate(rule, attributeMap, ValidateEntityAction);
 
+	/// <summary>
+	/// Validates an entity rule including schema-aware checks for apply-static-filter.
+	/// </summary>
+	internal static void ValidateEntity(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
+		Validate(rule, attributeMap, (action, map) => ValidateEntityAction(action, map, filterSchemaProvider));
+	}
+
 	internal static void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
 		ArgumentNullException.ThrowIfNull(rule);
 		bool isApplyFilterRule = IsApplyFilterOnlyRule(rule);
+		bool isApplyStaticFilterRule = IsApplyStaticFilterOnlyRule(rule);
+		bool isUnconditionalRule = isApplyFilterRule || isApplyStaticFilterRule;
 
 		if (string.IsNullOrWhiteSpace(rule.Caption)) {
 			throw new ArgumentException("rule.caption is required.");
@@ -42,13 +56,14 @@ internal static class BusinessRuleValidator {
 		}
 
 		ValidateNoMixedApplyFilter(rule, isApplyFilterRule);
+		ValidateNoMixedApplyStaticFilter(rule, isApplyStaticFilterRule);
 		ValidateLogicalOperation(rule.Condition);
 
 		if (rule.Condition.Conditions is null) {
 			throw new ArgumentException("rule.condition.conditions is required.");
 		}
 
-		if (!isApplyFilterRule && rule.Condition.Conditions.Count == 0) {
+		if (!isUnconditionalRule && rule.Condition.Conditions.Count == 0) {
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
@@ -62,6 +77,15 @@ internal static class BusinessRuleValidator {
 			&& !isApplyFilterRule) {
 			throw new ArgumentException(
 				"apply-filter rules support exactly one action and cannot be combined with other entity business-rule actions.");
+		}
+	}
+
+	private static void ValidateNoMixedApplyStaticFilter(BusinessRule rule, bool isApplyStaticFilterRule) {
+		if (rule.Actions.Exists(action =>
+			    string.Equals(action?.ActionType, ApplyStaticFilterActionTypeName, StringComparison.OrdinalIgnoreCase))
+			&& !isApplyStaticFilterRule) {
+			throw new ArgumentException(
+				"apply-static-filter rules support exactly one action and cannot be combined with other entity business-rule actions.");
 		}
 	}
 
@@ -132,13 +156,24 @@ internal static class BusinessRuleValidator {
 
 	private static void ValidateEntityAction(
 		BusinessRuleAction action,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
+		ValidateEntityAction(action, attributeMap, filterSchemaProvider: null);
+
+	private static void ValidateEntityAction(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
 		if (string.IsNullOrEmpty(action.ActionType)) {
 			throw new ArgumentException("rule.actions[*].type is required.");
 		}
 
 		if (string.Equals(action.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase)) {
 			ValidateApplyFilterAction(action, attributeMap);
+			return;
+		}
+
+		if (string.Equals(action.ActionType, ApplyStaticFilterActionTypeName, StringComparison.OrdinalIgnoreCase)) {
+			ValidateApplyStaticFilterAction(action, attributeMap, filterSchemaProvider);
 			return;
 		}
 
@@ -503,6 +538,10 @@ internal static class BusinessRuleValidator {
 		rule.Actions.Count == 1
 		&& string.Equals(rule.Actions[0]?.ActionType, ApplyFilterActionTypeName, StringComparison.OrdinalIgnoreCase);
 
+	private static bool IsApplyStaticFilterOnlyRule(BusinessRule rule) =>
+		rule.Actions.Count == 1
+		&& string.Equals(rule.Actions[0]?.ActionType, ApplyStaticFilterActionTypeName, StringComparison.OrdinalIgnoreCase);
+
 	private static void ValidateApplyFilterAction(
 		BusinessRuleAction action,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
@@ -565,6 +604,43 @@ internal static class BusinessRuleValidator {
 		if (!string.IsNullOrWhiteSpace(applyFilterAction.SourceFilterPath) && applyFilterAction.PopulateValue) {
 			throw new ArgumentException(
 				"rule.actions[*].populateValue is not supported when rule.actions[*].sourceFilterPath is set for apply-filter.");
+		}
+	}
+
+	private static void ValidateApplyStaticFilterAction(
+		BusinessRuleAction action,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
+		if (action is not ApplyStaticFilterBusinessRuleAction staticFilterAction) {
+			throw new ArgumentException("rule.actions[*] apply-static-filter payload is invalid.");
+		}
+
+		if (string.IsNullOrWhiteSpace(staticFilterAction.TargetAttribute)) {
+			throw new ArgumentException("rule.actions[*].targetAttribute is required when type is 'apply-static-filter'.");
+		}
+
+		ValidateDirectAttributePath(staticFilterAction.TargetAttribute, "rule.actions[*].targetAttribute");
+		if (!attributeMap.TryGetValue(staticFilterAction.TargetAttribute, out BusinessRuleAttributeDescriptor? targetDescriptor)) {
+			throw new ArgumentException(
+				$"filter.target-attribute-unknown: targetAttribute '{staticFilterAction.TargetAttribute}' was not found on the entity schema.");
+		}
+
+		EnsureLookupDescriptor(
+			targetDescriptor,
+			staticFilterAction.TargetAttribute,
+			"rule.actions[*].targetAttribute");
+
+		if (staticFilterAction.Filter.ValueKind == JsonValueKind.Undefined
+			|| staticFilterAction.Filter.ValueKind == JsonValueKind.Null) {
+			throw new ArgumentException("rule.actions[*].filter is required when type is 'apply-static-filter'.");
+		}
+
+		StaticFilterGroup filterGroup = StaticFilterDeserializer.Deserialize(staticFilterAction.Filter);
+		StaticFilterStructuralValidator.Validate(filterGroup);
+
+		if (filterSchemaProvider is not null) {
+			SchemaAwareFilterValidator schemaValidator = new(filterSchemaProvider);
+			schemaValidator.Validate(filterGroup, targetDescriptor.ReferenceSchemaName!);
 		}
 	}
 

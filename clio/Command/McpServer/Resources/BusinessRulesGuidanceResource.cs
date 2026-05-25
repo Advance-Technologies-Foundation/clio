@@ -46,10 +46,27 @@ public sealed class BusinessRulesGuidanceResource {
 		       1. Entity-level business rules
 		          - Scope: operate on entity schema attributes (columns).
 		          - Tool: `create-entity-business-rule`
-		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter.
+		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter, apply-static-filter.
 		          - Use when the rule should apply everywhere the entity is used, regardless of which page displays it.
-		          - `apply-filter` targets one lookup field, compares it to one source lookup field, and may auto-generate child clear/populate rules.
+		          - `apply-filter` targets one lookup field, compares it to one source lookup field on the current record, and may auto-generate child clear/populate rules.
+		          - `apply-static-filter` narrows a target lookup by a static ESQ filter expressed in a friendly contract (constants, lookup values by GUID or display name, AND/OR groups, EXISTS/NOT_EXISTS backward references). `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller.
 		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
+
+		       apply-static-filter friendly filter contract
+		       - action shape:
+		         { "type": "apply-static-filter", "targetAttribute": "<EntityLookupAttribute>", "filter": { ... } }
+		       - filter group fields:
+		         - `logicalOperation`: "AND" or "OR" (required).
+		         - `filters`: array of leaf conditions on the lookup's reference schema.
+		         - `groups`: nested filter groups for (A AND B) OR (A AND C) compositions.
+		         - `backwardReferenceFilters`: array of EXISTS/NOT_EXISTS clauses against child schemas pointing back at the lookup root via a lookup column.
+		       - leaf fields:
+		         - `columnPath`: column name on the current schema; forward-paths through Lookup chains supported (e.g. "Country.Name").
+		         - `comparisonType`: EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH.
+		         - `value`: omitted for IS_NULL/IS_NOT_NULL; scalar JSON for other tokens; JSON array of strings allowed only on Lookup columns with EQUAL/NOT_EQUAL (multi-value IN).
+		       - lookup values: GUID string is used directly; non-GUID strings are resolved against the lookup's primary display column (no-match and ambiguous matches are rejected).
+		       - backward reference shape: `"referenceColumnPath": "[ChildSchema:LinkColumn]"`, `"comparisonType": "EXISTS" | "NOT_EXISTS"`, optional nested `"filter": { ... }`.
+		       - discovery flow: use `find-entity-schema` and `get-entity-schema-properties` (or DataForge analogs when available) to confirm columnPath segments and reference schemas before submitting the action.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
