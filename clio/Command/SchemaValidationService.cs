@@ -945,59 +945,101 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
-		if (entry.ValueKind != JsonValueKind.Object) {
+		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
-		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
-		    operation.ValueKind != JsonValueKind.String ||
-		    !string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase)) {
-			return;
+		AppendBindingDeclarationError(descriptor, declaredAttributes, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+	}
+
+	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
+		descriptor = default;
+		if (entry.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (!IsInsertOperation(entry)) {
+			return false;
 		}
 		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
 		    values.ValueKind != JsonValueKind.Object) {
-			return;
+			return false;
 		}
 		if (!TryGetFieldType(values, out string componentType)) {
-			return;
+			return false;
+		}
+		if (!TryGetBindingAttribute(values, out _, out _, out string bindingAttribute)) {
+			return false;
 		}
 		string fieldName = GetFieldName(entry, values);
 		string displayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
-		if (!TryGetBindingAttribute(values, out _, out _, out string bindingAttribute)) {
+		descriptor = new InsertedFieldDescriptor(values, displayName, componentType, bindingAttribute);
+		return true;
+	}
+
+	private static bool IsInsertOperation(JsonElement entry) {
+		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
+		    operation.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		return string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static void AppendBindingDeclarationError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlySet<string> declaredAttributes,
+		SchemaValidationResult result) {
+		if (declaredAttributes.Contains(descriptor.BindingAttribute)) {
 			return;
 		}
-		if (!declaredAttributes.Contains(bindingAttribute)) {
-			result.Errors.Add(
-				$"Inserted field '{displayName}' (type '{componentType}') binds to '${bindingAttribute}' " +
-				$"but the body does not declare attribute '{bindingAttribute}' in viewModelConfigDiff. " +
-				$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
-				$"{{\"operation\":\"merge\",\"values\":{{\"{bindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
-				$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
-				$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
-		}
-		if (!TryGetStringProperty(values, "label", out string labelExpression) ||
+		result.Errors.Add(
+			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
+			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
+			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
+			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
+			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+	}
+
+	private static void AppendLabelResourceError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
 		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
-		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, bindingAttribute, modelPaths);
+		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
 		if (hasExplicit || isAutoProvided) {
 			return;
 		}
-		string suggestion;
-		if (modelPaths.TryGetValue(bindingAttribute, out string boundPath) && boundPath.Contains('.', StringComparison.Ordinal)) {
-			int lastDot = boundPath.LastIndexOf('.');
-			string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
-				? boundPath[(lastDot + 1)..]
-				: boundPath;
-			suggestion = $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
-		} else {
-			suggestion = "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
-		}
+		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
 		result.Errors.Add(
-			$"Inserted field '{displayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
+			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
 			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
 			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
 	}
+
+	private static string BuildAutoProvideSuggestion(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
+		    !boundPath.Contains('.', StringComparison.Ordinal)) {
+			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		}
+		int lastDot = boundPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
+			? boundPath[(lastDot + 1)..]
+			: boundPath;
+		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+	}
+
+	private readonly record struct InsertedFieldDescriptor(
+		JsonElement Values,
+		string DisplayName,
+		string ComponentType,
+		string BindingAttribute);
 
 	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument document, out _)) {
