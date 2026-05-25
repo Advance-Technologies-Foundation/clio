@@ -33,13 +33,11 @@ namespace Clio.Command.McpServer.Tools;
 internal static class TypeReferenceClosure {
 	// The pattern is linear (no quantifier nesting, no alternation that could
 	// backtrack) so a malicious type string cannot induce catastrophic
-	// backtracking. The timeout is a defence-in-depth guard against pathological
-	// inputs and clears Sonar S6444 — one second is orders of magnitude above any
-	// realistic type-string length.
-	private static readonly Regex IdentifierToken = new(
-		@"[A-Za-z_][A-Za-z0-9_]*",
-		RegexOptions.Compiled,
-		matchTimeout: TimeSpan.FromSeconds(1));
+	// backtracking. The 1-second timeout is a defence-in-depth guard against
+	// pathological inputs and clears Sonar S6444 — orders of magnitude above any
+	// realistic type-string length. Keep on a single line so the rule's pattern
+	// matcher picks the timeout up.
+	private static readonly Regex IdentifierToken = new(@"[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	/// <summary>
 	/// Property names whose <c>JsonElement</c> value is payload, not a type reference.
