@@ -21,7 +21,7 @@ SYNOPSIS
 OPTIONS
     --package                        Target package name. Required.
 
-    --name                           Schema name (max 22 characters). Required.
+    --name                           Schema name. Required.
 
     --title                          Schema title. Required.
 

@@ -2881,10 +2881,10 @@ public class PageToolsTests
 
 		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
 
-		merged.Should().Contain("\"name\":\"Existing\"", because: "existing entries without collisions are preserved");
-		merged.Should().Contain("\"name\":\"TestButton\"", because: "new entries are appended");
-		merged.Should().Contain("\"size\":\"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
-		merged.Should().NotContain("\"size\":\"large\"", because: "the colliding entry is superseded");
+		merged.Should().Contain("\"name\": \"Existing\"", because: "existing entries without collisions are preserved");
+		merged.Should().Contain("\"name\": \"TestButton\"", because: "new entries are appended");
+		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().NotContain("\"size\": \"large\"", because: "the colliding entry is superseded");
 		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
 		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
 	}
@@ -3524,6 +3524,50 @@ public class PageToolsTests
 		act.Should().Throw<InvalidOperationException>(
 				because: "append merge does not support the full 'modelConfig' form and must fail loudly instead of silently producing a mixed body")
 			.WithMessage("*modelConfig*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: merged body is indented JSON, not a single minified line")]
+	public void PageBodyMerger_Mobile_Should_Return_Indented_Json() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("\n",
+			because: "the merged mobile body must be indented JSON so that subsequent get-page writes produce a readable body.js");
+		merged.Should().NotBe(merged.ReplaceLineEndings("").Replace(" ", ""),
+			because: "a minified single-line output would make the saved body.js unreadable in source control");
+		JObject.Parse(merged)["viewConfigDiff"].Should().NotBeNull(
+			because: "the output must still be valid JSON regardless of formatting");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: JSON sections inside marker pairs are written as indented JSON, not minified single lines")]
+	public void PageBodyMerger_Web_Should_Write_Indented_Json_Inside_Marker_Sections() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"VM1\"}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"M1\"}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			because: "the marker envelope must be preserved verbatim");
+		merged.Should().NotContain("[{\"operation\":\"insert\",\"name\":\"NewButton\"",
+			because: "the merged JSON section must be indented, not written as a single minified line");
+		merged.Should().Contain("\"name\": \"NewButton\"",
+			because: "Newtonsoft's Indented formatting inserts a space after the colon — its presence proves the section was not serialized with Formatting.None");
+		merged.Should().Contain("\"name\": \"VM1\"",
+			because: "viewModelConfigDiff content inside its marker pair must also be indented");
+		merged.Should().Contain("\"name\": \"M1\"",
+			because: "modelConfigDiff content inside its marker pair must also be indented");
 	}
 
 	[Test]

@@ -17,7 +17,7 @@ public sealed class AppModelingGuidanceResource {
 	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {

@@ -277,7 +277,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the mobile page modification guide")]
-	[Description("Verifies that get-guidance returns the mobile-page-modification article with correct URI and constraint text about validators and handlers.")]
+	[Description("Verifies that get-guidance returns the mobile-page-modification article with correct URI and text about limited page-level business-rule support plus mobile body constraints.")]
 	public async Task GuidanceGet_Should_Return_Mobile_Page_Modification_Guide() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -301,6 +301,12 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI for the mobile page guide should be stable");
 		response.Article.Text.Should().Contain("clio MCP mobile page modification guide",
 			because: "the guidance tool should return the canonical mobile page guide text");
+		response.Article.Text.Should().Contain("create-page-business-rule",
+			because: "the mobile guide should explicitly document page-level business-rule support");
+		response.Article.Text.Should().Contain("create-entity-business-rule",
+			because: "the mobile guide should explicitly document entity-level business-rule support too");
+		response.Article.Text.Should().Contain("limited set of conditions and actions",
+			because: "the mobile guide should warn callers that mobile business rules do not have full web parity");
 		response.Article.Text.Should().Contain("validators",
 			because: "the mobile guide must document that validators are not supported in mobile pages");
 		response.Article.Text.Should().Contain("handlers",

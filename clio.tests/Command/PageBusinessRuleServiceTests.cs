@@ -28,7 +28,7 @@ public sealed class PageBusinessRuleServiceTests {
 		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		PageBundleInfo bundle = new();
 		BusinessRule rule = CreatePageRule();
-		BusinessRuleMetadataDto? capturedMetadata = null;
+		IReadOnlyList<BusinessRuleMetadataDto>? capturedMetadata = null;
 		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
 		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -43,7 +43,7 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService.AppendRule(
 				Arg.Any<AddonGetRequestDto>(),
 				rule,
-				Arg.Do<BusinessRuleMetadataDto>(metadata => capturedMetadata = metadata))
+				Arg.Do<IReadOnlyList<BusinessRuleMetadataDto>>(metadata => capturedMetadata = metadata))
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
 		PageBusinessRuleService service = new(
 			packageResolver,
@@ -68,10 +68,12 @@ public sealed class PageBusinessRuleServiceTests {
 				&& request.TargetSchemaManagerName == "ClientUnitSchemaManager"
 				&& request.UseFullHierarchy),
 			rule,
-			Arg.Any<BusinessRuleMetadataDto>());
+			Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>());
 		capturedMetadata.Should().NotBeNull(
 			because: "the service should convert the validated page rule before saving the add-on");
-		capturedMetadata!.Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleShowElementTypeName,
+		capturedMetadata!.Should().ContainSingle(
+			because: "page business-rule creation should still emit one saved metadata rule");
+		capturedMetadata[0].Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleShowElementTypeName,
 			because: "page show-element actions should still be converted into the Creatio show element action type");
 		lookupReferenceValidator.Received(1).Validate(
 			rule,

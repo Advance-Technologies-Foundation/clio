@@ -36,7 +36,7 @@ public sealed class PageUpdateTool(
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
 		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.")]
 	public async Task<PageUpdateResponse> UpdatePage(
-		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -56,18 +56,18 @@ public sealed class PageUpdateTool(
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		if (samplingFailure != null)
 			return samplingFailure;
-		PageUpdateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out response);
-			if (response.Success && args.Verify == true)
-				TryVerifyPage(args, response);
-		}
+			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse inner);
+			if (inner.Success && args.Verify == true)
+				TryVerifyPage(args, inner);
+			return inner;
+		});
 		response.SamplingReview = samplingReview;
 		response.Warnings = validationWarnings;
 		return response;
@@ -75,8 +75,9 @@ public sealed class PageUpdateTool(
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				options.Body, mobileComponentCatalog, webComponentCatalog);
+				options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
@@ -102,7 +103,8 @@ public sealed class PageUpdateTool(
 		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 			return (new PageUpdateResponse {
 				Success = false,
-				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+					+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check.",
 				SamplingReview = samplingReview
 			}, samplingReview);
 		}
@@ -200,7 +202,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]

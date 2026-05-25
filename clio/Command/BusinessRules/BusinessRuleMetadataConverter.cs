@@ -12,6 +12,23 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 internal static class BusinessRuleMetadataConverter {
 
+	internal static IReadOnlyList<BusinessRuleMetadataDto> ToEntityMetadata(
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
+		BusinessRule rule,
+		string entitySchemaName) =>
+		ToEntityMetadata(BuildAttributeDescriptorMap(columnMap), rule, entitySchemaName);
+
+	internal static IReadOnlyList<BusinessRuleMetadataDto> ToEntityMetadata(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule,
+		string entitySchemaName) {
+		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? action)) {
+			return BuildApplyFilterRules(attributeMap, rule, action!);
+		}
+
+		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName)];
+	}
+
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
 		BusinessRule rule) =>
@@ -81,7 +98,7 @@ internal static class BusinessRuleMetadataConverter {
 			TypeName = BusinessRuleGroupConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
 			LogicalOperation = string.Equals(group.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
-			Conditions = group.Conditions
+			Conditions = (group.Conditions ?? [])
 				.Select(condition => BuildCondition(attributeMap, condition, includeAttributeReferenceSchemaName))
 				.ToList()
 		};
@@ -156,7 +173,16 @@ internal static class BusinessRuleMetadataConverter {
 		};
 	}
 
-	private static FieldSelectionBusinessRuleActionMetadataDto BuildAction(
+	private static BusinessRuleExpressionMetadataDto BuildMinimalAttributeExpression(string path) {
+		return new BusinessRuleExpressionMetadataDto {
+			TypeName = BusinessRuleAttributeExpressionTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Type = AttributeValueExpressionType,
+			Path = path
+		};
+	}
+
+	private static BaseBusinessRuleActionMetadataDto BuildAction(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRuleAction action,
 		bool includeAttributeReferenceSchemaName,
@@ -299,6 +325,242 @@ internal static class BusinessRuleMetadataConverter {
 		return triggers;
 	}
 
+	private static IReadOnlyList<BusinessRuleMetadataDto> BuildApplyFilterRules(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule,
+		ApplyFilterBusinessRuleAction action) {
+		string normalizedTargetFilterPath = NormalizeRelativeFilterPath(action.TargetFilterPath);
+		string? normalizedSourceFilterPath = NormalizeOptionalRelativeFilterPath(action.SourceFilterPath);
+		string parentRuleUId = Guid.NewGuid().ToString();
+		string parentActionUId = Guid.NewGuid().ToString();
+
+		BusinessRuleMetadataDto parentRule = new() {
+			TypeName = BusinessRuleTypeName,
+			UId = parentRuleUId,
+			Name = GenerateBusinessRuleName(),
+			Enabled = true,
+			Caption = rule.Caption.Trim(),
+			Cases = [BuildApplyFilterParentCase(
+				attributeMap,
+				rule,
+				action,
+				normalizedTargetFilterPath,
+				normalizedSourceFilterPath,
+				parentActionUId)],
+			Triggers = BuildApplyFilterParentTriggers(rule, action)
+		};
+
+		List<BusinessRuleMetadataDto> rules = [parentRule];
+		if (action.ClearValue) {
+			rules.Add(BuildApplyFilterClearValueRule(
+				attributeMap,
+				action,
+				normalizedTargetFilterPath,
+				normalizedSourceFilterPath,
+				parentRuleUId,
+				parentActionUId));
+		}
+
+		if (action.PopulateValue) {
+			rules.Add(BuildApplyFilterPopulateValueRule(
+				attributeMap,
+				action,
+				normalizedTargetFilterPath,
+				parentRuleUId,
+				parentActionUId));
+		}
+
+		return rules;
+	}
+
+	private static BusinessRuleCaseMetadataDto BuildApplyFilterParentCase(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule,
+		ApplyFilterBusinessRuleAction action,
+		string normalizedTargetFilterPath,
+		string? normalizedSourceFilterPath,
+		string parentActionUId) {
+		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.Target];
+		BusinessRuleAttributeDescriptor sourceDescriptor = attributeMap[action.Source];
+		return new BusinessRuleCaseMetadataDto {
+			TypeName = BusinessRuleCaseTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true),
+			Actions = [
+				new BusinessRuleFilterLookupActionMetadataDto {
+					TypeName = BusinessRuleFilterLookupElementTypeName,
+					UId = parentActionUId,
+					Enabled = true,
+					ClearValue = action.ClearValue,
+					PopulateValue = action.PopulateValue,
+					LeftExpression = BuildFilterLookupExpression(targetDescriptor, action.Target, normalizedTargetFilterPath),
+					RightExpression = BuildFilterLookupExpression(sourceDescriptor, action.Source, normalizedSourceFilterPath)
+				}
+			]
+		};
+	}
+
+	private static BusinessRuleMetadataDto BuildApplyFilterClearValueRule(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		ApplyFilterBusinessRuleAction action,
+		string normalizedTargetFilterPath,
+		string? normalizedSourceFilterPath,
+		string parentRuleUId,
+		string parentActionUId) {
+		string caption = $"ChildRule-{parentRuleUId}-ClearValue";
+		string targetRelatedPath = $"{action.Target}.{normalizedTargetFilterPath}";
+		string sourceComparisonPath = BuildApplyFilterSourceComparisonPath(action.Source, normalizedSourceFilterPath);
+		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.Target];
+		return new BusinessRuleMetadataDto {
+			TypeName = BusinessRuleTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = $"Autogenerated_{parentRuleUId}_ClearValue",
+			Enabled = true,
+			Caption = caption,
+			ParentUId = parentRuleUId,
+			ParentActionUId = parentActionUId,
+			Cases = [
+				new BusinessRuleCaseMetadataDto {
+					TypeName = BusinessRuleCaseTypeName,
+					UId = Guid.NewGuid().ToString(),
+					Condition = new BusinessRuleConditionMetadataDto {
+						TypeName = BusinessRuleConditionTypeName,
+						UId = Guid.NewGuid().ToString(),
+						ComparisonType = ComparisonNotEqual,
+						LeftExpression = BuildMinimalAttributeExpression(sourceComparisonPath),
+						RightExpression = BuildMinimalAttributeExpression(targetRelatedPath)
+					},
+					Actions = [
+						new FieldSelectionBusinessRuleActionMetadataDto {
+							TypeName = BusinessRuleSetValuesElementTypeName,
+							UId = Guid.NewGuid().ToString(),
+							Enabled = true,
+							Items = new List<BusinessRuleSetValueItemMetadataDto> {
+								new() {
+									TypeName = BusinessRuleSetValueItemTypeName,
+									UId = Guid.NewGuid().ToString(),
+									Enabled = true,
+									Expression = BuildAttributeExpression(targetDescriptor, action.Target, targetDescriptor.DataValueTypeName, true),
+									Value = BuildEmptyLookupExpression()
+								}
+							}
+						}
+					]
+				}
+			],
+			Triggers = [BuildChangeTrigger(action.Source)]
+		};
+	}
+
+	private static BusinessRuleMetadataDto BuildApplyFilterPopulateValueRule(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		ApplyFilterBusinessRuleAction action,
+		string normalizedTargetFilterPath,
+		string parentRuleUId,
+		string parentActionUId) {
+		string caption = $"ChildRule-{parentRuleUId}-PopulateValue";
+		string targetRelatedPath = $"{action.Target}.{normalizedTargetFilterPath}";
+		BusinessRuleAttributeDescriptor sourceDescriptor = attributeMap[action.Source];
+		return new BusinessRuleMetadataDto {
+			TypeName = BusinessRuleTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = $"Autogenerated_{parentRuleUId}_PopulateValue",
+			Enabled = true,
+			Caption = caption,
+			ParentUId = parentRuleUId,
+			ParentActionUId = parentActionUId,
+			Cases = [
+				new BusinessRuleCaseMetadataDto {
+					TypeName = BusinessRuleCaseTypeName,
+					UId = Guid.NewGuid().ToString(),
+					Condition = new BusinessRuleConditionMetadataDto {
+						TypeName = BusinessRuleConditionTypeName,
+						UId = Guid.NewGuid().ToString(),
+						ComparisonType = ComparisonIsFilledIn,
+						LeftExpression = BuildMinimalAttributeExpression(action.Target)
+					},
+					Actions = [
+						new FieldSelectionBusinessRuleActionMetadataDto {
+							TypeName = BusinessRuleSetValuesElementTypeName,
+							UId = Guid.NewGuid().ToString(),
+							Enabled = true,
+							Items = new List<BusinessRuleSetValueItemMetadataDto> {
+								new() {
+									TypeName = BusinessRuleSetValueItemTypeName,
+									UId = Guid.NewGuid().ToString(),
+									Enabled = true,
+									Expression = BuildAttributeExpression(sourceDescriptor, action.Source, sourceDescriptor.DataValueTypeName, true),
+									Value = BuildAttributeExpression(attributeMap[targetRelatedPath], targetRelatedPath)
+								}
+							}
+						}
+					]
+				}
+			],
+			Triggers = [BuildChangeTrigger(action.Target)]
+		};
+	}
+
+	private static List<BusinessRuleTriggerMetadataDto> BuildApplyFilterParentTriggers(
+		BusinessRule rule,
+		ApplyFilterBusinessRuleAction action) {
+		List<BusinessRuleTriggerMetadataDto> triggers = (rule.Condition.Conditions ?? [])
+			.SelectMany(EnumerateTriggerNames)
+			.Append(action.Source)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Select(BuildChangeTrigger)
+			.ToList();
+		triggers.Add(BuildDataLoadedTrigger());
+		return triggers;
+	}
+
+	private static BusinessRuleTriggerMetadataDto BuildChangeTrigger(string name) =>
+		new() {
+			TypeName = BusinessRuleTriggerTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = name,
+			Type = ChangeAttributeValueTriggerType
+		};
+
+	private static BusinessRuleTriggerMetadataDto BuildDataLoadedTrigger() =>
+		new() {
+			TypeName = BusinessRuleTriggerTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = string.Empty,
+			Type = DataLoadedTriggerType
+		};
+
+	private static BusinessRuleFilterLookupExpressionMetadataDto BuildFilterLookupExpression(
+		BusinessRuleAttributeDescriptor descriptor,
+		string path,
+		string? filterExpression) =>
+		new() {
+			TypeName = BusinessRuleFilterLookupExpressionTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Type = ConstExpressionType,
+			DataValueTypeName = "Lookup",
+			ReferenceSchemaName = descriptor.ReferenceSchemaName,
+			Path = path,
+			FilterExpression = string.IsNullOrWhiteSpace(filterExpression) ? "null" : filterExpression
+		};
+
+	private static BusinessRuleExpressionMetadataDto BuildEmptyLookupExpression() =>
+		new() {
+			TypeName = BusinessRuleEmptyValueExpressionTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Type = ConstExpressionType,
+			DataValueTypeName = "Lookup",
+			Value = Guid.Empty.ToString()
+		};
+
+	private static string NormalizeRelativeFilterPath(string path) => path.Trim();
+
+	private static string? NormalizeOptionalRelativeFilterPath(string? path) =>
+		string.IsNullOrWhiteSpace(path) ? null : path.Trim();
+
+	private static string BuildApplyFilterSourceComparisonPath(string sourcePath, string? sourceFilterPath) =>
+		string.IsNullOrWhiteSpace(sourceFilterPath) ? sourcePath : $"{sourcePath}.{sourceFilterPath}";
+
 	private static IEnumerable<string> EnumerateTriggerNames(BusinessRuleCondition condition) {
 		yield return condition.LeftExpression.Path!;
 		if (condition.RightExpression is not null
@@ -343,6 +605,16 @@ internal static class BusinessRuleMetadataConverter {
 		string.Equals(expression?.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase);
 
 	private static string GenerateBusinessRuleName() => $"BusinessRule_{Guid.NewGuid():N}"[..20];
+
+	private static bool TryGetApplyFilterAction(BusinessRule rule, out ApplyFilterBusinessRuleAction? action) {
+		action = null;
+		if (rule.Actions.Count != 1) {
+			return false;
+		}
+
+		action = rule.Actions[0] as ApplyFilterBusinessRuleAction;
+		return action is not null;
+	}
 }
 
 

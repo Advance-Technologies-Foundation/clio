@@ -14,7 +14,8 @@ internal static class MobilePageValidation {
 	internal static PageSyncValidationResult Run(
 		string body,
 		IMobileComponentInfoCatalog mobileCatalog,
-		IComponentInfoCatalog webCatalog) {
+		IComponentInfoCatalog webCatalog,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
 		HashSet<string> allowedMobile = new(
 			(mobileCatalog.GetAll() ?? []).Select(e => e.ComponentType),
 			StringComparer.OrdinalIgnoreCase);
@@ -23,7 +24,7 @@ internal static class MobilePageValidation {
 				.Where(t => !allowedMobile.Contains(t)),
 			StringComparer.OrdinalIgnoreCase);
 		(List<string> errors, List<string> warnings) =
-			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly);
+			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly, explicitResources);
 		bool valid = errors.Count == 0;
 		return new PageSyncValidationResult {
 			MarkersOk = true,

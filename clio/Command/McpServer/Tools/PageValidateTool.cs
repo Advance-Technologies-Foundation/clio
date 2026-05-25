@@ -27,7 +27,9 @@ public sealed class PageValidateTool(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
-			PageSyncValidationResult mobileResult = MobilePageValidation.Run(args.Body, mobileComponentCatalog, webComponentCatalog);
+			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
+			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
+				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult

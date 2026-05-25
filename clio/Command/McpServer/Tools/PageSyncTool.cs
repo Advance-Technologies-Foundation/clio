@@ -41,7 +41,7 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
+		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -94,7 +94,8 @@ public sealed class PageSyncTool(
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
-			validationResult = MobilePageValidation.Run(page.Body, mobileComponentCatalog, webComponentCatalog);
+			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
+			validationResult = MobilePageValidation.Run(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
@@ -139,6 +140,7 @@ public sealed class PageSyncTool(
 					Validation = validationResult,
 					SamplingReview = samplingReview,
 					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+						+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
 				};
 			}
 			PageUpdateOptions updateOptions = new() {
@@ -371,7 +373,7 @@ public sealed record PageSyncArgs(
 	bool? Verify = null,
 
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip AI semantic review before saving. Default: false")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null
 );
 

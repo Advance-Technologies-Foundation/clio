@@ -649,7 +649,7 @@ public sealed class EntitySchemaToolE2ETests {
 			string workspaceName = $"workspace-{Guid.NewGuid():N}";
 			string workspacePath = Path.Combine(rootDirectory, workspaceName);
 			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			string schemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
+			string schemaName = $"Usr{Guid.NewGuid():N}";
 			string initialColumnName = "UsrName";
 			string lookupColumnName = "UsrSortOrder";
 			string addedColumnName = "UsrCode";
