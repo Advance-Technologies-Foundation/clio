@@ -1336,9 +1336,9 @@
         "required": true,
         "description": "Must be crt.Toggle."
       },
-      "value": {
+      "control": {
         "type": "boolean",
-        "description": "Current value or bound view-model attribute (e.g. '$PDS_IsActive')."
+        "description": "Bound view-model attribute (e.g. '$PDS_IsActive')."
       },
       "label": {
         "type": "string",
