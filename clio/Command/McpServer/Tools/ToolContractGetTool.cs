@@ -1194,11 +1194,11 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-1000. Default: 25.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25.")
 				],
 				Validators: [
 					new ToolContractValidator("limit", "invalid-top", "top",
-						Context: "top must be between 1 and 1000; omitted or out-of-range values default to 25.")
+						Context: "top must be between 1 and 100; omitted or out-of-range values default to 25.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

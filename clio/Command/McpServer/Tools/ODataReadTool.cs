@@ -155,7 +155,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			parts.Add($"$orderby={Uri.EscapeDataString(args.OrderBy!.Trim())}");
 		}
 
-		int top = args.Top is > 0 and <= 1000 ? args.Top.Value : 25;
+		int top = args.Top is > 0 and <= 100 ? args.Top.Value : 25;
 		parts.Add($"$top={top}");
 
 		return $"?{string.Join("&", parts)}";
@@ -219,9 +219,9 @@ public sealed record ODataReadArgs {
 	[Description("OData $orderby clause. Example: \"CreatedOn desc\" or \"Name asc, Amount desc\".")]
 	public string? OrderBy { get; init; }
 
-	/// <summary>Maximum number of records to return (1–1000, default 25).</summary>
+	/// <summary>Maximum number of records to return (1-100, default 25).</summary>
 	[JsonPropertyName("top")]
-	[Description("Maximum number of records to return. Range: 1–1000. Default: 25.")]
+	[Description("Maximum number of records to return. Range: 1-100. Default: 25.")]
 	public int? Top { get; init; }
 
 	/// <summary>Structured filter (alternative or addition to raw filter).</summary>
