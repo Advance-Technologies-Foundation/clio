@@ -1,3 +1,4 @@
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -44,34 +45,36 @@ public sealed class GetPkgListToolE2ETests {
 		AssertStructuredPackagesReturned(actResult);
 	}
 
-	[AllureStep("Arrange list-packages MCP session")]
 	private static async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-			settings,
-			settings.Sandbox.EnvironmentName!,
-			cancellationTokenSource.Token);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new GetPkgListArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange list-packages MCP session", async () => {
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
+				settings,
+				settings.Sandbox.EnvironmentName!,
+				cancellationTokenSource.Token);
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new GetPkgListArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking list-packages through MCP")]
 	private static async Task<GetPkgListActResult> ActAsync(GetPkgListArrangeContext arrangeContext, string environmentName) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking list-packages through MCP", async () => {
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(ToolName,
+				because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
 
-		IReadOnlyList<GetPkgListEnvelope> packages = GetPkgListResultParser.Extract(callResult);
-		return new GetPkgListActResult(callResult, packages);
+			IReadOnlyList<GetPkgListEnvelope> packages = GetPkgListResultParser.Extract(callResult);
+			return new GetPkgListActResult(callResult, packages);
+		});
 	}
 
 	[AllureStep("Assert MCP tool result is successful")]
