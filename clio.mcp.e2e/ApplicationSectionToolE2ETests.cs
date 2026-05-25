@@ -206,7 +206,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 
 		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationCode)) {
-			Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment — Sandbox.EnvironmentName or Sandbox.ApplicationCode is not configured.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationCode to point at the seeded installed application before running this test.");
 		}
 
 		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
@@ -274,7 +274,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 
 		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationCode)) {
-			Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment — Sandbox.EnvironmentName or Sandbox.ApplicationCode is not configured.");
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationCode to point at the seeded installed application before running this test.");
 		}
 
 		const string platformEntitySchemaName = "Case";
