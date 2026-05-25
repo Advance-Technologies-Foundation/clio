@@ -126,12 +126,12 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 
 Exit code is 0 only when every requested refresh got a 2xx from the CDN.
 
-### Long-form documentation (`content.docs[]`)
+### Long-form documentation (`references.docs[]`)
 
-A component entry may carry a `content.docs[]` array — a list of paths
+A component entry may carry a `references.docs[]` array — a list of paths
 (e.g. `docs/data-grid.component.md`) that live alongside the registry under
 the same `/api/mcp/{version}/` prefix on the academy edge. When a detail
-request hits an entry with `content.docs[]`, clio lazily fetches each file
+request hits an entry with `references.docs[]`, clio lazily fetches each file
 through a sibling pipeline implemented in
 `Tools/ComponentRegistryDocsClient.cs`:
 
@@ -177,16 +177,16 @@ and `Tools/ComponentInfoTool.cs` surfaces both verbatim:
   fixed clio-side POCO (`ComponentPropertyDefinition`). This shape still
   appears in the mobile catalog and in older per-version files.
 
-### Global content (`root.content.baseInputs` + `root.content.typeDefinitions`)
+### Global content (`root.references.baseInputs` + `root.references.typeDefinitions`)
 
 The wrapped registry payload also carries a top-level `content` block —
 metadata shared across every component:
 
-- `root.content.baseInputs` — input keys every component inherits
+- `root.references.baseInputs` — input keys every component inherits
   (`classes`, `id`, `loading`, `name`, `shape`, `styles`, `tabIndex`,
   `type`). Producer-side, these live once at root rather than being
   duplicated on every entry.
-- `root.content.typeDefinitions` — global named-type schemas referenced
+- `root.references.typeDefinitions` — global named-type schemas referenced
   by per-component `inputs`/`outputs` `type` strings (e.g.
   `RequestBindingConfig`, `CrtMenuItemViewElementConfig`,
   `ViewElementConfig`, `LocalizableStringModel`).
@@ -194,10 +194,10 @@ metadata shared across every component:
 `ComponentInfoTool.CreateDetailResponse` merges both into the
 per-component surface before serialising:
 
-- `response.inputs` = `root.content.baseInputs` ∪ `entry.inputs` —
+- `response.inputs` = `root.references.baseInputs` ∪ `entry.inputs` —
   per-component overrides win on a key collision.
-- `response.content.typeDefinitions` = `root.content.typeDefinitions` ∪
-  `entry.content.typeDefinitions` — per-component overrides win.
+- `response.references.typeDefinitions` = `root.references.typeDefinitions` ∪
+  `entry.references.typeDefinitions` — per-component overrides win.
 
 So an AI consumer reads a single flat per-component view without having
 to dereference globals separately. The merge is also exercised by
@@ -210,7 +210,7 @@ The mobile component catalog goes through the **same** infrastructure as the web
 catalog — same `IComponentRegistryClient` implementation, same wrapped envelope
 deserialisation, same `[JsonExtensionData] UnmappedExtensions` snapshot guard,
 same async pipeline, same `CreateDetailResponse`, same response shape
-(`inputs`/`outputs`/`content.typeDefinitions`/`documentation`/
+(`inputs`/`outputs`/`references.typeDefinitions`/`documentation`/
 `resolvedTargetVersion`/`resolvedFrom`). The two flavors are isolated by a
 `RegistryFlavor` config carried on the client at construction time:
 
@@ -249,7 +249,7 @@ two singleton registrations at injection time. The implementation
 
 Every POCO on the registry deserialisation path carries an
 `[JsonExtensionData] UnmappedExtensions` dictionary: `ComponentRegistryEnvelope`,
-`RegistryGlobalContent`, `ComponentRegistryEntry`, `ComponentContent`. The
+`RegistryGlobalReferences`, `ComponentRegistryEntry`, `ComponentReferences`. The
 guard test `ComponentRegistrySnapshotTests.Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields`
 deserialises a pinned copy of
 `https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json`
@@ -261,8 +261,8 @@ EITHER map the field onto a POCO property AND surface it through
 `CreateDetailResponse`, OR document an explicit reason it can stay on
 the bucket (and add an allowlist check in the test). Either way, the
 silent-drop pattern that motivated this section in the first place
-(`content.typeDefinitions`, `root.content.baseInputs`,
-`root.content.typeDefinitions` all went unnoticed for weeks) cannot
+(`references.typeDefinitions`, `root.references.baseInputs`,
+`root.references.typeDefinitions` all went unnoticed for weeks) cannot
 recur unchecked.
 
 To refresh the snapshot after a deliberate producer-side change, from
@@ -274,14 +274,14 @@ curl -s "https://academy.creatio.com/api/mcp/latest/ComponentRegistry.json" \
 dotnet test --filter "FullyQualifiedName~ComponentRegistrySnapshot"
 ```
 
-### Named type schemas (`content.typeDefinitions`)
+### Named type schemas (`references.typeDefinitions`)
 
 The `inputs`/`outputs` `type` strings on the wrapped shape can reference
 producer-defined type names (e.g. `"string | ButtonIcon | ButtonAnimatedIcon"`
 on `crt.Button.inputs.icon`, or `"DataGridColumnDefinition"` as the item
 type for `crt.DataGrid.inputs.columns`). Resolving these requires the
 producer's named-type schemas, which travel under the entry's
-`content.typeDefinitions` block:
+`references.typeDefinitions` block:
 
 ```jsonc
 "content": {
@@ -297,13 +297,13 @@ producer's named-type schemas, which travel under the entry's
 }
 ```
 
-`ComponentInfoTool` mirrors this 1:1 under `response.content.typeDefinitions`
+`ComponentInfoTool` mirrors this 1:1 under `response.references.typeDefinitions`
 (not flattened to root — the nested shape matches the producer). Each value
 stays a `JsonElement` so the producer can add `required`, `default`, `items`,
 deeper `fields` nests, or wholly new schema shapes without a coordinated clio
 release. AI consumers should treat the dictionary as the authoritative
 schema source for any non-primitive `type` token referenced by `inputs` /
-`outputs`. The flat `documentation` field is derived from `content.docs[]`
+`outputs`. The flat `documentation` field is derived from `references.docs[]`
 (fetched + concatenated); the raw `docs[]` paths are intentionally NOT
 surfaced on the response — only their resolved markdown.
 

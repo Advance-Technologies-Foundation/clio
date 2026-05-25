@@ -499,7 +499,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Detail responses concatenate every documentation file listed in content.docs[] into the documentation field with --- separators between them.")]
+	[Description("Detail responses concatenate every documentation file listed in references.docs[] into the documentation field with --- separators between them.")]
 	public async Task ComponentInfoTool_Should_Inline_Documentation_For_Components_With_Docs() {
 		// Arrange — minimal wrapped registry shape with a single component that lists two
 		// documentation files. The fake docs client returns one of them and reports the
@@ -513,7 +513,7 @@ public sealed class ComponentInfoToolTests {
 		      "description": "Sample with attached documentation.",
 		      "container": false,
 		      "properties": {},
-		      "content": {
+		      "references": {
 		        "docs": [
 		          "docs/with-docs.intro.md",
 		          "docs/with-docs.missing.md"
@@ -546,14 +546,14 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("Components without a content.docs[] block produce a detail response with documentation omitted entirely (null, JsonIgnore strips it from the wire).")]
+	[Description("Components without a references.docs[] block produce a detail response with documentation omitted entirely (null, JsonIgnore strips it from the wire).")]
 	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
 		ComponentInfoTool tool = CreateTool();
 
 		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
 
 		response.Documentation.Should().BeNull(
-			because: "the curated registry entry has no content.docs[] so the docs client must not be called");
+			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
 	}
 
 	[Test]
@@ -570,9 +570,9 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("A wrapped-shape entry without content.docs[] still returns inputs/outputs in the detail response — these blocks are the regular per-component metadata for the new payload, not opt-in extras.")]
+	[Description("A wrapped-shape entry without references.docs[] still returns inputs/outputs in the detail response — these blocks are the regular per-component metadata for the new payload, not opt-in extras.")]
 	public async Task ComponentInfoTool_Should_Return_Inputs_And_Outputs_For_Wrapped_Registry_Entry() {
-		// Arrange — a "simple" wrapped-shape component: no content.docs[], no
+		// Arrange — a "simple" wrapped-shape component: no references.docs[], no
 		// description, but with inputs and outputs (this is the shape that produced
 		// the empty crt.Button bug — inputs/outputs were silently dropped).
 		const string registryJson = """
@@ -622,7 +622,7 @@ public sealed class ComponentInfoToolTests {
 			because: "outputs must also round-trip through the response for the new payload shape");
 		response.Outputs!.Should().ContainKeys("clicked", "blurred");
 		response.Documentation.Should().BeNull(
-			because: "content.docs[] is the opt-in extra for complex components — its absence must not suppress inputs/outputs");
+			because: "references.docs[] is the opt-in extra for complex components — its absence must not suppress inputs/outputs");
 		response.Properties.Should().BeNull(
 			because: "the wrapped registry does not populate the legacy properties block — it must be omitted, not surfaced as an empty object");
 	}
@@ -667,7 +667,7 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("A wrapped-shape entry's content.typeDefinitions block is surfaced verbatim under response.content.typeDefinitions — AI needs it to resolve the type names referenced in inputs/outputs `type` strings.")]
+	[Description("A wrapped-shape entry's references.typeDefinitions block is surfaced verbatim under response.references.typeDefinitions — AI needs it to resolve the type names referenced in inputs/outputs `type` strings.")]
 	public async Task ComponentInfoTool_Should_Surface_TypeDefinitions_Under_Content() {
 		const string registryJson = """
 		{
@@ -677,7 +677,7 @@ public sealed class ComponentInfoToolTests {
 		      "inputs": {
 		        "icon": { "type": "string | ButtonIcon | ButtonAnimatedIcon" }
 		      },
-		      "content": {
+		      "references": {
 		        "typeDefinitions": {
 		          "ButtonIcon": {
 		            "type": "string",
@@ -705,30 +705,30 @@ public sealed class ComponentInfoToolTests {
 
 		response.Success.Should().BeTrue();
 		response.Mode.Should().Be("detail");
-		response.Content.Should().NotBeNull(
+		response.References.Should().NotBeNull(
 			because: "the wrapped registry's content block must round-trip when typeDefinitions is present");
-		response.Content!.TypeDefinitions.Should().NotBeNull();
-		response.Content.TypeDefinitions!.Should().ContainKeys("ButtonIcon", "ButtonAnimatedIcon");
+		response.References!.TypeDefinitions.Should().NotBeNull();
+		response.References.TypeDefinitions!.Should().ContainKeys("ButtonIcon", "ButtonAnimatedIcon");
 
-		JsonElement buttonIcon = response.Content.TypeDefinitions["ButtonIcon"];
+		JsonElement buttonIcon = response.References.TypeDefinitions["ButtonIcon"];
 		buttonIcon.GetProperty("type").GetString().Should().Be("string");
 		buttonIcon.GetProperty("values").EnumerateArray().Select(e => e.GetString())
 			.Should().BeEquivalentTo(new[] { "close-icon", "edit-icon" });
 
-		JsonElement animatedIcon = response.Content.TypeDefinitions["ButtonAnimatedIcon"];
+		JsonElement animatedIcon = response.References.TypeDefinitions["ButtonAnimatedIcon"];
 		animatedIcon.GetProperty("fields").GetProperty("loop").GetProperty("type").GetString()
 			.Should().Be("boolean | number");
 	}
 
 	[Test]
-	[Description("Entries without a content.typeDefinitions block omit response.content entirely (JsonIgnore strips it from the wire) — the response stays small for simple components.")]
+	[Description("Entries without a references.typeDefinitions block omit response.references entirely (JsonIgnore strips it from the wire) — the response stays small for simple components.")]
 	public async Task ComponentInfoTool_Should_Omit_Content_When_No_TypeDefinitions() {
 		// crt.TabContainer in TestRegistryJson has no content block at all.
 		ComponentInfoTool tool = CreateTool();
 
 		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
 
-		response.Content.Should().BeNull(
+		response.References.Should().BeNull(
 			because: "components without producer-side type definitions must not carry an empty content node");
 	}
 

@@ -114,7 +114,7 @@ public sealed class ComponentInfoCommand {
 	/// baseInputs ∪ per-component inputs, global typeDefinitions ∪ per-component
 	/// typeDefinitions, per-component winning on key collision. The
 	/// <paramref name="documentation"/> argument carries the concatenated
-	/// <c>content.docs[]</c> markdown fetched through <see cref="ComponentDocumentationLoader"/>
+	/// <c>references.docs[]</c> markdown fetched through <see cref="ComponentDocumentationLoader"/>
 	/// — same payload the MCP tool produces.
 	/// </summary>
 	private static ComponentInfoResponse BuildDetail(
@@ -122,9 +122,9 @@ public sealed class ComponentInfoCommand {
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? documentation,
-		RegistryGlobalContent globalContent) =>
+		RegistryGlobalReferences globalReferences) =>
 		ComponentInfoTool.CreateDetailResponse(
-			entry, resolvedTargetVersion, resolvedFrom, documentation, globalContent);
+			entry, resolvedTargetVersion, resolvedFrom, documentation, globalReferences);
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {
 		string payload = pretty
@@ -196,7 +196,7 @@ public sealed class ComponentInfoCommand {
 			string? documentation = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
-			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalContent);
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);

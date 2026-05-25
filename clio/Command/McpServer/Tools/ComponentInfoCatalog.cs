@@ -99,9 +99,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		(ComponentRegistryEntry[] rawEntries, RegistryGlobalContent? globalContent) =
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences) =
 			DeserializeEnvelope(stream, "Component registry stream");
-		return BuildState(rawEntries, globalContent, "Component registry stream", resolvedVersion, source);
+		return BuildState(rawEntries, globalReferences, "Component registry stream", resolvedVersion, source);
 	}
 
 	/// <summary>
@@ -111,11 +111,11 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
 	/// <c>null</c> global content — there is no envelope to carry it.
 	/// </summary>
-	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalContent? GlobalContent) DeserializeEnvelope(
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences) DeserializeEnvelope(
 		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
 		ComponentRegistryEntry[] entries;
-		RegistryGlobalContent? globalContent = null;
+		RegistryGlobalReferences? globalReferences = null;
 
 		if (document.RootElement.ValueKind == JsonValueKind.Array) {
 			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
@@ -132,7 +132,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			ComponentRegistryEnvelope envelope = document.RootElement.Deserialize<ComponentRegistryEnvelope>(DeserializerOptions)
 				?? throw new InvalidOperationException($"{sourceDescription} envelope was empty or invalid.");
 			entries = envelope.Components;
-			globalContent = envelope.Content;
+			globalReferences = envelope.References;
 		} else {
 			throw new InvalidOperationException(
 				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
@@ -141,7 +141,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return (entries, globalContent);
+		return (entries, globalReferences);
 	}
 
 	/// <summary>
@@ -168,7 +168,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 	internal static ComponentCatalogState BuildState(
 		ComponentRegistryEntry[] rawEntries,
-		RegistryGlobalContent? globalContent,
+		RegistryGlobalReferences? globalReferences,
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) {
@@ -194,7 +194,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalContent);
+		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalReferences);
 	}
 
 	/// <summary>
@@ -208,7 +208,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) =>
-		BuildState(rawEntries, globalContent: null, sourceDescription, resolvedVersion, source);
+		BuildState(rawEntries, globalReferences: null, sourceDescription, resolvedVersion, source);
 }
 
 /// <summary>
@@ -295,8 +295,8 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 /// <param name="Lookup">Case-insensitive map of componentType → entry.</param>
 /// <param name="ResolvedVersion">The version actually loaded; may differ from the requested version on fallback.</param>
 /// <param name="Source">Which tier of the fallback chain produced the bytes.</param>
-/// <param name="GlobalContent">
-/// Optional global <c>content</c> block from the wrapped envelope shape; carries
+/// <param name="GlobalReferences">
+/// Optional global <c>references</c> block from the wrapped envelope shape; carries
 /// the shared <c>baseInputs</c> and <c>typeDefinitions</c> producer metadata. Null
 /// for the legacy top-level-array shape and for the mobile catalog (which has no
 /// envelope).
@@ -306,4 +306,4 @@ public sealed record ComponentCatalogState(
 	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
 	string ResolvedVersion,
 	ComponentRegistrySource Source,
-	RegistryGlobalContent? GlobalContent = null);
+	RegistryGlobalReferences? GlobalReferences = null);

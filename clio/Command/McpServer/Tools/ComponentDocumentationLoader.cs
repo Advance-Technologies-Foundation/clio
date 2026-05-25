@@ -9,7 +9,7 @@ namespace Clio.Command.McpServer.Tools;
 /// component registry entry into the single <c>documentation</c> field returned on
 /// detail responses. Used by both the MCP <see cref="ComponentInfoTool"/> and the CLI
 /// <see cref="ComponentInfoCommand"/> so the two surfaces produce identical payloads
-/// — when the entry has no <c>content.docs[]</c>, returns <see langword="null"/>;
+/// — when the entry has no <c>references.docs[]</c>, returns <see langword="null"/>;
 /// when every fetch fails, also returns <see langword="null"/> (graceful degradation
 /// matches the registry chain itself, see <c>clio/Command/McpServer/AGENTS.md</c>).
 /// </summary>
@@ -21,7 +21,7 @@ internal static class ComponentDocumentationLoader {
 		ComponentRegistryEntry entry,
 		string resolvedVersion,
 		CancellationToken cancellationToken) {
-		IReadOnlyList<string>? docs = entry.Content?.Docs;
+		IReadOnlyList<string>? docs = entry.References?.Docs;
 		if (docs is null || docs.Count == 0) {
 			return null;
 		}

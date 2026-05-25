@@ -84,7 +84,7 @@ public sealed class ComponentInfoTool(
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
 			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalContent);
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
@@ -121,9 +121,9 @@ public sealed class ComponentInfoTool(
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? documentation,
-		RegistryGlobalContent? globalContent) {
-		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalContent?.BaseInputs, entry.Inputs);
-		ComponentContentResponse? content = BuildContentResponse(entry, globalContent);
+		RegistryGlobalReferences? globalReferences) {
+		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalReferences?.BaseInputs, entry.Inputs);
+		ComponentReferencesResponse? references = BuildReferencesResponse(entry, globalReferences);
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -140,7 +140,7 @@ public sealed class ComponentInfoTool(
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
-			Content = content
+			References = references
 		};
 	}
 
@@ -154,13 +154,13 @@ public sealed class ComponentInfoTool(
 	/// pipeline consumes them and the result lands on
 	/// <see cref="ComponentInfoResponse.Documentation"/> instead.
 	/// </summary>
-	private static ComponentContentResponse? BuildContentResponse(
+	private static ComponentReferencesResponse? BuildReferencesResponse(
 		ComponentRegistryEntry entry,
-		RegistryGlobalContent? globalContent) {
-		IReadOnlyDictionary<string, JsonElement>? perComponent = entry.Content?.TypeDefinitions;
-		IReadOnlyDictionary<string, JsonElement>? global = globalContent?.TypeDefinitions;
+		RegistryGlobalReferences? globalReferences) {
+		IReadOnlyDictionary<string, JsonElement>? perComponent = entry.References?.TypeDefinitions;
+		IReadOnlyDictionary<string, JsonElement>? global = globalReferences?.TypeDefinitions;
 		IReadOnlyDictionary<string, JsonElement>? merged = MergeBindings(global, perComponent);
-		return merged is null ? null : new ComponentContentResponse { TypeDefinitions = merged };
+		return merged is null ? null : new ComponentReferencesResponse { TypeDefinitions = merged };
 	}
 
 	/// <summary>
@@ -369,16 +369,16 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets or sets the raw <c>content</c> block surfaced from the registry entry —
-	/// today this is just <see cref="ComponentContentResponse.TypeDefinitions"/>. The
+	/// today this is just <see cref="ComponentReferencesResponse.TypeDefinitions"/>. The
 	/// nested shape mirrors the producer's payload 1:1 so AI can resolve the named
 	/// type references that appear in <c>inputs</c>/<c>outputs</c> <c>type</c> strings
 	/// (e.g. <c>"string | ButtonIcon | ButtonAnimatedIcon"</c>). The flat
 	/// <see cref="Documentation"/> field is derived from <c>content.docs[]</c>; raw
 	/// docs paths are intentionally not surfaced here.
 	/// </summary>
-	[JsonPropertyName("content")]
+	[JsonPropertyName("references")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public ComponentContentResponse? Content { get; init; }
+	public ComponentReferencesResponse? References { get; init; }
 }
 
 /// <summary>
@@ -387,7 +387,7 @@ public sealed class ComponentInfoResponse {
 /// here, but the producer can add new ones to the underlying payload without breaking
 /// existing AI consumers.
 /// </summary>
-public sealed class ComponentContentResponse {
+public sealed class ComponentReferencesResponse {
 	/// <summary>
 	/// Gets or sets the named type schemas referenced by the component's
 	/// <c>inputs</c>/<c>outputs</c> values. Each key is a TypeScript-like type name
@@ -498,13 +498,27 @@ public sealed class ComponentRegistryEntry {
 	public JsonElement? Example { get; init; }
 
 	/// <summary>
-	/// Gets or sets the per-component <c>content</c> block from the registry payload.
+	/// Gets or sets the per-component <c>references</c> block from the registry payload.
 	/// In the wrapped registry shape this carries the long-form documentation references
-	/// (<see cref="ComponentContent.Docs"/>) and per-component type definitions.
+	/// (<see cref="ComponentReferences.Docs"/>) and per-component type definitions.
 	/// </summary>
-	[JsonPropertyName("content")]
+	[JsonPropertyName("references")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public ComponentContent? Content { get; init; }
+	public ComponentReferences? References { get; init; }
+
+	/// <summary>
+	/// Gets or sets the producer-defined default values applied by the page designer when
+	/// the user drops the component onto a Freedom UI page (e.g. <c>{ "isAddAllowed": true,
+	/// "showValueAsLink": true }</c> for <c>crt.ComboBox</c>). The shape is producer-owned —
+	/// each key is an input name, each value is a primitive or nested literal. Captured as
+	/// a forward-compatible <see cref="JsonElement"/> so the producer can evolve the inner
+	/// schema freely; the field is not surfaced on the public response today, but the data
+	/// round-trips through the catalog so a future <c>get-component-info</c> revision can
+	/// promote it without a coordinated producer change.
+	/// </summary>
+	[JsonPropertyName("designerDefaults")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonElement? DesignerDefaults { get; init; }
 
 	/// <summary>
 	/// Captures any per-component field clio has not mapped yet (e.g. a future
@@ -525,9 +539,9 @@ public sealed class ComponentRegistryEntry {
 /// <item><c>components</c> — the per-component entries (the only field the legacy
 /// shape uses, lifted to top-level there).</item>
 /// <item><c>content</c> — global metadata shared across every component:
-/// <see cref="RegistryGlobalContent.BaseInputs"/> (the inherited input surface
+/// <see cref="RegistryGlobalReferences.BaseInputs"/> (the inherited input surface
 /// every component carries on top of its own <c>inputs</c>) and
-/// <see cref="RegistryGlobalContent.TypeDefinitions"/> (the named-type schemas
+/// <see cref="RegistryGlobalReferences.TypeDefinitions"/> (the named-type schemas
 /// referenced by every component's <c>inputs</c>/<c>outputs</c> <c>type</c>
 /// strings — e.g. <c>RequestBindingConfig</c>, <c>ViewElementConfig</c>).</item>
 /// </list>
@@ -542,9 +556,9 @@ public sealed class ComponentRegistryEnvelope {
 	public ComponentRegistryEntry[] Components { get; init; } = [];
 
 	/// <summary>Global content block shared across every component.</summary>
-	[JsonPropertyName("content")]
+	[JsonPropertyName("references")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public RegistryGlobalContent? Content { get; init; }
+	public RegistryGlobalReferences? References { get; init; }
 
 	/// <summary>
 	/// Captures any top-level producer field clio has not mapped yet. Always
@@ -562,7 +576,7 @@ public sealed class ComponentRegistryEnvelope {
 /// Shared by every component; merged into per-component data when surfaced on the
 /// detail response (per-component wins on a key collision).
 /// </summary>
-public sealed class RegistryGlobalContent {
+public sealed class RegistryGlobalReferences {
 	/// <summary>
 	/// Inherited input surface every component carries. Each key is an input name
 	/// (e.g. <c>"classes"</c>, <c>"id"</c>, <c>"styles"</c>, <c>"tabIndex"</c>);
@@ -579,7 +593,7 @@ public sealed class RegistryGlobalContent {
 	/// <summary>
 	/// Global named-type schemas (e.g. <c>"RequestBindingConfig"</c>,
 	/// <c>"CrtMenuItemViewElementConfig"</c>, <c>"ViewElementConfig"</c>). Same
-	/// shape as per-component <see cref="ComponentContent.TypeDefinitions"/>;
+	/// shape as per-component <see cref="ComponentReferences.TypeDefinitions"/>;
 	/// merged into the detail response's <c>content.typeDefinitions</c> block so
 	/// AI does not need to dereference a second registry call to resolve a type
 	/// name referenced by the per-component schema.
@@ -603,7 +617,7 @@ public sealed class RegistryGlobalContent {
 /// by the deserialiser so the producer can evolve the block without a coordinated
 /// schema bump.
 /// </summary>
-public sealed class ComponentContent {
+public sealed class ComponentReferences {
 	/// <summary>
 	/// Gets or sets the list of long-form documentation files for the component.
 	/// Each entry is a path relative to <c>/api/mcp/{version}/</c> (e.g.

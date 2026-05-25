@@ -77,14 +77,14 @@ public static class ComponentInfoPrettyRenderer {
 		AppendProperties(sb, response.Properties);
 		AppendBindings(sb, "inputs", response.Inputs);
 		AppendBindings(sb, "outputs", response.Outputs);
-		AppendTypeDefinitions(sb, response.Content?.TypeDefinitions);
+		AppendTypeDefinitions(sb, response.References?.TypeDefinitions);
 		AppendExample(sb, response.Example);
 		AppendDocumentation(sb, response.Documentation);
 	}
 
 	/// <summary>
 	/// Renders the producer's named type schemas (e.g. <c>ButtonIcon</c>,
-	/// <c>DataGridColumnDefinition</c>) under a dedicated <c>content.typeDefinitions:</c>
+	/// <c>DataGridColumnDefinition</c>) under a dedicated <c>references.typeDefinitions:</c>
 	/// header. Each entry shows the type name on its own line, then the producer's raw
 	/// schema indented under it as a compact one-line JSON blob. We intentionally do
 	/// NOT walk into <c>fields</c>/<c>values</c> here — type definitions are arbitrary
@@ -95,7 +95,7 @@ public static class ComponentInfoPrettyRenderer {
 		if (typeDefinitions is null || typeDefinitions.Count == 0) {
 			return;
 		}
-		sb.AppendLine().AppendLine("content.typeDefinitions:");
+		sb.AppendLine().AppendLine("references.typeDefinitions:");
 		int nameWidth = typeDefinitions.Keys.Max(key => key.Length);
 		foreach (KeyValuePair<string, JsonElement> definition in typeDefinitions) {
 			sb.Append("  ").Append(definition.Key.PadRight(nameWidth)).Append("  ")

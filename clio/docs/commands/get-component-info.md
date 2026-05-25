@@ -41,7 +41,7 @@ responses omit `resolvedTargetVersion` and `resolvedFrom` accordingly.
 
 Output defaults to JSON (identical to the MCP tool's response shape,
 including the long-form `documentation` field built from any
-`content.docs[]` markdown files) so the result pipes cleanly into `jq`
+`references.docs[]` markdown files) so the result pipes cleanly into `jq`
 and other scripting tools. Pass `--pretty` for a human-readable text
 rendering on stdout — the docs block surfaces under a `documentation:`
 section.

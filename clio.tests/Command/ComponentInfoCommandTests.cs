@@ -167,7 +167,7 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
-	[Description("Wrapped-shape detail responses surface content.typeDefinitions on JSON output and render it under content.typeDefinitions: in --pretty — AI needs the named-type schemas to resolve the type names referenced in inputs/outputs.")]
+	[Description("Wrapped-shape detail responses surface references.typeDefinitions on JSON output and render it under references.typeDefinitions: in --pretty — AI needs the named-type schemas to resolve the type names referenced in inputs/outputs.")]
 	public async Task Returns_Wrapped_Detail_With_TypeDefinitions() {
 		const string wrappedRegistry = """
 		{
@@ -177,7 +177,7 @@ public sealed class ComponentInfoCommandTests {
 		      "inputs": {
 		        "icon": { "type": "string | ButtonIcon" }
 		      },
-		      "content": {
+		      "references": {
 		        "typeDefinitions": {
 		          "ButtonIcon": { "type": "string", "values": ["close-icon", "edit-icon"] }
 		        }
@@ -199,17 +199,17 @@ public sealed class ComponentInfoCommandTests {
 
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
 		parsed.Mode.Should().Be("detail");
-		parsed.Content.Should().NotBeNull(
-			because: "the CLI verb must surface content.typeDefinitions verbatim, not drop them");
-		parsed.Content!.TypeDefinitions.Should().NotBeNull();
-		parsed.Content.TypeDefinitions!.Should().ContainKey("ButtonIcon");
+		parsed.References.Should().NotBeNull(
+			because: "the CLI verb must surface references.typeDefinitions verbatim, not drop them");
+		parsed.References!.TypeDefinitions.Should().NotBeNull();
+		parsed.References.TypeDefinitions!.Should().ContainKey("ButtonIcon");
 
 		// Act — --pretty path on the same input
 		logger.Reset();
 		exit = await command.ExecuteAsync(
 			new ComponentInfoCommandOptions { ComponentType = "crt.WithTypes", Pretty = true }, CancellationToken.None);
 		exit.Should().Be(0);
-		logger.Captured.Should().Contain("content.typeDefinitions:",
+		logger.Captured.Should().Contain("references.typeDefinitions:",
 			because: "the --pretty renderer must label the typeDefinitions block so operators can read it");
 		logger.Captured.Should().Contain("ButtonIcon",
 			because: "each type-definition key must be listed by name");
@@ -279,7 +279,7 @@ public sealed class ComponentInfoCommandTests {
 		  "components": [
 		    {
 		      "componentType": "crt.Button",
-		      "content": {
+		      "references": {
 		        "docs": ["docs/button.component.md", "docs/button.recipes.md"]
 		      }
 		    }
@@ -322,7 +322,7 @@ public sealed class ComponentInfoCommandTests {
 		  "components": [
 		    {
 		      "componentType": "crt.Button",
-		      "content": { "docs": ["docs/button.component.md"] }
+		      "references": { "docs": ["docs/button.component.md"] }
 		    }
 		  ]
 		}

@@ -224,9 +224,9 @@ clio component-registry refresh [--version <semver>] [--all]
 
 Operationally useful when a user wants to pick up a newly published GA without waiting for the 5min TTL (rarely needed at that cadence, but kept for parity with longer past TTLs and for force-refresh debugging). Trivial wrapper over `IComponentRegistryClient.RefreshAsync(version)`.
 
-#### 8. Long-form documentation pipeline (`content.docs[]`)
+#### 8. Long-form documentation pipeline (`references.docs[]`)
 
-A component entry may list one or more documentation files under `content.docs[]` (e.g. `docs/data-grid.component.md`). These files live on the CDN under the same `/api/mcp/{version}/` prefix and exist to give AI agents long-form prose context that doesn't belong in the structured `properties` map (recipes, do-this-not-that guidance, step-by-step playbooks).
+A component entry may list one or more documentation files under `references.docs[]` (e.g. `docs/data-grid.component.md`). These files live on the CDN under the same `/api/mcp/{version}/` prefix and exist to give AI agents long-form prose context that doesn't belong in the structured `properties` map (recipes, do-this-not-that guidance, step-by-step playbooks).
 
 clio fetches them lazily on detail requests through a dedicated pipeline (`IComponentRegistryDocsClient` → `IComponentRegistryDocsCacheStore`) that mirrors the registry-payload one in shape but with two deliberate differences:
 
