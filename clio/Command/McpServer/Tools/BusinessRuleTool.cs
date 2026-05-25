@@ -138,6 +138,7 @@ public sealed record EntityBusinessRuleMcpContract
 [JsonDerivedType(typeof(EntityMakeRequiredBusinessRuleActionMcpContract), "make-required")]
 [JsonDerivedType(typeof(EntityMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
 [JsonDerivedType(typeof(EntitySetValuesBusinessRuleActionMcpContract), "set-values")]
+[JsonDerivedType(typeof(EntityApplyFilterBusinessRuleActionMcpContract), "apply-filter")]
 public abstract record EntityBusinessRuleActionMcpContract
 {
 	protected EntityBusinessRuleActionMcpContract()
@@ -257,6 +258,65 @@ public sealed record EntitySetValuesBusinessRuleActionMcpContract : EntityBusine
 	public List<BusinessRuleSetValueItem> Items { get; init; } = [];
 
 	internal override BusinessRuleAction ToBusinessRuleAction() => new SetValuesBusinessRuleAction(Items ?? []);
+}
+
+/// <summary>
+/// MCP action contract that applies dynamic filtering to a lookup field.
+/// </summary>
+public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
+{
+	/// <summary>
+	/// Gets the target lookup attribute on the root entity.
+	/// </summary>
+	[JsonPropertyName("target")]
+	[Description("Target lookup attribute on the root entity.")]
+	[Required]
+	public string Target { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the path inside the target lookup schema used for filtering.
+	/// </summary>
+	[JsonPropertyName("targetFilterPath")]
+	[Description("Lookup-valued path inside the target lookup schema used for filtering. Must resolve to a Lookup attribute, not Guid, for example Country or Country.TimeZone")]
+	[Required]
+	public string TargetFilterPath { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the source lookup attribute on the root entity.
+	/// </summary>
+	[JsonPropertyName("source")]
+	[Description("Source lookup attribute on the root entity.")]
+	[Required]
+	public string Source { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the optional path inside the source lookup schema used on the right side of the filter comparison.
+	/// </summary>
+	[JsonPropertyName("sourceFilterPath")]
+	[Description("Optional lookup-valued path inside the source lookup schema used on the right side of the filter comparison. Must resolve to a Lookup attribute, not Guid.")]
+	public string? SourceFilterPath { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the target lookup should be cleared when the source changes.
+	/// </summary>
+	[JsonPropertyName("clearValue")]
+	[Description("When true, clears the target lookup when the source lookup value changes.")]
+	public bool ClearValue { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the source lookup should be populated from the chosen target value.
+	/// </summary>
+	[JsonPropertyName("populateValue")]
+	[Description("When true, populates the source lookup from the chosen target lookup value. Prefer true by default for standard dependent-lookup scenarios unless the user explicitly wants one-way filtering only.")]
+	public bool PopulateValue { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new ApplyFilterBusinessRuleAction(
+		Target,
+		TargetFilterPath,
+		Source,
+		SourceFilterPath,
+		ClearValue,
+		PopulateValue);
 }
 
 /// <summary>

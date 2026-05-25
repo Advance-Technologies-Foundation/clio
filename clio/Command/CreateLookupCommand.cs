@@ -20,7 +20,7 @@ public sealed class CreateLookupOptions : RemoteCommandOptions
 		set { if (!string.IsNullOrEmpty(value)) Package = value; }
 	}
 
-	[Option("name", Required = true, HelpText = "Schema name (max 22 characters)")]
+	[Option("name", Required = true, HelpText = "Schema name")]
 	public string SchemaName { get; set; } = string.Empty;
 
 	[Option("title", Required = true, HelpText = "Schema title")]
@@ -54,9 +54,6 @@ public sealed class CreateLookupCommand(
 			}
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 				throw new InvalidOperationException("Schema name is required.");
-			}
-			if (options.SchemaName.Trim().Length > 22) {
-				throw new InvalidOperationException("Schema name must not exceed 22 characters.");
 			}
 			if (string.IsNullOrWhiteSpace(options.Title)) {
 				throw new InvalidOperationException("Schema title is required.");

@@ -31,7 +31,7 @@ clio create-lookup [options]
 ```bash
 --package                        Target package name. Required.
 
---name                           Schema name (max 22 characters). Required.
+--name                           Schema name. Required.
 
 --title                          Schema title. Required.
 
@@ -60,7 +60,6 @@ clio create-lookup --package UsrSalesApp --name UsrDealType --title "Deal Type" 
 ## Notes
 
 - --package, --name, and --title are required.
-- Schema name must not exceed 22 characters.
 - BaseLookup already provides Name and Description; do not add those via --column.
 - cliogate must be installed in the target environment.
 

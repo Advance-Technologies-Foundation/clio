@@ -1374,6 +1374,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should warn that state-changing business-rule actions are directional");
 		article.Text.Should().Contain("explicit inverse business rule",
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
+		article.Text.Should().Contain("prefer `populateValue=true` by default",
+			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
 	}
 
 	[Test]

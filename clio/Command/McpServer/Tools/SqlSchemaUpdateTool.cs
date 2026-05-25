@@ -35,7 +35,7 @@ public sealed class SqlSchemaUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			SqlSchemaUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaUpdateCommand>(options);
@@ -45,7 +45,7 @@ public sealed class SqlSchemaUpdateTool(
 			}
 			resolvedCommand.TryUpdateSchema(options, out SqlSchemaUpdateResponse response);
 			return response;
-		}
+		});
 	}
 }
 

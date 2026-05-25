@@ -1320,14 +1320,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, and Set values actions from constants, formulas, or attributes.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1338,7 +1338,11 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
-						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column.")
+						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
+					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rule.actions[*]",
+						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
+					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
+						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1383,7 +1387,27 @@ internal static class ToolContractCatalog {
 					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
-					])
+					]),
+				ApplyFilterBusinessRuleExample(
+					"Create a dynamic lookup filter that limits City by Country",
+					"UsrAddress",
+					"Filter city by selected country",
+					"City",
+					"Country",
+					"Country",
+					null,
+					true,
+					true),
+				ApplyFilterBusinessRuleExample(
+					"Create a dynamic lookup filter that compares deep lookup paths",
+					"UsrAddress",
+					"Filter city by country time zone",
+					"City",
+					"Country.TimeZone",
+					"Country",
+					"TimeZone",
+					true,
+					false)
 			],
 			Flow(
 				[
@@ -1592,6 +1616,43 @@ internal static class ToolContractCatalog {
 				["path"] = sourcePath
 			}
 		};
+	}
+
+	private static ToolContractExample ApplyFilterBusinessRuleExample(
+		string summary,
+		string entitySchemaName,
+		string caption,
+		string target,
+		string targetFilterPath,
+		string source,
+		string? sourceFilterPath,
+		bool clearValue,
+		bool populateValue) {
+		Dictionary<string, object?> action = new() {
+			["type"] = BusinessRuleConstants.ApplyFilterActionTypeName,
+			["target"] = target,
+			["targetFilterPath"] = targetFilterPath,
+			["source"] = source,
+			["clearValue"] = clearValue,
+			["populateValue"] = populateValue
+		};
+		if (!string.IsNullOrWhiteSpace(sourceFilterPath)) {
+			action["sourceFilterPath"] = sourceFilterPath;
+		}
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[EntitySchemaNameFieldName] = entitySchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = System.Array.Empty<object>()
+				},
+				["actions"] = new object[] { action }
+			}
+		});
 	}
 
 	private static ToolContractExample PageBusinessRuleExample(
