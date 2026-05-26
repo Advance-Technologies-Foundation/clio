@@ -529,6 +529,7 @@ public class BindingsModule {
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors))
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
 				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
 				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
@@ -566,15 +567,13 @@ public class BindingsModule {
 
 	/// <summary>
 	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
-	/// Enables out-of-order metadata properties (available on .NET 9+) so that the
+	/// Enables out-of-order metadata properties so that the
 	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
 	/// LLMs do not guarantee JSON property ordering.
 	/// </summary>
-	private static JsonSerializerOptions CreateMcpSerializerOptions() {
+	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
 		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
-#if NET9_0_OR_GREATER
 		options.AllowOutOfOrderMetadataProperties = true;
-#endif
 		return options;
 	}
 
