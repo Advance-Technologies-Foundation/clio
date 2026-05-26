@@ -39,7 +39,7 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
+		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncRunArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {

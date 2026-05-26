@@ -57,6 +57,7 @@ public sealed class ToolContractGetToolTests {
 				AppsTool.ToolName,
 				DataForgeTool.DataForgeContextToolName,
 				DataForgeTool.DataForgeFindToolName,
+				ODataReadTool.ToolName,
 				GetSchemaTool.ToolName,
 				SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 				ShowWebAppListTool.ShowWebAppListToolName,

@@ -497,6 +497,7 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetRelationsToolName,
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeStatusToolName,
+		ODataReadTool.ToolName,
 		FindEmptyIisPortTool.FindEmptyIisPortToolName,
 		ComponentInfoTool.ToolName,
 		FsmModeTool.GetFsmModeToolName,

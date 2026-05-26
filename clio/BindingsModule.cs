@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -51,6 +52,7 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
@@ -565,15 +567,17 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
+		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
 		services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors))
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
-				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
-				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
+				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
+				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
@@ -604,6 +608,16 @@ public class BindingsModule {
 			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
 		}
 		return CreateBootstrapPlaceholderEnvironment();
+	}
+
+	/// <summary>
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool and prompt argument deserialization.
+	/// Enables out-of-order metadata properties so the polymorphic <c>type</c> discriminator does not need to be the first JSON property.
+	/// </summary>
+	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
+		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
+		options.AllowOutOfOrderMetadataProperties = true;
+		return options;
 	}
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {

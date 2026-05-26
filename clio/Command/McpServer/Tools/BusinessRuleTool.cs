@@ -17,7 +17,7 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	internal const string BusinessRuleCreateToolName = "create-entity-business-rule";
 	
-		[Description("Creates an entity-level Freedom UI business rule.")]
+		[Description("Creates an entity-level Freedom UI business rule. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
@@ -521,7 +521,7 @@ public sealed class CreatePageBusinessRuleTool(
 
 	internal const string BusinessRuleCreateToolName = "create-page-business-rule";
 
-		[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
+		[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rule (all required).")]
 		[Required]
