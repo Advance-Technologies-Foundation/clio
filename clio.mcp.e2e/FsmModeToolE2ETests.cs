@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -85,48 +86,54 @@ public sealed class FsmModeToolE2ETests
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	[AllureStep("Arrange FSM MCP session")]
 	private static async Task<FsmModeArrangeContext> ArrangeAsync(McpE2ESettings settings)
 	{
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new FsmModeArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange FSM MCP session", async () =>
+		{
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new FsmModeArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking get-fsm-mode through MCP")]
 	private static async Task<CallToolResult> ActGetAsync(FsmModeArrangeContext arrangeContext, string environmentName)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(GetToolName,
-			because: "the get-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking get-fsm-mode through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(GetToolName,
+				because: "the get-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
 
-		return await arrangeContext.Session.CallToolAsync(
-			GetToolName,
-			new Dictionary<string, object?> { ["environmentName"] = environmentName },
-			arrangeContext.CancellationTokenSource.Token);
+			return await arrangeContext.Session.CallToolAsync(
+				GetToolName,
+				new Dictionary<string, object?> { ["environmentName"] = environmentName },
+				arrangeContext.CancellationTokenSource.Token);
+		});
 	}
 
-	[AllureStep("Act by invoking set-fsm-mode through MCP")]
 	private static async Task<CommandExecutionActResult> ActSetAsync(
 		FsmModeArrangeContext arrangeContext,
 		string environmentName,
 		string mode)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SetToolName,
-			because: "the set-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking set-fsm-mode through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(SetToolName,
+				because: "the set-fsm-mode MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			SetToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["mode"] = mode
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
-		return new CommandExecutionActResult(callResult, execution);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				SetToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["mode"] = mode
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			return new CommandExecutionActResult(callResult, execution);
+		});
 	}
 
 	[AllureStep("Assert get-fsm-mode call failed for invalid environment")]

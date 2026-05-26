@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -153,117 +154,121 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertPushWorkspaceToolAdvertisesSkipBackup(tools);
 	}
 
-	[AllureStep("Arrange workspace-sync invalid-environment MCP session")]
 	private static async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
-		string workspacePath = Path.Combine(rootDirectory, "workspace");
-		string restoreWorkspacePath = Path.Combine(rootDirectory, "restore-workspace");
-		string environmentName = $"missing-{toolPrefix}-env-{Guid.NewGuid():N}";
-		Directory.CreateDirectory(workspacePath);
+		return await AllureApi.Step("Arrange workspace-sync invalid-environment MCP session", async () => {
+			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
+			string workspacePath = Path.Combine(rootDirectory, "workspace");
+			string restoreWorkspacePath = Path.Combine(rootDirectory, "restore-workspace");
+			string environmentName = $"missing-{toolPrefix}-env-{Guid.NewGuid():N}";
+			Directory.CreateDirectory(workspacePath);
 
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new WorkspaceSyncArrangeContext(
-			settings,
-			rootDirectory,
-			workspacePath,
-			WorkspaceName: "workspace",
-			restoreWorkspacePath,
-			RestoreWorkspaceName: "restore-workspace",
-			environmentName,
-			PackageName: string.Empty,
-			PackageMetadata: null,
-			session,
-			cancellationTokenSource);
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new WorkspaceSyncArrangeContext(
+				settings,
+				rootDirectory,
+				workspacePath,
+				WorkspaceName: "workspace",
+				restoreWorkspacePath,
+				RestoreWorkspaceName: "restore-workspace",
+				environmentName,
+				PackageName: string.Empty,
+				PackageMetadata: null,
+				session,
+				cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Arrange workspace-sync sandbox lifecycle")]
 	private static async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive MCP end-to-end tests.");
-		}
+		return await AllureApi.Step("Arrange workspace-sync sandbox lifecycle", async () => {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			if (!settings.AllowDestructiveMcpTests) {
+				Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive MCP end-to-end tests.");
+			}
 
-		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-sync-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
+			TestConfiguration.EnsureSandboxIsConfigured(settings);
+			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-sync-e2e-{Guid.NewGuid():N}");
+			Directory.CreateDirectory(rootDirectory);
 
-		string workspaceName = $"workspace-{Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
-		string restoreWorkspaceName = $"restore-{Guid.NewGuid():N}";
-		string restoreWorkspacePath = Path.Combine(rootDirectory, restoreWorkspaceName);
-		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+			string workspaceName = $"workspace-{Guid.NewGuid():N}";
+			string workspacePath = Path.Combine(rootDirectory, workspaceName);
+			string restoreWorkspaceName = $"restore-{Guid.NewGuid():N}";
+			string restoreWorkspacePath = Path.Combine(rootDirectory, restoreWorkspaceName);
+			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 
-		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-			settings,
-			settings.Sandbox.EnvironmentName!,
-			cancellationTokenSource.Token);
-		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
-		await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-		PackageMetadata packageMetadata = ReadPackageMetadata(workspacePath, packageName);
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
+				settings,
+				settings.Sandbox.EnvironmentName!,
+				cancellationTokenSource.Token);
+			await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
+			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
+			PackageMetadata packageMetadata = ReadPackageMetadata(workspacePath, packageName);
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new WorkspaceSyncArrangeContext(
-			settings,
-			rootDirectory,
-			workspacePath,
-			workspaceName,
-			restoreWorkspacePath,
-			restoreWorkspaceName,
-			settings.Sandbox.EnvironmentName!,
-			packageName,
-			packageMetadata,
-			session,
-			cancellationTokenSource);
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new WorkspaceSyncArrangeContext(
+				settings,
+				rootDirectory,
+				workspacePath,
+				workspaceName,
+				restoreWorkspacePath,
+				restoreWorkspaceName,
+				settings.Sandbox.EnvironmentName!,
+				packageName,
+				packageMetadata,
+				session,
+				cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking workspace-sync tool through MCP")]
 	private static async Task<WorkspaceCommandActResult> ActWorkspaceCommandAsync(
 		WorkspaceSyncArrangeContext arrangeContext,
 		string toolName,
 		string workspacePath) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking workspace-sync tool through MCP", async () => {
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(toolName,
+				because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["workspace-path"] = workspacePath
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				toolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["workspace-path"] = workspacePath
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
 
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
-		return new WorkspaceCommandActResult(callResult, execution);
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			return new WorkspaceCommandActResult(callResult, execution);
+		});
 	}
 
-	[AllureStep("Act by invoking list-packages through MCP")]
 	private static async Task<PackageListActResult> ActGetPkgListAsync(
 		WorkspaceSyncArrangeContext arrangeContext,
 		string filter) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(PackageListToolName,
-			because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking list-packages through MCP", async () => {
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(PackageListToolName,
+				because: "the list-packages MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			PackageListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["filter"] = filter
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				PackageListToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["filter"] = filter
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
 
-		IReadOnlyList<GetPkgListEnvelope> packages = GetPkgListResultParser.Extract(callResult);
-		return new PackageListActResult(callResult, packages);
+			IReadOnlyList<GetPkgListEnvelope> packages = GetPkgListResultParser.Extract(callResult);
+			return new PackageListActResult(callResult, packages);
+		});
 	}
 
 	[AllureStep("Assert MCP tool call failed")]
