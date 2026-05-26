@@ -5,15 +5,29 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
-internal static class PageBusinessRuleValidator {
+internal interface IPageBusinessRuleValidator {
+	/// <summary>
+	/// Validates a page business-rule definition against page attributes and elements.
+	/// </summary>
+	/// <param name="rule">Business rule to validate.</param>
+	/// <param name="attributeMap">Page business-rule attributes keyed by payload path.</param>
+	/// <param name="elementNames">Available page element names.</param>
+	void Validate(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IReadOnlySet<string> elementNames);
+}
 
-	internal static void Validate(
+internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessRuleValidator)
+	: IPageBusinessRuleValidator {
+
+	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
 		RejectDatasourcePaths(rule);
 		try {
-			BusinessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
+			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
 		} catch (ArgumentException exception) {
 			throw new ArgumentException(AppendCandidateHint(exception.Message, attributeMap, elementNames), exception);
 		}

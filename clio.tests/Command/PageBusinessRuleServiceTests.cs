@@ -24,6 +24,7 @@ public sealed class PageBusinessRuleServiceTests {
 		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
 		IPageBusinessRuleElementProvider elementProvider = Substitute.For<IPageBusinessRuleElementProvider>();
 		IBusinessRuleAddonService addonService = Substitute.For<IBusinessRuleAddonService>();
+		IBusinessRuleLookupReferenceValidator lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
 		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		PageBundleInfo bundle = new();
 		BusinessRule rule = CreatePageRule();
@@ -49,7 +50,8 @@ public sealed class PageBusinessRuleServiceTests {
 			schemaProvider,
 			attributeProvider,
 			elementProvider,
-			addonService);
+			addonService,
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
 
 		// Act
 		BusinessRuleCreateResult result = service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -73,6 +75,9 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "page business-rule creation should still emit one saved metadata rule");
 		capturedMetadata[0].Cases.Single().Actions.Single().TypeName.Should().Be(BusinessRuleConstants.BusinessRuleShowElementTypeName,
 			because: "page show-element actions should still be converted into the Creatio show element action type");
+		lookupReferenceValidator.Received(1).Validate(
+			rule,
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
 	}
 
 	[Test]
@@ -85,6 +90,7 @@ public sealed class PageBusinessRuleServiceTests {
 		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
 		IPageBusinessRuleElementProvider elementProvider = Substitute.For<IPageBusinessRuleElementProvider>();
 		IBusinessRuleAddonService addonService = Substitute.For<IBusinessRuleAddonService>();
+		IBusinessRuleLookupReferenceValidator lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
 		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		PageBundleInfo bundle = new();
 		BusinessRule rule = CreatePageRule(actionElementName: "MissingInput");
@@ -104,7 +110,8 @@ public sealed class PageBusinessRuleServiceTests {
 			schemaProvider,
 			attributeProvider,
 			elementProvider,
-			addonService);
+			addonService,
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
 
 		// Act
 		Action act = () => service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -113,6 +120,54 @@ public sealed class PageBusinessRuleServiceTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("Unknown page element 'MissingInput' in rule.actions[*].items. Available page elements: Input_One.",
 				because: "invalid page element targets should be rejected before destructive add-on writes");
+		addonService.DidNotReceiveWithAnyArgs().AppendRule(default!, default!, default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops before add-on mutation when a page lookup condition references a missing lookup record.")]
+	public void Create_Should_Not_Append_Addon_When_Page_Lookup_Validation_Fails() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
+		IPageBusinessRuleElementProvider elementProvider = Substitute.For<IPageBusinessRuleElementProvider>();
+		IBusinessRuleAddonService addonService = Substitute.For<IBusinessRuleAddonService>();
+		IBusinessRuleLookupReferenceValidator lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		BusinessRule rule = CreatePageRule();
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+			["PDS_Text"] = new("PDS_Text", "Text", null)
+		});
+		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
+			"Input_One"
+		});
+		lookupReferenceValidator
+			.When(validator => validator.Validate(
+				Arg.Any<BusinessRule>(),
+				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>()))
+			.Do(_ => throw new ArgumentException("Lookup record was not found."));
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			attributeProvider,
+			elementProvider,
+			addonService,
+			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+
+		// Act
+		Action act = () => service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Lookup record was not found.",
+				because: "page lookup references should be validated before destructive add-on writes");
 		addonService.DidNotReceiveWithAnyArgs().AppendRule(default!, default!, default!);
 	}
 

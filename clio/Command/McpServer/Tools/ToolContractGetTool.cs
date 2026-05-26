@@ -205,15 +205,20 @@ internal static class ToolContractCatalog {
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string ErrorFieldName = "error";
+	private const string ExampleAccountSchemaName = "Account";
+	private const string ExampleContactSchemaName = "Contact";
 	private const string ExampleEnvironmentName = "local";
 	private const string ExampleLookupValueId = "00000000-0000-0000-0000-000000000001";
 	private const string ExamplePackageName = "UsrTaskApp";
 	private const string ExampleTaskStatusSchemaName = "UsrTaskStatus";
 	private const string FailureMessageDescription = "Human-readable failure message.";
+	private const string FieldFieldName = "field";
+	private const string FiltersFieldName = "filters";
 	private const string IconBackgroundFieldName = "icon-background";
 	private const string InvalidLocalizationMapCode = "invalid-localization-map";
 	private const string KeyValueFieldName = "key-value";
@@ -237,6 +242,8 @@ internal static class ToolContractCatalog {
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
 	private const string ResourcesFieldName = "resources";
+	private const string SelectFieldName = "select";
+	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -267,6 +274,7 @@ internal static class ToolContractCatalog {
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
+	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
@@ -304,6 +312,7 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeContextToolName] = BuildDataForgeContext(),
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
+			[ODataReadTool.ToolName] = BuildODataRead(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[PageListTool.ToolName] = BuildPageList(),
@@ -353,6 +362,7 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetRelationsToolName,
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
+		ODataReadTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		PageListTool.ToolName,
@@ -710,7 +720,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("section", ObjectType, "Created section metadata."),
-				Field("entity", ObjectType, "Created or targeted entity metadata when available."),
+				Field(EntityFieldName, ObjectType, "Created or targeted entity metadata when available."),
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -1056,7 +1066,7 @@ internal static class ToolContractCatalog {
 					Field("relations", ArrayType, "Resolved relation paths as cypher-style strings.")),
 				Examples = [
 					Example("Read Contact-to-Account relations for a configured environment", new Dictionary<string, object?> {
-						["source-table"] = "Contact",
+						["source-table"] = ExampleContactSchemaName,
 						["target-table"] = "Account",
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
@@ -1083,7 +1093,7 @@ internal static class ToolContractCatalog {
 					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
-						["table-name"] = "Contact",
+						["table-name"] = ExampleContactSchemaName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
@@ -1169,6 +1179,108 @@ internal static class ToolContractCatalog {
 				],
 				PreferredFlow = Flow([DataForgeTool.DataForgeUpdateToolName], "Use only for explicit Data Forge remediation or refresh maintenance.")
 			});
+	}
+
+	private static ToolContractDefinition BuildODataRead() {
+		return new ToolContractDefinition(
+			ODataReadTool.ToolName,
+			"Reads Creatio records through OData v4. Use this to query records, resolve lookup primary values, verify records by Id, or inspect selected fields.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
+					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25.")
+				],
+				Validators: [
+					new ToolContractValidator("limit", "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitted or out-of-range values default to 25.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("count", NumberType, "Number of records returned."),
+				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
+				Field("next-link", StringType, "OData next-link URL when more records are available.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Resolve a lookup row by display value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleTaskStatusSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { [FieldFieldName] = "Name", ["op"] = "eq", [ValueFieldName] = "In Progress" }
+						}
+					},
+					[SelectFieldName] = new[] { "Id", "Name" },
+					["top"] = 5
+				}),
+				Example("Verify a known lookup row exists by Id", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { [FieldFieldName] = "Id", ["op"] = "eq", [ValueFieldName] = ExampleLookupValueId }
+						}
+					},
+					[SelectFieldName] = new[] { "Id" },
+					["top"] = 1
+				}),
+				Example("Query records with multiple fields and ordering", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					[SelectFieldName] = new[] { "Id", "Name", "AccountId" },
+					["order-by"] = "Name asc",
+					["top"] = 10
+				}),
+				Example("Query records where a text field contains a value", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleAccountSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> { [FieldFieldName] = "Name", ["op"] = "contains", [ValueFieldName] = "Acme" }
+						}
+					},
+					[SelectFieldName] = new[] { "Id", "Name" },
+					["top"] = 10
+				}),
+				Example("Query contacts by account lookup using structured filters", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					[FiltersFieldName] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> {
+								[FieldFieldName] = "Account/Id",
+								["op"] = "eq",
+								[ValueFieldName] = ExampleLookupValueId
+							}
+						}
+					},
+					[SelectFieldName] = new[] { "Id", "Name" },
+					["top"] = 10
+				})
+			],
+			Flow([ODataReadTool.ToolName], "Use when exact Creatio record values are needed from OData, including lookup primary values, record verification, filtered reads, or ordered record lists."),
+			[
+				Flow(
+					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName, ODataReadTool.ToolName],
+					"Use when the entity name or column names are unknown and DataForge is available."),
+				Flow(
+					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
+					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
+			],
+			[]);
 	}
 
 	private static ToolContractDefinition BuildDataForgeContract(DataForgeContractDescriptor descriptor) {
@@ -1319,14 +1431,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildEntityBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions.",
+			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, and Time targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1335,13 +1447,16 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
 					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
-						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, and ISO 8601 time strings with timezone suffix for Time targets."),
+						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
 					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
 						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
 					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
 					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
-						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false.")
+						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
+					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
+
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1375,7 +1490,8 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrCompleted", true),
 						BusinessRuleSetValueItem("UsrStartDate", "2025-01-01"),
 						BusinessRuleSetValueItem("UsrPlannedOn", "2025-01-01T00:00:00Z"),
-						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00")
+						BusinessRuleSetValueItem("UsrReminderTime", "12:00:00+02:00"),
+						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
 					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
@@ -1412,9 +1528,11 @@ internal static class ToolContractCatalog {
 				[
 					ApplicationGetListTool.ApplicationGetListToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"When the application exists and the entity is a part of it. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rule contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -1423,9 +1541,10 @@ internal static class ToolContractCatalog {
 						FindEntitySchemaTool.FindEntitySchemaToolName,
 						DataForgeTool.DataForgeFindTablesToolName,
 						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
+						ODataReadTool.ToolName,
 						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables tool and create business rule for this entity in the application."),
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id."),
 				Flow(
 					[
 						ApplicationCreateTool.ApplicationCreateToolName,
@@ -1437,13 +1556,19 @@ internal static class ToolContractCatalog {
 					"When application does not exist yet. Suggest user to create new empty application and create business rule there."),
 
 			],
-			[]);
+			[],
+			null,
+			[
+				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
+				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
+				"When any lookup condition or lookup set-values constant is needed, call odata-read first and use an existing record Id."
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageBusinessRuleCreate() {
 		return new ToolContractDefinition(
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants.",
+			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
 				[
@@ -1527,24 +1652,32 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
+					ToolContractGetTool.ToolName,
+					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then create the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rule contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
 						ApplicationGetListTool.ApplicationGetListToolName,
 						ApplicationGetInfoTool.ApplicationGetInfoToolName,
 						PageGetTool.ToolName,
+						ODataReadTool.ToolName,
 						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule.")
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id.")
 			],
 			[],
 			[
 				new ToolAntiPattern(
 					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
 					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+			],
+			[
+				"Call get-guidance with name business-rules before calling create-page-business-rule.",
+				"Call get-tool-contract for create-page-business-rule before building the final payload.",
+				"When any lookup condition constant is needed, call odata-read first and use an existing record Id. When filtering records by a lookup value, use structured filters with a traversal path such as Account/Id."
 			]);
 	}
 
@@ -1561,7 +1694,9 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
 				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
-				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm').")
+				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
+			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling the business-rule creation tool; when filtering records by a lookup value, use traversal paths such as Account/Id.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(
@@ -1576,7 +1711,7 @@ internal static class ToolContractCatalog {
 		BusinessRuleExample(summary, EntitySchemaNameFieldName, entitySchemaName, caption, leftPath,
 			comparisonType, actionType, actionItems, constantValue);
 
-	private const string BusinessRuleValueKey = "value";
+	private const string BusinessRuleValueKey = ValueFieldName;
 
 	private static Dictionary<string, object?> BusinessRuleSetValueItem(string path, object value) {
 		return new Dictionary<string, object?> {
@@ -1584,9 +1719,9 @@ internal static class ToolContractCatalog {
 				["type"] = "AttributeValue",
 				["path"] = path
 			},
-			["value"] = new Dictionary<string, object?> {
+			[BusinessRuleValueKey] = new Dictionary<string, object?> {
 				["type"] = "Const",
-				["value"] = value
+				[BusinessRuleValueKey] = value
 			}
 		};
 	}
@@ -3100,7 +3235,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private const string SysSettingCodeFieldName = "code";
-	private const string SysSettingValueFieldName = "value";
+	private const string SysSettingValueFieldName = ValueFieldName;
 	private const string SysSettingValueTypeFieldName = "value-type-name";
 	private const string ExampleSysSettingCode = "MaxFileSize";
 	private const string ExampleSysSettingName = "Maximum file size";
