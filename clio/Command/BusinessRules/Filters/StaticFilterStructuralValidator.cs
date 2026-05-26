@@ -10,7 +10,8 @@ namespace Clio.Command.BusinessRules.Filters;
 internal static class StaticFilterStructuralValidator {
 
 	private static readonly Regex BackwardReferenceShape = new(@"^\[[A-Za-z0-9_]+:[A-Za-z0-9_]+\]$",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled,
+		TimeSpan.FromMilliseconds(100));
 
 	internal static void Validate(StaticFilterGroup group) => Validate(group, "filter");
 

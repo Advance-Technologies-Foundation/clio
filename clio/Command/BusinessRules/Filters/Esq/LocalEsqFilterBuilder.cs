@@ -15,7 +15,8 @@ internal sealed class LocalEsqFilterBuilder {
 
 	private static readonly Regex GuidRegex = new(
 		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-		RegexOptions.Compiled);
+		RegexOptions.Compiled,
+		TimeSpan.FromMilliseconds(100));
 
 	private static readonly JsonSerializerOptions SerializerOptions = new() {
 		DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
