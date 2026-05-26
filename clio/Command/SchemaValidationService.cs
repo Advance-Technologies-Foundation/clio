@@ -1326,9 +1326,12 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
 	/// the preferred label in validator error/warning messages. The platform auto-provides the
-	/// caption resource under the view-model attribute name (not the model-path-with-underscores),
-	/// so the suggestion is always <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> when the
-	/// control's binding attribute has a DS-bound <c>modelConfig.path</c>.
+	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
+	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
+	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
+	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
+	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
+	/// auto-provided.
 	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
@@ -1341,7 +1344,11 @@ public static class SchemaValidationService
 		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
 			return false;
 		}
-		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
+		int lastDot = modelPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
+			? modelPath[(lastDot + 1)..]
+			: modelPath;
+		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
 		return true;
 	}
 
