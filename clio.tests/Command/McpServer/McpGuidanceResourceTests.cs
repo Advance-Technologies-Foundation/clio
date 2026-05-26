@@ -1380,7 +1380,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents limited page-level business-rule support.")]
+	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents business-rule support and offline limitations.")]
 	public void MobilePageGuidanceResource_Should_Return_Canonical_Mobile_Page_Guide() {
 		// Arrange
 		MobilePageGuidanceResource resource = new();
@@ -1401,8 +1401,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the mobile guide should explicitly document that mobile pages support page-level business rules");
 		article.Text.Should().Contain("create-entity-business-rule",
 			because: "the mobile guide should explicitly document that mobile guidance covers entity-level business rules too");
-		article.Text.Should().Contain("limited set of conditions and actions",
-			because: "the mobile guide should warn callers that mobile business rules do not have full web parity");
+		article.Text.Should().Contain("identically to web",
+			because: "the mobile guide should clarify that business rule generation works the same as web");
+		article.Text.Should().Contain("OFFLINE LIMITATION",
+			because: "the mobile guide should warn callers that not all rules are guaranteed to work offline");
 		article.Text.Should().Contain("separate artifacts",
 			because: "the guide should keep page-level business rules separate from mobile page body editing");
 		article.Text.Should().Contain("Read `business-rules` for rule semantics",

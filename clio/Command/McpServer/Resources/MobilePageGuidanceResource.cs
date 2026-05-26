@@ -231,17 +231,95 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       ADAPTIVE BREAKPOINTS
 		       ─────────────────────────────────────────────────────────────
-		       crt.GridContainer supports adaptive per-breakpoint column overrides:
-		         {
-		           "type": "crt.GridContainer",
-		           "columns": "1fr",
-		           "adaptive": {
-		             "small":  { "columns": "1fr" },
-		             "medium": { "columns": "1fr 1fr" },
-		             "large":  { "columns": "1fr 1fr 1fr" }
+		       Apply this section only when the user explicitly asks for adaptive / responsive layout.
+		       Otherwise rely on the static `columns` / `layoutConfig` values.
+
+		       Breakpoints: "small" (phone portrait), "medium" (landscape / tablet portrait), "large" (tablet landscape).
+		       The mobile designer "Tablet portrait" / "Tablet landscape" preview switcher maps to `medium` / `large`.
+
+		       Adaptive layout has TWO sides — you must edit both for a real responsive layout:
+
+		       (1) CONTAINER side — `adaptive` on crt.GridContainer (sibling of `columns`).
+		           Defines how many grid columns exist at each breakpoint.
+		           Both string ("1fr 1fr") and array (["1fr","1fr"]) forms are accepted by the runtime.
+
+		           {
+		             "operation": "merge",
+		             "name": "AreaProfileContainer",
+		             "values": {
+		               "adaptive": {
+		                 "small":  { "columns": ["1fr"] },
+		                 "medium": { "columns": ["1fr", "1fr"] },
+		                 "large":  { "columns": ["1fr", "1fr", "1fr"] }
+		               }
+		             }
 		           }
-		         }
-		       Breakpoints: "small" (phone portrait), "medium" (landscape/tablet portrait), "large" (tablet landscape).
+
+		       (2) CHILD side — `layoutConfig.adaptive` on each child component (button, field, label, ...).
+		           Defines the explicit grid cell the child occupies at each breakpoint.
+		           Per breakpoint keys: `row` (1-based), `column` (1-based), `colSpan`, `rowSpan`.
+
+		           Without per-breakpoint `layoutConfig.adaptive`, children fall back to the static
+		           `layoutConfig.{row,column,colSpan,rowSpan}` values and the container's adaptive
+		           `columns` change alone will NOT reflow them — the result is a wider container with
+		           items still pinned to their original cells.
+
+		       Worked example — three buttons that stack on phone, wrap 2+1 on tablet portrait, and
+		       line up 1×3 on tablet landscape (see UsrMobilePage_07zg9nr for a live reference):
+
+		           // Container: 1 / 2 / 3 columns by breakpoint
+		           { "operation": "merge", "name": "AreaProfileContainer", "values": {
+		               "adaptive": {
+		                 "small":  { "columns": ["1fr"] },
+		                 "medium": { "columns": ["1fr","1fr"] },
+		                 "large":  { "columns": ["1fr","1fr","1fr"] }
+		               }
+		           }}
+
+		           // Button 1 — always top-left
+		           { "operation": "insert", "name": "Button1", "parentName": "AreaProfileContainer",
+		             "propertyName": "items", "index": 0,
+		             "values": { "type": "crt.Button", "caption": "...",
+		               "layoutConfig": { "adaptive": {
+		                 "small":  { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
+		                 "medium": { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 },
+		                 "large":  { "row": 1, "column": 1, "colSpan": 1, "rowSpan": 1 }
+		               }}
+		             }}
+
+		           // Button 2 — below on phone, right on tablet portrait, middle on tablet landscape
+		           { "operation": "insert", "name": "Button2", "parentName": "AreaProfileContainer",
+		             "propertyName": "items", "index": 1,
+		             "values": { "type": "crt.Button", "caption": "...",
+		               "layoutConfig": { "adaptive": {
+		                 "small":  { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 1 },
+		                 "medium": { "row": 1, "column": 2, "colSpan": 1, "rowSpan": 1 },
+		                 "large":  { "row": 1, "column": 2, "colSpan": 1, "rowSpan": 1 }
+		               }}
+		             }}
+
+		           // Button 3 — third row on phone, second row on tablet portrait, third column on landscape
+		           { "operation": "insert", "name": "Button3", "parentName": "AreaProfileContainer",
+		             "propertyName": "items", "index": 2,
+		             "values": { "type": "crt.Button", "caption": "...",
+		               "layoutConfig": { "adaptive": {
+		                 "small":  { "row": 3, "column": 1, "colSpan": 1, "rowSpan": 1 },
+		                 "medium": { "row": 2, "column": 1, "colSpan": 1, "rowSpan": 1 },
+		                 "large":  { "row": 1, "column": 3, "colSpan": 1, "rowSpan": 1 }
+		               }}
+		             }}
+
+		       Rules of thumb:
+		         - Define `adaptive` on the GridContainer AND `layoutConfig.adaptive` on every child
+		           that needs to move between breakpoints. Skipping either side breaks the layout.
+		         - Use 1-based `row` and `column`. `colSpan` / `rowSpan` default to 1; include them
+		           explicitly to match the format produced by the mobile designer.
+		         - Keep all three breakpoints (`small`, `medium`, `large`) populated even when two
+		           share the same cell — the designer always serialises the full set and partial maps
+		           may render as empty cells on the missing breakpoint.
+		         - Adaptive child placement is supported inside crt.GridContainer. For crt.FlexContainer,
+		           reflow happens through the container's own `direction` / `wrap` properties, not
+		           through child `layoutConfig.adaptive`.
 
 		       ─────────────────────────────────────────────────────────────
 		       FIELD GROUPING IN CONTAINERS (mobile layout convention)
