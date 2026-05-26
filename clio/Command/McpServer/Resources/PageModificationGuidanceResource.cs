@@ -143,15 +143,14 @@ public sealed class PageModificationGuidanceResource {
 		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
 
 		       Inserted-field contract — 3-part payload for a new data-bound field control
-		       Inserting a new field control onto a FormPage (or any DS-bound page) is NOT a single-section edit. The control component, the view-model attribute, and the label resource live in three different parts of the body and must all be present in the SAME `update-page` call. Missing any part used to fail silently (control renders with no data source, label renders blank, downstream tests fail). `update-page` now hard-rejects payloads that violate the contract; the diagnostic names the field, the missing attribute, and the section that needs the edit.
-
-		       The contract applies to every component type listed in the pre-edit checklist row for inserted fields (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider). It applies ONLY to `operation:"insert"` — for `operation:"merge"` against an existing control the parent schema is presumed to provide the attribute and resource.
-
+		       """
+		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"
+		       + """
 		       Three required edits for a single new field:
 
 		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.
 		       2. `viewModelConfigDiff` — merge a matching attribute entry that declares `modelConfig.path` to the entity column the control reads/writes.
-		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<bindingAttribute>` so the platform auto-provides the caption from the DS-bound attribute. The auto-provided form requires the binding attribute itself to have a `modelConfig.path` (step 2 above).
+		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<columnCode>` (the LAST segment of the binding attribute's `modelConfig.path`, e.g. `UsrCompleted` for `PDS.UsrCompleted`) so the platform auto-provides the caption from the entity column. The auto-provided form requires the binding attribute itself to have a `modelConfig.path` (step 2 above); auto-provide is keyed by column code, not by view-model attribute name.
 
 		       Canonical payload — adding a `crt.NumberInput` "Estimated minutes" field bound to `UsrEstimatedMinutes`:
 

@@ -90,6 +90,29 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Canonical statement of the inserted-field contract enforced by
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
+	/// <c>page-modification</c> guidance resource so all three describe the same rule in
+	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
+	/// attributes (which only accept compile-time constant expressions).
+	/// </summary>
+	internal const string InsertedFieldContractSummary =
+		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
+		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
+		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
+		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
+		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
+		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
+		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
+		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
+		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
+		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
+		"violate this contract are rejected at update-page validation time; the diagnostic names " +
+		"the offending field, attribute, and section. The contract does NOT apply to " +
+		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+
+	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body.</param>

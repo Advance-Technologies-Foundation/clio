@@ -22,22 +22,14 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
-	/// three-part payload requirement next to the component's <c>example</c>.
+	/// three-part payload requirement next to the component's <c>example</c>. The wording
+	/// is intentionally identical to the <c>update-page</c> tool [Description] and the
+	/// <c>page-modification</c> guidance — all three reuse
+	/// <see cref="SchemaValidationService.InsertedFieldContractSummary"/>.
 	/// </summary>
 	internal const string DataSourceBindingContractText =
-		"This is a data-source-bound field component. When inserting it via " +
-		"\"operation\":\"insert\" in viewConfigDiff, the SAME update-page call MUST also include " +
-		"both of the following — update-page validation rejects payloads that omit either part:\n" +
-		"  (1) viewModelConfigDiff entry that declares the control's binding attribute, e.g. " +
-		"{\"operation\":\"merge\",\"values\":{\"<bindingAttr>\":{\"modelConfig\":{\"path\":\"<DataSource>.<columnCode>\"}}}} " +
-		"— omit it and the control renders with no data source.\n" +
-		"  (2) Label resource — either pass {\"<labelKey>\":\"<Caption>\"} in the `resources` parameter, " +
-		"OR set the control's label to \"$Resources.Strings.<columnCode>\" where <columnCode> is the LAST " +
-		"segment of the binding attribute's modelConfig.path (e.g. \"UsrCompleted\" for path \"PDS.UsrCompleted\"). " +
-		"Auto-provide is keyed by COLUMN CODE, not by view-model attribute name — the path-with-underscores " +
-		"form (e.g. \"PDS_UsrCompleted\") is NOT auto-provided even when declared as a DS-bound attribute. " +
-		"Omit both options and the label renders blank.\n" +
-		"For `operation:\"merge\"` against an existing parent-provided control, this contract does NOT apply.";
+		"This is a data-source-bound field component. "
+		+ SchemaValidationService.InsertedFieldContractSummary;
 
 	/// <summary>
 	/// Returns grouped component summaries or full metadata for a specific component type.
