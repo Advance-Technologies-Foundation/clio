@@ -158,6 +158,39 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool surfaces action deserialization errors")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives a readable deserialization error instead of a generic invocation failure.")]
+	public async Task BusinessRuleCreate_Should_Surface_Action_Deserialization_Error() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "missing-business-rule-env",
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateInvalidActionRule()
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "argument binding failures occur before command execution and should be returned as MCP error results");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "the MCP error result should include human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains($"Failed to deserialize argument 'args' for MCP tool '{ToolName}'", StringComparison.Ordinal)
+				&& message.Contains("unsupported-action", StringComparison.Ordinal),
+			because: "the caller should see the underlying System.Text.Json action binding error");
+	}
+
+	[Test]
 	[Description("Creates an entity business rule for Contact in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool creates a Contact rule")]
@@ -370,6 +403,21 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			}
 		};
 
+	private static IReadOnlyDictionary<string, object?> CreateInvalidActionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Invalid action",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["items"] = new object[] { "Name" },
+					["type"] = "unsupported-action"
+				}
+			}
+		};
+
 	private static IReadOnlyDictionary<string, object?> CreateContactApplyFilterRule(string caption) =>
 		new Dictionary<string, object?> {
 			["caption"] = caption,
@@ -421,7 +469,9 @@ public sealed class EntityBusinessRuleToolE2ETests {
 
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ClioProcessPath = string.IsNullOrWhiteSpace(settings.ClioProcessPath)
+			? TestConfiguration.ResolveFreshClioProcessPath()
+			: settings.ClioProcessPath;
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource);
