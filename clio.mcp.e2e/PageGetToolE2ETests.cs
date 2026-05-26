@@ -250,6 +250,8 @@ public sealed class PageGetToolE2ETests {
 			cancellationToken,
 			environmentName,
 			installedApplication.Code);
+		pageList.Success.Should().BeTrue(
+			because: $"list-pages must succeed before a seeded page can be resolved; treating an MCP-level failure as 'no pages' would hide real runtime regressions. Error: {pageList.Error}");
 		PageListItem? seededPage = pageList.Pages?.FirstOrDefault();
 		if (seededPage is not null) {
 			return new PageDiscoveryCandidate(installedApplication, seededPage);
