@@ -28,7 +28,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		]));
 
 		// Act
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, schemaProvider);
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, schemaProvider);
 
 		// Assert
 		act.Should().NotThrow();
@@ -43,7 +43,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, Substitute.For<IFilterSchemaProvider>());
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, Substitute.For<IFilterSchemaProvider>());
 
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("filter.target-attribute-unknown: targetAttribute 'UsrCity1' was not found on the entity schema.");
@@ -58,7 +58,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("Title", "Text", null));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, Substitute.For<IFilterSchemaProvider>());
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, Substitute.For<IFilterSchemaProvider>());
 
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("Attribute 'Title' in rule.actions[*].targetAttribute must be a Lookup.");
@@ -77,7 +77,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 			("Country", "Lookup", "Country")
 		]));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, schemaProvider);
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, schemaProvider);
 
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("filter.path-unknown: Column 'Name1' not found on schema 'City' (looked up by Name).*");
@@ -92,7 +92,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			SchemaProvider(("Country", [("Name", "Text", null)])));
 
 		act.Should().Throw<ArgumentException>().WithMessage("*unsupported value 'FOO'*");
@@ -107,7 +107,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			SchemaProvider(("Country", [("Name", "Text", null)])));
 
 		act.Should().Throw<ArgumentException>().WithMessage("*must be omitted when comparisonType is 'IS_NULL'*");
@@ -122,7 +122,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			SchemaProvider(("Country", [("Name", "Text", null)])));
 
 		act.Should().Throw<ArgumentException>().WithMessage("*'GREATER' is supported only on numeric and date/time columns*");
@@ -137,7 +137,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			SchemaProvider(("Country", [("Name", "Text", null)])));
 
 		act.Should().Throw<ArgumentException>().WithMessage("*array (multi-value IN) is supported only on Lookup columns*");
@@ -155,7 +155,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 			("City", [("Country", "Lookup", "Country")]),
 			("Country", [("Name", "Text", null)]));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, schemaProvider);
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, schemaProvider);
 
 		act.Should().NotThrow();
 	}
@@ -176,7 +176,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 			("UsrCountry", "Lookup", "Country"),
 			("Title", "Text", null));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			Substitute.For<IFilterSchemaProvider>());
 
 		act.Should().Throw<ArgumentException>().WithMessage("apply-static-filter rules support exactly one action*");
@@ -201,7 +201,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 			("Contact", []),
 			("Activity", [("Owner", "Lookup", "Contact")]));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, schemaProvider);
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, schemaProvider);
 
 		act.Should().NotThrow();
 	}
@@ -225,7 +225,7 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 			("Contact", []),
 			("Activity", [("Account", "Lookup", "Account")]));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap, schemaProvider);
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap, schemaProvider);
 
 		act.Should().Throw<ArgumentException>().WithMessage("*must be a Lookup pointing back to root schema 'Contact'*");
 	}
@@ -238,13 +238,16 @@ public sealed class BusinessRuleValidatorApplyStaticFilterTests {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = Attributes(
 			("UsrCountry", "Lookup", "Country"));
 
-		Action act = () => BusinessRuleValidator.ValidateEntity(rule, attributeMap,
+		Action act = () => CreateValidator().ValidateEntity(rule, attributeMap,
 			Substitute.For<IFilterSchemaProvider>());
 
 		act.Should().Throw<ArgumentException>().WithMessage("filter.logicalOperation:*");
 	}
 
 	// ---- helpers ----
+
+	private static BusinessRuleValidator CreateValidator() =>
+		new(Substitute.For<IBusinessRuleLookupReferenceValidator>());
 
 	private static BusinessRule CreateApplyStaticFilterRule(string targetAttribute, string filterJson) =>
 		new(

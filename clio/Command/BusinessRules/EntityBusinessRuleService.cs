@@ -35,6 +35,7 @@ internal sealed class EntityBusinessRuleService(
 	IEntityBusinessRuleSchemaProvider entitySchemaProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
 	IBusinessRuleFormulaValidationService formulaValidationService,
+	IBusinessRuleValidator businessRuleValidator,
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder)
 	: IEntityBusinessRuleService {
@@ -56,7 +57,7 @@ internal sealed class EntityBusinessRuleService(
 			lookupValueResolver = new LookupValueResolver(filterSchemaProvider, applicationClient, serviceUrlBuilder);
 		}
 
-		BusinessRuleValidator.ValidateEntity(request.Rule, attributeContext.Attributes, filterSchemaProvider);
+		businessRuleValidator.ValidateEntity(request.Rule, attributeContext.Attributes, filterSchemaProvider);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules = BusinessRuleMetadataConverter.ToEntityMetadata(
