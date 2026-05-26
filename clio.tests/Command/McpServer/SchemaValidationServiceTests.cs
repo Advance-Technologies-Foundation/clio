@@ -1679,6 +1679,110 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Multiple insert entries with distinct violations each surface their own error instead of stopping after the first — keeps the agent off the one-error-per-attempt remediation treadmill.")]
+	public void ValidateInsertedFieldSelfConsistency_MultipleInvalidInserts_ReturnsAllErrors() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrCompleted",
+						"values":
+							{
+								"type":"crt.Checkbox",
+								"label":"$Resources.Strings.PDS_UsrCompleted",
+								"control":"$PDS_UsrCompleted"
+							}
+					},
+					{
+						"operation":"insert",
+						"name":"UsrCompletionComment",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.PDS_UsrCompletionComment",
+								"control":"$PDS_UsrCompletionComment"
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because each insert is missing its own viewModelConfigDiff declaration and label resource");
+		result.Errors.Should().Contain(e => e.Contains("UsrCompleted") && e.Contains("PDS_UsrCompleted"),
+			"because the first insert must surface its own diagnostic naming the offending field and binding attribute");
+		result.Errors.Should().Contain(e => e.Contains("UsrCompletionComment") && e.Contains("PDS_UsrCompletionComment"),
+			"because the second insert must surface its own diagnostic instead of being masked by the first error");
+	}
+
+	[Test]
+	[Description("Insert of a non-field component (crt.Button) does not invoke the inserted-field contract — only standard field component types are gated.")]
+	public void ValidateInsertedFieldSelfConsistency_NonFieldComponentInsert_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrSaveButton",
+						"values":
+							{
+								"type":"crt.Button",
+								"caption":"$Resources.Strings.UsrSaveButton_caption",
+								"clicked":{"request":"usr.SaveRequest"}
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the inserted-field contract only applies to data-source-bound standard field component types listed in StandardFieldComponentTypes");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert of a standard field component with no control binding is skipped silently — there is no binding to cross-check against viewModelConfigDiff.")]
+	public void ValidateInsertedFieldSelfConsistency_FieldInsertWithoutControlBinding_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrDecorative",
+						"values":
+							{
+								"type":"crt.Input"
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the validator only checks bindings and labels when they are actually present on the inserted control");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Empty body or whitespace-only body is tolerated — the validator returns valid without throwing so it can be chained behind earlier syntactic checks.")]
+	public void ValidateInsertedFieldSelfConsistency_EmptyBody_ReturnsValid() {
+		var emptyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(string.Empty);
+		var whitespaceResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency("   ");
+
+		emptyResult.IsValid.Should().BeTrue("because an empty body has no inserts to validate");
+		emptyResult.Errors.Should().BeEmpty();
+		whitespaceResult.IsValid.Should().BeTrue("because a whitespace body has no inserts to validate");
+		whitespaceResult.Errors.Should().BeEmpty();
+	}
+
+	[Test]
 	[Description("Standard field binding to the declared validator attribute is accepted")]
 	public void ValidateStandardFieldBindings_AttributeWithValidators_ViewModelBindingIsAllowed() {
 		// Arrange — UsrName has a validator in viewModelConfig; control binds to the same declared attribute.

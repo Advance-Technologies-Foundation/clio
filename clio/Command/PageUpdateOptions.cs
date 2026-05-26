@@ -572,7 +572,7 @@ namespace Clio.Command {
 			if (!insertSelfConsistencyResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = $"Body inserts new field controls without the matching viewModelConfigDiff and/or resource strings: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
+					Error = $"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
 				};
 			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
