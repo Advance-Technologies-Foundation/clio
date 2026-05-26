@@ -469,9 +469,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = string.IsNullOrWhiteSpace(settings.ClioProcessPath)
-			? TestConfiguration.ResolveFreshClioProcessPath()
-			: settings.ClioProcessPath;
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource);

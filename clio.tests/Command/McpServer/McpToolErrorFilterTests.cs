@@ -1,11 +1,9 @@
 using System;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
-using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -19,47 +17,38 @@ public sealed class McpToolErrorFilterTests
 {
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the original deserialization message before SDK invocation can hide a matched tool argument binding error.")]
-	public async Task HandleCallToolErrors_Should_Return_Deserialization_Message_For_Matched_Tool_Argument_Error() {
+	[Description("Does not convert runtime JSON failures from tool execution into argument binding errors.")]
+	public async Task HandleCallToolErrors_Should_Not_Convert_Runtime_Json_Exception_To_Argument_Error() {
 		// Arrange
-		NotSupportedException metadataException = new(
-			"The JSON payload for polymorphic interface or abstract type 'SampleAction' must specify a type discriminator.");
-		McpRequestHandler<CallToolRequestParams, CallToolResult> handler = McpToolErrorFilter.HandleCallToolErrors(
-			(_, _) => throw new InvalidOperationException("Invocation failed.", metadataException));
+		JsonException jsonException = new("The JSON value could not be converted.");
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw jsonException);
 		RequestContext<CallToolRequestParams> context = CreateContext("sample-tool");
 
 		// Act
-		CallToolResult result = await handler(context, CancellationToken.None);
-		string message = GetText(result);
+		Func<Task> act = async () => await handler(context, CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeTrue(
-			because: "argument deserialization failure must be returned as a tool error result");
-		message.Should().Contain("Failed to deserialize arguments for MCP tool 'sample-tool'",
-			because: "the caller needs to know which tool rejected the payload");
-		message.Should().Contain(metadataException.Message,
-			because: "the original deserialization diagnostic should be preserved");
+		await act.Should().ThrowAsync<JsonException>(
+			because: "only the explicit preflight argument binding path should create MCP deserialization diagnostics");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the original JSON deserialization message without metadata-order guidance for unrelated JSON failures.")]
-	public async Task HandleCallToolErrors_Should_Return_Json_Message_Without_Metadata_Order_Hint_For_Other_Failures() {
+	[Description("Delegates to the next MCP handler when no preflight argument binding error is detected.")]
+	public async Task HandleCallToolErrors_Should_Return_Next_Handler_Result_When_No_Argument_Error_Is_Detected() {
 		// Arrange
-		JsonException jsonException = new("The JSON value could not be converted.");
+		CallToolResult expected = new() { IsError = false };
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler = McpToolErrorFilter.HandleCallToolErrors(
-			(_, _) => throw new InvalidOperationException("Invocation failed.", jsonException));
+			(_, _) => ValueTask.FromResult(expected));
 		RequestContext<CallToolRequestParams> context = CreateContext("get-package-list");
 
 		// Act
 		CallToolResult result = await handler(context, CancellationToken.None);
-		string message = GetText(result);
 
 		// Assert
-		result.IsError.Should().BeTrue(
-			because: "wrapped JSON failures should be surfaced as MCP error results");
-		message.Should().Contain("The JSON value could not be converted.",
-			because: "the actual deserialization error is the actionable part for the caller");
+		result.Should().BeSameAs(expected,
+			because: "the filter should not alter successful tool execution results");
 	}
 
 	private static RequestContext<CallToolRequestParams> CreateContext(string toolName) {
@@ -71,7 +60,4 @@ public sealed class McpToolErrorFilterTests
 		};
 		return context;
 	}
-
-	private static string GetText(CallToolResult result) =>
-		result.Content.OfType<TextContentBlock>().Single().Text;
 }

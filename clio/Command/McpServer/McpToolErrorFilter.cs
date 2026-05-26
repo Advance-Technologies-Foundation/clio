@@ -26,12 +26,7 @@ public static class McpToolErrorFilter
 			if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
 			}
-			try {
-				return await next(context, cancellationToken);
-			}
-			catch (Exception ex) when (TryGetDeserializationException(ex, out Exception? deserializationException)) {
-				return CreateJsonErrorResult(BuildDeserializationErrorMessage(context.Params?.Name, null, deserializationException!));
-			}
+			return await next(context, cancellationToken);
 		};
 
 	private static bool TryCreateArgumentDeserializationError(
@@ -64,10 +59,6 @@ public static class McpToolErrorFilter
 		return false;
 	}
 
-	private static CallToolResult CreateJsonErrorResult(string? toolName, JsonException exception) {
-		return CreateJsonErrorResult(BuildDeserializationErrorMessage(toolName, null, exception));
-	}
-
 	private static CallToolResult CreateJsonErrorResult(string message) {
 		return new CallToolResult {
 			IsError = true,
@@ -93,24 +84,4 @@ public static class McpToolErrorFilter
 
 	private static bool IsDeserializationException(Exception exception) =>
 		exception is JsonException or NotSupportedException;
-
-	private static bool TryGetDeserializationException(Exception exception, out Exception? deserializationException) {
-		for (Exception? current = exception; current is not null; current = current.InnerException) {
-			if (IsDeserializationException(current)) {
-				deserializationException = current;
-				return true;
-			}
-
-			if (current is AggregateException aggregateException) {
-				foreach (Exception innerException in aggregateException.Flatten().InnerExceptions) {
-					if (TryGetDeserializationException(innerException, out deserializationException)) {
-						return true;
-					}
-				}
-			}
-		}
-
-		deserializationException = null;
-		return false;
-	}
 }
