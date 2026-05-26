@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command.BusinessRules.Filters;
+using Clio.Command.BusinessRules.Filters.Esq;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
@@ -21,9 +24,23 @@ internal static class BusinessRuleMetadataConverter {
 	internal static IReadOnlyList<BusinessRuleMetadataDto> ToEntityMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		string entitySchemaName) {
-		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? action)) {
-			return BuildApplyFilterRules(attributeMap, rule, action!);
+		string entitySchemaName) =>
+		ToEntityMetadata(attributeMap, rule, entitySchemaName,
+			filterSchemaProvider: null, lookupValueResolver: null);
+
+	internal static IReadOnlyList<BusinessRuleMetadataDto> ToEntityMetadata(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule,
+		string entitySchemaName,
+		IFilterSchemaProvider? filterSchemaProvider,
+		ILookupValueResolver? lookupValueResolver) {
+		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? applyFilterAction)) {
+			return BuildApplyFilterRules(attributeMap, rule, applyFilterAction!);
+		}
+
+		if (TryGetApplyStaticFilterAction(rule, out ApplyStaticFilterBusinessRuleAction? applyStaticFilterAction)) {
+			return [BuildApplyStaticFilterRule(
+				attributeMap, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver)];
 		}
 
 		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName)];
@@ -614,6 +631,85 @@ internal static class BusinessRuleMetadataConverter {
 
 		action = rule.Actions[0] as ApplyFilterBusinessRuleAction;
 		return action is not null;
+	}
+
+	private static bool TryGetApplyStaticFilterAction(BusinessRule rule, out ApplyStaticFilterBusinessRuleAction? action) {
+		action = null;
+		if (rule.Actions.Count != 1) {
+			return false;
+		}
+
+		action = rule.Actions[0] as ApplyStaticFilterBusinessRuleAction;
+		return action is not null;
+	}
+
+	private static BusinessRuleMetadataDto BuildApplyStaticFilterRule(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRule rule,
+		ApplyStaticFilterBusinessRuleAction action,
+		IFilterSchemaProvider? filterSchemaProvider,
+		ILookupValueResolver? lookupValueResolver) {
+		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.TargetAttribute];
+		string rootSchemaName = targetDescriptor.ReferenceSchemaName!;
+		StaticFilterGroup filterGroup = StaticFilterDeserializer.Deserialize(action.Filter);
+
+		string esqEnvelope = BuildEsqEnvelope(filterGroup, rootSchemaName, filterSchemaProvider, lookupValueResolver);
+
+		BusinessRuleSetFilterActionMetadataDto setFilterAction = new() {
+			TypeName = BusinessRuleSetFilterElementTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Enabled = true,
+			Expression = new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleAttributeExpressionTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Type = AttributeValueExpressionType,
+				Path = action.TargetAttribute
+			},
+			Value = new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleValueExpressionTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Type = ConstExpressionType,
+				Value = esqEnvelope
+			}
+		};
+
+		BusinessRuleCaseMetadataDto @case = new() {
+			TypeName = BusinessRuleCaseTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true),
+			Actions = [setFilterAction]
+		};
+
+		List<BusinessRuleTriggerMetadataDto> triggers = (rule.Condition.Conditions ?? [])
+			.SelectMany(EnumerateTriggerNames)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Select(BuildChangeTrigger)
+			.ToList();
+		triggers.Add(BuildDataLoadedTrigger());
+
+		return new BusinessRuleMetadataDto {
+			TypeName = BusinessRuleTypeName,
+			UId = Guid.NewGuid().ToString(),
+			Name = GenerateBusinessRuleName(),
+			Enabled = true,
+			Caption = rule.Caption.Trim(),
+			Cases = [@case],
+			Triggers = triggers
+		};
+	}
+
+	private static string BuildEsqEnvelope(
+		StaticFilterGroup filterGroup,
+		string rootSchemaName,
+		IFilterSchemaProvider? filterSchemaProvider,
+		ILookupValueResolver? lookupValueResolver) {
+		if (filterSchemaProvider is null) {
+			throw new InvalidOperationException(
+				"apply-static-filter requires an IFilterSchemaProvider to resolve column metadata.");
+		}
+
+		LocalEsqFilterBuilder builder = new(filterSchemaProvider, lookupValueResolver);
+		return builder.Build(filterGroup, rootSchemaName);
 	}
 }
 
