@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Command.BusinessRules;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -18,7 +19,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			leftPath: "PDS.Name");
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -35,7 +36,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			rightExpression: new BusinessRuleExpression("AttributeValue", "PDS.Status"));
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -56,7 +57,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			action: CreateAction(actionType, ["NameInput"]));
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().NotThrow(
@@ -76,7 +77,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			]));
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -93,7 +94,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			action: new HideElementBusinessRuleAction([" "]));
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -110,7 +111,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			action: new ShowElementBusinessRuleAction(["MissingInput"]));
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -127,7 +128,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			leftPath: "MissingAttribute");
 
 		// Act
-		Action act = () => PageBusinessRuleValidator.Validate(rule, CreateAttributeMap(), CreateElementNames());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -173,4 +174,7 @@ public sealed class PageBusinessRuleValidatorTests {
 			"make-optional" => new MakeOptionalBusinessRuleAction(items),
 			_ => throw new ArgumentOutOfRangeException(nameof(actionType), actionType, null)
 		};
+
+	private static PageBusinessRuleValidator CreateValidator() =>
+		new(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>()));
 }
