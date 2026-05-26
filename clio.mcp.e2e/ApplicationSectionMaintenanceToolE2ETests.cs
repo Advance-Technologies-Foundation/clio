@@ -19,8 +19,9 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionMaintenanceToolE2ETests {
-	private const string SectionListToolName = AppSectionTool.ToolName;
-	private const string SectionDeleteToolName = AppSectionTool.ToolName;
+	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
+	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
+	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 
 	[Test]
 	[Description("Advertises list-app-sections in the MCP tool list so callers can discover the installed-app section discovery tool.")]
@@ -63,7 +64,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp"
 				}
@@ -100,7 +100,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = environmentName
 				}
 			},
@@ -117,11 +116,11 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers an installed application through list-apps, and verifies that list-app-sections returns a structured section envelope for that application.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application configured via Sandbox.ApplicationCode, and verifies that list-app-sections returns a structured section envelope for that application.")]
 	[AllureFeature(SectionListToolName)]
 	[AllureTag(SectionListToolName)]
 	[AllureName("Application section list returns structured section metadata")]
-	[AllureDescription("Uses the real clio MCP server to discover an installed application via list-apps, ignores when none exist, and otherwise verifies that list-app-sections returns the expected structured installed-application section envelope.")]
+	[AllureDescription("Uses the real clio MCP server to look up the configured seeded installed application via list-apps and verifies that list-app-sections returns the expected structured installed-application section envelope for that application.")]
 	public async Task ApplicationSectionGetList_Should_Return_Structured_Section_List() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -129,17 +128,17 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		ApplicationListItemEnvelope installedApplication = await ResolveInstalledApplicationOrIgnoreAsync(
+		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session,
 			cancellationTokenSource.Token,
-			environmentName);
+			environmentName,
+			settings.Sandbox.ApplicationCode);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
 			SectionListToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["action"] = AppSectionTool.ActionList,
 					["environment-name"] = environmentName,
 					["application-code"] = installedApplication.Code
 				}
@@ -151,13 +150,13 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: $"structured list-app-sections success should be returned in the payload instead of as an MCP invocation error. Actual result: {DescribeCallResult(callResult)}");
 		response.Success.Should().BeTrue(
-			because: "list-app-sections should succeed for a discovered installed application");
+			because: "list-app-sections should succeed for the seeded installed application");
 		response.ApplicationId.Should().Be(installedApplication.Id,
-			because: "the section list envelope should resolve the same installed application discovered through list-apps");
+			because: "the section list envelope should resolve the same seeded installed application returned by list-apps");
 		response.ApplicationCode.Should().Be(installedApplication.Code,
-			because: "the section list envelope should preserve the discovered installed application code");
+			because: "the section list envelope should preserve the seeded installed application code");
 		response.ApplicationName.Should().Be(installedApplication.Name,
-			because: "the section list envelope should preserve the discovered installed application name");
+			because: "the section list envelope should preserve the seeded installed application name");
 		response.Sections.Should().NotBeNull(
 			because: "list-app-sections should always include the sections collection so clients can handle empty and populated applications uniformly");
 		response.Error.Should().BeNullOrWhiteSpace(
@@ -205,7 +204,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionDeleteToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["action"] = AppSectionTool.ActionDelete,
 					["environment-name"] = invalidEnvironmentName,
 					["application-code"] = "UsrMissingApp",
 					["section-code"] = "UsrMissingSection"
@@ -243,7 +241,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			SectionDeleteToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["action"] = AppSectionTool.ActionDelete,
 					["environment-name"] = environmentName,
 					["application-code"] = "UsrOrdersApp"
 				}
@@ -261,13 +258,136 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	}
 
 	[Test]
-	[Description("Deferred positive coverage for delete-app-section when the E2E environment has a known installed application and section lifecycle data.")]
+	[Description("Starts the real clio MCP server, creates a section in the seeded installed application via create-app-section, lists sections to confirm the new section appears, deletes the section via delete-app-section, and verifies that the deleted section is removed from the section list.")]
 	[AllureFeature(SectionDeleteToolName)]
 	[AllureTag(SectionDeleteToolName)]
 	[AllureName("Application section delete removes a created section from the section list")]
-	[AllureDescription("Placeholder for a future seeded-data E2E that creates, lists, deletes, and re-lists a section in a known installed application.")]
-	public void ApplicationSectionDelete_Should_Remove_Created_Section_From_Section_List() {
-		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment, then restore this positive delete-app-section lifecycle scenario.");
+	[AllureDescription("Uses the real clio MCP server to drive the full create → list → delete → re-list lifecycle for delete-app-section against the configured seeded application, and verifies that the deleted section no longer appears in the list-app-sections response.")]
+	public async Task ApplicationSectionDelete_Should_Remove_Created_Section_From_Section_List() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		string? applicationCode = settings.Sandbox.ApplicationCode;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive delete-app-section lifecycle test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationCode)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationCode to run the delete-app-section lifecycle test.");
+		}
+
+		string caption = $"E2E Del {Guid.NewGuid():N}"[..24];
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string? createdSectionCode = null;
+		try {
+			// Act 1: create a new section in the seeded application
+			CallToolResult createResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = applicationCode,
+						["caption"] = caption
+					}
+				},
+				cancellationTokenSource.Token);
+			ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
+
+			createResult.IsError.Should().NotBeTrue(
+				because: $"create-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(createResult)}");
+			createResponse.Success.Should().BeTrue(
+				because: $"create-app-section must succeed before the delete lifecycle can be verified. Error: {createResponse.Error}");
+			createResponse.Section.Should().NotBeNull(
+				because: "create-app-section readback must include the created section metadata");
+			createResponse.Section!.Code.Should().NotBeNullOrWhiteSpace(
+				because: "the readback must expose the created section code");
+
+			createdSectionCode = createResponse.Section.Code;
+
+			// Act 2: list sections and confirm the new section is present
+			ApplicationSectionListContextResponseEnvelope listBefore = await CallListSectionsAsync(
+				session, cancellationTokenSource.Token, environmentName!, applicationCode!);
+
+			listBefore.Success.Should().BeTrue(
+				because: $"list-app-sections should succeed for the seeded application before deletion. Error: {listBefore.Error}");
+			listBefore.Sections.Should().NotBeNull(
+				because: "list-app-sections must return the sections collection so the test can assert membership");
+			listBefore.Sections!.Should().Contain(section => section.Code == createdSectionCode,
+				because: "the section created above should appear in list-app-sections before it is deleted");
+
+			// Act 3: delete the created section
+			CallToolResult deleteResult = await session.CallToolAsync(
+				SectionDeleteToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = applicationCode,
+						["section-code"] = createdSectionCode
+					}
+				},
+				cancellationTokenSource.Token);
+			ApplicationSectionDeleteContextResponseEnvelope deleteResponse = ApplicationResultParser.ExtractSectionDelete(deleteResult);
+
+			deleteResult.IsError.Should().NotBeTrue(
+				because: $"delete-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(deleteResult)}");
+			deleteResponse.Success.Should().BeTrue(
+				because: $"delete-app-section must succeed for the section created above. Error: {deleteResponse.Error}");
+			deleteResponse.DeletedSection.Should().NotBeNull(
+				because: "the delete readback must include the deleted section metadata");
+			deleteResponse.DeletedSection!.Code.Should().Be(createdSectionCode,
+				because: "the delete readback must echo the deleted section code so callers can correlate the deletion");
+
+			// Mark the section as cleaned up so the finally block does not double-delete
+			createdSectionCode = null;
+
+			// Act 4: re-list sections and confirm the section is gone
+			ApplicationSectionListContextResponseEnvelope listAfter = await CallListSectionsAsync(
+				session, cancellationTokenSource.Token, environmentName!, applicationCode!);
+
+			listAfter.Success.Should().BeTrue(
+				because: $"list-app-sections should succeed for the seeded application after deletion. Error: {listAfter.Error}");
+			listAfter.Sections.Should().NotBeNull(
+				because: "list-app-sections must return the sections collection after deletion so the test can assert removal");
+			listAfter.Sections!.Should().NotContain(section => section.Code == deleteResponse.DeletedSection!.Code,
+				because: "the deleted section must no longer appear in list-app-sections after delete-app-section succeeds");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
+				try {
+					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+					await session.CallToolAsync(
+						SectionDeleteToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = applicationCode,
+								["section-code"] = createdSectionCode
+							}
+						},
+						cleanupCts.Token);
+				} catch (Exception ex) {
+					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+				}
+			}
+		}
+	}
+
+	private static async Task<ApplicationSectionListContextResponseEnvelope> CallListSectionsAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string applicationCode) {
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionListToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = applicationCode
+				}
+			},
+			cancellationToken);
+		return ApplicationResultParser.ExtractSectionList(callResult);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -298,28 +418,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		} catch (OperationCanceledException) {
 			return false;
 		}
-	}
-
-	private static async Task<ApplicationListItemEnvelope> ResolveInstalledApplicationOrIgnoreAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName) {
-		CallToolResult callResult = await session.CallToolAsync(
-			ApplicationGetListTool.ApplicationGetListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			cancellationToken);
-		ApplicationListResponseEnvelope response = ApplicationResultParser.ExtractList(callResult);
-		ApplicationListItemEnvelope? installedApplication = response.Applications?.FirstOrDefault();
-		if (installedApplication is not null) {
-			return installedApplication;
-		}
-
-		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment.");
-		return null!;
 	}
 
 	private static string DescribeCallResult(CallToolResult callResult) {

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -96,30 +97,32 @@ public sealed class PackageHotfixToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	[AllureStep("Arrange MCP server session")]
 	private static async Task<PackageHotfixArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new PackageHotfixArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange MCP server session", async () => {
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new PackageHotfixArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking hotfix tool through MCP")]
 	private static async Task<CommandExecutionActResult> ActAsync(
 		PackageHotfixArrangeContext arrangeContext,
 		string toolName,
 		string packageName,
 		string environmentName) {
-		var originalArgs = new Dictionary<string, object?> {
-			["package-name"] = packageName,
-			["environment-name"] = environmentName
-		};
-		var routed = ClioRunRoutingHelper.Resolve(toolName, originalArgs);
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			routed.ToolName,
-			routed.Arguments,
-			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
-		return new CommandExecutionActResult(callResult, execution);
+		return await AllureApi.Step("Act by invoking hotfix tool through MCP", async () => {
+			Dictionary<string, object?> originalArgs = new() {
+				["package-name"] = packageName,
+				["environment-name"] = environmentName
+			};
+			var routed = ClioRunRoutingHelper.Resolve(toolName, originalArgs);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				routed.ToolName,
+				routed.Arguments,
+				arrangeContext.CancellationTokenSource.Token);
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			return new CommandExecutionActResult(callResult, execution);
+		});
 	}
 
 	[AllureStep("Assert tool is advertised by MCP server")]

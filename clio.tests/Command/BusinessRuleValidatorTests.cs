@@ -1099,7 +1099,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter.",
+			.WithMessage("Unsupported rule.actions[*].type 'set-visible'. Supported values: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter, apply-static-filter.",
 				because: "the current business-rule action subset is intentionally limited to supported field-state, set-values, and lookup-filter actions");
 	}
 

@@ -51,8 +51,10 @@ Environment variables should use the standard double-underscore form, for exampl
 - Every test method must include `[Description("...")]`.
 - Decorate every MCP test with `AllureTag` naming the tool under test plus human-readable `AllureName` and `AllureDescription`.
 - Prefer `[AllureFeature("<clio-command-name>")]` when the MCP tool maps directly to a `clio` command, for example `[AllureFeature("clear-redis-db")]`.
-- Split long tests into explicit Allure step methods with `[AllureStep]` for `Arrange`, `Act`, and `Assert`.
-- Do not collapse multiple assertions into a single Allure assert step; expose each important assertion as its own `[AllureStep]` with `AllureDescription` so reports stay readable.
+- Split long tests into explicit Allure steps for `Arrange`, `Act`, and `Assert` so reports stay readable. Use `await AllureApi.Step("description", async () => { ... })` for async test bodies and helpers; use `[AllureStep]` on extracted **synchronous** step methods. `grep` for `AllureApi.Step` in this project to find live async examples.
+- Do not collapse multiple assertions into a single step; expose each important assertion as its own `AllureApi.Step(...)` (or its own `[AllureStep]` sync method) with a clear description.
+- Do NOT decorate async methods or async helpers with `[AllureStep]`. The attribute is implemented via AspectInjector AOP, and the wrapper deadlocks on the first `await` — the test hangs with no timeout or error. Convert the helper to use `AllureApi.Step` instead.
+- Be cautious with `[AllureNUnit]` at the fixture level. In fixtures whose tests perform many sequential `await` calls, the per-test bookkeeping has been observed to block async continuations and deadlock the test. Fixtures that hit this deadlock pattern omit `[AllureNUnit]` and explain the omission in a top-of-class comment starting with `// [AllureNUnit] is intentionally omitted.` — `grep` for that line to find the live set. If a new long-running async fixture hangs with no timeout, suspect `[AllureNUnit]` first and add the same comment block when you remove it.
 - Successful command-path assertions should verify that MCP output includes at least one `Info` log message.
 - Failed command-path assertions should verify that MCP output includes at least one `Error` log message when execution output is available.
 - Add negative MCP tests for important failure modes such as invalid environment names and assert both failure diagnostics and absence of unintended side effects.

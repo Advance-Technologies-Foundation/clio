@@ -1,3 +1,4 @@
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -40,31 +41,33 @@ public sealed class AssertInfrastructureToolE2ETests
 		AssertDatabaseCandidatesAreNormalized(actResult);
 	}
 
-	[AllureStep("Arrange assert-infrastructure MCP session")]
-	[AllureDescription("Arrange by starting a real clio MCP server session for the assert-infrastructure tool")]
 	private static async Task<AssertInfrastructureArrangeContext> ArrangeAsync()
 	{
-		McpE2ESettings settings = TestConfiguration.Load();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new AssertInfrastructureArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange assert-infrastructure MCP session", async () =>
+		{
+			McpE2ESettings settings = TestConfiguration.Load();
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new AssertInfrastructureArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking assert-infrastructure through MCP")]
-	[AllureDescription("Act by discovering the assert-infrastructure MCP tool and invoking it without arguments")]
 	private static async Task<AssertInfrastructureActResult> ActAsync(AssertInfrastructureArrangeContext arrangeContext)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
-			because: "the assert-infrastructure MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking assert-infrastructure through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
+				because: "the assert-infrastructure MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?>(),
-			arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?>(),
+				arrangeContext.CancellationTokenSource.Token);
 
-		AssertInfrastructureEnvelope execution = AssertInfrastructureResultParser.Extract(callResult);
-		return new AssertInfrastructureActResult(callResult, execution);
+			AssertInfrastructureEnvelope execution = AssertInfrastructureResultParser.Extract(callResult);
+			return new AssertInfrastructureActResult(callResult, execution);
+		});
 	}
 
 	[AllureStep("Assert MCP tool result is successful at protocol level")]

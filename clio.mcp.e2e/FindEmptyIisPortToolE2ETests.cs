@@ -1,3 +1,4 @@
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -60,29 +61,33 @@ public sealed class FindEmptyIisPortToolE2ETests
 		}
 	}
 
-	[AllureStep("Arrange find-empty-iis-port MCP session")]
 	private static async Task<ArrangeContext> ArrangeAsync()
 	{
-		McpE2ESettings settings = TestConfiguration.Load();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange find-empty-iis-port MCP session", async () =>
+		{
+			McpE2ESettings settings = TestConfiguration.Load();
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new ArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking find-empty-iis-port through MCP")]
 	private static async Task<ActResult> ActAsync(ArrangeContext arrangeContext)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
-			because: "the find-empty-iis-port MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking find-empty-iis-port through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
+				because: "the find-empty-iis-port MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?>(),
-			arrangeContext.CancellationTokenSource.Token);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?>(),
+				arrangeContext.CancellationTokenSource.Token);
 
-		FindAvailableIisPortEnvelope execution = FindAvailableIisPortResultParser.Extract(callResult);
-		return new ActResult(callResult, execution);
+			FindAvailableIisPortEnvelope execution = FindAvailableIisPortResultParser.Extract(callResult);
+			return new ActResult(callResult, execution);
+		});
 	}
 
 	private sealed record ArrangeContext(

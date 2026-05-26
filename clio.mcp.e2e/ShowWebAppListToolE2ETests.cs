@@ -1,3 +1,4 @@
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -43,29 +44,31 @@ public sealed class ShowWebAppListToolE2ETests
 		AssertSensitiveValuesAreNotMasked(actResult, settings.Sandbox.EnvironmentName!, sandboxEnvironment);
 	}
 
-	[AllureStep("Arrange show-webApp-list MCP session")]
-	[AllureDescription("Arrange by starting a real clio MCP server session for the show-webApp-list tool")]
 	private static async Task<ShowWebAppListArrangeContext> ArrangeAsync(McpE2ESettings settings)
 	{
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ShowWebAppListArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange show-webApp-list MCP session", async () =>
+		{
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new ShowWebAppListArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking show-webApp-list through MCP")]
-	[AllureDescription("Act by discovering the show-webApp-list MCP tool and invoking it without arguments")]
 	private static async Task<ShowWebAppListActResult> ActAsync(ShowWebAppListArrangeContext arrangeContext)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
-			because: "the show-webApp-list MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking show-webApp-list through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
+				because: "the show-webApp-list MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?>(),
-			arrangeContext.CancellationTokenSource.Token);
-		IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments = ShowWebAppListResultParser.Extract(callResult);
-		return new ShowWebAppListActResult(callResult, environments);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?>(),
+				arrangeContext.CancellationTokenSource.Token);
+			IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments = ShowWebAppListResultParser.Extract(callResult);
+			return new ShowWebAppListActResult(callResult, environments);
+		});
 	}
 
 	[AllureStep("Assert MCP tool result is successful at protocol level")]

@@ -3287,3 +3287,10 @@ Decision: Kept the PR #624 clio-run architecture and renamed run-args types, the
 Discovery: The PR branch needed `using ModelContextProtocol;` for `McpJsonUtilities.DefaultOptions`; without it the new `CreateMcpSerializerOptions()` helper failed to compile even though the rest of the master MCP registration changes applied cleanly.
 Files: clio/BindingsModule.cs, clio/Command/McpServer/Tools/BusinessRuleTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio.tests/Command/McpServer/ToolContractGetToolTests.cs, .codex/workspace-diary.md
 Impact: The merge now preserves PR #624's consolidated MCP tool surface while also carrying forward origin/master's OData and MCP JSON/error-handling updates, with Debug build and McpServer unit tests passing.
+
+## 2026-05-26 12:00 – Resolve master merge conflicts in MCP e2e/tests
+Context: Merging origin/master into PR branch xenodochial-moser-229844 introduced conflicts across MCP e2e tests and ToolContractGetTool.
+Decision: Kept AllureApi.Step wrappers from master, preserved clio-run advertised-name/routing behavior from the branch for routed tools, and kept master's full business-rule validator set including apply-static-filter and lookup-record validators.
+Discovery: PackageHotfix and workspace/clear-redis/compile-creatio e2e coverage now relies on ClioRunRoutingHelper for both advertised-name assertions and routed CallToolAsync envelopes during merge resolution.
+Files: clio.mcp.e2e/*.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, .codex/workspace-diary.md
+Impact: The merge now completes cleanly, MCP-server unit tests pass, and the branch retains both newer Allure reporting and routed MCP tool expectations.
