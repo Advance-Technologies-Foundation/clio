@@ -51,6 +51,8 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
@@ -520,6 +522,7 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
+		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
 		services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
@@ -527,8 +530,8 @@ public class BindingsModule {
 				})
 				.WithStdioServerTransport()
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
-				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
-				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
+				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
+				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
@@ -559,6 +562,20 @@ public class BindingsModule {
 			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
 		}
 		return CreateBootstrapPlaceholderEnvironment();
+	}
+
+	/// <summary>
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Enables out-of-order metadata properties (available on .NET 9+) so that the
+	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
+	/// LLMs do not guarantee JSON property ordering.
+	/// </summary>
+	private static JsonSerializerOptions CreateMcpSerializerOptions() {
+		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
+#if NET9_0_OR_GREATER
+		options.AllowOutOfOrderMetadataProperties = true;
+#endif
+		return options;
 	}
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
