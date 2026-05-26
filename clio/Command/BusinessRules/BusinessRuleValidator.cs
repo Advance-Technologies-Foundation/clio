@@ -67,16 +67,6 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
 		Validate(rule, attributeMap, ValidateEntityAction);
 
-	/// <summary>
-	/// Validates an entity rule including schema-aware checks for apply-static-filter.
-	/// </summary>
-	public void ValidateEntity(
-		BusinessRule rule,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		IFilterSchemaProvider? filterSchemaProvider) {
-		Validate(rule, attributeMap, (action, map) => ValidateEntityAction(action, map, filterSchemaProvider));
-	}
-
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
@@ -113,6 +103,16 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		ValidateAllConditions(rule.Condition.Conditions, attributeMap);
 		ValidateAllActions(rule.Actions, attributeMap, validateAction);
 		lookupReferenceValidator.Validate(rule, attributeMap);
+	}
+
+	/// <summary>
+	/// Validates an entity rule including schema-aware checks for apply-static-filter.
+	/// </summary>
+	public void ValidateEntity(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		IFilterSchemaProvider? filterSchemaProvider) {
+		Validate(rule, attributeMap, (action, map) => ValidateEntityAction(action, map, filterSchemaProvider));
 	}
 
 	private static void ValidateNoMixedApplyFilter(BusinessRule rule, bool isApplyFilterRule) {

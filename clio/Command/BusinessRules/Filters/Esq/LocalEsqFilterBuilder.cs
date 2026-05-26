@@ -23,14 +23,13 @@ internal sealed class LocalEsqFilterBuilder {
 		WriteIndented = false
 	};
 
-	private readonly IFilterSchemaProvider _schemaProvider;
 	private readonly ILookupValueResolver? _lookupResolver;
 	private readonly SchemaAwareFilterValidator _schemaValidator;
 
 	public LocalEsqFilterBuilder(
 		IFilterSchemaProvider schemaProvider,
 		ILookupValueResolver? lookupResolver) {
-		_schemaProvider = schemaProvider ?? throw new ArgumentNullException(nameof(schemaProvider));
+		ArgumentNullException.ThrowIfNull(schemaProvider);
 		_lookupResolver = lookupResolver;
 		_schemaValidator = new SchemaAwareFilterValidator(schemaProvider);
 	}

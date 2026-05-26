@@ -5,6 +5,7 @@ using System.Text.Json;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
@@ -53,12 +54,13 @@ public sealed class EntityBusinessRuleServiceTests {
 		_service = new EntityBusinessRuleService(
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
 			new EntityBusinessRuleAttributeProvider(schemaProvider),
-			schemaProvider,
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
 			_formulaValidationService,
 			new BusinessRuleValidator(_lookupReferenceValidator),
-			Substitute.For<IApplicationClient>(),
-			Substitute.For<IServiceUrlBuilder>());
+			new StaticFilterContextFactory(
+				schemaProvider,
+				Substitute.For<IApplicationClient>(),
+				Substitute.For<IServiceUrlBuilder>()));
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]

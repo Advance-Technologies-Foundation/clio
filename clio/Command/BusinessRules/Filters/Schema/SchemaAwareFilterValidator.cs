@@ -9,6 +9,8 @@ namespace Clio.Command.BusinessRules.Filters.Schema;
 /// </summary>
 internal sealed class SchemaAwareFilterValidator {
 
+	private const string LookupDataValueTypeName = "Lookup";
+
 	private readonly IFilterSchemaProvider _schemaProvider;
 
 	public SchemaAwareFilterValidator(IFilterSchemaProvider schemaProvider) {
@@ -54,7 +56,7 @@ internal sealed class SchemaAwareFilterValidator {
 
 		JsonElement value = leaf.Value!.Value;
 		if (value.ValueKind == JsonValueKind.Array) {
-			if (!string.Equals(column.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)) {
+			if (!string.Equals(column.DataValueTypeName, LookupDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
 				throw new ArgumentException(
 					$"{path}.value: array (multi-value IN) is supported only on Lookup columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
 			}
@@ -73,7 +75,7 @@ internal sealed class SchemaAwareFilterValidator {
 						$"{path}.value: must be a JSON boolean when column '{columnPath}' is Boolean.");
 				}
 				return;
-			case "Lookup":
+			case LookupDataValueTypeName:
 			case "Guid":
 				if (value.ValueKind != JsonValueKind.String) {
 					throw new ArgumentException(
@@ -106,7 +108,7 @@ internal sealed class SchemaAwareFilterValidator {
 				$"{path}.referenceColumnPath: column '{childColumn}' not found on child schema '{childSchema}'.");
 		}
 
-		if (!string.Equals(linkColumn.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)
+		if (!string.Equals(linkColumn.DataValueTypeName, LookupDataValueTypeName, StringComparison.OrdinalIgnoreCase)
 			|| !string.Equals(linkColumn.ReferenceSchemaName, rootSchemaName, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException(
 				$"{path}.referenceColumnPath: column '{childColumn}' on '{childSchema}' must be a Lookup pointing back to root schema '{rootSchemaName}'.");
@@ -133,7 +135,7 @@ internal sealed class SchemaAwareFilterValidator {
 
 			bool isLast = i == segments.Length - 1;
 			if (!isLast) {
-				if (!string.Equals(column.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase)
+				if (!string.Equals(column.DataValueTypeName, LookupDataValueTypeName, StringComparison.OrdinalIgnoreCase)
 					|| string.IsNullOrEmpty(column.ReferenceSchemaName)) {
 					throw new ArgumentException(
 						$"{path}: segment '{segment}' on schema '{currentSchema}' is not a Lookup; forward-path traversal requires Lookup columns.");
