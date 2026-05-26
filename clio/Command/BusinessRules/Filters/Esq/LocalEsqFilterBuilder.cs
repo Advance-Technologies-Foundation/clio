@@ -158,10 +158,10 @@ internal sealed class LocalEsqFilterBuilder {
 		JsonElement value) {
 		EsqDataValueType valueDataType = MapColumnDatatypeToParameterType(column.DataValueTypeName);
 		object parameterValue = ConvertScalarValue(value, valueDataType, column.DataValueTypeName);
-		bool trimDate = valueDataType == EsqDataValueType.DateTime;
+		// trimDateTimeParameterToDate is intentionally left unset (null → omitted from envelope) so that
+		// timestamp comparisons such as CreatedOn GREATER 2026-05-01T12:00:00Z preserve the time portion.
 		return new EsqCompareFilterDto {
 			ComparisonType = MapLeafComparisonToEsq(comparison),
-			TrimDateTimeParameterToDate = trimDate ? true : null,
 			LeftExpression = new EsqColumnExpressionDto { ColumnPath = columnPath },
 			RightExpression = new EsqParameterExpressionDto {
 				Parameter = new EsqParameterDto {

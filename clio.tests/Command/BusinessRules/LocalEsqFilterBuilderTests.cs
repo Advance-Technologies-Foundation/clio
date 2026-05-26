@@ -196,6 +196,24 @@ public sealed class LocalEsqFilterBuilderTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Preserves the full DateTime precision in the parameter and omits trimDateTimeParameterToDate.")]
+	public void Build_Should_Preserve_DateTime_Precision() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "value": "2026-05-01T12:00:00Z" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Account");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.TryGetProperty("trimDateTimeParameterToDate", out _).Should().BeFalse(
+			because: "forcing date-only truncation would change CreatedOn GREATER 2026-05-01T12:00:00Z into a date-only comparison");
+		filter0.GetProperty("rightExpression").GetProperty("parameter").GetProperty("value").GetString()
+			.Should().Be("2026-05-01T12:00:00Z");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Emits OR root logicalOperation when filter uses OR.")]
 	public void Build_Should_Emit_Or_Root() {
 		StaticFilterGroup group = Deserialize("""
