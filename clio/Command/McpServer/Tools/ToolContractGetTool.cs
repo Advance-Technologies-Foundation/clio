@@ -313,6 +313,9 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
 			[ODataReadTool.ToolName] = BuildODataRead(),
+			[ODataCreateTool.ToolName] = BuildODataCreate(),
+			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
+			[ODataDeleteTool.ToolName] = BuildODataDelete(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[PageListTool.ToolName] = BuildPageList(),
@@ -363,6 +366,9 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
 		ODataReadTool.ToolName,
+		ODataCreateTool.ToolName,
+		ODataUpdateTool.ToolName,
+		ODataDeleteTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		PageListTool.ToolName,
@@ -1279,6 +1285,123 @@ internal static class ToolContractCatalog {
 				Flow(
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataCreate() {
+		return new ToolContractDefinition(
+			ODataCreateTool.ToolName,
+			"Creates a Creatio record through OData v4 (POST). Returns the created record including its generated Id.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "data", EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
+					Field("data", ObjectType, "Object of field/value pairs for the new record. Lookup fields are set with their GUID, for example { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData create succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "Generated GUID of the created record."),
+				Field("record", ObjectType, "The created record returned by Creatio.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Create a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" }
+				})
+			],
+			Flow([ODataCreateTool.ToolName], "Use to insert a new Creatio record when field values are known."),
+			[
+				Flow(
+					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName, ODataCreateTool.ToolName],
+					"Discover the entity and column names first when they are unknown, then create."),
+				Flow(
+					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
+					"Create the record, then read it back by the returned id to confirm persisted values.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataUpdate() {
+		return new ToolContractDefinition(
+			ODataUpdateTool.ToolName,
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID; only supplied fields change. Never performs a keyless mass update.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", "data", EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the updated record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Rename a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" }
+				})
+			],
+			Flow([ODataUpdateTool.ToolName], "Use to change fields of an existing Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataUpdateTool.ToolName],
+					"Read the record to obtain its Id, then update the desired fields by that Id.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataDelete() {
+		return new ToolContractDefinition(
+			ODataDeleteTool.ToolName,
+			"Deletes a single Creatio record through OData v4 (DELETE). Requires the record GUID; never performs a keyless mass delete.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to delete. Required; a keyless mass delete is rejected."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the deleted record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Delete a contact by id", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId
+				})
+			],
+			Flow([ODataDeleteTool.ToolName], "Use to remove a single Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataDeleteTool.ToolName],
+					"Read to confirm the target record and obtain its Id, then delete by that Id.")
 			],
 			[]);
 	}

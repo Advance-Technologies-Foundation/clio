@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -49,32 +48,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
-	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-
-	private static readonly Regex GuidPattern = new(
-		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-		RegexOptions.Compiled,
-		RegexTimeout);
-
-	private static bool IsGuid(string s) => GuidPattern.IsMatch(s);
-
-	private static bool IsIdish(string field) {
-		int slash = field.LastIndexOf('/');
-		string lastSegment = slash >= 0 ? field[(slash + 1)..] : field;
-		return lastSegment.EndsWith("Id", StringComparison.OrdinalIgnoreCase);
-	}
-
 	private static string LiteralFor(string field, JsonElement value) =>
-		value.ValueKind switch {
-			JsonValueKind.Null => "null",
-			JsonValueKind.Number => value.GetRawText(),
-			JsonValueKind.True => "true",
-			JsonValueKind.False => "false",
-			JsonValueKind.String => IsGuid(value.GetString()!) && IsIdish(field)
-				? value.GetString()!
-				: $"'{value.GetString()!.Replace("'", "''")}'",
-			_ => $"'{value.GetRawText().Replace("'", "''")}'",
-		};
+		ODataKeyFormatter.LiteralFor(field, value);
 
 	private static string? JoinConditions(IReadOnlyList<string> conditions, string separator) {
 		return conditions.Count switch {
