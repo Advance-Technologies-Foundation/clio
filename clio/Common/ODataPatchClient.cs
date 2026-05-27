@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -27,11 +28,13 @@ public interface IODataPatchClient {
 
 /// <inheritdoc cref="IODataPatchClient"/>
 public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
+	private const int AuthTimeoutMs = 30_000;
+
 	private readonly EnvironmentSettings _settings;
 	private readonly Lazy<HttpClient> _lazyHttpClient;
 	private readonly CookieContainer _cookies = new();
 	private readonly object _authLock = new();
-	private bool _authenticated;
+	private volatile bool _authenticated;
 	private string? _authToken;
 
 	public ODataPatchClient(EnvironmentSettings settings) {
@@ -128,13 +131,7 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		using HttpRequestMessage request = new(HttpMethod.Post, loginUrl) {
 			Content = new StringContent(payload, Encoding.UTF8, "application/json")
 		};
-		using CancellationTokenSource cts = new(30_000);
-		using HttpResponseMessage response = _lazyHttpClient.Value.Send(request, cts.Token);
-		string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-		if (!response.IsSuccessStatusCode) {
-			throw new InvalidOperationException(
-				$"Creatio Forms login failed (HTTP {(int)response.StatusCode} {response.ReasonPhrase}).");
-		}
+		string body = SendForAuth(request, "Creatio Forms login failed");
 		if (!TryReadLoginCode(body, out int code)) {
 			throw new InvalidOperationException(
 				"Creatio Forms login response was not understood (no numeric Code field).");
@@ -180,18 +177,12 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		string tokenUrl = $"{authBase}/connect/token";
 		using HttpRequestMessage request = new(HttpMethod.Post, tokenUrl) {
 			Content = new FormUrlEncodedContent(new[] {
-				new System.Collections.Generic.KeyValuePair<string, string>("grant_type", "client_credentials"),
-				new System.Collections.Generic.KeyValuePair<string, string>("client_id", _settings.ClientId),
-				new System.Collections.Generic.KeyValuePair<string, string>("client_secret", _settings.ClientSecret)
+				new KeyValuePair<string, string>("grant_type", "client_credentials"),
+				new KeyValuePair<string, string>("client_id", _settings.ClientId),
+				new KeyValuePair<string, string>("client_secret", _settings.ClientSecret)
 			})
 		};
-		using CancellationTokenSource cts = new(30_000);
-		using HttpResponseMessage response = _lazyHttpClient.Value.Send(request, cts.Token);
-		string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-		if (!response.IsSuccessStatusCode) {
-			throw new InvalidOperationException(
-				$"Creatio OAuth token request failed (HTTP {(int)response.StatusCode} {response.ReasonPhrase}).");
-		}
+		string body = SendForAuth(request, "Creatio OAuth token request failed");
 		using JsonDocument doc = JsonDocument.Parse(body);
 		_authToken = doc.RootElement.TryGetProperty("access_token", out JsonElement tokenEl)
 			? tokenEl.GetString()
@@ -199,6 +190,21 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		if (string.IsNullOrEmpty(_authToken)) {
 			throw new InvalidOperationException("Creatio OAuth token response did not contain an access_token.");
 		}
+	}
+
+	/// <summary>
+	/// Sends an authentication request and returns the response body, throwing with
+	/// <paramref name="failureContext"/> (and the HTTP status, never the body) on a non-success status.
+	/// </summary>
+	private string SendForAuth(HttpRequestMessage request, string failureContext) {
+		using CancellationTokenSource cts = new(AuthTimeoutMs);
+		using HttpResponseMessage response = _lazyHttpClient.Value.Send(request, cts.Token);
+		string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+		if (!response.IsSuccessStatusCode) {
+			throw new InvalidOperationException(
+				$"{failureContext} (HTTP {(int)response.StatusCode} {response.ReasonPhrase}).");
+		}
+		return body;
 	}
 
 	private static string Truncate(string value) {

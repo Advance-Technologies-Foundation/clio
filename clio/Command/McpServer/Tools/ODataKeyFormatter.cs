@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -98,6 +99,6 @@ internal static class ODataKeyFormatter {
 		$"odata/{entity.Trim()}({FormatEntityKey(id.Trim())})";
 
 	private static bool IsNumeric(string s) =>
-		long.TryParse(s, out _) || double.TryParse(s, System.Globalization.NumberStyles.Float,
-			System.Globalization.CultureInfo.InvariantCulture, out _);
+		long.TryParse(s, out _) || double.TryParse(s, NumberStyles.Float,
+			CultureInfo.InvariantCulture, out _);
 }

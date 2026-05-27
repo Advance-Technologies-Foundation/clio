@@ -41,8 +41,8 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(" ", "{}");
 
-		act.Should().Throw<ArgumentException>();
-		handler.Requests.Should().BeEmpty();
+		act.Should().Throw<ArgumentException>(because: "a blank url must be rejected up front");
+		handler.Requests.Should().BeEmpty(because: "no HTTP request should be sent when the url is blank");
 	}
 
 	[Test]
@@ -63,9 +63,9 @@ public sealed class ODataPatchClientTests {
 
 		string body = client.ExecutePatch(PatchUrl, "{\"Name\":\"New\"}");
 
-		body.Should().Be("{\"ok\":true}");
-		sentAuthScheme.Should().Be("Bearer");
-		sentAuthValue.Should().Be("tok-123");
+		body.Should().Be("{\"ok\":true}", because: "the PATCH response body must be forwarded to the caller");
+		sentAuthScheme.Should().Be("Bearer", because: "OAuth mode authorizes with a Bearer scheme");
+		sentAuthValue.Should().Be("tok-123", because: "the access token from the token endpoint must be used");
 	}
 
 	[Test]
@@ -80,8 +80,9 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>()
-			.Which.Message.Should().Contain("OAuth token request failed").And.NotContain("should-not-leak");
+		act.Should().Throw<InvalidOperationException>(because: "a failed token request must surface as an error")
+			.Which.Message.Should().Contain("OAuth token request failed", because: "the error must name the failing step")
+			.And.NotContain("should-not-leak", because: "response bodies must not leak into the error message");
 	}
 
 	[Test]
@@ -96,7 +97,8 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("access_token");
+		act.Should().Throw<InvalidOperationException>(because: "a token response without access_token is unusable")
+			.Which.Message.Should().Contain("access_token", because: "the error must explain the missing field");
 	}
 
 	[Test]
@@ -139,8 +141,9 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("401");
-		patchCalls.Should().Be(2, "exactly one retry, not a loop");
+		act.Should().Throw<InvalidOperationException>(because: "a persistent 401 must surface as an error")
+			.Which.Message.Should().Contain("401", because: "the error must include the failing status code");
+		patchCalls.Should().Be(2, because: "exactly one retry, not a loop");
 	}
 
 	[Test]
@@ -155,7 +158,8 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("400");
+		act.Should().Throw<InvalidOperationException>(because: "a non-success PATCH status must surface as an error")
+			.Which.Message.Should().Contain("400", because: "the error must include the failing status code");
 	}
 
 	[Test]
@@ -174,8 +178,9 @@ public sealed class ODataPatchClientTests {
 		// Auth proceeds far enough to send the login request; it then fails on the missing BPMCSRF cookie.
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>();
-		loginUrl.Should().Contain("/0/ServiceModel/AuthService.svc/Login");
+		act.Should().Throw<InvalidOperationException>(because: "auth fails on the missing BPMCSRF cookie after login");
+		loginUrl.Should().Contain("/0/ServiceModel/AuthService.svc/Login",
+			because: ".NET Framework environments serve the app under the 0/ web-app alias");
 	}
 
 	[Test]
@@ -193,9 +198,10 @@ public sealed class ODataPatchClientTests {
 
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>();
-		loginUrl.Should().EndWith("/ServiceModel/AuthService.svc/Login");
-		loginUrl.Should().NotContain("/0/ServiceModel");
+		act.Should().Throw<InvalidOperationException>(because: "auth fails on the missing BPMCSRF cookie after login");
+		loginUrl.Should().EndWith("/ServiceModel/AuthService.svc/Login",
+			because: ".NET Core environments serve the app at the root without an alias");
+		loginUrl.Should().NotContain("/0/ServiceModel", because: "the 0/ alias must not be applied on .NET Core");
 	}
 
 	private sealed class StubHandler : HttpMessageHandler {

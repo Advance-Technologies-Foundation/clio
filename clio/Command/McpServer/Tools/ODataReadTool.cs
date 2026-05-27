@@ -32,6 +32,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			if (string.IsNullOrWhiteSpace(args.Entity)) {
 				return ODataReadResponse.Failure("entity is required.");
 			}
+			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
+				return ODataReadResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
+			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
