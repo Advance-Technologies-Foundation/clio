@@ -31,6 +31,9 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			if (string.IsNullOrWhiteSpace(args.Entity)) {
 				return ODataWriteResponse.Failure("entity is required.");
 			}
+			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
+				return ODataWriteResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
+			}
 			if (args.Data is not { ValueKind: JsonValueKind.Object } data || data.EnumerateObject().MoveNext() == false) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
@@ -39,7 +42,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string url = urlBuilder.Build($"odata/{args.Entity.Trim()}");
+			string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
 			string responseJson = client.ExecutePostRequest(url, data.GetRawText(), 30_000);
 			return ParseCreated(responseJson);
 		} catch (Exception ex) {
@@ -58,9 +61,11 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 				string message = error.TryGetProperty("message", out JsonElement m) ? m.GetString() ?? json : json;
 				return ODataWriteResponse.Failure(message);
 			}
-			string? id = root.TryGetProperty("Id", out JsonElement idEl) ? idEl.GetString() : null;
+			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
+				? idEl.GetString()
+				: null;
 			return new ODataWriteResponse(true, null, id, root.Clone());
-		} catch {
+		} catch (JsonException) {
 			// A non-JSON body on a successful POST still means the record was created.
 			return new ODataWriteResponse(true);
 		}

@@ -30,6 +30,9 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 			if (string.IsNullOrWhiteSpace(args.Entity)) {
 				return ODataWriteResponse.Failure("entity is required.");
 			}
+			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
+				return ODataWriteResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
+			}
 			if (string.IsNullOrWhiteSpace(args.Id) || !ODataKeyFormatter.IsGuid(args.Id.Trim())) {
 				return ODataWriteResponse.Failure("id is required and must be a record GUID; keyless mass delete is not allowed.");
 			}
@@ -38,8 +41,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string key = ODataKeyFormatter.FormatEntityKey(args.Id.Trim());
-			string url = urlBuilder.Build($"odata/{args.Entity.Trim()}({key})");
+			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(args.Entity, args.Id));
 			client.ExecuteDeleteRequest(url, string.Empty, 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {

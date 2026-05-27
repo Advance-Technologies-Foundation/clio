@@ -31,11 +31,18 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 	private readonly CookieContainer _cookies = new();
 	private readonly object _authLock = new();
 	private bool _authenticated;
-	private string? _csrfToken;
+	private string? _authToken;
 
 	public ODataPatchClient(EnvironmentSettings settings) {
 		_settings = settings ?? throw new ArgumentNullException(nameof(settings));
 		_lazyHttpClient = new Lazy<HttpClient>(CreateHttpClient);
+	}
+
+	/// <summary>Test seam: injects a custom <see cref="HttpMessageHandler"/> so HTTP traffic can be stubbed.</summary>
+	internal ODataPatchClient(EnvironmentSettings settings, HttpMessageHandler handler) {
+		_settings = settings ?? throw new ArgumentNullException(nameof(settings));
+		ArgumentNullException.ThrowIfNull(handler);
+		_lazyHttpClient = new Lazy<HttpClient>(() => new HttpClient(handler));
 	}
 
 	private bool IsOAuth => !string.IsNullOrWhiteSpace(_settings.ClientId);
@@ -77,11 +84,11 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		};
 		request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 		if (IsOAuth) {
-			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _csrfToken);
+			request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
 		} else {
 			request.Headers.TryAddWithoutValidation("ForceUseSession", "true");
-			if (!string.IsNullOrEmpty(_csrfToken)) {
-				request.Headers.TryAddWithoutValidation("BPMCSRF", _csrfToken);
+			if (!string.IsNullOrEmpty(_authToken)) {
+				request.Headers.TryAddWithoutValidation("BPMCSRF", _authToken);
 			}
 		}
 		using CancellationTokenSource cts = new(requestTimeout);
@@ -121,27 +128,37 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 		if (!response.IsSuccessStatusCode) {
 			throw new InvalidOperationException(
-				$"Creatio Forms login failed ({(int)response.StatusCode}): {Truncate(body)}");
+				$"Creatio Forms login failed (HTTP {(int)response.StatusCode} {response.ReasonPhrase}).");
 		}
-		int code = ReadLoginCode(body);
+		if (!TryReadLoginCode(body, out int code)) {
+			throw new InvalidOperationException(
+				"Creatio Forms login response was not understood (no numeric Code field).");
+		}
 		if (code != 0) {
-			throw new InvalidOperationException($"Creatio Forms login rejected (Code {code}): {Truncate(body)}");
+			throw new InvalidOperationException($"Creatio Forms login rejected (Code {code}).");
 		}
-		_csrfToken = ReadCsrfCookie(baseUrl);
-		if (string.IsNullOrEmpty(_csrfToken)) {
+		_authToken = ReadCsrfCookie(baseUrl);
+		if (string.IsNullOrEmpty(_authToken)) {
 			throw new InvalidOperationException("Creatio Forms login did not return a BPMCSRF cookie.");
 		}
 	}
 
-	private static int ReadLoginCode(string body) {
+	/// <summary>
+	/// Parses the AuthService login <c>Code</c>. Returns <c>false</c> when the body is not JSON or has
+	/// no numeric <c>Code</c>, so an unparseable response is never coerced to the success sentinel (0).
+	/// </summary>
+	private static bool TryReadLoginCode(string body, out int code) {
+		code = 0;
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
-			return doc.RootElement.TryGetProperty("Code", out JsonElement codeEl)
-				&& codeEl.ValueKind == JsonValueKind.Number
-				? codeEl.GetInt32()
-				: 0;
-		} catch {
-			return 0;
+			if (doc.RootElement.TryGetProperty("Code", out JsonElement codeEl)
+				&& codeEl.ValueKind == JsonValueKind.Number) {
+				code = codeEl.GetInt32();
+				return true;
+			}
+			return false;
+		} catch (JsonException) {
+			return false;
 		}
 	}
 
@@ -156,7 +173,9 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 	}
 
 	private void AuthenticateOAuth() {
-		string tokenUrl = $"{_settings.AuthAppUri?.TrimEnd('/')}/connect/token";
+		string authBase = _settings.AuthAppUri?.TrimEnd('/')
+			?? throw new InvalidOperationException("Environment AuthAppUri is required for OData PATCH over OAuth.");
+		string tokenUrl = $"{authBase}/connect/token";
 		using HttpRequestMessage request = new(HttpMethod.Post, tokenUrl) {
 			Content = new FormUrlEncodedContent(new[] {
 				new System.Collections.Generic.KeyValuePair<string, string>("grant_type", "client_credentials"),
@@ -169,13 +188,13 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		string body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 		if (!response.IsSuccessStatusCode) {
 			throw new InvalidOperationException(
-				$"Creatio OAuth token request failed ({(int)response.StatusCode}): {Truncate(body)}");
+				$"Creatio OAuth token request failed (HTTP {(int)response.StatusCode} {response.ReasonPhrase}).");
 		}
 		using JsonDocument doc = JsonDocument.Parse(body);
-		_csrfToken = doc.RootElement.TryGetProperty("access_token", out JsonElement tokenEl)
+		_authToken = doc.RootElement.TryGetProperty("access_token", out JsonElement tokenEl)
 			? tokenEl.GetString()
 			: null;
-		if (string.IsNullOrEmpty(_csrfToken)) {
+		if (string.IsNullOrEmpty(_authToken)) {
 			throw new InvalidOperationException("Creatio OAuth token response did not contain an access_token.");
 		}
 	}
