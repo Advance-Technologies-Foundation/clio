@@ -39,8 +39,11 @@ public static class PagePrompt {
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
 		 Before passing `resources`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-resources`. The body containing `$Resources.Strings.*` or `#ResourceString(...)#` is NOT sufficient justification. The guide specifies both the decision algorithm (when to register vs skip) and the required payload shape.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.
-		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions like `$Resources.Strings.PDS_UsrStatus`.
-		 If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute. If the control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name. Do not infer correctness from naming patterns such as `$PDS_*`, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
+		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions keyed by the entity column code,
+		 i.e. `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (e.g. `$Resources.Strings.UsrStatus` for path `PDS.UsrStatus`).
+		 The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided; on `operation:"insert"` it is rejected unless you register it explicitly via the `resources` parameter.
+		 If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute. If the control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name.
+		 Do not infer correctness from naming patterns such as `$PDS_*`, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
 		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
 		 Prefer `list-pages -> get-page -> sync-pages -> get-page` for canonical page edits.
 		 """;
