@@ -20,6 +20,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Delete a single Creatio record via OData v4 (DELETE). " +
 		"Requires the record's GUID id; this tool never performs a keyless mass delete. " +
+		"This is a destructive operation: it requires confirm=true to proceed. " +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-delete to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Delete(
@@ -35,6 +36,11 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 			}
 			if (string.IsNullOrWhiteSpace(args.Id) || !ODataKeyFormatter.IsGuid(args.Id.Trim())) {
 				return ODataWriteResponse.Failure("id is required and must be a record GUID; keyless mass delete is not allowed.");
+			}
+			if (!args.Confirm) {
+				return ODataWriteResponse.Failure(
+					$"Refusing to delete {args.Entity.Trim()}({args.Id.Trim()}) without confirmation. " +
+					"This is a destructive operation; re-call odata-delete with \"confirm\": true to authorize this deletion.");
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -69,4 +75,9 @@ public sealed record ODataDeleteArgs {
 	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
 	[Required]
 	public required string EnvironmentName { get; init; }
+
+	/// <summary>Explicit confirmation gate for this destructive operation.</summary>
+	[JsonPropertyName("confirm")]
+	[Description("Must be true to authorize this destructive delete. When false or omitted, the tool refuses and returns what would be deleted without making any remote call.")]
+	public bool Confirm { get; init; }
 }

@@ -45,7 +45,8 @@ public sealed class ODataUpdateToolTests {
 			EnvironmentName = "dev",
 			Entity = "Contact",
 			Id = Guid,
-			Data = Obj("{\"Name\":\"New\"}")
+			Data = Obj("{\"Name\":\"New\"}"),
+			Confirm = true
 		});
 
 		response.Success.Should().BeTrue();
@@ -64,11 +65,31 @@ public sealed class ODataUpdateToolTests {
 		ODataUpdateTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = "all", Data = Obj("{\"Name\":\"x\"}")
+			EnvironmentName = "dev", Entity = "Contact", Id = "all", Data = Obj("{\"Name\":\"x\"}"), Confirm = true
 		});
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("must be a record GUID");
+		patchClient.DidNotReceive().ExecutePatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a destructive update when confirm is omitted, without any remote call.")]
+	public void Update_Should_Refuse_Without_Confirm() {
+		IODataPatchClient patchClient = Substitute.For<IODataPatchClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IODataPatchClient>(Arg.Any<EnvironmentOptions>()).Returns(patchClient);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataUpdateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}")
+		});
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("confirm");
 		patchClient.DidNotReceive().ExecutePatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
 

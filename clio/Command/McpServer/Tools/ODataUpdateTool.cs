@@ -22,6 +22,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
 		"This tool never performs a keyless mass update. " +
+		"This is a destructive operation: it requires confirm=true to proceed. " +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
@@ -40,6 +41,11 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			}
 			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
+			}
+			if (!args.Confirm) {
+				return ODataWriteResponse.Failure(
+					$"Refusing to update {args.Entity.Trim()}({args.Id.Trim()}) without confirmation. " +
+					"This is a destructive operation; re-call odata-update with \"confirm\": true to authorize this change.");
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -83,4 +89,9 @@ public sealed record ODataUpdateArgs {
 	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
 	[Required]
 	public required string EnvironmentName { get; init; }
+
+	/// <summary>Explicit confirmation gate for this destructive operation.</summary>
+	[JsonPropertyName("confirm")]
+	[Description("Must be true to authorize this destructive update. When false or omitted, the tool refuses and returns what would change without making any remote call.")]
+	public bool Confirm { get; init; }
 }

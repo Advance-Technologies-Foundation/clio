@@ -40,13 +40,33 @@ public sealed class ODataDeleteToolTests {
 		ODataDeleteTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
-			EnvironmentName = "dev", Entity = "Contact", Id = Guid
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
 		});
 
 		response.Success.Should().BeTrue();
 		response.Id.Should().Be(Guid);
 		urlBuilder.Received(1).Build($"odata/Contact({Guid})");
 		client.Received(1).ExecuteDeleteRequest($"http://creatio/odata/Contact({Guid})", string.Empty, 30_000, 1, 1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses a destructive delete when confirm is omitted, without any remote call.")]
+	public void Delete_Should_Refuse_Without_Confirm() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataDeleteTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid
+		});
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("confirm");
+		client.DidNotReceive().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

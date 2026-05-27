@@ -60,7 +60,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			// UPDATE (PATCH via ODataPatchClient)
 			string newName = name + "-upd";
 			ODataWriteResponse updated = update.Update(new ODataUpdateArgs {
-				EnvironmentName = "live", Entity = "Contact", Id = id!, Data = Obj($"{{\"Name\":\"{newName}\"}}")
+				EnvironmentName = "live", Entity = "Contact", Id = id!, Data = Obj($"{{\"Name\":\"{newName}\"}}"), Confirm = true
 			});
 			updated.Success.Should().BeTrue(because: updated.Error);
 
@@ -71,7 +71,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 
 			// DELETE
 			ODataWriteResponse deleted = delete.Delete(new ODataDeleteArgs {
-				EnvironmentName = "live", Entity = "Contact", Id = id!
+				EnvironmentName = "live", Entity = "Contact", Id = id!, Confirm = true
 			});
 			deleted.Success.Should().BeTrue(because: deleted.Error);
 			id = null;
@@ -82,7 +82,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			afterDelete.Count.Should().Be(0);
 		} finally {
 			if (id is not null) {
-				delete.Delete(new ODataDeleteArgs { EnvironmentName = "live", Entity = "Contact", Id = id });
+				delete.Delete(new ODataDeleteArgs { EnvironmentName = "live", Entity = "Contact", Id = id, Confirm = true });
 			}
 		}
 	}
