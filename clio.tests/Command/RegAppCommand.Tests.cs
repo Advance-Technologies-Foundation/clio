@@ -43,7 +43,7 @@ public class RegAppCommandTestCase {
 		command.Execute(options);
 
 		// Assert
-		settingsRepository.Received(1).ConfigureEnvironment(name, Arg.Is<EnvironmentSettings>(
+		settingsRepository.Received().ConfigureEnvironment(name, Arg.Is<EnvironmentSettings>(
 			e => e.Login == login
 				&& e.Password == password
 				&& e.Uri == uri
