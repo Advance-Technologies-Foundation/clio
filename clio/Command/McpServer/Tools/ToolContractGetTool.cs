@@ -341,32 +341,51 @@ internal static class ToolContractCatalog {
 			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
-			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
+			[ClioRunTool.ToolName] = BuildClioRun(),
+			[AppsTool.ToolName] = BuildApps(),
+			[DataForgeTool.DataForgeFindToolName] = BuildDataForgeFind(),
+			[GetSchemaTool.ToolName] = BuildGetSchema(),
+			[ShowWebAppListTool.ShowWebAppListToolName] = BuildShowWebAppList(),
+			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
+			[SysSettingTool.ToolName] = BuildSysSetting(),
+			[SchemaListTool.ToolName] = BuildSchemaList()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
+		// Phase 2 meta-tool and flat read-only surface
+		ClioRunTool.ToolName,
 		GuidanceGetTool.ToolName,
 		SettingsHealthTool.ToolName,
-		ApplicationCreateTool.ApplicationCreateToolName,
-		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-		CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
-		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
-		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
-		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
-		ApplicationGetInfoTool.ApplicationGetInfoToolName,
-		ApplicationGetListTool.ApplicationGetListToolName,
+		AppsTool.ToolName,
 		DataForgeTool.DataForgeStatusToolName,
+		DataForgeTool.DataForgeFindToolName,
 		DataForgeTool.DataForgeFindTablesToolName,
 		DataForgeTool.DataForgeFindLookupsToolName,
 		DataForgeTool.DataForgeGetRelationsToolName,
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
 		ODataReadTool.ToolName,
-		SchemaSyncTool.ToolName,
-		PageSyncTool.ToolName,
+		GetSchemaTool.ToolName,
+		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		ShowWebAppListTool.ShowWebAppListToolName,
+		GetPkgListTool.GetPkgListToolName,
+		SysSettingTool.ToolName,
+		SchemaListTool.ToolName,
 		PageListTool.ToolName,
 		PageGetTool.ToolName,
+		PageValidateTool.ToolName,
+		ComponentInfoTool.ToolName,
+		// Legacy names kept for explicit get-tool-contract lookups; not in default bootstrap set
+		ApplicationCreateTool.ApplicationCreateToolName,
+		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
+		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+		ApplicationGetInfoTool.ApplicationGetInfoToolName,
+		ApplicationGetListTool.ApplicationGetListToolName,
+		SchemaSyncTool.ToolName,
+		PageSyncTool.ToolName,
 		CreateLookupTool.CreateLookupToolName,
 		CreateEntitySchemaTool.CreateEntitySchemaToolName,
 		UpdateEntitySchemaTool.UpdateEntitySchemaToolName,
@@ -376,12 +395,7 @@ internal static class ToolContractCatalog {
 		FindEntitySchemaTool.FindEntitySchemaToolName,
 		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
-		ComponentInfoTool.ToolName,
-		PageUpdateTool.ToolName,
-		PageValidateTool.ToolName,
 		ApplicationDeleteTool.ToolName,
-		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
 		SysSettingGetTool.GetSysSettingToolName,
 		SysSettingsListTool.ListSysSettingsToolName,
@@ -1531,8 +1545,6 @@ internal static class ToolContractCatalog {
 				[
 					ApplicationGetListTool.ApplicationGetListToolName,
 					ApplicationGetInfoTool.ApplicationGetInfoToolName,
-					ToolContractGetTool.ToolName,
-					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
 				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rule contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
@@ -1544,7 +1556,6 @@ internal static class ToolContractCatalog {
 						FindEntitySchemaTool.FindEntitySchemaToolName,
 						DataForgeTool.DataForgeFindTablesToolName,
 						GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-						ODataReadTool.ToolName,
 						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
 					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id."),
@@ -1655,8 +1666,6 @@ internal static class ToolContractCatalog {
 				[
 					PageListTool.ToolName,
 					PageGetTool.ToolName,
-					ToolContractGetTool.ToolName,
-					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				],
 				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rule contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
@@ -3412,6 +3421,274 @@ internal static class ToolContractCatalog {
 					SysSettingUpdateTool.UpdateSysSettingToolName
 				],
 				"Discover the existing sys-setting via list-sys-settings, then apply the new value."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildClioRun() {
+		return new ToolContractDefinition(
+			ClioRunTool.ToolName,
+			"Executes any non-read-only clio MCP command. Use the 'command' discriminator to select the operation; remaining args are command-specific (see anyOf branches in the JSON Schema). " +
+			"For read-only operations prefer the dedicated flat tools (apps, get-schema, sys-setting, list-environments, dataforge-find, …) which the host can auto-approve.",
+			new ToolInputSchemaContract(
+				["command"],
+				[
+					Field("command", StringType, "Operation name, e.g. 'restart-creatio', 'create-schema', 'app-section'. Selects the anyOf branch."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			new ToolOutputContract("command-execution-result", null,
+				["exit-code != 0"],
+				[
+					Field("exit-code", NumberType, "0 on success, non-zero on failure."),
+					Field("execution-log-messages", ArrayType, "Log messages produced during command execution.")
+				]),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Restart a Creatio environment", new Dictionary<string, object?> {
+					["command"] = "restart-creatio",
+					["mode"] = "environment",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([ClioRunTool.ToolName], "Use for any non-read-only clio operation; pick the command discriminator from the anyOf branches."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildApps() {
+		return new ToolContractDefinition(
+			AppsTool.ToolName,
+			"Lists installed Creatio applications when no identifier is provided; returns full app info (primary package and runtime entity metadata) when id or code is supplied. Provide at most one of id/code.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("id", StringType, "Optional application identifier (Guid). Provide id or code, never both."),
+					Field("code", StringType, "Optional application code. Provide id or code, never both.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("applications", ArrayType, "Installed applications (when no id/code provided)."),
+				Field("application", ObjectType, "Full app info including packages and entity metadata (when id or code provided)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List all installed applications", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				}),
+				Example("Get full info for a specific app by code", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					["code"] = "UsrApp"
+				})
+			],
+			Flow([AppsTool.ToolName], "Use to discover or inspect installed Creatio applications before mutations."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDataForgeFind() {
+		return BuildDataForgeContract(
+			new DataForgeContractDescriptor {
+				ToolName = DataForgeTool.DataForgeFindToolName,
+				Description = "Consolidated DataForge search. kind='tables' finds existing Creatio tables that semantically match a business concept; kind='lookups' finds lookup values and schemas matching a requested business value. " + DataForgePlatformRequirementDescription,
+				RequiredFields = ["kind", QueryFieldName],
+				InputFields = DataForgeConnectionFields(
+					Field("kind", StringType, "Discriminator: 'tables' or 'lookups'."),
+					Field(QueryFieldName, StringType, "Search term."),
+					Field(LimitFieldName, NumberType, "Optional result limit."),
+					Field("schema-name", StringType, "Optional schema name filter (kind='lookups' only).")),
+				OutputFields = DataForgeEnvelopeFields(
+					QueryCorrelationIdentifierDescription,
+					Field("similar-tables", ArrayType, "Table results (kind='tables'): name, caption, description."),
+					Field("lookup-values", ArrayType, "Lookup results (kind='lookups'): value, schema, description.")),
+				Examples = [
+					Example("Find Contact-like tables", new Dictionary<string, object?> {
+						["kind"] = DataForgeTool.DataForgeFindKindTables,
+						[QueryFieldName] = "contact",
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					}),
+					Example("Find lookup values for status", new Dictionary<string, object?> {
+						["kind"] = DataForgeTool.DataForgeFindKindLookups,
+						[QueryFieldName] = "status",
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+				],
+				PreferredFlow = Flow([DataForgeTool.DataForgeFindToolName], "Use when app-modeling or schema discovery needs table or lookup reuse hints."),
+				FallbackFlow = [
+					Flow(
+						[DataForgeTool.DataForgeStatusToolName, DataForgeTool.DataForgeFindToolName],
+						"Confirm Data Forge readiness before searching.")
+				]
+			});
+	}
+
+	private static ToolContractDefinition BuildGetSchema() {
+		return new ToolContractDefinition(
+			GetSchemaTool.ToolName,
+			"Reads a Creatio schema. schema-type discriminator selects the flavor: 'source-code' reads C# source, 'entity' reads entity schema JSON, 'client-unit' reads client-side JS, 'sql' reads SQL body.",
+			new ToolInputSchemaContract(
+				["schema-type", "schema-name"],
+				[
+					Field("schema-type", StringType, "Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'."),
+					Field("schema-name", StringType, "Schema name to read."),
+					Field("package-name", StringType, "Required when schema-type='entity'."),
+					Field(EnvironmentNameFieldName, StringType, "Required when schema-type='entity'. Registered clio environment name.")
+				],
+				[
+					["source-code", "schema-name"],
+					["entity", "schema-name", "package-name", EnvironmentNameFieldName],
+					["client-unit", "schema-name"],
+					["sql", "schema-name"]
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("body", StringType, "Schema body text."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read entity schema", new Dictionary<string, object?> {
+					["schema-type"] = "entity",
+					["schema-name"] = "Contact",
+					["package-name"] = "CrtBase",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([GetSchemaTool.ToolName], "Use to inspect schema source before planning mutations."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildShowWebAppList() {
+		return new ToolContractDefinition(
+			ShowWebAppListTool.ShowWebAppListToolName,
+			"Shows the list of registered clio environments (web applications) and their settings as structured JSON. Sensitive values such as passwords are masked.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field("environments", ArrayType, "Registered environments with name, uri, and masked credentials.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List all registered environments", new Dictionary<string, object?>())
+			],
+			Flow([ShowWebAppListTool.ShowWebAppListToolName], "Use to discover available registered clio environments before choosing one."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGetPkgList() {
+		return new ToolContractDefinition(
+			GetPkgListTool.GetPkgListToolName,
+			"Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("filter", StringType, "Optional case-insensitive package-name filter.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field("packages", ArrayType, "Package list with name, version, and maintainer."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List all packages in an environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([GetPkgListTool.GetPkgListToolName], "Use to discover available packages before targeting a package for schema mutations."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildSysSetting() {
+		return new ToolContractDefinition(
+			SysSettingTool.ToolName,
+			"Reads a Creatio system setting when code is provided; lists all sys-settings (excluding binary) when code is empty.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SysSettingCodeFieldName, StringType, "Optional. When provided, returns the setting value; when empty, returns the full list.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(SysSettingCodeFieldName, StringType, "Sys-setting code echoed from the request (when code was provided)."),
+				Field(SysSettingValueFieldName, StringType, "Setting value (when code was provided)."),
+				Field("settings", ArrayType, "List of all sys-settings (when code was omitted)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read a single sys-setting by code", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SysSettingCodeFieldName] = "SchemaNamePrefix"
+				}),
+				Example("List all sys-settings", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([SysSettingTool.ToolName], "Use to read or discover sys-settings before mutations."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildSchemaList() {
+		return new ToolContractDefinition(
+			SchemaListTool.ToolName,
+			"Lists or searches schemas of the requested type. Currently supports schema-type=entity. Provide environment-name plus exactly one of schema-name (exact), search-pattern (contains), or uid (Guid).",
+			new ToolInputSchemaContract(
+				["schema-type", EnvironmentNameFieldName],
+				[
+					Field("schema-type", StringType, "Discriminator: currently only 'entity' is supported."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(SchemaNameFieldName, StringType, "Optional exact schema name match."),
+					Field(SearchPatternFieldName, StringType, "Optional case-insensitive substring search."),
+					Field("uid", StringType, "Optional schema UId (Guid) for exact lookup.")
+				],
+				[
+					[SchemaNameFieldName],
+					[SearchPatternFieldName],
+					["uid"]
+				]),
+			StructuredResultOutput(
+				Field("schema-name", StringType, "Entity schema name."),
+				Field("package-name", StringType, "Package that owns the schema."),
+				Field("uid", StringType, "Schema UId.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Search entity schemas by pattern", new Dictionary<string, object?> {
+					["schema-type"] = "entity",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SearchPatternFieldName] = "Contact"
+				})
+			],
+			Flow([SchemaListTool.ToolName], "Use to discover entity schemas before targeting one for inspection or mutation."),
 			[],
 			[]);
 	}
