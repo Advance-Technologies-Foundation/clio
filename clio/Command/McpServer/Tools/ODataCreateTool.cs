@@ -57,19 +57,27 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		try {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
-			if (root.TryGetProperty("error", out JsonElement error)) {
-				string message = error.TryGetProperty("message", out JsonElement m) ? m.GetString() ?? json : json;
-				return ODataWriteResponse.Failure(message);
+			if (ODataResponseError.TryDetect(root, out string serverError)) {
+				return ODataWriteResponse.Failure(serverError);
 			}
 			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
 				? idEl.GetString()
 				: null;
+			if (string.IsNullOrEmpty(id)) {
+				// A successful OData create always echoes the new record with its Id; its absence
+				// means the body is not a created record (an unrecognized error or empty payload).
+				return ODataWriteResponse.Failure(
+					$"OData create did not return a record Id. Response: {Truncate(json)}");
+			}
 			return new ODataWriteResponse(true, null, id, root.Clone());
 		} catch (JsonException) {
 			// A non-JSON body on a successful POST still means the record was created.
 			return new ODataWriteResponse(true);
 		}
 	}
+
+	private static string Truncate(string value) =>
+		string.IsNullOrEmpty(value) ? "<empty>" : value.Length > 500 ? value[..500] + "..." : value;
 }
 
 /// <summary>Arguments for <see cref="ODataCreateTool"/>.</summary>

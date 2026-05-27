@@ -119,11 +119,11 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 	private void AuthenticateForms() {
 		string baseUrl = _settings.Uri?.TrimEnd('/')
 			?? throw new InvalidOperationException("Environment Uri is required for OData PATCH.");
-		// .NET Framework environments serve the web app (and AuthService) under the "0/" alias,
-		// the same prefix IServiceUrlBuilder applies to the PATCH URL. Mirror it here so Forms
-		// login and the subsequent PATCH target the same application.
-		string alias = _settings.IsNetCore ? string.Empty : "0/";
-		string loginUrl = $"{baseUrl}/{alias}ServiceModel/AuthService.svc/Login";
+		// AuthService.svc/Login is served at the site ROOT on both .NET Framework and .NET Core.
+		// The "0/" web-app alias applies only to data services (OData/DataService), not to login —
+		// adding it here makes the login return 401. The login cookies (.ASPXAUTH/BPMCSRF) are set
+		// for the whole site, so the subsequent PATCH under /0/odata still authenticates.
+		string loginUrl = $"{baseUrl}/ServiceModel/AuthService.svc/Login";
 		string payload = JsonSerializer.Serialize(new {
 			UserName = _settings.Login,
 			UserPassword = _settings.Password

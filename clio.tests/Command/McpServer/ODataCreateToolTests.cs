@@ -127,4 +127,49 @@ public sealed class ODataCreateToolTests {
 		response.Success.Should().BeFalse();
 		response.Error.Should().Be("Column Name is required");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An ASP.NET server error body (e.g. EDM model NullReferenceException) returned with a non-failing status is reported as a failure, not a created record.")]
+	public void Create_Should_Surface_AspNet_ServerError_As_Failure() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
+		ODataCreateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
+		});
+
+		response.Success.Should().BeFalse(because: "a server error body must never be reported as a successful create");
+		response.Error.Should().Contain("Object reference", because: "the ExceptionMessage should be surfaced to the caller");
+		response.Id.Should().BeNull(because: "no record was created");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A success-status body without an Id is treated as a failure, since a real OData create always echoes the record Id.")]
+	public void Create_Should_Fail_When_Response_Has_No_Id() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Name\":\"Office\"}");
+		ODataCreateTool tool = new(resolver);
+
+		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
+		});
+
+		response.Success.Should().BeFalse(because: "a created record without an Id indicates the body is not a real create response");
+		response.Error.Should().Contain("did not return a record Id", because: "the failure should explain the missing Id");
+	}
 }

@@ -144,6 +144,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
+			if (ODataResponseError.TryDetect(root, out string serverError)) {
+				return ODataReadResponse.Failure(serverError);
+			}
+
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
 				int count = valueEl.ValueKind == JsonValueKind.Array ? valueEl.GetArrayLength() : 1;
 				string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nl)

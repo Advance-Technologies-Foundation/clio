@@ -162,10 +162,11 @@ public sealed class ODataPatchClientTests {
 			.Which.Message.Should().Contain("400", because: "the error must include the failing status code");
 	}
 
-	[Test]
+	[TestCase(false, TestName = "Forms_Login_Url_Is_Site_Root_On_NetFramework")]
+	[TestCase(true, TestName = "Forms_Login_Url_Is_Site_Root_On_NetCore")]
 	[Category("Unit")]
-	[Description("On .NET Framework the Forms login URL carries the '0/' web-app alias, matching the PATCH URL.")]
-	public void Forms_Login_Url_Should_Include_WebApp_Alias_For_NetFramework() {
+	[Description("The Forms login URL is always served at the site root (no '0/' alias). The 0/ alias applies only to data services; applying it to AuthService login returns 401.")]
+	public void Forms_Login_Url_Should_Target_Site_Root(bool isNetCore) {
 		string? loginUrl = null;
 		StubHandler handler = new(request => {
 			if (request.RequestUri!.AbsoluteUri.Contains("AuthService.svc/Login")) {
@@ -173,35 +174,16 @@ public sealed class ODataPatchClientTests {
 			}
 			return Json(HttpStatusCode.OK, "{\"Code\":0}");
 		});
-		using ODataPatchClient client = new(FormsSettings(isNetCore: false), handler);
+		using ODataPatchClient client = new(FormsSettings(isNetCore), handler);
 
 		// Auth proceeds far enough to send the login request; it then fails on the missing BPMCSRF cookie.
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
-		act.Should().Throw<InvalidOperationException>(because: "auth fails on the missing BPMCSRF cookie after login");
-		loginUrl.Should().Contain("/0/ServiceModel/AuthService.svc/Login",
-			because: ".NET Framework environments serve the app under the 0/ web-app alias");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("On .NET Core the Forms login URL has no '0/' alias.")]
-	public void Forms_Login_Url_Should_Omit_Alias_For_NetCore() {
-		string? loginUrl = null;
-		StubHandler handler = new(request => {
-			if (request.RequestUri!.AbsoluteUri.Contains("AuthService.svc/Login")) {
-				loginUrl = request.RequestUri.AbsoluteUri;
-			}
-			return Json(HttpStatusCode.OK, "{\"Code\":0}");
-		});
-		using ODataPatchClient client = new(FormsSettings(isNetCore: true), handler);
-
-		Action act = () => client.ExecutePatch(PatchUrl, "{}");
-
-		act.Should().Throw<InvalidOperationException>(because: "auth fails on the missing BPMCSRF cookie after login");
+		act.Should().Throw<InvalidOperationException>(because: "the stub returns no BPMCSRF cookie after login");
 		loginUrl.Should().EndWith("/ServiceModel/AuthService.svc/Login",
-			because: ".NET Core environments serve the app at the root without an alias");
-		loginUrl.Should().NotContain("/0/ServiceModel", because: "the 0/ alias must not be applied on .NET Core");
+			because: "AuthService login is served at the site root for both .NET Framework and .NET Core");
+		loginUrl.Should().NotContain("/0/ServiceModel",
+			because: "applying the 0/ data-service alias to the login endpoint makes Creatio return 401");
 	}
 
 	private sealed class StubHandler : HttpMessageHandler {
