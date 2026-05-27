@@ -81,6 +81,7 @@ internal sealed class BusinessRuleConditionMetadataDto : BaseBusinessRuleConditi
 [JsonPolymorphic]
 [JsonDerivedType(typeof(FieldSelectionBusinessRuleActionMetadataDto))]
 [JsonDerivedType(typeof(BusinessRuleFilterLookupActionMetadataDto))]
+[JsonDerivedType(typeof(BusinessRuleSetFilterActionMetadataDto))]
 internal abstract class BaseBusinessRuleActionMetadataDto {
 	[JsonPropertyName("typeName")]
 	public string TypeName { get; set; } = string.Empty;
@@ -109,6 +110,14 @@ internal sealed class BusinessRuleFilterLookupActionMetadataDto : BaseBusinessRu
 
 	[JsonPropertyName("populateValue")]
 	public bool PopulateValue { get; set; }
+}
+
+internal sealed class BusinessRuleSetFilterActionMetadataDto : BaseBusinessRuleActionMetadataDto {
+	[JsonPropertyName("expression")]
+	public BusinessRuleExpressionMetadataDto Expression { get; set; } = default!;
+
+	[JsonPropertyName("value")]
+	public BusinessRuleExpressionMetadataDto Value { get; set; } = default!;
 }
 
 internal sealed class BusinessRuleSetValueItemMetadataDto : BaseBusinessRuleActionMetadataDto {

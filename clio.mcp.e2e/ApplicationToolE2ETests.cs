@@ -35,7 +35,7 @@ public sealed class ApplicationToolE2ETests {
 	[AllureFeature(ListToolName)]
 	[AllureTag(ListToolName)]
 	[AllureName("Application get list returns structured installed applications")]
-	[AllureDescription("Uses the real clio MCP server to call list-apps for the configured environment, ignores when no installed applications are available, and otherwise verifies that the first installed application exposes the expected structured selectors and metadata fields.")]
+	[AllureDescription("Uses the real clio MCP server to call list-apps for the configured environment, resolves the seeded installed application configured via Sandbox.ApplicationCode, and verifies that the seeded application exposes the expected structured selectors and metadata fields.")]
 	public async Task ApplicationGetList_Should_Return_Structured_Applications() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -47,13 +47,13 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = GetInstalledApplicationOrIgnore(listResult.Result);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Assert
 		listResult.CallResult.IsError.Should().NotBeTrue(
 			because: $"a valid list-apps request should return a structured MCP payload instead of a transport-level error. Actual result: {DescribeCallResult(listResult.CallResult)}");
 		listResult.Result.Success.Should().BeTrue(
-			because: "list-apps should succeed before a discovered installed application can be validated");
+			because: "list-apps should succeed before the seeded installed application can be validated");
 		installedApplication.Id.Should().NotBeNullOrWhiteSpace(
 			because: "installed application list items should expose an id for follow-up MCP targeting");
 		installedApplication.Code.Should().NotBeNullOrWhiteSpace(
@@ -65,11 +65,11 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers an installed application through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info returns structured package and entity metadata")]
-	[AllureDescription("Uses the real clio MCP server to discover an installed application via list-apps, ignores when none exist, and otherwise verifies that get-app-info returns the expected structured metadata envelope for that application.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that get-app-info returns the expected structured metadata envelope for that application.")]
 	public async Task ApplicationGetInfo_Should_Return_Structured_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -79,7 +79,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = GetInstalledApplicationOrIgnore(listResult.Result);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
 		ApplicationInfoActResult infoResult = await ActInfoAsync(
@@ -93,7 +93,7 @@ public sealed class ApplicationToolE2ETests {
 		infoResult.CallResult.IsError.Should().NotBeTrue(
 			because: $"a valid get-app-info request should return structured metadata instead of a transport-level error. Actual result: {DescribeCallResult(infoResult.CallResult)}");
 		infoResult.Result.Success.Should().BeTrue(
-			because: "get-app-info should succeed for a discovered installed application");
+			because: "get-app-info should succeed for the seeded installed application");
 		infoResult.Result.ApplicationId.Should().Be(installedApplication.Id,
 			because: "get-app-info should resolve the same installed application selected from list-apps");
 		infoResult.Result.ApplicationCode.Should().Be(installedApplication.Code,
@@ -152,13 +152,13 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers an installed application through list-apps, and verifies that its id can be reused with get-app-info.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that its id can be reused with get-app-info.")]
 	[AllureFeature(ListToolName)]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(ListToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application list returns ids usable by get-app-info when applications exist")]
-	[AllureDescription("Uses the real clio MCP server to discover an installed application via list-apps, ignores when none exist, and otherwise verifies that the returned application id is accepted by get-app-info and resolves the same application.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that the returned application id is accepted by get-app-info and resolves the same application.")]
 	public async Task ApplicationGetList_Should_Return_Ids_Usable_By_GetAppInfo_When_Applications_Exist() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -168,7 +168,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = GetInstalledApplicationOrIgnore(listResult.Result);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
 		ApplicationInfoActResult infoResult = await ActInfoAsync(
@@ -180,7 +180,7 @@ public sealed class ApplicationToolE2ETests {
 
 		// Assert
 		infoResult.Result.Success.Should().BeTrue(
-			because: "a discovered list-apps identifier should be reusable as a valid get-app-info selector");
+			because: "the seeded list-apps identifier should be reusable as a valid get-app-info selector");
 		infoResult.Result.ApplicationId.Should().Be(installedApplication.Id,
 			because: "get-app-info should resolve the same installed application id that list-apps returned");
 		infoResult.Result.ApplicationCode.Should().Be(installedApplication.Code,
@@ -1091,16 +1091,6 @@ public sealed class ApplicationToolE2ETests {
 			StructuredContent = callResult.StructuredContent,
 			Content = callResult.Content
 		});
-	}
-
-	private static ApplicationListItemEnvelope GetInstalledApplicationOrIgnore(ApplicationListResponseEnvelope listResponse) {
-		ApplicationListItemEnvelope? installedApplication = listResponse.Applications?.FirstOrDefault();
-		if (installedApplication is not null) {
-			return installedApplication;
-		}
-
-		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment.");
-		return null!;
 	}
 
 	private sealed record ApplicationArrangeContext(

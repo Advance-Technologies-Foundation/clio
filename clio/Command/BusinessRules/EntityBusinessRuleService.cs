@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
@@ -32,7 +34,8 @@ internal sealed class EntityBusinessRuleService(
 	IEntityBusinessRuleAttributeProvider attributeProvider,
 	IBusinessRuleAddonService businessRuleAddonService,
 	IBusinessRuleFormulaValidationService formulaValidationService,
-	IBusinessRuleValidator businessRuleValidator)
+	IBusinessRuleValidator businessRuleValidator,
+	IStaticFilterContextFactory staticFilterContextFactory)
 	: IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
@@ -43,18 +46,30 @@ internal sealed class EntityBusinessRuleService(
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-		businessRuleValidator.Validate(request.Rule, attributeContext.Attributes);
+
+		StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(request.Rule)
+			? staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
+			: null;
+
+		businessRuleValidator.ValidateEntity(request.Rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
 		ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, request.Rule);
 
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules = BusinessRuleMetadataConverter.ToEntityMetadata(
 			attributeContext.Attributes,
 			request.Rule,
-			attributeContext.EntitySchema.Name);
+			attributeContext.EntitySchema.Name,
+			staticFilterContext?.SchemaProvider,
+			staticFilterContext?.LookupResolver);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,
 			createdRules);
 	}
+
+	private static bool RequiresStaticFilterScope(BusinessRule rule) =>
+		rule?.Actions?.Any(action =>
+			string.Equals(action?.ActionType, ApplyStaticFilterActionTypeName, StringComparison.OrdinalIgnoreCase))
+		?? false;
 
 	private void ValidateFormulas(
 		string entitySchemaName,

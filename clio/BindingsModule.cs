@@ -137,6 +137,7 @@ public class BindingsModule {
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
 			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
+			services.AddSingleton<IODataPatchClient>(_ => new ODataPatchClient(activeSettings));
 			services.AddTransient<SysSettingsManager>();
 		}
 
@@ -335,6 +336,9 @@ public class BindingsModule {
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
+		services.AddTransient<ODataCreateTool>();
+		services.AddTransient<ODataUpdateTool>();
+		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();

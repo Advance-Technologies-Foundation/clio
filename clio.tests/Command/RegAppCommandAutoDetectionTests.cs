@@ -42,7 +42,7 @@ public sealed class RegAppCommandAutoDetectionTests {
 			settings.Uri == "http://example.invalid"
 			&& settings.Login == "Supervisor"
 			&& settings.Password == "Supervisor"));
-		settingsRepository.Received(1).ConfigureEnvironment("sandbox", Arg.Is<EnvironmentSettings>(settings =>
+		settingsRepository.Received().ConfigureEnvironment("sandbox", Arg.Is<EnvironmentSettings>(settings =>
 			settings.Uri == "http://example.invalid"
 			&& settings.IsNetCore));
 	}

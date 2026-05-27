@@ -205,6 +205,7 @@ internal static class ToolContractCatalog {
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
@@ -313,6 +314,9 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
 			[ODataReadTool.ToolName] = BuildODataRead(),
+			[ODataCreateTool.ToolName] = BuildODataCreate(),
+			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
+			[ODataDeleteTool.ToolName] = BuildODataDelete(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[PageListTool.ToolName] = BuildPageList(),
@@ -363,6 +367,9 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
 		ODataReadTool.ToolName,
+		ODataCreateTool.ToolName,
+		ODataUpdateTool.ToolName,
+		ODataDeleteTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		PageListTool.ToolName,
@@ -1283,6 +1290,127 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildODataCreate() {
+		return new ToolContractDefinition(
+			ODataCreateTool.ToolName,
+			"Creates a Creatio record through OData v4 (POST). Returns the created record including its generated Id.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "data", EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
+					Field("data", ObjectType, "Object of field/value pairs for the new record. Lookup fields are set with their GUID, for example { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData create succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "Generated GUID of the created record."),
+				Field("record", ObjectType, "The created record returned by Creatio.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Create a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" }
+				})
+			],
+			Flow([ODataCreateTool.ToolName], "Use to insert a new Creatio record when field values are known."),
+			[
+				Flow(
+					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName, ODataCreateTool.ToolName],
+					"Discover the entity and column names first when they are unknown, then create."),
+				Flow(
+					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
+					"Create the record, then read it back by the returned id to confirm persisted values.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataUpdate() {
+		return new ToolContractDefinition(
+			ODataUpdateTool.ToolName,
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. Never performs a keyless mass update.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the updated record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Rename a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
+					[ConfirmFieldName] = true
+				})
+			],
+			Flow([ODataUpdateTool.ToolName], "Use to change fields of an existing Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataUpdateTool.ToolName],
+					"Read the record to obtain its Id, then update the desired fields by that Id.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataDelete() {
+		return new ToolContractDefinition(
+			ODataDeleteTool.ToolName,
+			"Deletes a single Creatio record through OData v4 (DELETE). Requires the record GUID and confirm=true; never performs a keyless mass delete.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to delete. Required; a keyless mass delete is rejected."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the deleted record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Delete a contact by id", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					[ConfirmFieldName] = true
+				})
+			],
+			Flow([ODataDeleteTool.ToolName], "Use to remove a single Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataDeleteTool.ToolName],
+					"Read to confirm the target record and obtain its Id, then delete by that Id.")
+			],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildDataForgeContract(DataForgeContractDescriptor descriptor) {
 		return new ToolContractDefinition(
 			descriptor.ToolName,
@@ -1454,9 +1582,12 @@ internal static class ToolContractCatalog {
 						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
 					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
 						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
+					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
+						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
+					new ToolContractValidator("apply-static-filter-filter", "invalid-apply-static-filter-filter", "rule.actions[*].filter",
+						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[] (EXISTS or NOT_EXISTS only in this release). Leaf comparisons: EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath supports forward paths through Lookup chains. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. See guidance resource business-rules for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
 						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
-
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,

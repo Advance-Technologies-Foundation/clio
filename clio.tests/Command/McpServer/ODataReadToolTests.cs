@@ -348,4 +348,26 @@ public sealed class ODataReadToolTests {
 		// Assert — no $filter when structured filters produce no conditions
 		urlBuilder.Received(1).Build("odata/Contact?$top=5");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A server error body (ASP.NET EDM model NullReferenceException) is reported as a failure, not wrapped as a single-entity success.")]
+	public void Read_Should_Surface_Server_Error_As_Failure() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "AddressType" });
+
+		response.Success.Should().BeFalse(
+			because: "an ASP.NET server error body must not be reported as a successful single-entity read");
+		response.Error.Should().Contain("Object reference",
+			because: "the ExceptionMessage should be surfaced to the caller");
+	}
 }

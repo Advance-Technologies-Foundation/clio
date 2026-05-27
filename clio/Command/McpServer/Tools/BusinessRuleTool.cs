@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
 using Clio.Common;
@@ -139,6 +140,7 @@ public sealed record EntityBusinessRuleMcpContract
 [JsonDerivedType(typeof(EntityMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
 [JsonDerivedType(typeof(EntitySetValuesBusinessRuleActionMcpContract), "set-values")]
 [JsonDerivedType(typeof(EntityApplyFilterBusinessRuleActionMcpContract), "apply-filter")]
+[JsonDerivedType(typeof(EntityApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record EntityBusinessRuleActionMcpContract
 {
 	protected EntityBusinessRuleActionMcpContract()
@@ -320,6 +322,46 @@ public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusi
 }
 
 /// <summary>
+/// MCP action contract that applies a static ESQ filter to a lookup attribute on the entity.
+/// </summary>
+public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
+{
+	/// <summary>
+	/// Gets the target lookup attribute on the root entity whose dropdown is filtered.
+	/// </summary>
+	[JsonPropertyName("targetAttribute")]
+	[Description("Target lookup attribute on the root entity. The lookup's reference schema is used as the filter root; rootSchemaName is never accepted from the caller.")]
+	[Required]
+	public string TargetAttribute { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the friendly filter definition.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	[Description("Friendly filter definition for apply-static-filter. Use get-guidance name=business-rules for the full contract.")]
+	[Required]
+	public JsonElement Filter { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() =>
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+}
+
+/// <summary>
+/// Page-variant of apply-static-filter exists only so payloads deserialize cleanly; page validator rejects it.
+/// </summary>
+public sealed record PageApplyStaticFilterBusinessRuleActionMcpContract : PageBusinessRuleActionMcpContract
+{
+	[JsonPropertyName("targetAttribute")]
+	public string TargetAttribute { get; init; } = string.Empty;
+
+	[JsonPropertyName("filter")]
+	public JsonElement Filter { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() =>
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+}
+
+/// <summary>
 /// MCP contract for a page-level Freedom UI business rule.
 /// </summary>
 public sealed record PageBusinessRuleMcpContract
@@ -386,6 +428,7 @@ public sealed record PageBusinessRuleMcpContract
 [JsonDerivedType(typeof(PageMakeReadOnlyBusinessRuleActionMcpContract), "make-read-only")]
 [JsonDerivedType(typeof(PageMakeRequiredBusinessRuleActionMcpContract), "make-required")]
 [JsonDerivedType(typeof(PageMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
+[JsonDerivedType(typeof(PageApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record PageBusinessRuleActionMcpContract
 {
 	protected PageBusinessRuleActionMcpContract()
