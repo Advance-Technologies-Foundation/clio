@@ -113,10 +113,9 @@ public sealed class ComponentRegistrySnapshotTests {
 	[Test]
 	[Description("The live mobile registry payload (https://academy.creatio.com/api/mcp/latest/MobileComponentRegistry.json, mirrored 2026-05-20) must deserialise through the same wrapped envelope as the web payload with no fields landing on an UnmappedExtensions bucket — the snapshot guard is intentionally symmetric across flavors.")]
 	public void Live_Mobile_Registry_Snapshot_Should_Have_No_Unmapped_Fields() {
-		// Arrange — the fixture is a verbatim pull of the live academy URL above,
-		// also copied into clio/Command/McpServer/Data/MobileComponentRegistry.json
-		// for offline iteration. Refresh procedure: re-run the curl into both
-		// paths (see commit message of this test's most recent update).
+		// Arrange — the fixture is a verbatim pull of the live academy URL above.
+		// Refresh procedure: re-run the curl into the fixture path
+		// (see commit message of this test's most recent update).
 		string snapshotPath = Path.Combine(
 			TestContext.CurrentContext.TestDirectory,
 			"Command/McpServer/Fixtures/MobileComponentRegistry.live-snapshot.json");

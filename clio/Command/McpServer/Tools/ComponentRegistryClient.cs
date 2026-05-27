@@ -52,9 +52,8 @@ public enum ComponentRegistrySource {
 	/// <summary>Returned bytes came from the on-disk cache (fresh or stale).</summary>
 	FileCache,
 	/// <summary>
-	/// Returned bytes came from a developer-supplied file pointed to by
-	/// <c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c>, or from a static file shipped
-	/// with the install (e.g. the mobile component catalog). Never cached.
+	/// Returned bytes came from a developer-supplied file pointed to by the
+	/// flavor's local-override env var. Never cached.
 	/// </summary>
 	Local
 }
@@ -63,8 +62,7 @@ public enum ComponentRegistrySource {
 /// Profile that distinguishes the web and mobile component-registry pipelines. The
 /// two consumers share the same cache+CDN infrastructure (same envelope shape, same
 /// 5min TTL, same retry/backoff, same UnmappedExtensions guard), but they read
-/// different files from the CDN and from disk, and each has its own developer
-/// local-override env var.
+/// different files from the CDN and each has its own developer local-override env var.
 /// </summary>
 /// <param name="DisplayName">Stable identifier used in log lines (e.g. <c>"web"</c>, <c>"mobile"</c>).</param>
 /// <param name="CdnRegistryFileName">Bare filename served by the academy CDN; e.g. <c>"ComponentRegistry.json"</c>.</param>
@@ -74,44 +72,30 @@ public enum ComponentRegistrySource {
 /// flavor's payloads. Empty for the web flavor (back-compat with cache files written
 /// before the mobile flavor existed).
 /// </param>
-/// <param name="BundledFileRelativePath">
-/// Optional path (relative to the executing directory) to a static file shipped with
-/// the install that should serve as a final fallback when both cache and CDN miss.
-/// Used today by the mobile flavor as a transitional bootstrap: the producer is in
-/// the process of publishing <c>MobileComponentRegistry.json</c> to the academy CDN,
-/// and the bundled file keeps <c>get-component-info schema-type=mobile</c> working in
-/// the meantime. <c>null</c> for the web flavor — web exhaustion throws
-/// <see cref="ComponentRegistryUnavailableException"/> per the published 2-tier contract.
-/// </param>
 public sealed record RegistryFlavor(
 	string DisplayName,
 	string CdnRegistryFileName,
 	string LocalFileEnvironmentVariable,
-	string CacheSubdirectoryName,
-	string? BundledFileRelativePath) {
+	string CacheSubdirectoryName) {
 
 	/// <summary>Web flavor: the original component registry — <c>academy/api/mcp/{version}/ComponentRegistry.json</c>.</summary>
 	public static readonly RegistryFlavor Web = new(
 		DisplayName: "web",
 		CdnRegistryFileName: "ComponentRegistry.json",
 		LocalFileEnvironmentVariable: "CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
-		CacheSubdirectoryName: string.Empty,
-		BundledFileRelativePath: null);
+		CacheSubdirectoryName: string.Empty);
 
 	/// <summary>
 	/// Mobile flavor: same wrapped-envelope contract, separate file —
 	/// <c>academy/api/mcp/{version}/MobileComponentRegistry.json</c>. Cache lives in a
 	/// dedicated subfolder so web and mobile payloads cannot collide on the same
-	/// <c>latest.json</c> key. The bundled file
-	/// <c>Command/McpServer/Data/MobileComponentRegistry.json</c> backs up the chain
-	/// until producer publishes to CDN.
+	/// <c>latest.json</c> key.
 	/// </summary>
 	public static readonly RegistryFlavor Mobile = new(
 		DisplayName: "mobile",
 		CdnRegistryFileName: "MobileComponentRegistry.json",
 		LocalFileEnvironmentVariable: "CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
-		CacheSubdirectoryName: "mobile",
-		BundledFileRelativePath: "Command/McpServer/Data/MobileComponentRegistry.json");
+		CacheSubdirectoryName: "mobile");
 }
 
 /// <summary>
@@ -159,7 +143,6 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	// on the subclass). DI resolves ILogger<T> instances at construction time; the
 	// generic category is preserved through the upcast.
 	private readonly ILogger _logger;
-	private readonly IWorkingDirectoriesProvider? _workingDirectoriesProvider;
 	private readonly string _cdnBaseUrl;
 	private readonly RegistryFlavor _flavor;
 
@@ -168,7 +151,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger)
-		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), RegistryFlavor.Web, workingDirectoriesProvider: null) {
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), RegistryFlavor.Web) {
 	}
 
 	public ComponentRegistryClient(
@@ -176,9 +159,8 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
-		RegistryFlavor flavor,
-		IWorkingDirectoriesProvider? workingDirectoriesProvider)
-		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), flavor, workingDirectoriesProvider) {
+		RegistryFlavor flavor)
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, ResolveCdnBaseUrl(), flavor) {
 	}
 
 	/// <summary>
@@ -192,9 +174,8 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
 		ILogger logger,
-		RegistryFlavor flavor,
-		IWorkingDirectoriesProvider workingDirectoriesProvider)
-		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), flavor, workingDirectoriesProvider) {
+		RegistryFlavor flavor)
+		: this(httpClientFactory, cacheStore, fileSystem, logger, ResolveCdnBaseUrl(), flavor) {
 	}
 
 	internal ComponentRegistryClient(
@@ -203,7 +184,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IFileSystem fileSystem,
 		ILogger<ComponentRegistryClient> logger,
 		string cdnBaseUrl)
-		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, cdnBaseUrl, RegistryFlavor.Web, workingDirectoriesProvider: null) {
+		: this(httpClientFactory, cacheStore, fileSystem, (ILogger)logger, cdnBaseUrl, RegistryFlavor.Web) {
 	}
 
 	internal ComponentRegistryClient(
@@ -212,14 +193,12 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		IFileSystem fileSystem,
 		ILogger logger,
 		string cdnBaseUrl,
-		RegistryFlavor flavor,
-		IWorkingDirectoriesProvider? workingDirectoriesProvider) {
+		RegistryFlavor flavor) {
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
 		_cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_flavor = flavor ?? throw new ArgumentNullException(nameof(flavor));
-		_workingDirectoriesProvider = workingDirectoriesProvider;
 		_cdnBaseUrl = string.IsNullOrWhiteSpace(cdnBaseUrl) ? DefaultCdnBaseUrl : cdnBaseUrl;
 		if (!_cdnBaseUrl.EndsWith('/')) {
 			_cdnBaseUrl += "/";
@@ -289,18 +268,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 			}
 		}
 
-		// Tier 4 (mobile only, transitional): the bundled file shipped under
-		// Command/McpServer/Data/MobileComponentRegistry.json. The producer is still
-		// rolling out the mobile feed onto academy.creatio.com/api/mcp; until then,
-		// the bundled file keeps mobile `get-component-info` calls working. Web has
-		// no equivalent — its embedded tier was retired in a503b832 once the academy
-		// mirror went live.
-		Stream? bundled = TryOpenBundledFile(requestedVersion);
-		if (bundled is not null) {
-			return new ComponentRegistryFetchResult(bundled, requestedVersion, ComponentRegistrySource.Local);
-		}
-
-		// Tier exhausted: cache + CDN both miss, no local override, no bundled fallback.
+		// Tier exhausted: cache + CDN both miss, no local override.
 		// Surface a clear error — ComponentInfoTool's catch-all turns it into a graceful
 		// MCP response that points the operator at the flavor's local-override env var.
 		_logger.LogWarning(
@@ -473,37 +441,6 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		return stream;
 	}
 
-	/// <summary>
-	/// Last-resort bundled-file fallback. Only the mobile flavor populates
-	/// <see cref="RegistryFlavor.BundledFileRelativePath"/> — the file ships in the
-	/// install via the <c>Command/McpServer/Data/**</c> csproj content glob and keeps
-	/// <c>get-component-info schema-type=mobile</c> working during the producer-side
-	/// rollout. Returns <c>null</c> for the web flavor (no bundled file configured)
-	/// or when the bundled file is absent (e.g. once the producer goes live and the
-	/// in-repo copy is deleted).
-	/// </summary>
-	private Stream? TryOpenBundledFile(string requestedVersion) {
-		if (string.IsNullOrWhiteSpace(_flavor.BundledFileRelativePath)) {
-			return null;
-		}
-		if (_workingDirectoriesProvider is null) {
-			return null;
-		}
-		string absolutePath = _fileSystem.Path.Combine(
-			_workingDirectoriesProvider.ExecutingDirectory,
-			_flavor.BundledFileRelativePath);
-		if (!_fileSystem.File.Exists(absolutePath)) {
-			_logger.LogInformation(
-				"component-registry bundled-missing flavor={Flavor} version={Version} path={Path}",
-				_flavor.DisplayName, requestedVersion, absolutePath);
-			return null;
-		}
-		_logger.LogInformation(
-			"component-registry source=bundled flavor={Flavor} version={Version} path={Path}",
-			_flavor.DisplayName, requestedVersion, absolutePath);
-		return _fileSystem.File.OpenRead(absolutePath);
-	}
-
 	private static string ResolveCdnBaseUrl() {
 		string? envOverride = Environment.GetEnvironmentVariable(CdnBaseUrlEnvironmentVariable);
 		return string.IsNullOrWhiteSpace(envOverride) ? DefaultCdnBaseUrl : envOverride;
@@ -539,9 +476,8 @@ public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMo
 		IHttpClientFactory httpClientFactory,
 		IComponentRegistryCacheStore cacheStore,
 		IFileSystem fileSystem,
-		ILogger<MobileComponentRegistryClient> logger,
-		IWorkingDirectoriesProvider workingDirectoriesProvider)
-		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile, workingDirectoriesProvider) {
+		ILogger<MobileComponentRegistryClient> logger)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile) {
 	}
 }
 

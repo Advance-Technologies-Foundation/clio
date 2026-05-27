@@ -279,8 +279,7 @@ public class BindingsModule {
 				sp.GetRequiredService<TimeProvider>(),
 				RegistryFlavor.Mobile.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
-			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>(),
-			sp.GetRequiredService<IWorkingDirectoriesProvider>()));
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();

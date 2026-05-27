@@ -89,17 +89,6 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
-		<!--
-			Ships the bundled component-registry data files (today: just MobileComponentRegistry.json)
-			to bin/{config}/{tfm}/Command/McpServer/Data/. The web registry no longer needs this glob
-			(retired in a503b832 along with the embedded snapshot), but the mobile catalog still
-			reads the bundled JSON via MobileComponentInfoCatalog. The glob was incorrectly removed
-			in 577b4e80 — restoring it here unbreaks `get-component-info schema-type=mobile`.
-		-->
-		<Content Include="Command\McpServer\Data\**">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-
 	</ItemGroup>
 
 	<Choose>
