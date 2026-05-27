@@ -15,8 +15,8 @@ internal enum EsqFilterType {
 /// Numeric values mirror Terrasoft.Nui.ServiceModel.DataContract.FilterComparisonType.
 /// </summary>
 internal enum EsqComparisonType {
-	IsNotNull = 0,
 	IsNull = 1,
+	IsNotNull = 2,
 	Equal = 3,
 	NotEqual = 4,
 	Less = 5,

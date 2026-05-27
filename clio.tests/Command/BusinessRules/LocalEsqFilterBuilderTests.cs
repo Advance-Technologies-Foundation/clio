@@ -52,9 +52,27 @@ public sealed class LocalEsqFilterBuilderTests {
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
 
 		filter0.GetProperty("filterType").GetInt32().Should().Be(2);
-		filter0.GetProperty("comparisonType").GetInt32().Should().Be(0);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(2,
+			because: "Terrasoft FilterComparisonType.IsNotNull is 2; emitting 0 (None) makes the platform reject the IsNullFilter");
 		filter0.GetProperty("isNull").GetBoolean().Should().BeFalse();
 		filter0.GetProperty("className").GetString().Should().Be("Terrasoft.IsNullFilter");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits an IsNullFilter with comparisonType 1 for IS_NULL.")]
+	public void Build_Should_Emit_IsNullFilter_For_IsNull() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "MobilePhone", "comparisonType": "IS_NULL" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("MobilePhone", "PhoneText", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(2);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(1, because: "FilterComparisonType.IsNull is 1");
+		filter0.GetProperty("isNull").GetBoolean().Should().BeTrue();
 	}
 
 	[Test]
