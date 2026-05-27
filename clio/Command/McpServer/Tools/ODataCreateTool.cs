@@ -76,8 +76,12 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
-	private static string Truncate(string value) =>
-		string.IsNullOrEmpty(value) ? "<empty>" : value.Length > 500 ? value[..500] + "..." : value;
+	private static string Truncate(string value) {
+		if (string.IsNullOrEmpty(value)) {
+			return "<empty>";
+		}
+		return value.Length > 500 ? value[..500] + "..." : value;
+	}
 }
 
 /// <summary>Arguments for <see cref="ODataCreateTool"/>.</summary>
