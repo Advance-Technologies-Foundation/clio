@@ -22,6 +22,13 @@ public sealed class ODataPatchClientTests {
 		ClientSecret = "client-secret"
 	};
 
+	private static EnvironmentSettings FormsSettings(bool isNetCore) => new() {
+		Uri = "http://creatio",
+		Login = "Supervisor",
+		Password = "Supervisor",
+		IsNetCore = isNetCore
+	};
+
 	private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
 		new(status) { Content = new StringContent(body) };
 
@@ -149,6 +156,46 @@ public sealed class ODataPatchClientTests {
 		Action act = () => client.ExecutePatch(PatchUrl, "{}");
 
 		act.Should().Throw<InvalidOperationException>().Which.Message.Should().Contain("400");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On .NET Framework the Forms login URL carries the '0/' web-app alias, matching the PATCH URL.")]
+	public void Forms_Login_Url_Should_Include_WebApp_Alias_For_NetFramework() {
+		string? loginUrl = null;
+		StubHandler handler = new(request => {
+			if (request.RequestUri!.AbsoluteUri.Contains("AuthService.svc/Login")) {
+				loginUrl = request.RequestUri.AbsoluteUri;
+			}
+			return Json(HttpStatusCode.OK, "{\"Code\":0}");
+		});
+		using ODataPatchClient client = new(FormsSettings(isNetCore: false), handler);
+
+		// Auth proceeds far enough to send the login request; it then fails on the missing BPMCSRF cookie.
+		Action act = () => client.ExecutePatch(PatchUrl, "{}");
+
+		act.Should().Throw<InvalidOperationException>();
+		loginUrl.Should().Contain("/0/ServiceModel/AuthService.svc/Login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On .NET Core the Forms login URL has no '0/' alias.")]
+	public void Forms_Login_Url_Should_Omit_Alias_For_NetCore() {
+		string? loginUrl = null;
+		StubHandler handler = new(request => {
+			if (request.RequestUri!.AbsoluteUri.Contains("AuthService.svc/Login")) {
+				loginUrl = request.RequestUri.AbsoluteUri;
+			}
+			return Json(HttpStatusCode.OK, "{\"Code\":0}");
+		});
+		using ODataPatchClient client = new(FormsSettings(isNetCore: true), handler);
+
+		Action act = () => client.ExecutePatch(PatchUrl, "{}");
+
+		act.Should().Throw<InvalidOperationException>();
+		loginUrl.Should().EndWith("/ServiceModel/AuthService.svc/Login");
+		loginUrl.Should().NotContain("/0/ServiceModel");
 	}
 
 	private sealed class StubHandler : HttpMessageHandler {

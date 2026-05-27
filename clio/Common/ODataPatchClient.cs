@@ -115,7 +115,11 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 	private void AuthenticateForms() {
 		string baseUrl = _settings.Uri?.TrimEnd('/')
 			?? throw new InvalidOperationException("Environment Uri is required for OData PATCH.");
-		string loginUrl = $"{baseUrl}/ServiceModel/AuthService.svc/Login";
+		// .NET Framework environments serve the web app (and AuthService) under the "0/" alias,
+		// the same prefix IServiceUrlBuilder applies to the PATCH URL. Mirror it here so Forms
+		// login and the subsequent PATCH target the same application.
+		string alias = _settings.IsNetCore ? string.Empty : "0/";
+		string loginUrl = $"{baseUrl}/{alias}ServiceModel/AuthService.svc/Login";
 		string payload = JsonSerializer.Serialize(new {
 			UserName = _settings.Login,
 			UserPassword = _settings.Password
