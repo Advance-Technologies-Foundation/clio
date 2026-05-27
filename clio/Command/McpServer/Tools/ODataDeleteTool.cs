@@ -20,6 +20,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Delete a single Creatio record via OData v4 (DELETE). " +
 		"Requires the record's GUID id; this tool never performs a keyless mass delete. " +
+		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-delete to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Delete(
 		[Description("Parameters: entity, id, environment-name (all required).")]
@@ -51,7 +52,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 public sealed record ODataDeleteArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account).</summary>
 	[JsonPropertyName("entity")]
-	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity).")]
+	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover names.")]
 	[Required]
 	public required string Entity { get; init; }
 

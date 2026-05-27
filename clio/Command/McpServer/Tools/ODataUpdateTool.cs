@@ -22,6 +22,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
 		"This tool never performs a keyless mass update. " +
+		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
 		[Description("Parameters: entity, id, data, environment-name (all required).")]
@@ -56,7 +57,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 public sealed record ODataUpdateArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account).</summary>
 	[JsonPropertyName("entity")]
-	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity).")]
+	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover names.")]
 	[Required]
 	public required string Entity { get; init; }
 
@@ -70,6 +71,7 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("data")]
 	[Description(
 		"Object of field/value pairs to change. Only supplied fields are updated. " +
+		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
 	[Required]
 	public JsonElement? Data { get; init; }

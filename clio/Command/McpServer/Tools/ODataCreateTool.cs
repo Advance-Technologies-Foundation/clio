@@ -80,6 +80,7 @@ public sealed record ODataCreateArgs {
 	[Description(
 		"Object of field/value pairs for the new record. " +
 		"Use dataforge-get-table-columns to discover field names. " +
+		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Example: { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }")]
 	[Required]
 	public JsonElement? Data { get; init; }
