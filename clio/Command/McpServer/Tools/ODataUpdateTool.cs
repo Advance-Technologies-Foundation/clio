@@ -38,7 +38,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			if (string.IsNullOrWhiteSpace(args.Id) || !ODataKeyFormatter.IsGuid(args.Id.Trim())) {
 				return ODataWriteResponse.Failure("id is required and must be a record GUID; keyless mass update is not allowed.");
 			}
-			if (args.Data is not { ValueKind: JsonValueKind.Object } data || data.EnumerateObject().MoveNext() == false) {
+			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
 

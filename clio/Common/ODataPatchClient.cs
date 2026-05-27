@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -167,13 +168,10 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 	}
 
 	private string? ReadCsrfCookie(string baseUrl) {
-		CookieCollection cookies = _cookies.GetCookies(new Uri(baseUrl));
-		foreach (Cookie cookie in cookies) {
-			if (string.Equals(cookie.Name, "BPMCSRF", StringComparison.OrdinalIgnoreCase)) {
-				return cookie.Value;
-			}
-		}
-		return null;
+		return _cookies.GetCookies(new Uri(baseUrl))
+			.Cast<Cookie>()
+			.FirstOrDefault(cookie => string.Equals(cookie.Name, "BPMCSRF", StringComparison.OrdinalIgnoreCase))
+			?.Value;
 	}
 
 	private void AuthenticateOAuth() {
@@ -203,8 +201,12 @@ public sealed class ODataPatchClient : IODataPatchClient, IDisposable {
 		}
 	}
 
-	private static string Truncate(string value) =>
-		string.IsNullOrEmpty(value) ? "<empty>" : value.Length > 500 ? value[..500] + "..." : value;
+	private static string Truncate(string value) {
+		if (string.IsNullOrEmpty(value)) {
+			return "<empty>";
+		}
+		return value.Length > 500 ? value[..500] + "..." : value;
+	}
 
 	public void Dispose() {
 		if (_lazyHttpClient.IsValueCreated) {

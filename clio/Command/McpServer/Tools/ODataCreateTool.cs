@@ -34,7 +34,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
 				return ODataWriteResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
 			}
-			if (args.Data is not { ValueKind: JsonValueKind.Object } data || data.EnumerateObject().MoveNext() == false) {
+			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
 
