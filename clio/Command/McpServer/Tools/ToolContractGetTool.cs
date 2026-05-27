@@ -205,6 +205,7 @@ internal static class ToolContractCatalog {
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
@@ -1335,12 +1336,12 @@ internal static class ToolContractCatalog {
 			ODataUpdateTool.ToolName,
 			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "id", "data", "confirm", EnvironmentNameFieldName],
+				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
 					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
-					Field("confirm", BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			EnvelopeOutput(
@@ -1359,7 +1360,7 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
 					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
-					["confirm"] = true
+					[ConfirmFieldName] = true
 				})
 			],
 			Flow([ODataUpdateTool.ToolName], "Use to change fields of an existing Creatio record identified by its GUID."),
@@ -1376,11 +1377,11 @@ internal static class ToolContractCatalog {
 			ODataDeleteTool.ToolName,
 			"Deletes a single Creatio record through OData v4 (DELETE). Requires the record GUID and confirm=true; never performs a keyless mass delete.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "id", "confirm", EnvironmentNameFieldName],
+				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to delete. Required; a keyless mass delete is rejected."),
-					Field("confirm", BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			EnvelopeOutput(
@@ -1398,7 +1399,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
-					["confirm"] = true
+					[ConfirmFieldName] = true
 				})
 			],
 			Flow([ODataDeleteTool.ToolName], "Use to remove a single Creatio record identified by its GUID."),
