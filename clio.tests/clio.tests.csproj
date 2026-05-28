@@ -92,7 +92,11 @@
     <None Include="Examples\Sites\N8_Site\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    
+
+    <None Include="Command\McpServer\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
   </ItemGroup>
   
 </Project>

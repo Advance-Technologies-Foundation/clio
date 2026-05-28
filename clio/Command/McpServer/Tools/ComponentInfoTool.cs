@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -13,10 +13,17 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for curated Freedom UI component metadata.
 /// </summary>
 [McpServerToolType]
-public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComponentInfoCatalog mobileCatalog) {
-	private static readonly string[] CategoryOrder = ["containers", "fields", "interactive", "display", "filtering"];
+public sealed class ComponentInfoTool(
+	IComponentInfoCatalog catalog,
+	IMobileComponentInfoCatalog mobileCatalog,
+	IPlatformVersionResolver versionResolver,
+	IComponentRegistryDocsClient docsClient) {
 
 	internal const string ToolName = "get-component-info";
+	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
+	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
+	internal const string SchemaTypeMobile = "mobile";
+	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
@@ -32,52 +39,26 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 		+ SchemaValidationService.InsertedFieldContractSummary;
 
 	/// <summary>
-	/// Returns grouped component summaries or full metadata for a specific component type.
+	/// Returns the component catalog list or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
-	/// <returns>A structured response with grouped summaries or a full component definition.</returns>
+	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
+	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
-		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types. ")]
-	public ComponentInfoResponse GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to list all), search (optional keyword filter), schema-type (optional; 'web' or 'mobile'; default: 'web')")]
-		[Required]
-		ComponentInfoArgs args) {
+		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
+	public async Task<ComponentInfoResponse> GetComponentInfo(
+		[Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog.")]
+		string? componentType = null,
+		[Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
+		string? search = null,
+		[Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+		string? schemaType = null,
+		CancellationToken cancellationToken = default) {
+		ComponentInfoArgs args = new(componentType, search, schemaType);
 		try {
-			IComponentInfoCatalog activeCatalog = ResolveActiveCatalog(args.SchemaType);
-			if (string.IsNullOrWhiteSpace(args.ComponentType)
-				|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-				return CreateListResponse(activeCatalog.Search(args.Search));
-			}
-
-			ComponentRegistryEntry? entry = activeCatalog.Find(args.ComponentType);
-			if (entry is null) {
-				return new ComponentInfoResponse {
-					Success = false,
-					Mode = "list",
-					Error = $"Component type '{args.ComponentType}' was not found.",
-					Count = activeCatalog.Search(args.Search).Count,
-					Groups = CreateGroups(activeCatalog.Search(args.Search))
-				};
-			}
-
-			return new ComponentInfoResponse {
-				Success = true,
-				Mode = "detail",
-				Count = 1,
-				ComponentType = entry.ComponentType,
-				Category = entry.Category,
-				Description = entry.Description,
-				Container = entry.Container,
-				ParentTypes = entry.ParentTypes,
-				Properties = entry.Properties,
-				TypicalChildren = entry.TypicalChildren,
-				Example = entry.Example,
-				DataSourceBindingContract = SchemaValidationService.StandardFieldComponentTypes.Contains(entry.ComponentType)
-					? DataSourceBindingContractText
-					: null
-			};
+			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
 		}
 		catch (Exception ex) {
 			return new ComponentInfoResponse {
@@ -85,49 +66,165 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 				Mode = "list",
 				Error = ex.Message,
 				Count = 0,
-				Groups = []
+				Items = []
 			};
 		}
 	}
 
-	private IComponentInfoCatalog ResolveActiveCatalog(string? schemaType) =>
-		string.Equals(schemaType, "mobile", StringComparison.OrdinalIgnoreCase)
-			? mobileCatalog
-			: catalog;
+	/// <summary>
+	/// Single async pipeline that backs both the web and mobile flavors. The branch
+	/// only picks the right catalog source up front; everything below — version
+	/// resolution, envelope merge, documentation lazy-load, suggestion fallback — is
+	/// identical on both surfaces. That symmetry is what makes the response shape
+	/// (<c>inputs</c> / <c>outputs</c> / <c>content.typeDefinitions</c> /
+	/// <c>documentation</c> / <c>resolvedTargetVersion</c> / <c>resolvedFrom</c>)
+	/// stable across the <c>schema-type</c> dimension.
+	/// </summary>
+	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
+		bool isMobile = IsMobile(args.SchemaType);
+		PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+		ComponentCatalogState state = isMobile
+			? await mobileCatalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+			: await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
+			version.Source, version.ResolvedVersion, state.ResolvedVersion);
 
-	private static ComponentInfoResponse CreateListResponse(IReadOnlyList<ComponentRegistryEntry> entries) {
+		if (string.IsNullOrWhiteSpace(args.ComponentType)
+			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
+			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
+			return CreateListResponse(filtered, state.ResolvedVersion, resolvedFrom);
+		}
+
+		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
+			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
+		}
+
+		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
+		return new ComponentInfoResponse {
+			Success = false,
+			Mode = "list",
+			Error = $"Component type '{args.ComponentType}' was not found.",
+			Count = suggestions.Count,
+			Items = ComponentInfoGrouping.CreateItems(suggestions),
+			ResolvedTargetVersion = state.ResolvedVersion,
+			ResolvedFrom = resolvedFrom
+		};
+	}
+
+	private static bool IsMobile(string? schemaType) =>
+		string.Equals(schemaType, SchemaTypeMobile, StringComparison.OrdinalIgnoreCase);
+
+	private static ComponentInfoResponse CreateListResponse(
+		IReadOnlyList<ComponentRegistryEntry> entries,
+		string? resolvedTargetVersion,
+		string? resolvedFrom) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
-			Groups = CreateGroups(entries)
+			Items = ComponentInfoGrouping.CreateItems(entries),
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom
 		};
 	}
 
-	private static IReadOnlyList<ComponentInfoGroup> CreateGroups(IReadOnlyList<ComponentRegistryEntry> entries) {
-		return entries
-			.GroupBy(entry => entry.Category, StringComparer.OrdinalIgnoreCase)
-			.OrderBy(group => GetCategorySortKey(group.Key))
-			.ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-			.Select(group => new ComponentInfoGroup {
-				Category = group.Key,
-				Items = group
-					.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
-					.Select(entry => new ComponentInfoListItem {
-						ComponentType = entry.ComponentType,
-						Description = entry.Description
-					})
-					.ToArray()
-			})
-			.ToArray();
+	internal static ComponentInfoResponse CreateDetailResponse(
+		ComponentRegistryEntry entry,
+		string? resolvedTargetVersion,
+		string? resolvedFrom,
+		string? documentation,
+		RegistryGlobalReferences? globalReferences) {
+		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalReferences?.BaseInputs, entry.Inputs);
+		ComponentReferencesResponse? references = BuildReferencesResponse(entry, globalReferences);
+		return new ComponentInfoResponse {
+			Success = true,
+			Mode = "detail",
+			Count = 1,
+			ComponentType = entry.ComponentType,
+			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+			Container = entry.Container ? true : null,
+			ParentTypes = entry.ParentTypes.Count == 0 ? null : entry.ParentTypes,
+			Properties = entry.Properties.Count == 0 ? null : entry.Properties,
+			Inputs = mergedInputs,
+			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
+			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
+			Example = entry.Example,
+			DataSourceBindingContract = SchemaValidationService.StandardFieldComponentTypes.Contains(entry.ComponentType)
+				? DataSourceBindingContractText
+				: null,
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom,
+			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
+			References = references
+		};
 	}
 
-	private static int GetCategorySortKey(string? category) {
-		int index = Array.FindIndex(
-			CategoryOrder,
-			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
-		return index >= 0 ? index : CategoryOrder.Length;
+	/// <summary>
+	/// Lifts the registry entry's <c>references</c> block into the wire shape exposed
+	/// on the detail response. The producer publishes a shared <c>root.references.typeDefinitions</c>
+	/// bag (~190 keys), of which any one component only references a handful — we
+	/// resolve the transitive closure starting from the component's
+	/// inputs/outputs/per-component typedefs (see <see cref="TypeReferenceClosure"/>)
+	/// so AI receives only the schemas it actually needs to interpret this
+	/// component, not the whole global dictionary. Raw <c>docs</c> paths are
+	/// intentionally not surfaced here; the docs CDN/cache pipeline consumes them
+	/// and the result lands on <see cref="ComponentInfoResponse.Documentation"/>
+	/// instead.
+	/// </summary>
+	private static ComponentReferencesResponse? BuildReferencesResponse(
+		ComponentRegistryEntry entry,
+		RegistryGlobalReferences? globalReferences) {
+		IReadOnlyDictionary<string, JsonElement>? resolved = TypeReferenceClosure.Resolve(
+			entry.Inputs,
+			entry.Outputs,
+			entry.References?.TypeDefinitions,
+			globalReferences?.TypeDefinitions);
+		return resolved is null ? null : new ComponentReferencesResponse { TypeDefinitions = resolved };
 	}
+
+	/// <summary>
+	/// Merges a global binding dictionary (lower priority) with a per-component
+	/// binding dictionary (higher priority). When both sides declare the same key,
+	/// the per-component value wins — a component that overrides a baseInput or
+	/// re-defines a global type has explicitly opted out of inheritance. Returns
+	/// <c>null</c> when both inputs are null/empty so the JsonIgnore strips the
+	/// field from the wire shape.
+	/// </summary>
+	internal static IReadOnlyDictionary<string, JsonElement>? MergeBindings(
+		IReadOnlyDictionary<string, JsonElement>? global,
+		IReadOnlyDictionary<string, JsonElement>? perComponent) {
+		bool globalEmpty = global is null || global.Count == 0;
+		bool localEmpty = perComponent is null || perComponent.Count == 0;
+		if (globalEmpty && localEmpty) {
+			return null;
+		}
+		if (globalEmpty) {
+			return perComponent;
+		}
+		if (localEmpty) {
+			return global;
+		}
+		Dictionary<string, JsonElement> merged = new(capacity: global!.Count + perComponent!.Count);
+		foreach (KeyValuePair<string, JsonElement> binding in global) {
+			merged[binding.Key] = binding.Value;
+		}
+		foreach (KeyValuePair<string, JsonElement> binding in perComponent) {
+			merged[binding.Key] = binding.Value;
+		}
+		return merged;
+	}
+
+	/// <summary>
+	/// Delegates to the shared <see cref="ComponentDocumentationLoader"/> so the MCP tool
+	/// and the CLI verb produce identical <c>documentation</c> payloads. See the loader
+	/// for the cache → CDN pipeline contract and the partial-failure semantics.
+	/// </summary>
+	private Task<string?> LoadDocumentationAsync(
+		ComponentRegistryEntry entry,
+		string resolvedVersion,
+		CancellationToken cancellationToken) =>
+		ComponentDocumentationLoader.LoadAsync(docsClient, entry, resolvedVersion, cancellationToken);
 }
 
 /// <summary>
@@ -135,7 +232,7 @@ public sealed class ComponentInfoTool(IComponentInfoCatalog catalog, IMobileComp
 /// </summary>
 public sealed record ComponentInfoArgs(
 	[property: JsonPropertyName("component-type")]
-	[property: Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the grouped catalog.")]
+	[property: Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog.")]
 	string? ComponentType = null,
 
 	[property: JsonPropertyName("search")]
@@ -184,13 +281,6 @@ public sealed class ComponentInfoResponse {
 	public string? ComponentType { get; init; }
 
 	/// <summary>
-	/// Gets or sets the component category for detail responses.
-	/// </summary>
-	[JsonPropertyName("category")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string? Category { get; init; }
-
-	/// <summary>
 	/// Gets or sets the component description for detail responses.
 	/// </summary>
 	[JsonPropertyName("description")]
@@ -212,11 +302,35 @@ public sealed class ComponentInfoResponse {
 	public IReadOnlyList<string>? ParentTypes { get; init; }
 
 	/// <summary>
-	/// Gets or sets the curated property catalog for the component.
+	/// Gets or sets the curated property catalog for the component. Populated by the
+	/// legacy registry shape (top-level array with <c>properties</c>); empty in the
+	/// wrapped registry shape where the producer uses <see cref="Inputs"/> and
+	/// <see cref="Outputs"/> instead.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, ComponentPropertyDefinition>? Properties { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's input bindings in the wrapped registry shape.
+	/// Each value is surfaced as a forward-compatible <see cref="JsonElement"/> so the
+	/// producer can evolve the inner schema (e.g. add <c>keyType</c>, <c>items</c>,
+	/// <c>deprecated</c>) without a coordinated clio release. Omitted entirely when
+	/// the underlying entry has no <c>inputs</c> block.
+	/// </summary>
+	[JsonPropertyName("inputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Inputs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's output bindings in the wrapped registry shape.
+	/// Same forward-compatible <see cref="JsonElement"/> treatment as
+	/// <see cref="Inputs"/>; omitted entirely when the entry has no <c>outputs</c>
+	/// block.
+	/// </summary>
+	[JsonPropertyName("outputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Outputs { get; init; }
 
 	/// <summary>
 	/// Gets or sets typical child component types for container components.
@@ -243,32 +357,83 @@ public sealed class ComponentInfoResponse {
 	public string? DataSourceBindingContract { get; init; }
 
 	/// <summary>
-	/// Gets or sets grouped component summaries for list responses.
-	/// </summary>
-	[JsonPropertyName("groups")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public IReadOnlyList<ComponentInfoGroup>? Groups { get; init; }
-}
-
-/// <summary>
-/// Grouped list response entry for the <c>get-component-info</c> tool.
-/// </summary>
-public sealed class ComponentInfoGroup {
-	/// <summary>
-	/// Gets or sets the component category name.
-	/// </summary>
-	[JsonPropertyName("category")]
-	public string Category { get; init; } = string.Empty;
-
-	/// <summary>
-	/// Gets or sets the component summaries that belong to the category.
+	/// Gets or sets the component list for list responses.
 	/// </summary>
 	[JsonPropertyName("items")]
-	public IReadOnlyList<ComponentInfoListItem> Items { get; init; } = [];
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ComponentInfoListItem>? Items { get; init; }
+
+	/// <summary>
+	/// Gets or sets the platform version the catalog was filtered against. In v1 this is
+	/// always <c>"latest"</c> (the catalog is loaded from CDN <c>latest.json</c> / cache / embedded);
+	/// once <c>IPlatformVersionResolver</c> lands this will carry the GA-tag-shaped semver
+	/// resolved from the active environment's cliogate <c>GetSysInfo</c> probe.
+	/// </summary>
+	[JsonPropertyName("resolvedTargetVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ResolvedTargetVersion { get; init; }
+
+	/// <summary>
+	/// Gets or sets the resolver tier that produced <see cref="ResolvedTargetVersion"/>.
+	/// Permitted values: <c>"environment"</c> (resolved from cliogate GetSysInfo),
+	/// <c>"latest-fallback"</c> (env unknown, probe failed, or version unparseable). AI should
+	/// treat <c>"latest-fallback"</c> as a superset of the true target environment.
+	/// </summary>
+	[JsonPropertyName("resolvedFrom")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ResolvedFrom { get; init; }
+
+	/// <summary>
+	/// Gets or sets the long-form documentation associated with the component. Populated
+	/// only on detail responses for components whose registry entry lists files under
+	/// <c>content.docs[]</c>; each file is fetched lazily through the docs CDN/cache
+	/// pipeline and the resulting markdown blocks are concatenated with
+	/// <c>"\n\n---\n\n"</c> separators in registry order. Omitted entirely when the
+	/// component has no documentation, when the schema is mobile, or when every
+	/// referenced file fails to fetch (the partial-failure mode skips failed files and
+	/// keeps the rest — see <c>clio/Command/McpServer/AGENTS.md</c>).
+	/// </summary>
+	[JsonPropertyName("documentation")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Documentation { get; init; }
+
+	/// <summary>
+	/// Gets or sets the raw <c>content</c> block surfaced from the registry entry —
+	/// today this is just <see cref="ComponentReferencesResponse.TypeDefinitions"/>. The
+	/// nested shape mirrors the producer's payload 1:1 so AI can resolve the named
+	/// type references that appear in <c>inputs</c>/<c>outputs</c> <c>type</c> strings
+	/// (e.g. <c>"string | ButtonIcon | ButtonAnimatedIcon"</c>). The flat
+	/// <see cref="Documentation"/> field is derived from <c>content.docs[]</c>; raw
+	/// docs paths are intentionally not surfaced here.
+	/// </summary>
+	[JsonPropertyName("references")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ComponentReferencesResponse? References { get; init; }
 }
 
 /// <summary>
-/// Compact list item for grouped component summaries.
+/// Nested <c>content</c> block on a <see cref="ComponentInfoResponse"/> detail. Mirrors
+/// the producer's wire shape 1:1 — unknown sub-fields are intentionally not surfaced
+/// here, but the producer can add new ones to the underlying payload without breaking
+/// existing AI consumers.
+/// </summary>
+public sealed class ComponentReferencesResponse {
+	/// <summary>
+	/// Gets or sets the named type schemas referenced by the component's
+	/// <c>inputs</c>/<c>outputs</c> values. Each key is a TypeScript-like type name
+	/// (e.g. <c>"ButtonIcon"</c>, <c>"DataGridColumnDefinition"</c>); each value is a
+	/// forward-compatible <see cref="JsonElement"/> blob carrying the producer's
+	/// schema for that type (<c>fields</c>, <c>values</c>, <c>items</c>,
+	/// <c>required</c>, …). Omitted entirely when the registry entry has no
+	/// <c>content.typeDefinitions</c> block.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
+}
+
+/// <summary>
+/// Compact list item for the <c>get-component-info</c> list response.
 /// </summary>
 public sealed class ComponentInfoListItem {
 	/// <summary>
@@ -278,10 +443,12 @@ public sealed class ComponentInfoListItem {
 	public string ComponentType { get; init; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets the one-line component description.
+	/// Gets or sets the one-line component description. Omitted from JSON when the source
+	/// payload does not carry one (new wrapped registry shape).
 	/// </summary>
 	[JsonPropertyName("description")]
-	public string Description { get; init; } = string.Empty;
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Description { get; init; }
 }
 
 /// <summary>
@@ -319,11 +486,34 @@ public sealed class ComponentRegistryEntry {
 	public IReadOnlyList<string> ParentTypes { get; init; } = [];
 
 	/// <summary>
-	/// Gets or sets the curated property metadata.
+	/// Gets or sets the curated property metadata. Populated by the legacy registry
+	/// shape (top-level array). The wrapped registry shape produced by
+	/// <c>static-files-mcp</c> uses <see cref="Inputs"/> and <see cref="Outputs"/>
+	/// instead — both deserialise from the same JSON without a coordinated rename.
 	/// </summary>
 	[JsonPropertyName("properties")]
 	public IReadOnlyDictionary<string, ComponentPropertyDefinition> Properties { get; init; }
 		= new Dictionary<string, ComponentPropertyDefinition>();
+
+	/// <summary>
+	/// Gets or sets the component's input bindings from the wrapped registry shape.
+	/// Values are kept as <see cref="JsonElement"/> so the producer can evolve the
+	/// inner schema (e.g. add <c>keyType</c>, <c>items</c>, <c>deprecated</c>) without
+	/// a coordinated clio release. The forward-compatible payload is surfaced
+	/// verbatim through <c>ComponentInfoResponse.Inputs</c>.
+	/// </summary>
+	[JsonPropertyName("inputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Inputs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the component's output bindings from the wrapped registry shape.
+	/// Same forward-compatible <see cref="JsonElement"/> treatment as
+	/// <see cref="Inputs"/>; surfaced verbatim through <c>ComponentInfoResponse.Outputs</c>.
+	/// </summary>
+	[JsonPropertyName("outputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? Outputs { get; init; }
 
 	/// <summary>
 	/// Gets or sets typical child component types.
@@ -336,6 +526,159 @@ public sealed class ComponentRegistryEntry {
 	/// </summary>
 	[JsonPropertyName("example")]
 	public JsonElement? Example { get; init; }
+
+	/// <summary>
+	/// Gets or sets the per-component <c>references</c> block from the registry payload.
+	/// In the wrapped registry shape this carries the long-form documentation references
+	/// (<see cref="ComponentReferences.Docs"/>) and per-component type definitions.
+	/// </summary>
+	[JsonPropertyName("references")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ComponentReferences? References { get; init; }
+
+	/// <summary>
+	/// Gets or sets the producer-defined default values applied by the page designer when
+	/// the user drops the component onto a Freedom UI page (e.g. <c>{ "isAddAllowed": true,
+	/// "showValueAsLink": true }</c> for <c>crt.ComboBox</c>). The shape is producer-owned —
+	/// each key is an input name, each value is a primitive or nested literal. Captured as
+	/// a forward-compatible <see cref="JsonElement"/> so the producer can evolve the inner
+	/// schema freely; the field is not surfaced on the public response today, but the data
+	/// round-trips through the catalog so a future <c>get-component-info</c> revision can
+	/// promote it without a coordinated producer change.
+	/// </summary>
+	[JsonPropertyName("designerDefaults")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonElement? DesignerDefaults { get; init; }
+
+	/// <summary>
+	/// Captures any per-component field clio has not mapped yet (e.g. a future
+	/// <c>deprecated</c>/<c>stability</c>/<c>resources</c> producer addition). Always
+	/// expected to be empty against the live snapshot — the snapshot guard test
+	/// fails when this dictionary is non-empty. Goal: make silent data loss a CI
+	/// failure rather than a runtime mystery.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// Root-level envelope of the wrapped registry shape. Top-level keys live here when
+/// the payload is an object rather than the legacy top-level array. Today the
+/// envelope carries:
+/// <list type="bullet">
+/// <item><c>components</c> — the per-component entries (the only field the legacy
+/// shape uses, lifted to top-level there).</item>
+/// <item><c>content</c> — global metadata shared across every component:
+/// <see cref="RegistryGlobalReferences.BaseInputs"/> (the inherited input surface
+/// every component carries on top of its own <c>inputs</c>) and
+/// <see cref="RegistryGlobalReferences.TypeDefinitions"/> (the named-type schemas
+/// referenced by every component's <c>inputs</c>/<c>outputs</c> <c>type</c>
+/// strings — e.g. <c>RequestBindingConfig</c>, <c>ViewElementConfig</c>).</item>
+/// </list>
+/// The deserialiser is strict over this envelope (see
+/// <c>ComponentInfoCatalog.SnapshotJsonOptions</c> + the snapshot guard test); any
+/// new producer field forces a coordinated decision — map it, or explicitly
+/// allowlist it via <see cref="UnmappedExtensions"/>.
+/// </summary>
+public sealed class ComponentRegistryEnvelope {
+	/// <summary>Per-component entries (the only required field).</summary>
+	[JsonPropertyName("components")]
+	public ComponentRegistryEntry[] Components { get; init; } = [];
+
+	/// <summary>Global content block shared across every component.</summary>
+	[JsonPropertyName("references")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public RegistryGlobalReferences? References { get; init; }
+
+	/// <summary>
+	/// Captures any top-level producer field clio has not mapped yet. Always
+	/// expected to be empty against the live snapshot — the
+	/// <c>Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields</c> guard test
+	/// fails when this dictionary is non-empty. The bucket exists so deserialise
+	/// does NOT throw under strict mode; the test does the bookkeeping.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// Global metadata block under <c>ComponentRegistry.json</c>'s <c>content</c> key.
+/// Shared by every component; merged into per-component data when surfaced on the
+/// detail response (per-component wins on a key collision).
+/// </summary>
+public sealed class RegistryGlobalReferences {
+	/// <summary>
+	/// Inherited input surface every component carries. Each key is an input name
+	/// (e.g. <c>"classes"</c>, <c>"id"</c>, <c>"styles"</c>, <c>"tabIndex"</c>);
+	/// each value is the producer's schema for that input (same shape as
+	/// per-component <see cref="ComponentRegistryEntry.Inputs"/> values). Merged
+	/// into the detail response's <c>inputs</c> block so AI sees a single flat
+	/// surface — the per-component override wins when both sides declare the same
+	/// key.
+	/// </summary>
+	[JsonPropertyName("baseInputs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? BaseInputs { get; init; }
+
+	/// <summary>
+	/// Global named-type schemas (e.g. <c>"RequestBindingConfig"</c>,
+	/// <c>"CrtMenuItemViewElementConfig"</c>, <c>"ViewElementConfig"</c>). Same
+	/// shape as per-component <see cref="ComponentReferences.TypeDefinitions"/>;
+	/// merged into the detail response's <c>content.typeDefinitions</c> block so
+	/// AI does not need to dereference a second registry call to resolve a type
+	/// name referenced by the per-component schema.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
+
+	/// <summary>
+	/// Strict-mode catch-all for any new producer key under
+	/// <c>root.content.*</c>. See <see cref="ComponentRegistryEnvelope.UnmappedExtensions"/>
+	/// for the same rationale.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// The optional <c>content</c> block inside a <see cref="ComponentRegistryEntry"/>.
+/// Only the fields clio actually consumes are surfaced here; unknown keys are ignored
+/// by the deserialiser so the producer can evolve the block without a coordinated
+/// schema bump.
+/// </summary>
+public sealed class ComponentReferences {
+	/// <summary>
+	/// Gets or sets the list of long-form documentation files for the component.
+	/// Each entry is a path relative to <c>/api/mcp/{version}/</c> (e.g.
+	/// <c>"docs/data-grid.component.md"</c>); clio fetches the bytes lazily on detail
+	/// requests, caches them with the same 5-minute TTL as the registry payload, and
+	/// concatenates them into the response <c>documentation</c> field.
+	/// </summary>
+	[JsonPropertyName("docs")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Docs { get; init; }
+
+	/// <summary>
+	/// Gets or sets the named type schemas referenced by the component's <c>inputs</c>
+	/// and <c>outputs</c> values (e.g. <c>"ButtonIcon"</c>, <c>"DataGridColumnDefinition"</c>).
+	/// Each value carries the producer's TypeScript-like schema for the named type —
+	/// fields, allowed values, nested item shapes. Values are stored as
+	/// <see cref="JsonElement"/> so the producer can evolve the inner schema freely
+	/// (add <c>fields</c>, <c>values</c>, <c>items</c>, <c>required</c>, …) without a
+	/// coordinated clio release. Surfaced verbatim through
+	/// <c>ComponentInfoResponse.Content.TypeDefinitions</c>.
+	/// </summary>
+	[JsonPropertyName("typeDefinitions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, JsonElement>? TypeDefinitions { get; init; }
+
+	/// <summary>
+	/// Strict-mode catch-all for any new per-component <c>content.*</c> producer
+	/// key. Snapshot guard test fails when this is non-empty.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
 }
 
 /// <summary>

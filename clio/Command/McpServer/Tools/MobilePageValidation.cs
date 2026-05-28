@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -8,19 +10,30 @@ namespace Clio.Command.McpServer.Tools;
 /// Runs all mobile page validators using the mobile and web component catalogs.
 /// Returns a <see cref="PageSyncValidationResult"/> with <c>MarkersOk</c> and <c>JsSyntaxOk</c>
 /// set to <c>true</c> (mobile pages have neither), errors on structural/binding issues,
-/// and warnings for web-only component types.
+/// and warnings for web-only component types. Both catalogs are async (cache → CDN
+/// fallback chain); validators use <c>latest</c> because catalogs differ in component
+/// SET, not per-version semantics — knowing the GA-pinned version is not required to
+/// decide whether a component type is mobile-allowed or web-only.
 /// </summary>
 internal static class MobilePageValidation {
-	internal static PageSyncValidationResult Run(
+	internal static async Task<PageSyncValidationResult> RunAsync(
 		string body,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		CancellationToken cancellationToken = default) {
+		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
+			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
+			webCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		await Task.WhenAll(mobileTask, webTask).ConfigureAwait(false);
+		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileTask.Result ?? [];
+		IReadOnlyList<ComponentRegistryEntry> webEntries = webTask.Result ?? [];
 		HashSet<string> allowedMobile = new(
-			(mobileCatalog.GetAll() ?? []).Select(e => e.ComponentType),
+			mobileEntries.Select(e => e.ComponentType),
 			StringComparer.OrdinalIgnoreCase);
 		HashSet<string> webOnly = new(
-			(webCatalog.GetAll() ?? []).Select(e => e.ComponentType)
+			webEntries.Select(e => e.ComponentType)
 				.Where(t => !allowedMobile.Contains(t)),
 			StringComparer.OrdinalIgnoreCase);
 		(List<string> errors, List<string> warnings) =

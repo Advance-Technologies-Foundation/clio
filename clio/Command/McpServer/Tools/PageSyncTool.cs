@@ -94,8 +94,15 @@ public sealed class PageSyncTool(
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			// PageSyncTool runs synchronously inside a McpToolExecutionLock; the MCP
+			// server has no SynchronizationContext, so a sync-over-async wait on the
+			// async catalog API is deadlock-free. Master's ENG-89649 also added the
+			// `explicitResources` parameter for resource-binding validation, plumbed
+			// through here.
 			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
-			validationResult = MobilePageValidation.Run(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
+			validationResult = MobilePageValidation
+				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.GetAwaiter().GetResult();
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,

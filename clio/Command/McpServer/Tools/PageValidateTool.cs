@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -23,13 +25,14 @@ public sealed class PageValidateTool(
 		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them. " +
 		"For mobile pages (plain JSON body starting with '{'): validates that disallowed constructs " +
 		"(validators, handlers, custom converters sections) are absent.")]
-	public PageValidateResponse ValidatePage(
+	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
-		[Required] PageValidateArgs args) {
+		[Required] PageValidateArgs args,
+		CancellationToken cancellationToken = default) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
-			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
+			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
+				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult

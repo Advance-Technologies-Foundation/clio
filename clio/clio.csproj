@@ -89,10 +89,6 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
-		<Content Include="Command\McpServer\Data\**">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-
 	</ItemGroup>
 
 	<Choose>

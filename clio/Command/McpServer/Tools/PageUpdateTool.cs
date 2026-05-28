@@ -76,9 +76,15 @@ public sealed class PageUpdateTool(
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			// Mobile body validation requires async catalogs (CDN+cache) AND the
+			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
+			// under the McpToolExecutionLock; the MCP server has no SynchronizationContext,
+			// so a sync-over-async wait is deadlock-free here. Refactoring the full
+			// PageUpdate → ValidateBody chain to async is out of scope for this PR.
 			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
-			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
+			PageSyncValidationResult mobileResult = MobilePageValidation
+				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
