@@ -53,6 +53,26 @@
 
 ## Ручной способ: создание релиза
 
+### 1. Pre-release checklist
+
+Before creating a release tag, verify the following:
+
+**BMAD artifacts**
+- [ ] All features in this release have an approved test plan in `spec/test-plans/`
+- [ ] All stories for this release are `done` in `spec/sprint-status.yaml`
+- [ ] Run `/bmad-status` to confirm no feature is stuck in `in-progress` or `review`
+
+**Test gates**
+- [ ] `make test-unit` passes locally
+- [ ] CI is green on master (`make check-pr`)
+- [ ] MCP E2E tests run manually if any MCP tool was changed (not in CI yet)
+- [ ] SonarCloud has no new unresolved issues
+
+**Documentation**
+- [ ] Command docs updated (`clio/docs/commands/`, `clio/help/en/`, `clio/Commands.md`)
+- [ ] AGENTS.md updated if any new policies were introduced
+- [ ] What's new draft ready (see [Release Notes](#6-обязательные-release-notes-whats-new) below)
+
 ### 1. Подготовка
 
 Убедитесь, что все изменения готовы и протестированы в master ветке.
