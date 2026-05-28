@@ -195,6 +195,61 @@ public class CreateUiProjectToolTests {
 	}
 
 	[Test]
+	[Description("Rejects drive-relative or root-relative workspace paths that would otherwise pass IsPathRooted.")]
+	[Category("Unit")]
+	public void CreateUiProject_Should_Reject_Drive_Relative_Workspace_Directory() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateUiProjectTool tool = new(ConsoleLogger.Instance, commandResolver);
+
+		// Act — "C:ws" is path-rooted but NOT fully qualified; resolves against the
+		// process's current directory on the named drive, not an absolute location.
+		CommandExecutionResult result = tool.CreateUiProject(
+			new CreateUiProjectArgs(
+				WorkspaceDirectory: "C:ws",
+				ProjectName: "my_module",
+				PackageName: "UsrCustomPkg",
+				VendorPrefix: "usr"));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().ContainSingle()
+			.Which.Value.ToString().Should().Contain("fully-qualified");
+		commandResolver.DidNotReceive().ResolveWithoutEnvironment<CreateUiProjectCommand>(Arg.Any<EnvironmentOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[TestCase("../escape")]
+	[TestCase("..\\escape")]
+	[TestCase("packages/sub")]
+	[TestCase("packages\\sub")]
+	[TestCase("C:\\absolute")]
+	[Description("Rejects packageName values that contain path separators, parent-directory references, or absolute paths so scaffolding cannot escape the workspace.")]
+	[Category("Unit")]
+	public void CreateUiProject_Should_Reject_PackageName_With_Path_Characters(string packageName) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateUiProjectTool tool = new(ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateUiProject(
+			new CreateUiProjectArgs(
+				WorkspaceDirectory: _workspaceDirectory,
+				ProjectName: "my_module",
+				PackageName: packageName,
+				VendorPrefix: "usr"));
+
+		// Assert
+		result.ExitCode.Should().Be(1);
+		result.Output.Should().ContainSingle()
+			.Which.Value.ToString().Should().Contain("packageName");
+		commandResolver.DidNotReceive().ResolveWithoutEnvironment<CreateUiProjectCommand>(Arg.Any<EnvironmentOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Exposes the supported new-ui-project arguments and requires the structured args payload.")]
 	[Category("Unit")]
 	public void CreateUiProject_Should_Expose_Required_Args_Payload() {

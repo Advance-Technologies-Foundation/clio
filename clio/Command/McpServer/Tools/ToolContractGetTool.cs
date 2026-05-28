@@ -3370,7 +3370,7 @@ internal static class ToolContractCatalog {
 					Field(ProjectNameFieldName, StringType,
 						"Angular project name in snake_case. MUST match '^[0-9a-z_]+$' (lowercase letters, digits, underscores). Examples: 'rss_reader', 'task_board'. Translate any PascalCase/camelCase/kebab-case user input into snake_case before sending."),
 					Field("packageName", StringType,
-						"Clio package name that will host the project. Conventionally PascalCase (e.g., 'UsrRssReader', 'RssReader'). Created if missing; reused if it already exists."),
+						"Clio package name that will host the project. MUST be a simple identifier matching '^[A-Za-z0-9_]+$' — path separators, '..', and absolute paths are rejected so scaffolding cannot escape the workspace. Conventionally PascalCase (e.g., 'UsrRssReader', 'RssReader'). Created if missing; reused if it already exists."),
 					Field(VendorPrefixFieldName, StringType,
 						"Vendor prefix; 1-50 lowercase letters only ('^[a-z]{1,50}$'). Examples: 'usr', 'crt', 'acme'. Uppercase and digits are rejected by the options validator."),
 					Field(EmptyFieldName, BooleanType,
@@ -3383,13 +3383,19 @@ internal static class ToolContractCatalog {
 						"absolute-path",
 						"invalid-workspace-directory",
 						Field: WorkspaceDirectoryFieldName,
-						Context: "workspaceDirectory must be absolute (rooted) and must point at an existing directory containing '.clio/workspaceSettings.json'.",
+						Context: "workspaceDirectory must be a fully-qualified absolute path (Path.IsPathFullyQualified). Drive-relative ('C:ws') and root-relative ('\\ws') paths are rejected. It must also point at an existing directory containing '.clio/workspaceSettings.json'.",
 						Required: true),
 					new ToolContractValidator(
 						"regex",
 						"invalid-project-name",
 						Field: ProjectNameFieldName,
 						Context: "projectName must match ^[0-9a-z_]+$ (snake_case). Uppercase, hyphens, dots and spaces are rejected.",
+						Required: true),
+					new ToolContractValidator(
+						"regex",
+						"invalid-package-name",
+						Field: "packageName",
+						Context: "packageName must match ^[A-Za-z0-9_]+$ (simple identifier). Path separators, '..', and absolute paths are rejected so scaffolding stays inside the workspace.",
 						Required: true),
 					new ToolContractValidator(
 						"regex",
@@ -3447,8 +3453,9 @@ internal static class ToolContractCatalog {
 					"The underlying creator enforces snake_case via '^[0-9a-z_]+$'. Translate user-supplied names like 'RssReader' or 'rss-reader' into 'rss_reader' before calling the tool; do not pass the raw display name through.")
 			],
 			Preconditions: [
-				$"`{WorkspaceDirectoryFieldName}` is an absolute path to an existing directory containing `.clio/workspaceSettings.json` (call `create-workspace` first when it is not).",
+				$"`{WorkspaceDirectoryFieldName}` is a fully-qualified absolute path to an existing directory containing `.clio/workspaceSettings.json` (call `create-workspace` first when it is not).",
 				$"`{ProjectNameFieldName}` is snake_case matching `^[0-9a-z_]+$`.",
+				"`packageName` is a simple identifier matching `^[A-Za-z0-9_]+$`.",
 				$"`{VendorPrefixFieldName}` is lowercase-only matching `^[a-z]{{1,50}}$`."
 			]);
 	}

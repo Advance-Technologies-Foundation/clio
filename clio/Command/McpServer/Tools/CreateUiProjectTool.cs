@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -17,6 +18,7 @@ public class CreateUiProjectTool(
 
 	internal const string CreateUiProjectToolName = "new-ui-project";
 	private const string WorkspaceMarkerRelativePath = ".clio/workspaceSettings.json";
+	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
 
 	/// <summary>
 	/// Creates a new Angular (Freedom UI remote module) project inside the supplied clio workspace.
@@ -44,9 +46,10 @@ public class CreateUiProjectTool(
 			return new CommandExecutionResult(1,
 				[new ErrorMessage("workspaceDirectory is required and must be an absolute path to an existing clio workspace.")], null);
 		}
-		if (!Path.IsPathRooted(args.WorkspaceDirectory)) {
+		if (!Path.IsPathFullyQualified(args.WorkspaceDirectory)) {
 			return new CommandExecutionResult(1,
-				[new ErrorMessage($"workspaceDirectory must be an absolute path. Received: '{args.WorkspaceDirectory}'.")], null);
+				[new ErrorMessage(
+					$"workspaceDirectory must be a fully-qualified absolute path. Drive-relative ('C:ws') and root-relative ('\\ws') paths are rejected. Received: '{args.WorkspaceDirectory}'.")], null);
 		}
 		if (!Directory.Exists(args.WorkspaceDirectory)) {
 			return new CommandExecutionResult(1,
@@ -58,6 +61,11 @@ public class CreateUiProjectTool(
 				[new ErrorMessage(
 					$"workspaceDirectory is not a clio workspace (missing '{WorkspaceMarkerRelativePath}'): '{args.WorkspaceDirectory}'. "
 					+ "Create it first with the create-workspace tool.")], null);
+		}
+		if (string.IsNullOrWhiteSpace(args.PackageName) || !PackageNamePattern.IsMatch(args.PackageName)) {
+			return new CommandExecutionResult(1,
+				[new ErrorMessage(
+					$"packageName must be a simple identifier matching '^[A-Za-z0-9_]+$'. Path separators, '..', and absolute paths are rejected to keep scaffolding inside the workspace. Received: '{args.PackageName}'.")], null);
 		}
 
 		CreateUiProjectOptions options = new() {
