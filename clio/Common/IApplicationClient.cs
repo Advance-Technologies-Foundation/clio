@@ -27,12 +27,12 @@ public interface IApplicationClient{
 	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1);
 
-	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1);
-
 	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new();
+
+	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1);
 
 	void Listen(CancellationToken cancellationToken);
 	void Login();
@@ -125,16 +125,16 @@ public class CreatioClientAdapter : IApplicationClient{
 		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
-	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec);
-	}
-
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
 		string response = Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
 		return _jsonConverter.DeserializeObject<T>(response);
+	}
+
+	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1) {
+		return Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
