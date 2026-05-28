@@ -90,6 +90,29 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Canonical statement of the inserted-field contract enforced by
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
+	/// <c>page-modification</c> guidance resource so all three describe the same rule in
+	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
+	/// attributes (which only accept compile-time constant expressions).
+	/// </summary>
+	internal const string InsertedFieldContractSummary =
+		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
+		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
+		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
+		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
+		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
+		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
+		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
+		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
+		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
+		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
+		"violate this contract are rejected at update-page validation time; the diagnostic names " +
+		"the offending field, attribute, and section. The contract does NOT apply to " +
+		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+
+	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body.</param>
@@ -893,6 +916,154 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	/// <summary>
+	/// Validates that every <c>operation: "insert"</c> entry in the page body's
+	/// <c>viewConfigDiff</c> that introduces a standard field component is self-consistent —
+	/// i.e. the same body either declares the control's binding attribute in
+	/// <c>viewModelConfigDiff</c> / <c>viewModelConfig</c>, and any label that uses
+	/// <c>$Resources.Strings.X</c> is either passed in <paramref name="explicitResources"/>
+	/// or is auto-provided by a DS-bound binding attribute.
+	/// </summary>
+	/// <remarks>
+	/// This guards the common bug where an AI agent adds a control insert for a freshly created
+	/// entity column without registering the matching view-model attribute and resource string.
+	/// The result is a control with no data source and a blank caption. Unlike
+	/// <see cref="ValidateStandardFieldBindings"/>, this validator does NOT tolerate
+	/// undeclared bindings or unregistered labels for <em>insert</em> operations, because a
+	/// newly-inserted control cannot legitimately inherit either piece from a parent schema —
+	/// if it did, the agent would use <c>merge</c>, not <c>insert</c>.
+	/// </remarks>
+	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				ValidateInsertedFieldEntry(entry, declaredAttributes, modelPaths, explicitResources, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ValidateInsertedFieldEntry(
+		JsonElement entry,
+		IReadOnlySet<string> declaredAttributes,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
+			return;
+		}
+		AppendBindingDeclarationError(descriptor, declaredAttributes, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+	}
+
+	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
+		descriptor = default;
+		if (entry.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (!IsInsertOperation(entry)) {
+			return false;
+		}
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+		    values.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (!TryGetFieldType(values, out string componentType)) {
+			return false;
+		}
+		if (!TryGetBindingAttribute(values, out _, out _, out string bindingAttribute)) {
+			return false;
+		}
+		string fieldName = GetFieldName(entry, values);
+		string displayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
+		descriptor = new InsertedFieldDescriptor(values, displayName, componentType, bindingAttribute);
+		return true;
+	}
+
+	private static bool IsInsertOperation(JsonElement entry) {
+		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
+		    operation.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		return string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static void AppendBindingDeclarationError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlySet<string> declaredAttributes,
+		SchemaValidationResult result) {
+		if (declaredAttributes.Contains(descriptor.BindingAttribute)) {
+			return;
+		}
+		result.Errors.Add(
+			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
+			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
+			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
+			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
+			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+	}
+
+	private static void AppendLabelResourceError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
+		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
+			return;
+		}
+		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
+		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
+		if (hasExplicit || isAutoProvided) {
+			return;
+		}
+		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
+		result.Errors.Add(
+			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
+			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
+			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
+	}
+
+	private static string BuildAutoProvideSuggestion(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
+		    !boundPath.Contains('.', StringComparison.Ordinal)) {
+			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		}
+		int lastDot = boundPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
+			? boundPath[(lastDot + 1)..]
+			: boundPath;
+		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+	}
+
+	private readonly record struct InsertedFieldDescriptor(
+		JsonElement Values,
+		string DisplayName,
+		string ComponentType,
+		string BindingAttribute);
+
 	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument document, out _)) {
 			return [];
@@ -1178,9 +1349,12 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
 	/// the preferred label in validator error/warning messages. The platform auto-provides the
-	/// caption resource under the view-model attribute name (not the model-path-with-underscores),
-	/// so the suggestion is always <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> when the
-	/// control's binding attribute has a DS-bound <c>modelConfig.path</c>.
+	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
+	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
+	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
+	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
+	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
+	/// auto-provided.
 	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
@@ -1193,17 +1367,23 @@ public static class SchemaValidationService
 		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
 			return false;
 		}
-		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
+		int lastDot = modelPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
+			? modelPath[(lastDot + 1)..]
+			: modelPath;
+		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
 		return true;
 	}
 
 	/// <summary>
 	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
 	/// caption resource for the control's binding attribute. The platform auto-provides
-	/// captions for every view-model attribute that has a DS-bound <c>modelConfig.path</c>,
-	/// keyed by the attribute name. If multiple view-model attributes share the same
-	/// <c>modelConfig.path</c>, the caption is auto-provided under each of their names —
-	/// so any of those names is an acceptable label resource key.
+	/// captions ONLY when the resource key equals the entity column code (the last segment
+	/// of the binding attribute's <c>modelConfig.path</c>) — e.g. <c>UsrCompleted</c> for
+	/// path <c>PDS.UsrCompleted</c>. Path-with-underscores forms like <c>PDS_UsrCompleted</c>
+	/// are NOT auto-provided even when declared as DS-bound view-model attributes, because
+	/// the platform resolves caption resources by entity-column code, not by arbitrary
+	/// view-model attribute name.
 	/// </summary>
 	private static bool IsAutoProvidedLabelResourceKey(
 		string resourceKey,
@@ -1215,8 +1395,11 @@ public static class SchemaValidationService
 		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
 			return false;
 		}
-		return modelPaths.TryGetValue(resourceKey, out string keyPath) &&
-		       string.Equals(keyPath, bindingPath, StringComparison.OrdinalIgnoreCase);
+		int lastDot = bindingPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < bindingPath.Length - 1
+			? bindingPath[(lastDot + 1)..]
+			: bindingPath;
+		return string.Equals(resourceKey, columnCode, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool TryGetBindingAttribute(

@@ -568,6 +568,13 @@ namespace Clio.Command {
 					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
 				};
 			}
+			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
+			if (!insertSelfConsistencyResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = $"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
+				};
+			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
 				return new PageUpdateResponse {
