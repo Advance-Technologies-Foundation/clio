@@ -10,7 +10,7 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Live round-trip against a real Creatio environment exercising the actual create/update/delete
-/// tools and the self-authenticating <see cref="ODataPatchClient"/>. Explicit: run on demand only.
+/// tools over the shared <see cref="IApplicationClient"/> transport. Explicit: run on demand only.
 /// </summary>
 [TestFixture]
 [Explicit("Hits a live Creatio environment; run manually.")]
@@ -57,7 +57,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			afterCreate.Success.Should().BeTrue(because: afterCreate.Error);
 			afterCreate.Count.Should().Be(1);
 
-			// UPDATE (PATCH via ODataPatchClient)
+			// UPDATE (PATCH via IApplicationClient.ExecutePatchRequest)
 			string newName = name + "-upd";
 			ODataWriteResponse updated = update.Update(new ODataUpdateArgs {
 				EnvironmentName = "live", Entity = "Contact", Id = id!, Data = Obj($"{{\"Name\":\"{newName}\"}}"), Confirm = true

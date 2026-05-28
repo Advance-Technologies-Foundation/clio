@@ -27,6 +27,9 @@ public interface IApplicationClient{
 	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1);
 
+	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1);
+
 	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new();
@@ -120,6 +123,11 @@ public class CreatioClientAdapter : IApplicationClient{
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
 		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+	}
+
+	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+		int retryCount = 1, int delaySec = 1) {
+		return Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec);
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,

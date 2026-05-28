@@ -49,11 +49,11 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
-			IODataPatchClient patchClient = commandResolver.Resolve<IODataPatchClient>(options);
 
 			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(args.Entity, args.Id));
-			patchClient.ExecutePatch(url, data.GetRawText(), 30_000);
+			client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(ex.Message);
