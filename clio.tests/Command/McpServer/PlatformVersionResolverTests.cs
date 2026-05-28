@@ -200,6 +200,82 @@ public sealed class PlatformVersionResolverTests {
 		client.Received(2).ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("ApplicationInfoService (no cliogate) is the primary version source: its coreVersion resolves to the environment tier even when the cliogate GetSysInfo probe fails — this is the works-without-cliogate guarantee.")]
+	public async Task ResolveAsync_Resolves_From_ApplicationInfo_When_Cliogate_Absent() {
+		// Arrange — ApplicationInfo returns a version; cliogate GetSysInfo throws (not installed).
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.3.3.3292" } } }""");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("cliogate not installed"));
+		PlatformVersionResolver resolver = CreateResolver(client);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.Environment,
+			because: "ApplicationInfoService needs only auth, so version resolution must succeed without cliogate");
+		resolution.ResolvedVersion.Should().Be("8.3.3",
+			because: "the 4-part coreVersion from ApplicationInfo is normalised to the 3-part CDN tag");
+	}
+
+	[Test]
+	[Description("When ApplicationInfo yields a version the cliogate GetSysInfo probe is never attempted — the non-cliogate path is primary, not a fallback.")]
+	public async Task ResolveAsync_Does_Not_Probe_Cliogate_When_ApplicationInfo_Succeeds() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.2.1.100" } } }""");
+		PlatformVersionResolver resolver = CreateResolver(client);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.ResolvedVersion.Should().Be("8.2.1");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("When ApplicationInfo returns an unexpected shape the resolver falls back to the cliogate GetSysInfo probe — older Creatio versions stay covered.")]
+	public async Task ResolveAsync_Falls_Back_To_Cliogate_When_ApplicationInfo_Unusable() {
+		// Arrange — ApplicationInfo lacks the sysValues node; cliogate answers.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "applicationInfo": { } }""");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "SysInfo": { "CoreVersion": "8.1.5.7" } }""");
+		PlatformVersionResolver resolver = CreateResolver(client);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.Environment,
+			because: "the cliogate fallback must still resolve when ApplicationInfo is unusable");
+		resolution.ResolvedVersion.Should().Be("8.1.5");
+	}
+
+	[Test]
+	[Description("On a .NET Framework environment the ApplicationInfo probe hits /0/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo (WebAppAlias prefix).")]
+	public async Task ResolveAsync_Builds_NetFramework_ApplicationInfo_Url() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.3.3.1" } } }""");
+		PlatformVersionResolver resolver = CreateResolver(client, isNetCore: false);
+
+		// Act
+		await resolver.ResolveAsync();
+
+		// Assert
+		client.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("/0/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	private static IApplicationClient SubstituteClient(string responseBody) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

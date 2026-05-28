@@ -21,16 +21,21 @@ describe, describe-creatio, instance-info
 ## Description
 
 Retrieves comprehensive information about the Creatio instance including
-version, underlying runtime, database type, and product name. This command
-communicates with the Creatio instance through the cliogate API gateway to
-collect system details.
+version, underlying runtime, database type, and product name. The full report
+is collected through the cliogate API gateway.
+
+When cliogate is not installed (or is older than the required version) the
+command degrades gracefully instead of failing: it falls back to the standard
+`ApplicationInfoService` — which needs only an authenticated session — and
+reports the core version plus locale/user/workspace metadata, with a warning
+that the cliogate-only fields are unavailable in this mode.
 
 The command returns information such as:
-- Creatio version
-- Runtime environment (.NET version)
-- Database type (MSSQL, PostgreSQL, Oracle)
-- Product name and configuration
-- System settings and configuration details
+- Creatio version (available with or without cliogate)
+- Runtime environment (.NET version) — cliogate only
+- Database type (MSSQL, PostgreSQL, Oracle) — cliogate only
+- Product name and configuration — cliogate only
+- System settings and configuration details — cliogate only
 
 REQUIREMENTS:
 - cliogate must be installed on the target Creatio instance

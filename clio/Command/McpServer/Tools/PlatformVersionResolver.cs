@@ -48,6 +48,14 @@ public enum VersionResolutionSource {
 /// would be pure overhead.
 /// </summary>
 public sealed class PlatformVersionResolver : IPlatformVersionResolver {
+	/// <summary>
+	/// Standard Creatio service that returns the core version without requiring cliogate —
+	/// only an authenticated session. Preferred over <see cref="GetSysInfoServicePath"/> so
+	/// version resolution works on environments where cliogate is not installed.
+	/// Returns <c>{ applicationInfo: { sysValues: { coreVersion: "8.3.3.xxxx" } } }</c>.
+	/// </summary>
+	internal const string GetApplicationInfoServicePath = "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo";
+	/// <summary>cliogate fallback probe — used only when <see cref="GetApplicationInfoServicePath"/> yields no version.</summary>
 	internal const string GetSysInfoServicePath = "/rest/CreatioApiGateway/GetSysInfo";
 	internal const string LatestVersion = "latest";
 	internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
@@ -93,36 +101,22 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 
 	private async Task<PlatformVersionResolution> ProbeAsync(string environmentKey, CancellationToken cancellationToken) {
 		// Route through IServiceUrlBuilder so .NET Framework deployments (IsNetCore=false)
-		// receive the /0/rest/... alias they need. Hand-rolling the URL here would always
+		// receive the /0/... alias they need. Hand-rolling the URL here would always
 		// hit 404 on those environments and force a silent latest-fallback.
 		IServiceUrlBuilder serviceUrlBuilder = _serviceUrlBuilderFactory.Create(_environmentSettings);
-		string url = serviceUrlBuilder.Build(GetSysInfoServicePath);
 
-		string? rawResponse;
-		try {
-			// IApplicationClient.ExecuteGetRequest is synchronous; offload so the call does not
-			// block the MCP host's loop. Cancellation is best-effort because the underlying
-			// HTTP plumbing in CreatioClient does not surface a CancellationToken — we simply
-			// stop awaiting if the caller cancels.
-			rawResponse = await Task.Run(
-				() => _applicationClient.ExecuteGetRequest(url),
-				cancellationToken).ConfigureAwait(false);
-		} catch (OperationCanceledException) {
-			throw;
-		} catch (Exception ex) {
-			_logger.LogInformation(ex,
-				"platform-version source=latest-fallback reason=probe-failed env={Env} error={Error}",
-				environmentKey, ex.Message);
-			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback);
+		// Primary: ApplicationInfoService — a standard Creatio service that needs only an
+		// authenticated session, so version resolution no longer depends on cliogate being
+		// installed. Fall back to the cliogate GetSysInfo probe only when this yields nothing
+		// (e.g. an older Creatio whose response shape differs). Both expose the same
+		// Major.Minor.Patch.Build core version, so the fallback is byte-equivalent when it runs.
+		string? coreVersion = await TryGetCoreVersionFromApplicationInfoAsync(serviceUrlBuilder, environmentKey, cancellationToken)
+			.ConfigureAwait(false);
+		if (string.IsNullOrWhiteSpace(coreVersion)) {
+			coreVersion = await TryGetCoreVersionFromCliogateAsync(serviceUrlBuilder, environmentKey, cancellationToken)
+				.ConfigureAwait(false);
 		}
 
-		if (string.IsNullOrWhiteSpace(rawResponse)) {
-			_logger.LogInformation(
-				"platform-version source=latest-fallback reason=empty-response env={Env}", environmentKey);
-			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback);
-		}
-
-		string? coreVersion = TryExtractCoreVersion(rawResponse);
 		if (string.IsNullOrWhiteSpace(coreVersion)) {
 			_logger.LogInformation(
 				"platform-version source=latest-fallback reason=core-version-missing env={Env}", environmentKey);
@@ -142,7 +136,88 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		return new PlatformVersionResolution(threePart!, VersionResolutionSource.Environment);
 	}
 
-	private static string? TryExtractCoreVersion(string rawJson) {
+	/// <summary>
+	/// Probes the standard ApplicationInfoService (no cliogate required). Returns the raw
+	/// 4-part core version string, or <c>null</c> on any failure class (request error, empty
+	/// body, unexpected shape) so the caller can fall through to the cliogate probe.
+	/// </summary>
+	private async Task<string?> TryGetCoreVersionFromApplicationInfoAsync(
+		IServiceUrlBuilder serviceUrlBuilder, string environmentKey, CancellationToken cancellationToken) {
+		string url = serviceUrlBuilder.Build(GetApplicationInfoServicePath);
+		try {
+			// ExecutePostRequest is synchronous; offload so the MCP host loop is not blocked.
+			// The service takes an empty JSON body.
+			string? rawResponse = await Task.Run(
+				() => _applicationClient.ExecutePostRequest(url, "{}"),
+				cancellationToken).ConfigureAwait(false);
+			return TryExtractApplicationInfoCoreVersion(rawResponse);
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception ex) {
+			_logger.LogInformation(ex,
+				"platform-version application-info-probe-failed env={Env} error={Error}",
+				environmentKey, ex.Message);
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Fallback probe via cliogate <c>GetSysInfo</c>. Returns the raw core version string, or
+	/// <c>null</c> when cliogate is absent/unreachable or the shape is unexpected.
+	/// </summary>
+	private async Task<string?> TryGetCoreVersionFromCliogateAsync(
+		IServiceUrlBuilder serviceUrlBuilder, string environmentKey, CancellationToken cancellationToken) {
+		string url = serviceUrlBuilder.Build(GetSysInfoServicePath);
+		try {
+			string? rawResponse = await Task.Run(
+				() => _applicationClient.ExecuteGetRequest(url),
+				cancellationToken).ConfigureAwait(false);
+			return TryExtractSysInfoCoreVersion(rawResponse);
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception ex) {
+			_logger.LogInformation(ex,
+				"platform-version cliogate-probe-failed env={Env} error={Error}",
+				environmentKey, ex.Message);
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Extracts <c>applicationInfo.sysValues.coreVersion</c> from the ApplicationInfoService
+	/// response. Returns <c>null</c> on any missing node or non-string value.
+	/// </summary>
+	private static string? TryExtractApplicationInfoCoreVersion(string? rawJson) {
+		if (string.IsNullOrWhiteSpace(rawJson)) {
+			return null;
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(rawJson);
+			JsonElement root = document.RootElement;
+			// { "applicationInfo": { "sysValues": { "coreVersion": "8.3.3.xxxx" } } }
+			if (root.ValueKind != JsonValueKind.Object
+				|| !root.TryGetProperty("applicationInfo", out JsonElement appInfo)
+				|| appInfo.ValueKind != JsonValueKind.Object
+				|| !appInfo.TryGetProperty("sysValues", out JsonElement sysValues)
+				|| sysValues.ValueKind != JsonValueKind.Object
+				|| !sysValues.TryGetProperty("coreVersion", out JsonElement coreVersion)
+				|| coreVersion.ValueKind != JsonValueKind.String) {
+				return null;
+			}
+			return coreVersion.GetString();
+		} catch (JsonException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Extracts <c>SysInfo.CoreVersion</c> from the cliogate <c>GetSysInfo</c> response.
+	/// Returns <c>null</c> on any missing node or non-string value.
+	/// </summary>
+	private static string? TryExtractSysInfoCoreVersion(string? rawJson) {
+		if (string.IsNullOrWhiteSpace(rawJson)) {
+			return null;
+		}
 		try {
 			using JsonDocument document = JsonDocument.Parse(rawJson);
 			JsonElement root = document.RootElement;

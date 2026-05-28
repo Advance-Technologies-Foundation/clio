@@ -28,8 +28,12 @@ local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
 chosen by:
 
 1. `--version <semver>` — explicit override (highest priority).
-2. `--environment <name>` or `--uri ...` — probe cliogate `GetSysInfo` on
-   that environment to pick the matching catalog.
+2. `--environment <name>` or `--uri ...` — probe the environment for its
+   core version to pick the matching catalog. The probe uses the standard
+   `ApplicationInfoService` (no cliogate required — an authenticated session
+   is enough) and falls back to the cliogate `GetSysInfo` endpoint only if
+   that yields no version. This means version-accurate results work on
+   environments without cliogate installed.
 3. Neither — default to `latest`.
 
 `--version` and `--environment` (or `--uri`) are mutually exclusive.
