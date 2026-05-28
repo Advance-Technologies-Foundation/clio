@@ -16,13 +16,20 @@ namespace Clio.Tests.Command;
 [Property("Module", "McpServer")]
 public sealed class ComponentRegistryRefreshCommandTests {
 
+	private static IMobileComponentRegistryClient MobileAlwaysSucceeds() {
+		IMobileComponentRegistryClient m = Substitute.For<IMobileComponentRegistryClient>();
+		m.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(true));
+		return m;
+	}
+
 	[Test]
-	[Description("With no flags the verb refreshes the latest.json alias and exits 0 when the CDN responds.")]
+	[Description("With no flags the verb refreshes the latest.json alias for both web and mobile and exits 0 when the CDN responds.")]
 	public void Execute_Refreshes_Latest_When_No_Flags() {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("latest", success: true);
-		ComponentRegistryRefreshCommand command = new(client, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -34,12 +41,12 @@ public sealed class ComponentRegistryRefreshCommandTests {
 	}
 
 	[Test]
-	[Description("When CDN refuses to serve the verb exits 1 so CI/scripts can detect the failure.")]
+	[Description("When CDN refuses to serve the web flavor the verb exits 1 so CI/scripts can detect the failure.")]
 	public void Execute_Returns_NonZero_When_Cdn_Unavailable() {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("latest", success: false);
-		ComponentRegistryRefreshCommand command = new(client, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -49,12 +56,12 @@ public sealed class ComponentRegistryRefreshCommandTests {
 	}
 
 	[Test]
-	[Description("With --version the verb refreshes exactly that file and ignores the others.")]
+	[Description("With --version the verb refreshes exactly that file for both flavors.")]
 	public void Execute_Refreshes_Specific_Version_When_Provided() {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("8.2.1", success: true);
-		ComponentRegistryRefreshCommand command = new(client, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { Version = "8.2.1" });
@@ -66,7 +73,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 	}
 
 	[Test]
-	[Description("With --all the verb enumerates the cache directory and refreshes every per-version file it finds.")]
+	[Description("With --all the verb enumerates both web and mobile cache directories, deduplicates versions, and refreshes every distinct version for both flavors.")]
 	public void Execute_Refreshes_All_Cached_Versions_When_All_Flag_Set() {
 		// Arrange
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
@@ -83,7 +90,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		client.SetRefreshResult("8.2.0", success: true);
 		client.SetRefreshResult("8.3.0", success: true);
 		client.SetRefreshResult("latest", success: true);
-		ComponentRegistryRefreshCommand command = new(client, fileSystem, Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), fileSystem, Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
@@ -91,7 +98,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		// Assert
 		exitCode.Should().Be(0);
 		client.RefreshedVersions.Should().BeEquivalentTo(new[] { "8.2.0", "8.3.0", "latest" },
-			because: "every per-version json must be refreshed; sidecars and .tmp scratch files must be ignored");
+			because: "every per-version json must be refreshed; sidecars and .tmp scratch files must be ignored; versions from web and mobile dirs are deduplicated before refresh");
 	}
 
 	[Test]
@@ -101,7 +108,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(false);
 		FakeComponentRegistryClient client = new();
-		ComponentRegistryRefreshCommand command = new(client, fileSystem, Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), fileSystem, Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
@@ -112,12 +119,12 @@ public sealed class ComponentRegistryRefreshCommandTests {
 	}
 
 	[Test]
-	[Description("An exception inside the registry client is contained and reported as a failed version, not a process crash.")]
+	[Description("An exception inside the web registry client is contained and reported as a failed version, not a process crash.")]
 	public void Execute_Reports_Exception_Per_Version_Without_Crashing() {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshThrows("latest", new InvalidOperationException("boom"));
-		ComponentRegistryRefreshCommand command = new(client, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());

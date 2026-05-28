@@ -27,17 +27,21 @@ public sealed class ComponentRegistryRefreshOptions {
 /// CLI entry point for the <c>component-registry-refresh</c> verb. Force-pulls the component
 /// registry payload from the CDN regardless of the 24h cache TTL. Useful when a user wants
 /// to pick up a newly published platform GA without waiting for the natural refresh window.
+/// Refreshes both the web and mobile flavors for every targeted version.
 /// </summary>
 public sealed class ComponentRegistryRefreshCommand {
 	private readonly IComponentRegistryClient _registryClient;
+	private readonly IMobileComponentRegistryClient _mobileRegistryClient;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 
 	public ComponentRegistryRefreshCommand(
 		IComponentRegistryClient registryClient,
+		IMobileComponentRegistryClient mobileRegistryClient,
 		IFileSystem fileSystem,
 		ILogger logger) {
 		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
+		_mobileRegistryClient = mobileRegistryClient ?? throw new ArgumentNullException(nameof(mobileRegistryClient));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 	}
@@ -51,28 +55,31 @@ public sealed class ComponentRegistryRefreshCommand {
 
 		int failures = 0;
 		foreach (string version in targets) {
-			Stopwatch sw = Stopwatch.StartNew();
-			bool refreshed;
-			try {
-				refreshed = _registryClient.RefreshAsync(version, CancellationToken.None)
-					.GetAwaiter()
-					.GetResult();
-			} catch (Exception ex) {
-				_logger.WriteError($"component-registry version={version} status=error duration={sw.ElapsedMilliseconds}ms error={ex.Message}");
-				failures++;
-				continue;
-			}
-			sw.Stop();
-
-			if (refreshed) {
-				_logger.WriteInfo($"component-registry version={version} status=refreshed source=cdn duration={sw.ElapsedMilliseconds}ms");
-			} else {
-				_logger.WriteWarning($"component-registry version={version} status=cdn-unavailable duration={sw.ElapsedMilliseconds}ms");
-				failures++;
-			}
+			failures += RefreshFlavor("web", _registryClient, version);
+			failures += RefreshFlavor("mobile", _mobileRegistryClient, version);
 		}
 
 		return failures == 0 ? 0 : 1;
+	}
+
+	private int RefreshFlavor(string flavor, IComponentRegistryClient client, string version) {
+		Stopwatch sw = Stopwatch.StartNew();
+		bool refreshed;
+		try {
+			refreshed = client.RefreshAsync(version, CancellationToken.None).GetAwaiter().GetResult();
+		} catch (Exception ex) {
+			_logger.WriteError($"component-registry flavor={flavor} version={version} status=error duration={sw.ElapsedMilliseconds}ms error={ex.Message}");
+			return 1;
+		}
+		sw.Stop();
+
+		if (refreshed) {
+			_logger.WriteInfo($"component-registry flavor={flavor} version={version} status=refreshed source=cdn duration={sw.ElapsedMilliseconds}ms");
+		} else {
+			_logger.WriteWarning($"component-registry flavor={flavor} version={version} status=cdn-unavailable duration={sw.ElapsedMilliseconds}ms");
+			return 1;
+		}
+		return 0;
 	}
 
 	private IReadOnlyList<string> ResolveTargets(ComponentRegistryRefreshOptions options) {
@@ -85,14 +92,30 @@ public sealed class ComponentRegistryRefreshCommand {
 		}
 
 		string cacheDirectory = GetCacheDirectory();
-		if (!_fileSystem.ExistsDirectory(cacheDirectory)) {
+		string mobileCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Mobile.CacheSubdirectoryName);
+
+		// Collect versions from both web and mobile cache directories so --all covers both flavors.
+		List<string> versions = new();
+		CollectVersionsFrom(cacheDirectory, versions);
+		CollectVersionsFrom(mobileCacheDirectory, versions);
+
+		if (versions.Count == 0) {
 			_logger.WriteInfo($"Cache directory '{cacheDirectory}' does not exist yet; nothing to refresh in --all mode.");
 			return Array.Empty<string>();
 		}
 
+		return versions
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+	}
+
+	private void CollectVersionsFrom(string directory, List<string> versions) {
+		if (!_fileSystem.ExistsDirectory(directory)) {
+			return;
+		}
 		// Enumerate {version}.json files (skip sidecars and the .tmp scratch files used by atomic writes).
-		List<string> versions = new();
-		foreach (string fullPath in _fileSystem.GetFiles(cacheDirectory)) {
+		foreach (string fullPath in _fileSystem.GetFiles(directory)) {
 			string fileName = Path.GetFileName(fullPath);
 			if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) {
 				continue;
@@ -105,11 +128,6 @@ public sealed class ComponentRegistryRefreshCommand {
 				versions.Add(version);
 			}
 		}
-
-		return versions
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
-			.ToArray();
 	}
 
 	private static string GetCacheDirectory() {

@@ -213,13 +213,11 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 /// <summary>
 /// Mobile Freedom UI component catalog. Backed by the same wrapped-envelope
-/// contract and the same cache+CDN infrastructure as the web catalog, with two
+/// contract and the same CDN → cache fallback chain as the web catalog, with two
 /// flavor-specific differences enforced by <see cref="RegistryFlavor.Mobile"/>:
 /// the producer file is <c>MobileComponentRegistry.json</c>, the cache lives
 /// under a dedicated <c>mobile/</c> subdirectory, and the operator override
-/// reads <c>CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE</c>. The bundled file in
-/// <c>Command/McpServer/Data/</c> serves as a final fallback while the producer
-/// is rolling out the mobile feed onto the academy CDN.
+/// reads <c>CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE</c>.
 /// </summary>
 public interface IMobileComponentInfoCatalog {
 	/// <summary>

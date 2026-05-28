@@ -22,12 +22,13 @@ internal static class MobilePageValidation {
 		IComponentInfoCatalog webCatalog,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		CancellationToken cancellationToken = default) {
-		IReadOnlyList<ComponentRegistryEntry> mobileEntries = await mobileCatalog
-			.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken)
-			.ConfigureAwait(false);
-		IReadOnlyList<ComponentRegistryEntry> webEntries = await webCatalog
-			.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken)
-			.ConfigureAwait(false);
+		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
+			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
+			webCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		await Task.WhenAll(mobileTask, webTask).ConfigureAwait(false);
+		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileTask.Result ?? [];
+		IReadOnlyList<ComponentRegistryEntry> webEntries = webTask.Result ?? [];
 		HashSet<string> allowedMobile = new(
 			mobileEntries.Select(e => e.ComponentType),
 			StringComparer.OrdinalIgnoreCase);

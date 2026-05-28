@@ -32,7 +32,7 @@ public sealed class ComponentInfoCommandOptions : EnvironmentOptions {
 	public bool Pretty { get; set; }
 
 	[Option("schema-type", Required = false,
-		HelpText = "Component registry to query: 'web' (default) or 'mobile'. Mobile uses the bundled mobile registry and ignores --version/--environment.")]
+		HelpText = "Component registry to query: 'web' (default) or 'mobile'. Both flavors honor --version/--environment and share the CDN → cache fallback chain.")]
 	public string SchemaType { get; set; }
 }
 
