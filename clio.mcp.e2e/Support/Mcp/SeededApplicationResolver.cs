@@ -5,9 +5,9 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Mcp;
 
 /// <summary>
-/// Resolves the seeded installed application configured through <c>McpE2E:Sandbox:ApplicationCode</c>
-/// against a list-apps response. Fires <see cref="Assert.Ignore(string)"/> with a clear setup message
-/// when the configured code is missing or the seeded application is absent from the target environment.
+/// Resolves a seeded installed application by code against a list-apps response.
+/// Fires <see cref="Assert.Ignore(string)"/> when the seeded application is absent
+/// from the target environment.
 /// </summary>
 internal static class SeededApplicationResolver {
 	/// <summary>
@@ -16,24 +16,19 @@ internal static class SeededApplicationResolver {
 	/// </summary>
 	public static ApplicationListItemEnvelope GetOrIgnore(
 		ApplicationListResponseEnvelope listResponse,
-		string? configuredApplicationCode,
+		string applicationCode,
 		string environmentName) {
-		if (string.IsNullOrWhiteSpace(configuredApplicationCode)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationCode to point at the seeded installed application before running this test.");
-			return null!;
-		}
-
 		ApplicationListItemEnvelope? installedApplication = listResponse.Applications?
 			.FirstOrDefault(application => string.Equals(
 				application.Code,
-				configuredApplicationCode,
+				applicationCode,
 				StringComparison.OrdinalIgnoreCase));
 		if (installedApplication is not null) {
 			return installedApplication;
 		}
 
 		Assert.Ignore(
-			$"Seeded application with code '{configuredApplicationCode}' was not found on environment '{environmentName}'. Install the seed application or update McpE2E:Sandbox:ApplicationCode.");
+			$"Seeded application with code '{applicationCode}' was not found on environment '{environmentName}'. Install the seed package before running E2E tests.");
 		return null!;
 	}
 
@@ -46,7 +41,7 @@ internal static class SeededApplicationResolver {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName,
-		string? configuredApplicationCode) {
+		string applicationCode) {
 		CallToolResult callResult = await session.CallToolAsync(
 			ApplicationGetListTool.ApplicationGetListToolName,
 			new Dictionary<string, object?> {
@@ -56,6 +51,6 @@ internal static class SeededApplicationResolver {
 			},
 			cancellationToken);
 		ApplicationListResponseEnvelope response = ApplicationResultParser.ExtractList(callResult);
-		return GetOrIgnore(response, configuredApplicationCode, environmentName);
+		return GetOrIgnore(response, applicationCode, environmentName);
 	}
 }

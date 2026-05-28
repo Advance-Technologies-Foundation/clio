@@ -30,6 +30,7 @@ namespace Clio.Mcp.E2E;
 public sealed class PageSyncToolE2ETests {
 
 	private const string ToolName = PageSyncTool.ToolName;
+	private const string SavePage = "ClioMcp_BlankPageToSave";
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -356,12 +357,73 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Deferred positive coverage for sync-pages save-and-verify when the E2E environment has a known editable page.")]
+	[Description("Reads the seeded Freedom UI page ClioMcp_BlankPageToSave via get-page, sends the unchanged body back through sync-pages with validate=true, and verifies the no-op save succeeds.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages saves and verifies a real page with structured read-back")]
-	[AllureDescription("Placeholder for a future seeded-data E2E that saves and verifies a known editable page through sync-pages.")]
-	public void PageSyncTool_Should_Save_And_Verify_Real_Page_With_NoOp_Body() {
-		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this positive sync-pages save-and-verify scenario.");
+	[AllureDescription("Uses the real clio MCP server to call get-page for the seeded page ClioMcp_BlankPageToSave in AutoTestClioMcp, then sends the unchanged body back through sync-pages with validate=true, and verifies the save succeeds without validation drift so the seed page's body remains stable across read-write cycles.")]
+	public async Task PageSyncTool_Should_Save_And_Verify_Real_Page_With_NoOp_Body() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages save-and-verify test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act 1: get-page reads the seeded page's body to disk
+		CallToolResult getResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+
+		getResult.IsError.Should().NotBeTrue(
+			because: $"get-page should return a structured payload for the seeded page '{SavePage}' before the no-op save can run");
+		getResponse.Success.Should().BeTrue(
+			because: $"get-page must succeed for the seeded page '{SavePage}'. Error: {getResponse.Error}");
+		getResponse.Files.Should().NotBeNull(
+			because: "successful get-page calls must return the materialized file paths");
+		getResponse.Files.BodyFile.Should().NotBeNullOrWhiteSpace(
+			because: "sync-pages needs a body-file path to read the raw body from disk");
+		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+		body.Should().NotBeNullOrWhiteSpace(
+			because: "the no-op save is only meaningful if get-page returns a non-empty body");
+
+		// Act 2: sync-pages saves the unchanged body back with validation
+		CallToolResult syncResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = body
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+
+		// Assert sync-pages save-and-verify succeeded
+		syncResult.IsError.Should().NotBeTrue(
+			because: "the no-op save should produce a structured sync-pages response instead of a transport-level error");
+		syncResponse.Success.Should().BeTrue(
+			because: $"sync-pages must accept and persist the body get-page produced for '{SavePage}'. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+		syncResponse.Pages.Should().ContainSingle(
+			because: "one page was submitted for sync");
+		syncResponse.Pages[0].Success.Should().BeTrue(
+			because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
+		syncResponse.Pages[0].Error.Should().BeNullOrWhiteSpace(
+			because: "a successful no-op save should not include an error payload");
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
