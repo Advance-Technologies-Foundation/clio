@@ -177,6 +177,44 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the fallback response should still expose available types for discovery in the flat item list");
 	}
 
+	[Test]
+	[Description("Surfaces the dataSourceBindingContract on detail responses for standard field components so MCP agents see the three-part inserted-field contract next to the component's example payload.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info surfaces dataSourceBindingContract for standard field components")]
+	[AllureDescription("Starts the real clio MCP server, queries detail for crt.NumberInput (a standard field component) and crt.TabContainer (a non-field container), and verifies that the field component response carries the dataSourceBindingContract field while the container response does not.")]
+	public async Task ComponentInfoTool_Should_Surface_DataSourceBindingContract_For_Standard_Field_Components() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse fieldResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["component-type"] = "crt.NumberInput" });
+		ComponentInfoResponse containerResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["component-type"] = "crt.TabContainer" });
+
+		// Assert
+		fieldResponse.Success.Should().BeTrue(
+			because: "crt.NumberInput is a shipped standard field component");
+		fieldResponse.DataSourceBindingContract.Should().NotBeNullOrWhiteSpace(
+			because: "every standard field component must advertise the three-part inserted-field contract that update-page enforces");
+		fieldResponse.DataSourceBindingContract!.Should().Contain("viewModelConfigDiff",
+			because: "the contract must name the section where the binding attribute is declared");
+		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<columnCode>",
+			because: "the contract must describe the auto-provided label form that the strict IsAutoProvidedLabelResourceKey rule accepts");
+		fieldResponse.DataSourceBindingContract.Should().Contain("operation:\"merge\"",
+			because: "the contract must clarify that merge operations are exempt from the new strict rule");
+		containerResponse.Success.Should().BeTrue(
+			because: "crt.TabContainer is a shipped container component");
+		containerResponse.DataSourceBindingContract.Should().BeNull(
+			because: "the contract only applies to standard field components and must not surface for containers");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

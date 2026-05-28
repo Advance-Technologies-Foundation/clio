@@ -26,6 +26,19 @@ public sealed class ComponentInfoTool(
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
+	/// Canonical contract text returned for every data-source-bound field component type
+	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
+	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
+	/// three-part payload requirement next to the component's <c>example</c>. The wording
+	/// is intentionally identical to the <c>update-page</c> tool [Description] and the
+	/// <c>page-modification</c> guidance — all three reuse
+	/// <see cref="SchemaValidationService.InsertedFieldContractSummary"/>.
+	/// </summary>
+	internal const string DataSourceBindingContractText =
+		"This is a data-source-bound field component. "
+		+ SchemaValidationService.InsertedFieldContractSummary;
+
+	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
@@ -137,6 +150,9 @@ public sealed class ComponentInfoTool(
 			Outputs = entry.Outputs is { Count: > 0 } ? entry.Outputs : null,
 			TypicalChildren = entry.TypicalChildren.Count == 0 ? null : entry.TypicalChildren,
 			Example = entry.Example,
+			DataSourceBindingContract = SchemaValidationService.StandardFieldComponentTypes.Contains(entry.ComponentType)
+				? DataSourceBindingContractText
+				: null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
@@ -329,6 +345,16 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("example")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonElement? Example { get; init; }
+
+	/// <summary>
+	/// Gets or sets the data-source binding contract that surfaces only for standard field components
+	/// (text/number/checkbox/lookup/etc. inputs). Tells the agent the three-part payload required for
+	/// any <c>operation:"insert"</c> of this component type: viewConfigDiff entry, matching
+	/// viewModelConfigDiff attribute declaration, and a registered or auto-provided label resource.
+	/// </summary>
+	[JsonPropertyName("dataSourceBindingContract")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DataSourceBindingContract { get; init; }
 
 	/// <summary>
 	/// Gets or sets the component list for list responses.

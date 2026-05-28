@@ -63,6 +63,8 @@ public sealed class PageValidateTool(
 		new(
 			Field: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
+			InsertSelfConsistency: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
 			Binding: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateColumnBindings(body)),
 			ConverterDecl: RunContentValidation(contentResult,
@@ -85,7 +87,7 @@ public sealed class PageValidateTool(
 		ContentValidationResults content) {
 		List<string> errors = CollectErrors(
 			markerResult, syntaxResult, contentResult,
-			content.Field, content.ConverterDecl, content.ConverterFunctionShape,
+			content.Field, content.InsertSelfConsistency, content.ConverterDecl, content.ConverterFunctionShape,
 			content.HandlerStructure, content.ValidatorDecl, content.ValidatorFactoryShape);
 		var warnings = new List<string>();
 		warnings.AddRange(content.Field.Warnings);
@@ -93,7 +95,8 @@ public sealed class PageValidateTool(
 			warnings.AddRange(content.Binding.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
-		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.ConverterDecl.IsValid &&
+		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
+			content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
 		return new PageSyncValidationResult {
@@ -135,6 +138,7 @@ public sealed class PageValidateTool(
 
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
+		SchemaValidationResult InsertSelfConsistency,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,
 		SchemaValidationResult ConverterFunctionShape,

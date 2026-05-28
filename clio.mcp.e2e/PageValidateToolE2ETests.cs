@@ -245,6 +245,82 @@ public sealed class PageValidateToolE2ETests {
 			because: "the error must name the offending converter and direct the agent at the converter guidance");
 	}
 
+	[Test]
+	[Description("Returns valid: false when viewConfigDiff inserts a standard field control whose binding attribute is not declared in viewModelConfigDiff and whose label resource is neither registered nor auto-provided.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects inserted field without binding or resource")]
+	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to an undeclared PDS_<column> attribute with no resources payload, and verifies that validate-page surfaces an actionable error naming the offending field and the missing section.")]
+	public async Task PageValidateTool_Should_Reject_Inserted_Field_Without_Binding_Or_Resource() {
+		// Arrange
+		string bodyWithBareInsert = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
+				"\"label\":\"$Resources.Strings.PDS_UsrCompleted\",\"control\":\"$PDS_UsrCompleted\"}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithBareInsert);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an inserted field without a matching viewModelConfigDiff attribute or a resolvable label resource would render with no data source and a blank caption");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "the inserted-field self-consistency check is a content-level validator");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list at least one error for the broken insert");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("UsrCompleted") && e.Contains("PDS_UsrCompleted") && e.Contains("viewModelConfigDiff"),
+			because: "the missing-binding diagnostic must name the field, the binding attribute, and the section that needs the declaration");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("UsrCompleted") && e.Contains("PDS_UsrCompleted") && e.Contains("render blank"),
+			because: "the unregistered-label diagnostic must name the field, the resource key, and what will go wrong at runtime");
+	}
+
+	[Test]
+	[Description("Returns valid: true when viewConfigDiff inserts a standard field whose binding attribute is declared in viewModelConfigDiff with a DS-bound modelConfig.path and whose label uses the column-code form auto-provided by the platform.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts inserted field with declared binding and column-code label")]
+	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to a declared DS attribute whose name matches the entity column code, with the label rebound to $Resources.Strings.<columnCode>, and verifies that validate-page accepts the payload without resources.")]
+	public async Task PageValidateTool_Should_Accept_Inserted_Field_With_AutoProvided_Label() {
+		// Arrange
+		string bodyWithFullPayload = ValidPageBody
+			.Replace(
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+					"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
+					"\"label\":\"$Resources.Strings.UsrCompleted\",\"control\":\"$UsrCompleted\"}}" +
+					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
+			.Replace(
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
+					"{\"operation\":\"merge\",\"values\":{\"UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
+					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithFullPayload);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "a self-consistent insert with the matching viewModelConfigDiff entry and an auto-provided column-code label is the canonical happy path");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "every content-level validator should accept the self-consistent payload");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "no error should be reported for the canonical happy path");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

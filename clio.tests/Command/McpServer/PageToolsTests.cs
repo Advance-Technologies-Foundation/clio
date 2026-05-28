@@ -1576,8 +1576,8 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run passes when field binding targets an attribute not declared in the current schema — it may be in a parent schema.")]
-	public void TryUpdatePage_WhenFieldBindingTargetsAttributeNotInCurrentSchema_Succeeds() {
+	[Description("TryUpdatePage dry-run rejects field inserts whose binding attribute is not declared in the body — even when other unrelated attributes are declared. An inserted control with an undeclared binding attribute has no data source after save, so update-page must reject the payload at validation time.")]
+	public void TryUpdatePage_WhenInsertedFieldBindingHasNoMatchingViewModelDeclaration_ReturnsValidationError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
@@ -1591,10 +1591,36 @@ public class PageToolsTests
 
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
+		result.Should().BeFalse(
+			because: "update-page must require the body to declare any attribute referenced by an inserted control");
+		response.Success.Should().BeFalse(
+			because: "the validation failure must be surfaced in the response");
+		response.Error.Should().Contain("UsrStatusField",
+			because: "the diagnostic should name the undeclared binding attribute the agent must add");
+		response.Error.Should().Contain("viewModelConfigDiff",
+			because: "the diagnostic should point at the section that needs the missing declaration");
+	}
+
+	[Test]
+	[Description("TryUpdatePage dry-run accepts merge operations against parent-provided controls — only insert operations are required to declare their binding attributes locally.")]
+	public void TryUpdatePage_WhenMergeOperationTargetsParentProvidedAttribute_Succeeds() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMergeBinding_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMergeBinding_FormPage",
+			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
 		result.Should().BeTrue(
-			because: "update-page should allow bindings to attributes not in the current schema, as they may be inherited from a parent schema");
+			because: "merge operations target existing controls whose attribute and resource may legitimately come from a parent schema");
 		response.Success.Should().BeTrue(
-			because: "binding to a parent-schema attribute is not a validation failure");
+			because: "the new strict check applies only to insert operations");
 	}
 
 	[Test]
