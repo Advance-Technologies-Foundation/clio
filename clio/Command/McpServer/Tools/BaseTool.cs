@@ -77,6 +77,9 @@ public abstract class BaseTool<T>(
 										   && string.IsNullOrWhiteSpace(envOptions.Environment)
 										   && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
+									   CreateUiProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
+										   && string.IsNullOrWhiteSpace(envOptions.Uri)
+										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 
 									   EnvironmentOptions envOptions => commandResolver.Resolve<TCommand>(envOptions),
 									   var _ => throw new InvalidOperationException(
