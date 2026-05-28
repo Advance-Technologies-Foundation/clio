@@ -64,7 +64,7 @@ public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProject
 
 #region Class: CreateUiProjectCommand
 
-internal class CreateUiProjectCommand {
+internal class CreateUiProjectCommand : Command<CreateUiProjectOptions> {
 
 	#region Fields: Private
 
@@ -102,7 +102,7 @@ internal class CreateUiProjectCommand {
 
 	#region Methods: Public
 
-	public int Execute(CreateUiProjectOptions options){
+	public override int Execute(CreateUiProjectOptions options){
 		try {
 			ValidationResult result = _optionsValidator.Validate(options);
 			if (!result.IsValid) {
