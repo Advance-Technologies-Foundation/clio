@@ -28,26 +28,16 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 		[Required]
 		ODataDeleteArgs args) {
 		try {
-			if (string.IsNullOrWhiteSpace(args.Entity)) {
-				return ODataWriteResponse.Failure("entity is required.");
+			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "delete");
+			if (invalidTarget is not null) {
+				return invalidTarget;
 			}
-			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-				return ODataWriteResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
-			}
-			if (string.IsNullOrWhiteSpace(args.Id) || !ODataKeyFormatter.IsGuid(args.Id.Trim())) {
-				return ODataWriteResponse.Failure("id is required and must be a record GUID; keyless mass delete is not allowed.");
-			}
-			if (!args.Confirm) {
-				return ODataWriteResponse.Failure(
-					$"Refusing to delete {args.Entity.Trim()}({args.Id.Trim()}) without confirmation. " +
-					"This is a destructive operation; re-call odata-delete with \"confirm\": true to authorize this deletion.");
+			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "delete", "deletion");
+			if (notConfirmed is not null) {
+				return notConfirmed;
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
-
-			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(args.Entity, args.Id));
+			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
 			client.ExecuteDeleteRequest(url, string.Empty, 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {

@@ -30,30 +30,20 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		[Required]
 		ODataUpdateArgs args) {
 		try {
-			if (string.IsNullOrWhiteSpace(args.Entity)) {
-				return ODataWriteResponse.Failure("entity is required.");
-			}
-			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-				return ODataWriteResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
-			}
-			if (string.IsNullOrWhiteSpace(args.Id) || !ODataKeyFormatter.IsGuid(args.Id.Trim())) {
-				return ODataWriteResponse.Failure("id is required and must be a record GUID; keyless mass update is not allowed.");
+			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
+			if (invalidTarget is not null) {
+				return invalidTarget;
 			}
 			if (args.Data is not { ValueKind: JsonValueKind.Object } data || !data.EnumerateObject().MoveNext()) {
 				return ODataWriteResponse.Failure("data is required and must be a non-empty object of field/value pairs.");
 			}
-			if (!args.Confirm) {
-				return ODataWriteResponse.Failure(
-					$"Refusing to update {args.Entity.Trim()}({args.Id.Trim()}) without confirmation. " +
-					"This is a destructive operation; re-call odata-update with \"confirm\": true to authorize this change.");
+			ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, args.Entity, args.Id, "update", "change");
+			if (notConfirmed is not null) {
+				return notConfirmed;
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
-			IODataPatchClient patchClient = commandResolver.Resolve<IODataPatchClient>(options);
-
-			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(args.Entity, args.Id));
-			patchClient.ExecutePatch(url, data.GetRawText(), 30_000);
+			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(ex.Message);

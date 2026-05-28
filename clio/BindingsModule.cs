@@ -137,7 +137,6 @@ public class BindingsModule {
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
 			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
-			services.AddSingleton<IODataPatchClient>(_ => new ODataPatchClient(activeSettings));
 			services.AddTransient<SysSettingsManager>();
 		}
 

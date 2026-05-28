@@ -31,12 +31,12 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Sends a PATCH to the addressed entity key with the JSON body via the OData patch client.")]
+	[Description("Sends a PATCH to the addressed entity key with the JSON body via the shared application client.")]
 	public void Update_Should_Patch_Addressed_Key_With_Body() {
-		IODataPatchClient patchClient = Substitute.For<IODataPatchClient>();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IODataPatchClient>(Arg.Any<EnvironmentOptions>()).Returns(patchClient);
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		ODataUpdateTool tool = new(resolver);
@@ -52,16 +52,16 @@ public sealed class ODataUpdateToolTests {
 		response.Success.Should().BeTrue();
 		response.Id.Should().Be(Guid);
 		urlBuilder.Received(1).Build($"odata/Contact({Guid})");
-		patchClient.Received(1).ExecutePatch($"http://creatio/odata/Contact({Guid})", "{\"Name\":\"New\"}", 30_000);
+		client.Received(1).ExecutePatchRequest($"http://creatio/odata/Contact({Guid})", "{\"Name\":\"New\"}", 30_000, 1, 1);
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects a missing or non-GUID id without any remote call to guard against keyless mass updates.")]
 	public void Update_Should_Reject_NonGuid_Id() {
-		IODataPatchClient patchClient = Substitute.For<IODataPatchClient>();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IODataPatchClient>(Arg.Any<EnvironmentOptions>()).Returns(patchClient);
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		ODataUpdateTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -70,17 +70,17 @@ public sealed class ODataUpdateToolTests {
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("must be a record GUID");
-		patchClient.DidNotReceive().ExecutePatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Refuses a destructive update when confirm is omitted, without any remote call.")]
 	public void Update_Should_Refuse_Without_Confirm() {
-		IODataPatchClient patchClient = Substitute.For<IODataPatchClient>();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IODataPatchClient>(Arg.Any<EnvironmentOptions>()).Returns(patchClient);
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		ODataUpdateTool tool = new(resolver);
 
@@ -90,16 +90,16 @@ public sealed class ODataUpdateToolTests {
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("confirm");
-		patchClient.DidNotReceive().ExecutePatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects empty data without any remote call.")]
 	public void Update_Should_Reject_Empty_Data() {
-		IODataPatchClient patchClient = Substitute.For<IODataPatchClient>();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IODataPatchClient>(Arg.Any<EnvironmentOptions>()).Returns(patchClient);
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		ODataUpdateTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -108,6 +108,6 @@ public sealed class ODataUpdateToolTests {
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("data is required");
-		patchClient.DidNotReceive().ExecutePatch(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 }
