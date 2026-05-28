@@ -51,6 +51,22 @@ markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
 the catalog actually matched the requested target version and when it fell
 back.
 
+When `resolvedFrom` is `"latest-fallback"` the response also carries a
+`versionWarning` string. `latest` is a superset of every GA version, so a
+component listed under fallback (for example a freshly shipped `crt.Switch`)
+may not exist in the target environment's actual platform version and a page
+built against it can fail to render at runtime. Pass `--version` or
+`--environment` (the MCP tool accepts `environment-name`) to scope the
+catalog to a real version; the warning is omitted once `resolvedFrom` is
+`"environment"`. Under `--pretty` the warning renders on a `WARNING:` line
+beneath the header.
+
+The MCP `get-component-info` tool mirrors this resolution 1:1 and accepts the
+same per-call selectors — `environment-name` (preferred), `version`, or
+`uri`/`login`/`password` as an emergency fallback. Prefer passing the same
+`environment-name` you edit pages on so the catalog matches that
+environment's real component set.
+
 ## Synopsis
 
 ```bash
