@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
@@ -243,6 +244,31 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
+	[Description("DrainAsync returns within the timeout even when a background refresh task hangs on the CDN.")]
+	public async Task DrainAsync_Returns_Within_Timeout_When_Refresh_Hangs() {
+		// Arrange — CDN that never responds (simulates a network hang).
+		// Use a version key distinct from other tests to avoid sharing the
+		// static BackgroundRefreshGate and causing gate-leak interference.
+		const string version = "hang-test";
+		FakeRegistryCacheStore cache = new();
+		cache.Seed(version, SamplePayload, isFresh: false);
+		HangingHttpHandler hangingHandler = new();
+		ComponentRegistryClient client = CreateClient(cache, hangingHandler);
+
+		// Act — stale hit schedules a background refresh that will hang indefinitely
+		await client.GetAsync(version);
+		Stopwatch sw = Stopwatch.StartNew();
+		await ComponentRegistryClient.DrainAsync(TimeSpan.FromMilliseconds(300));
+		sw.Stop();
+
+		// Assert
+		sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5),
+			because: "DrainAsync must honour its timeout and not block the process shutdown indefinitely");
+
+		hangingHandler.Dispose();
+	}
+
+	[Test]
 	[Description("RefreshAsync reports failure when the CDN never returns success.")]
 	public async Task RefreshAsync_Returns_False_When_Cdn_Down() {
 		// Arrange
@@ -261,7 +287,7 @@ public sealed class ComponentRegistryClientTests {
 
 	private static ComponentRegistryClient CreateClient(
 		FakeRegistryCacheStore cache,
-		FakeHttpHandler handler,
+		HttpMessageHandler handler,
 		IFileSystem? fileSystem = null) {
 		fileSystem ??= new MockFileSystem();
 		return new ComponentRegistryClient(
@@ -272,7 +298,7 @@ public sealed class ComponentRegistryClientTests {
 			CdnBaseUrl);
 	}
 
-	private sealed class FakeHttpClientFactory(FakeHttpHandler handler) : IHttpClientFactory {
+	private sealed class FakeHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory {
 		public HttpClient CreateClient(string name) => new(handler) {
 			// Short timeout keeps the test fast in case of an accidental real network call.
 			Timeout = TimeSpan.FromSeconds(5)
@@ -346,6 +372,16 @@ public sealed class ComponentRegistryClientTests {
 		// can assert that an override env var (CLIO_COMPONENT_REGISTRY_CDN_BASE_URL)
 		// + flavor selection both surface verbatim in cache metadata.
 		public Dictionary<string, string> WrittenSourceUrls { get; } = new();
+	}
+
+	private sealed class HangingHttpHandler : HttpMessageHandler {
+		private readonly TaskCompletionSource<HttpResponseMessage> _tcs = new();
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+			_tcs.Task;
+		protected override void Dispose(bool disposing) {
+			_tcs.TrySetCanceled();
+			base.Dispose(disposing);
+		}
 	}
 
 	private sealed class EnvironmentVariableScope : IDisposable {

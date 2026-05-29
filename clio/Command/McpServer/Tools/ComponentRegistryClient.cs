@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -407,7 +408,12 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		// de-duplicated without blocking a parallel stale read on `mobile:latest`.
 		string key = $"{_flavor.DisplayName}|{version}";
 		SemaphoreSlim gate = GetBackgroundRefreshGate(version);
-		Task task = Task.Run(async () => {
+		// Declare before Task.Run so the lambda can capture the variable and
+		// use value-matched removal in the finally block (avoids evicting a
+		// concurrent task's dict entry — the indexer assignment below may
+		// overwrite this task if two stale reads race for the same key).
+		Task task = null!;
+		task = Task.Run(async () => {
 			if (!await gate.WaitAsync(0).ConfigureAwait(false)) {
 				return;
 			}
@@ -420,7 +426,11 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 					_flavor.DisplayName, version);
 			} finally {
 				gate.Release();
-				PendingRefreshTasks.TryRemove(key, out _);
+				// Value-matched removal: only evict this task's own entry so a
+				// concurrent refresh that overwrote the slot is not accidentally
+				// removed from the drain set.
+				((ICollection<KeyValuePair<string, Task>>)PendingRefreshTasks)
+					.Remove(new KeyValuePair<string, Task>(key, task));
 			}
 		});
 		PendingRefreshTasks[key] = task;
