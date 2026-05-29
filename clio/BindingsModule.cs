@@ -283,7 +283,11 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
-		services.AddSingleton<IPlatformVersionResolver, PlatformVersionResolver>();
+		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
+		// get-component-info MCP tool and the CLI verb resolve the platform version from
+		// per-call arguments (environment-name / uri / version), never from an ambient
+		// singleton bound to the server's startup environment. A singleton resolver would
+		// probe the wrong environment and report a falsely authoritative "environment" tier.
 		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();

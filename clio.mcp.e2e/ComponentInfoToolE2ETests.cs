@@ -63,7 +63,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse detailResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["component-type"] = "crt.MenuItem" });
+			new Dictionary<string, object?> { ["componentType"] = "crt.MenuItem" });
 
 		// Assert
 		tabListResponse.Success.Should().BeTrue(
@@ -92,8 +92,12 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "component-type lookups should return the detail contract");
 		detailResponse.ComponentType.Should().Be("crt.MenuItem",
 			because: "the detail response should echo the requested component type");
-		detailResponse.Container.Should().BeTrue(
-			because: "menu items can host submenu items");
+		// The wrapped (static-files-mcp) registry shape does not emit the `container`
+		// flag at all — no component carries it, so it deserialises to null. The legacy
+		// top-level-array shape did. Accept either: a true value (legacy) or null
+		// (wrapped). This mirrors the items legacy/wrapped tolerance just below.
+		detailResponse.Container.Should().NotBe(false,
+			because: "container is a legacy-shape flag absent from the wrapped registry payload — accept true (legacy) or null (wrapped), reject only an explicit non-container");
 		// crt.MenuItem details may arrive either through the legacy properties block
 		// (older catalogs) or through the wrapped-shape inputs/outputs blocks (current
 		// static-files-mcp registry). Accept either — both describe the same surface.
@@ -131,7 +135,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
+			new Dictionary<string, object?> { ["schemaType"] = "mobile" });
 
 		// Assert
 		mobileListResponse.Success.Should().BeTrue(
@@ -166,7 +170,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["component-type"] = "crt.DoesNotExist" });
+			new Dictionary<string, object?> { ["componentType"] = "crt.DoesNotExist" });
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -192,11 +196,11 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse fieldResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["component-type"] = "crt.NumberInput" });
+			new Dictionary<string, object?> { ["componentType"] = "crt.NumberInput" });
 		ComponentInfoResponse containerResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["component-type"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
 
 		// Assert
 		fieldResponse.Success.Should().BeTrue(
@@ -215,6 +219,60 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the contract only applies to standard field components and must not surface for containers");
 	}
 
+	[Test]
+	[Description("Couples versionWarning to the resolver tier on the real MCP server: a latest-fallback response (no environment passed) carries the superset caveat, and an environment-matched response omits it.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info emits versionWarning only on latest-fallback")]
+	[AllureDescription("Starts the real clio MCP server, requests detail without an environment, and verifies versionWarning is present exactly when resolvedFrom is latest-fallback.")]
+	public async Task ComponentInfoTool_Should_Emit_VersionWarning_On_Latest_Fallback() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act — no environment-name / version passed. Version resolution is driven solely by
+		// per-call arguments (the ambient singleton was removed), so the server deterministically
+		// reports latest-fallback regardless of any environment registered on the CI runner.
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "with no environment-name/version the resolver cannot scope to a real version and must report latest-fallback");
+		response.VersionWarning.Should().NotBeNullOrWhiteSpace(
+			because: "a latest-fallback catalog is a superset of the target version and the caveat must warn AI the component may not exist there");
+	}
+
+	[Test]
+	[Description("Rejects passing both version and environment-name on the real MCP server — the two version sources are mutually exclusive.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info rejects version + environment-name together")]
+	[AllureDescription("Starts the real clio MCP server and verifies that supplying both version and environment-name returns a structured mutually-exclusive error.")]
+	public async Task ComponentInfoTool_Should_Reject_Version_And_Environment_Together() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["componentType"] = "crt.TabContainer",
+				["version"] = "8.3.3",
+				["environmentName"] = "any-env"
+			});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "version and environment-name select the target version two different ways and must not be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the caller must be told why the request was rejected");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -227,7 +285,7 @@ public sealed class ComponentInfoToolE2ETests {
 		IReadOnlyDictionary<string, object?> arguments) {
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
-			new Dictionary<string, object?> { ["args"] = arguments },
+			new Dictionary<string, object?>(arguments),
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-component-info should return structured responses instead of top-level MCP failures");

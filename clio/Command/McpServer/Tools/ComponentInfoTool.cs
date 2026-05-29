@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -12,12 +13,22 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool surface for curated Freedom UI component metadata.
 /// </summary>
+/// <remarks>
+/// Version resolution mirrors the <c>clio get-component-info</c> CLI verb 1:1 (see
+/// <see cref="ComponentInfoCommand"/>): the target catalog version is driven entirely by the
+/// per-call arguments — never by ambient server state — so the tool returns the same catalog
+/// the targeted environment actually ships. An explicit <c>version</c> wins; otherwise an
+/// <c>environment-name</c>/<c>uri</c> triggers a cliogate <c>GetSysInfo</c> probe; with neither,
+/// the tool honestly reports <c>latest-fallback</c> and surfaces
+/// <see cref="ComponentInfoResponse.VersionWarning"/>.
+/// </remarks>
 [McpServerToolType]
 public sealed class ComponentInfoTool(
 	IComponentInfoCatalog catalog,
 	IMobileComponentInfoCatalog mobileCatalog,
-	IPlatformVersionResolver versionResolver,
-	IComponentRegistryDocsClient docsClient) {
+	IComponentRegistryDocsClient docsClient,
+	IPlatformVersionResolverFactory resolverFactory,
+	ISettingsRepository settingsRepository) {
 
 	internal const string ToolName = "get-component-info";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
@@ -46,6 +57,10 @@ public sealed class ComponentInfoTool(
 	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
+		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
+		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
+		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
+		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
@@ -55,8 +70,18 @@ public sealed class ComponentInfoTool(
 		string? search = null,
 		[Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
 		string? schemaType = null,
+		[Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
+		string? environmentName = null,
+		[Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
+		string? version = null,
+		[Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
+		string? uri = null,
+		[Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
+		string? login = null,
+		[Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
+		string? password = null,
 		CancellationToken cancellationToken = default) {
-		ComponentInfoArgs args = new(componentType, search, schemaType);
+		ComponentInfoArgs args = new(componentType, search, schemaType, environmentName, version, uri, login, password);
 		try {
 			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
 		}
@@ -82,12 +107,34 @@ public sealed class ComponentInfoTool(
 	/// </summary>
 	private async Task<ComponentInfoResponse> BuildResponseAsync(ComponentInfoArgs args, CancellationToken cancellationToken) {
 		bool isMobile = IsMobile(args.SchemaType);
-		PlatformVersionResolution version = await versionResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+		bool hasExplicitVersion = !string.IsNullOrWhiteSpace(args.Version);
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri);
+		if (hasExplicitVersion && hasEnvironment) {
+			return new ComponentInfoResponse {
+				Success = false,
+				Mode = "list",
+				Error = "'version' and 'environment-name'/'uri' are mutually exclusive. Pass one or neither.",
+				Count = 0,
+				Items = []
+			};
+		}
+		if (hasExplicitVersion && !PlatformVersionResolver.TryNormaliseToThreePartSemver(args.Version!, out _)) {
+			return new ComponentInfoResponse {
+				Success = false,
+				Mode = "list",
+				Error = $"'version' value '{args.Version}' is not a valid platform version. Use a 3-part semver, for example '8.3.3'.",
+				Count = 0,
+				Items = []
+			};
+		}
+
+		PlatformVersionResolution versionResolution = await ResolveVersionAsync(args, hasExplicitVersion, hasEnvironment, cancellationToken)
+			.ConfigureAwait(false);
 		ComponentCatalogState state = isMobile
-			? await mobileCatalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false)
-			: await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			? await mobileCatalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+			: await catalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
-			version.Source, version.ResolvedVersion, state.ResolvedVersion);
+			versionResolution.Source, versionResolution.ResolvedVersion, state.ResolvedVersion);
 
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
 			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
@@ -110,6 +157,53 @@ public sealed class ComponentInfoTool(
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom
 		};
+	}
+
+	/// <summary>
+	/// Selects the target catalog version from the per-call arguments, mirroring
+	/// <see cref="ComponentInfoCommand"/>'s resolution order so the MCP tool and the CLI verb
+	/// stay in lockstep:
+	/// <list type="number">
+	/// <item>explicit <c>version</c> — authoritative (<see cref="ComponentInfoResolution.MapResolvedFrom"/>
+	/// downgrades it to <c>latest-fallback</c> automatically if the catalog ends up loading a different version);</item>
+	/// <item><c>environment-name</c>/<c>uri</c> — probe cliogate <c>GetSysInfo</c> on that environment;</item>
+	/// <item>neither — <c>latest</c> with a non-authoritative source so the response carries <c>latest-fallback</c>.</item>
+	/// </list>
+	/// </summary>
+	private Task<PlatformVersionResolution> ResolveVersionAsync(
+		ComponentInfoArgs args,
+		bool hasExplicitVersion,
+		bool hasEnvironment,
+		CancellationToken cancellationToken) {
+		if (hasExplicitVersion) {
+			return Task.FromResult(new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment));
+		}
+
+		if (hasEnvironment) {
+			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
+			IPlatformVersionResolver resolver = resolverFactory.Create(settings);
+			return resolver.ResolveAsync(cancellationToken);
+		}
+
+		return Task.FromResult(new PlatformVersionResolution(
+			PlatformVersionResolver.LatestVersion,
+			VersionResolutionSource.LatestFallback));
+	}
+
+	/// <summary>
+	/// Builds the <see cref="EnvironmentSettings"/> for the cliogate probe from the per-call
+	/// arguments. Delegates to <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/>
+	/// so the same registered-environment lookup, active-environment fallback, and explicit
+	/// uri/login/password fill the CLI verb uses also back the MCP tool.
+	/// </summary>
+	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoArgs args) {
+		EnvironmentOptions options = new() {
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password
+		};
+		return settingsRepository.GetEnvironment(options);
 	}
 
 	private static bool IsMobile(string? schemaType) =>
@@ -241,7 +335,27 @@ public sealed record ComponentInfoArgs(
 
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
-	string? SchemaType = null
+	string? SchemaType = null,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered environment name to scope the catalog to its real platform version. Mutually exclusive with 'version'.")]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("version")]
+	[property: Description("Explicit catalog version (3-part semver). Mutually exclusive with 'environment-name'.")]
+	string? Version = null,
+
+	[property: JsonPropertyName("uri")]
+	[property: Description("Emergency fallback only: direct application URI. Prefer 'environment-name'.")]
+	string? Uri = null,
+
+	[property: JsonPropertyName("login")]
+	[property: Description("Emergency fallback only: login paired with 'uri'.")]
+	string? Login = null,
+
+	[property: JsonPropertyName("password")]
+	[property: Description("Emergency fallback only: password paired with 'uri'.")]
+	string? Password = null
 );
 
 /// <summary>
@@ -364,10 +478,11 @@ public sealed class ComponentInfoResponse {
 	public IReadOnlyList<ComponentInfoListItem>? Items { get; init; }
 
 	/// <summary>
-	/// Gets or sets the platform version the catalog was filtered against. In v1 this is
-	/// always <c>"latest"</c> (the catalog is loaded from CDN <c>latest.json</c> / cache / embedded);
-	/// once <c>IPlatformVersionResolver</c> lands this will carry the GA-tag-shaped semver
-	/// resolved from the active environment's cliogate <c>GetSysInfo</c> probe.
+	/// Gets or sets the platform version the catalog was filtered against. Carries the
+	/// GA-tag-shaped semver resolved from the targeted environment's cliogate <c>GetSysInfo</c>
+	/// probe (or an explicit <c>version</c> argument); falls back to <c>"latest"</c> when no
+	/// environment/version was supplied or the probe could not produce a usable version — see
+	/// <see cref="ResolvedFrom"/> for which tier produced it.
 	/// </summary>
 	[JsonPropertyName("resolvedTargetVersion")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -382,6 +497,19 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("resolvedFrom")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? ResolvedFrom { get; init; }
+
+	/// <summary>
+	/// Gets the human-readable caveat emitted whenever <see cref="ResolvedFrom"/> is
+	/// <c>latest-fallback</c>. Derived from <see cref="ResolvedFrom"/> so every response
+	/// shape (list / detail / not-found, web only) carries it without each branch having
+	/// to set it, and so the MCP tool and CLI verb stay in lockstep. Omitted from the wire
+	/// shape when the catalog matched the target version (<c>environment</c> tier) or when
+	/// the flavor reports no version markers (mobile). See
+	/// <see cref="ComponentInfoResolution.LatestFallbackWarning"/> for the rationale.
+	/// </summary>
+	[JsonPropertyName("versionWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
 
 	/// <summary>
 	/// Gets or sets the long-form documentation associated with the component. Populated

@@ -40,6 +40,9 @@ public static class ComponentInfoPrettyRenderer {
 			.Append(", count=").Append(response.Count)
 			.Append(")")
 			.AppendLine();
+		if (!string.IsNullOrWhiteSpace(response.VersionWarning)) {
+			sb.Append("WARNING: ").AppendLine(response.VersionWarning);
+		}
 	}
 
 	private static void AppendList(StringBuilder sb, ComponentInfoResponse response) {

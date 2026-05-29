@@ -28,8 +28,12 @@ local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
 chosen by:
 
 1. `--version <semver>` — explicit override (highest priority).
-2. `--environment <name>` or `--uri ...` — probe cliogate `GetSysInfo` on
-   that environment to pick the matching catalog.
+2. `--environment <name>` or `--uri ...` — probe the environment for its
+   core version to pick the matching catalog. The probe uses the standard
+   `ApplicationInfoService` (no cliogate required — an authenticated session
+   is enough) and falls back to the cliogate `GetSysInfo` endpoint only if
+   that yields no version. This means version-accurate results work on
+   environments without cliogate installed.
 3. Neither — default to `latest`.
 
 `--version` and `--environment` (or `--uri`) are mutually exclusive.
@@ -50,6 +54,22 @@ The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
 the catalog actually matched the requested target version and when it fell
 back.
+
+When `resolvedFrom` is `"latest-fallback"` the response also carries a
+`versionWarning` string. `latest` is a superset of every GA version, so a
+component listed under fallback (for example a freshly shipped `crt.Switch`)
+may not exist in the target environment's actual platform version and a page
+built against it can fail to render at runtime. Pass `--version` or
+`--environment` (the MCP tool accepts `environment-name`) to scope the
+catalog to a real version; the warning is omitted once `resolvedFrom` is
+`"environment"`. Under `--pretty` the warning renders on a `WARNING:` line
+beneath the header.
+
+The MCP `get-component-info` tool mirrors this resolution 1:1 and accepts the
+same per-call selectors — `environment-name` (preferred), `version`, or
+`uri`/`login`/`password` as an emergency fallback. Prefer passing the same
+`environment-name` you edit pages on so the catalog matches that
+environment's real component set.
 
 ## Synopsis
 

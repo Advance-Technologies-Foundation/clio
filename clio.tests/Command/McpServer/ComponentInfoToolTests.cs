@@ -7,7 +7,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
+using Clio.UserEnvironment;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -360,10 +362,10 @@ public sealed class ComponentInfoToolTests {
 		// Arrange
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
-		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"), new FakeDocsClient());
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
-		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		// Act — passing environment-name routes resolution through the cliogate probe stub.
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -382,10 +384,10 @@ public sealed class ComponentInfoToolTests {
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
 		ComponentInfoCatalog catalog = new(client);
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
-		ComponentInfoTool tool = new(catalog, mobileCatalog, StubPlatformVersionResolver.Environment("8.1.5"), new FakeDocsClient());
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
-		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		// Act — probe resolves 8.1.5 but the client only has "latest" published.
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -394,6 +396,125 @@ public sealed class ComponentInfoToolTests {
 			because: "the response must echo the version actually loaded by the client, not the requested one");
 		response.ResolvedFrom.Should().Be("latest-fallback",
 			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+	}
+
+	[Test]
+	[Description("Latest-fallback responses carry the versionWarning so AI does not mistake the 'latest' superset for the target environment's real component set.")]
+	public async Task ComponentInfoTool_Should_Emit_Version_Warning_On_Latest_Fallback() {
+		// Arrange — resolver falls back to latest (no environment / probe failure).
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo();
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the fixture resolver reports latest-fallback");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
+			because: "every latest-fallback response must surface the superset caveat so AI verifies the component exists in the target version");
+	}
+
+	[Test]
+	[Description("When the catalog matches the resolved environment version the response omits versionWarning — there is no superset risk to flag.")]
+	public async Task ComponentInfoTool_Should_Not_Emit_Version_Warning_When_Environment_Matches() {
+		// Arrange — resolver says 8.1.5 and the catalog loads exactly that version.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful probe whose catalog matches must surface the 'environment' tier");
+		response.VersionWarning.Should().BeNull(
+			because: "an environment-matched catalog carries no superset risk, so the warning must be omitted");
+	}
+
+	[Test]
+	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses and omits it for environment-matched responses.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_Version_Warning_Only_On_Latest_Fallback() {
+		// Arrange
+		ComponentInfoResponse fallback = new() {
+			Success = true, Mode = "list", Count = 0, Items = [],
+			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback"
+		};
+		ComponentInfoResponse matched = new() {
+			Success = true, Mode = "list", Count = 0, Items = [],
+			ResolvedTargetVersion = "8.1.5", ResolvedFrom = "environment"
+		};
+
+		// Act
+		string fallbackText = ComponentInfoPrettyRenderer.Render(fallback);
+		string matchedText = ComponentInfoPrettyRenderer.Render(matched);
+
+		// Assert
+		fallbackText.Should().Contain("WARNING:",
+			because: "the pretty surface must flag the latest superset so a human operator sees the same caveat AI gets");
+		fallbackText.Should().Contain("superset",
+			because: "the rendered warning must carry the LatestFallbackWarning text");
+		matchedText.Should().NotContain("WARNING:",
+			because: "an environment-matched catalog has no superset risk to flag");
+	}
+
+	[Test]
+	[Description("Passing environment-name routes version resolution through the cliogate probe for that environment (factory + settings repository), mirroring the CLI verb, instead of an ambient server-bound resolver.")]
+	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>())
+			.Returns(StubPlatformVersionResolver.Environment("8.2.1"));
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, settingsRepository);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "prod-stand");
+
+		// Assert
+		response.ResolvedTargetVersion.Should().Be("8.2.1",
+			because: "the version must come from the probe of the environment passed in the call, not from ambient state");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "an environment-name-driven probe that matches the catalog is the 'environment' tier");
+		settingsRepository.Received(1).GetEnvironment(Arg.Is<EnvironmentOptions>(o => o.Environment == "prod-stand"));
+		factory.Received(1).Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("A malformed explicit version is rejected up front with a readable error instead of silently degrading to latest-fallback when the CDN load fails.")]
+	public async Task ComponentInfoTool_Should_Reject_Malformed_Explicit_Version() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(version: "not-a-version");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unparseable version must surface a clear error rather than a silent latest-fallback");
+		response.Error.Should().Contain("not a valid platform version",
+			because: "the caller must be told the version value is malformed");
+	}
+
+	[Test]
+	[Description("Passing both version and environment-name is rejected with a readable error — the two version sources are mutually exclusive, mirroring the CLI verb guard.")]
+	public async Task ComponentInfoTool_Should_Reject_Both_Version_And_Environment() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			environmentName: "test-stand", version: "8.3.3");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "version and environment-name select the target version two different ways and must not be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the caller must be told why the request was rejected");
 	}
 
 	[Test]
@@ -424,11 +545,7 @@ public sealed class ComponentInfoToolTests {
 		ThrowingRegistryClient throwingClient = new(new ComponentRegistryUnavailableException("latest", "https://cdn.test/api/mcp/"));
 		ComponentInfoCatalog catalog = new(throwingClient);
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
-		ComponentInfoTool tool = new(
-			catalog,
-			mobileCatalog,
-			StubPlatformVersionResolver.LatestFallback(),
-			new FakeDocsClient());
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog);
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo();
@@ -444,11 +561,34 @@ public sealed class ComponentInfoToolTests {
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		return BuildTool(catalog, mobileCatalog, docsClient);
+	}
+
+	/// <summary>
+	/// Builds a <see cref="ComponentInfoTool"/> for tests. Version resolution mirrors the CLI verb:
+	/// with <paramref name="environmentVersion"/> null the tool resolves nothing (the caller makes a
+	/// bare or version-less call → <c>latest-fallback</c>); pass a semver to wire the stub factory so a
+	/// call carrying <c>environment-name</c> resolves to that version (<c>environment</c> tier).
+	/// </summary>
+	private static ComponentInfoTool BuildTool(
+		IComponentInfoCatalog catalog,
+		IMobileComponentInfoCatalog mobileCatalog,
+		IComponentRegistryDocsClient? docsClient = null,
+		string? environmentVersion = null) {
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		if (environmentVersion is not null) {
+			factory.Create(Arg.Any<EnvironmentSettings>())
+				.Returns(StubPlatformVersionResolver.Environment(environmentVersion));
+		}
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
 		return new ComponentInfoTool(
 			catalog,
 			mobileCatalog,
-			StubPlatformVersionResolver.LatestFallback(),
-			docsClient ?? new FakeDocsClient());
+			docsClient ?? new FakeDocsClient(),
+			factory,
+			settingsRepository);
 	}
 
 	[Test]
@@ -525,10 +665,9 @@ public sealed class ComponentInfoToolTests {
 		""";
 		FakeDocsClient docs = new FakeDocsClient()
 			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.");
-		ComponentInfoTool tool = new(
+		ComponentInfoTool tool = BuildTool(
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
 			new InMemoryMobileCatalog(TestMobileRegistryJson),
-			StubPlatformVersionResolver.LatestFallback(),
 			docs);
 
 		// Act
@@ -603,11 +742,9 @@ public sealed class ComponentInfoToolTests {
 		  ]
 		}
 		""";
-		ComponentInfoTool tool = new(
+		ComponentInfoTool tool = BuildTool(
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
-			new InMemoryMobileCatalog(TestMobileRegistryJson),
-			StubPlatformVersionResolver.LatestFallback(),
-			new FakeDocsClient());
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.SimpleButton");
@@ -646,11 +783,9 @@ public sealed class ComponentInfoToolTests {
 		  ]
 		}
 		""";
-		ComponentInfoTool tool = new(
+		ComponentInfoTool tool = BuildTool(
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
-			new InMemoryMobileCatalog(TestMobileRegistryJson),
-			StubPlatformVersionResolver.LatestFallback(),
-			new FakeDocsClient());
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Persistent");
@@ -695,11 +830,9 @@ public sealed class ComponentInfoToolTests {
 		  ]
 		}
 		""";
-		ComponentInfoTool tool = new(
+		ComponentInfoTool tool = BuildTool(
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
-			new InMemoryMobileCatalog(TestMobileRegistryJson),
-			StubPlatformVersionResolver.LatestFallback(),
-			new FakeDocsClient());
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithTypes");
 
@@ -756,11 +889,9 @@ public sealed class ComponentInfoToolTests {
 		  ]
 		}
 		""";
-		ComponentInfoTool tool = new(
+		ComponentInfoTool tool = BuildTool(
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
-			new InMemoryMobileCatalog(TestMobileRegistryJson),
-			StubPlatformVersionResolver.LatestFallback(),
-			new FakeDocsClient());
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(search: "selection");
