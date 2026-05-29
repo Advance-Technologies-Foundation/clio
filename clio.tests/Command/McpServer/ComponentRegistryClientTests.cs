@@ -223,6 +223,26 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	[Test]
+	[Description("DrainAsync waits for a background refresh triggered by a stale cache hit to write to the cache store.")]
+	public async Task DrainAsync_Waits_For_Background_Refresh_To_Complete() {
+		// Arrange
+		FakeRegistryCacheStore cache = new();
+		cache.Seed("latest", SamplePayload, isFresh: false);
+		FakeHttpHandler handler = new();
+		handler.Enqueue("latest/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
+		ComponentRegistryClient client = CreateClient(cache, handler);
+
+		// Act — stale hit schedules a background refresh; DrainAsync must not
+		// return until that refresh has written its result to the cache store.
+		await client.GetAsync("latest");
+		await ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(5));
+
+		// Assert
+		cache.WrittenVersions.Should().Contain("latest",
+			because: "the background refresh must complete (and persist to cache) before DrainAsync returns");
+	}
+
+	[Test]
 	[Description("RefreshAsync reports failure when the CDN never returns success.")]
 	public async Task RefreshAsync_Returns_False_When_Cdn_Down() {
 		// Arrange
