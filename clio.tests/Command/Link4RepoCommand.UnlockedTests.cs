@@ -7,6 +7,7 @@ using Clio.Command;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
+using ConsoleTables;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
@@ -29,6 +30,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 	private IJsonConverter _jsonConverter = null!;
 	private TestableUnlockedLink4RepoCommand _command = null!;
 	private MockFileSystem _mockFs = null!;
+	private CapturedLogger _logger = null!;
 
 	#endregion
 
@@ -44,8 +46,13 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 		_validator.Validate(Arg.Any<Link4RepoOptions>()).Returns(new ValidationResult());
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_jsonConverter = Substitute.For<IJsonConverter>();
+		// Use a fixture-local recording logger rather than the process-wide ConsoleLogger.Instance
+		// singleton: the singleton is shared across the whole test run, so another fixture toggling
+		// PreserveMessages / ClearMessages between this command's writes and the snapshot makes the
+		// message assertions flaky.
+		_logger = new CapturedLogger();
 		_command = new TestableUnlockedLink4RepoCommand(
-			ConsoleLogger.Instance,
+			_logger,
 			Substitute.For<IMediator>(),
 			_settingsRepository,
 			_fileSystem,
@@ -59,14 +66,10 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 			Substitute.For<ISysSettingsManager>(),
 			Substitute.For<IPackageLockManager>(),
 			Substitute.For<IFileDesignModePackages>());
-		ConsoleLogger.Instance.PreserveMessages = true;
-		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[TearDown]
 	public override void TearDown() {
-		ConsoleLogger.Instance.ClearMessages();
-		ConsoleLogger.Instance.PreserveMessages = false;
 		base.TearDown();
 	}
 
@@ -347,8 +350,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 		_packageListProvider.Received(1).GetPackages(Arg.Any<string>());
 		_command.CapturedSitePath.Should().BeNull("because dry-run should not create symlinks");
 		_command.VersionedLinkCalls.Should().BeEmpty("because dry-run should not link");
-		var logMessages = ConsoleLogger.Instance.FlushAndSnapshotMessages()
-			.Select(m => m.Value.ToString()).ToList();
+		List<string> logMessages = _logger.Messages;
 		logMessages.Should().Contain(m => m.Contains("[dry-run]") && m.Contains("unlocked package(s)"));
 		logMessages.Should().Contain(m => m.Contains("Repository structure:"));
 		logMessages.Should().Contain(m => m.Contains("[dry-run] No changes applied."));
@@ -373,6 +375,41 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 			UId = Guid.NewGuid()
 		};
 		return new PackageInfo(descriptor, string.Empty, []);
+	}
+
+	#endregion
+
+	#region CapturedLogger
+
+	/// <summary>
+	/// Fixture-local <see cref="ILogger"/> that records every written message into <see cref="Messages"/>.
+	/// Replaces the process-wide <c>ConsoleLogger.Instance</c> singleton so message assertions are not
+	/// affected by other fixtures running in the same test process.
+	/// </summary>
+	private sealed class CapturedLogger : ILogger, IDisposable {
+
+		public List<string> Messages { get; } = [];
+
+		public void Write(string value) => Messages.Add(value);
+		public void WriteLine() => Messages.Add(string.Empty);
+		public void WriteLine(string value) => Messages.Add(value);
+		public void WriteError(string value) => Messages.Add(value);
+		public void WriteInfo(string value) => Messages.Add(value);
+		public void WriteWarning(string value) => Messages.Add(value);
+		public void WriteDebug(string value) => Messages.Add(value);
+
+		// No-op infrastructure required by the ILogger contract.
+		List<LogMessage> ILogger.LogMessages { get; } = [];
+		bool ILogger.PreserveMessages { get; set; }
+		public void ClearMessages() => Messages.Clear();
+		public IDisposable BeginScopedFileSink(string logFilePath) => this;
+		public void Start(string logFilePath = "") { }
+		public void StartWithStream() { }
+		public void Stop() { }
+		public void SetCreatioLogStreamer(ILogStreamer creatioLogStreamer) { }
+		public void PrintTable(ConsoleTable table) { }
+		public void PrintValidationFailureErrors(IEnumerable<ValidationFailure> errors) { }
+		public void Dispose() { }
 	}
 
 	#endregion
