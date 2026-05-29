@@ -52,7 +52,7 @@ public sealed class MobilePageGuidanceResource {
 		       | Web `Rules for viewConfigDiff` section — every bullet EXCEPT the FormPage `DataValueType → component` mapping in the next row (i.e. `operation` / `name` / `parentName` / `propertyName` / `index`, the view-engine `visible` property, and the user-visible string → `$Resources.Strings.*` rule) | Applies in full |
 		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — pick the control from the MOBILE registry via `get-component-info schema-type: "mobile"`; the COMPONENT REGISTRY section below is the authoritative type list (note the canonical gotcha: Boolean → `crt.Toggle`, not `crt.Checkbox`) |
 		       | Finding a container for a new component (`parentName`) | Applies in full — same `bundle.containers` lookup; common mobile container types: `crt.Scaffold` (root), `crt.GridContainer`, `crt.FlexContainer`, `crt.TabPanel`, `crt.TabContainer`, `crt.ExpansionPanel` |
-		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb | Applies, with mobile-specific merge rules and AMD-marker exception — see WRITE MODES section below |
+		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb, and the own-body `insert`-to-`merge`/`move`/`remove` downgrade warning | Applies, but mobile bodies have no handlers/converters/validators sections (those merge rules do not apply) and the append fragment is plain JSON, not AMD (see BODY FORMAT below) |
 
 		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
 
@@ -110,16 +110,6 @@ public sealed class MobilePageGuidanceResource {
 		         - Stop and ask the user how to proceed before writing the body.
 
 		       ─────────────────────────────────
-		       WRITE MODES (mobile specifics)
-		       ─────────────────────────────────
-		       Append mode IS supported on mobile (see `MergeMobile` in PageBodyMerger.cs). Compared to web append:
-		         - `viewConfigDiff` — concat + dedupe by `name` (incoming wins, same as web).
-		         - `viewModelConfigDiff` and `modelConfigDiff` — plain concat (no dedupe — there is no key to dedupe on).
-		         - `handlers` / `converters` / `validators` merge rules from web DO NOT APPLY (those sections are absent from mobile bodies).
-		         - An incoming body that uses the full `viewModelConfig` or `modelConfig` form (instead of the `*Diff` form) is rejected — use replace mode in that case.
-		         - AMD MARKERS DO NOT APPLY: append takes a plain JSON fragment containing whichever of the three top-level `*Diff` arrays you want to merge; missing keys are skipped.
-
-		       ─────────────────────────────────
 		       BODY FORMAT — plain JSON, not AMD
 		       ─────────────────────────────────
 		       Mobile page bodies are plain JSON objects. They are NOT AMD define(...) modules.
@@ -134,6 +124,7 @@ public sealed class MobilePageGuidanceResource {
 		       DO NOT add: "handlers", "converters", "validators" — these are AMD/web-only constructs.
 		       DO NOT wrap the body in define(...).
 		       DO NOT add any AMD marker pairs (SCHEMA_DEPS, SCHEMA_VIEW_CONFIG_DIFF, etc.).
+		       For append mode, send a fragment containing only the `*Diff` arrays you want to merge; missing keys are skipped.
 
 		       ─────────────────────────────────────────────────────────────
 		       VALIDATORS, CONVERTERS, HANDLERS — mobile constraints

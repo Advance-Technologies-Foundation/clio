@@ -97,6 +97,7 @@ public sealed class PageModificationGuidanceResource {
 		         * `handlers` — concat + dedupe by `request` string (incoming wins)
 		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
+		       - Append does NOT support a body in the full `viewModelConfig`/`modelConfig` form (instead of the `*Diff` form); use replace mode for such bodies.
 		       - Modifying an existing component: edit the operation that introduces it. Changing an own-body `insert` to a same-`name` `merge`/`move`/`remove` discards the insert, so unless a parent schema inserts that name the component is orphaned (disappears at runtime). Identify own-body inserts via `ownBodySummary.viewConfigDiffOps` (`operation: insert`) and edit their `values`; reserve `merge`/`move`/`remove` for parent-introduced elements. `update-page`/`sync-pages` warn (advisory, never block) when they detect this against the prior body.
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
 		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`.
