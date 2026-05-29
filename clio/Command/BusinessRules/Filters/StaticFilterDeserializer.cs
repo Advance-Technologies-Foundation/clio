@@ -54,10 +54,17 @@ internal static class StaticFilterDeserializer {
 			JsonElement? value = leafElement.TryGetProperty("value", out JsonElement v) && v.ValueKind != JsonValueKind.Null
 				? v
 				: null;
+			string? valueMacros = leafElement.TryGetProperty("valueMacros", out JsonElement m)
+				&& m.ValueKind == JsonValueKind.String
+					? m.GetString()
+					: null;
+			int? valueMacrosArgument = ReadOptionalInt(leafElement, "valueMacrosArgument", leafPath);
 			result.Add(new StaticFilterLeaf {
 				ColumnPath = columnPath,
 				ComparisonType = comparisonType,
-				Value = value
+				Value = value,
+				ValueMacros = valueMacros,
+				ValueMacrosArgument = valueMacrosArgument
 			});
 			index++;
 		}
@@ -104,10 +111,22 @@ internal static class StaticFilterDeserializer {
 			}
 
 			string referenceColumnPath = ReadRequiredString(backwardItem, "referenceColumnPath", itemPath);
-			string comparisonType = backwardItem.TryGetProperty("comparisonType", out JsonElement ct)
-				&& ct.ValueKind == JsonValueKind.String
-					? ct.GetString() ?? StaticFilterConstants.Exists
-					: StaticFilterConstants.Exists;
+			string? aggregationType = backwardItem.TryGetProperty("aggregationType", out JsonElement at)
+				&& at.ValueKind == JsonValueKind.String
+					? at.GetString()
+					: null;
+			// In EXISTS mode comparisonType defaults to EXISTS; in aggregation mode the caller must supply
+			// a relational/equality token, so do not silently default it there.
+			bool hasComparison = backwardItem.TryGetProperty("comparisonType", out JsonElement ct)
+				&& ct.ValueKind == JsonValueKind.String;
+			string comparisonType = hasComparison
+				? ct.GetString() ?? StaticFilterConstants.Exists
+				: string.IsNullOrWhiteSpace(aggregationType) ? StaticFilterConstants.Exists : string.Empty;
+			string? aggregationColumnPath = backwardItem.TryGetProperty("aggregationColumnPath", out JsonElement acp)
+				&& acp.ValueKind == JsonValueKind.String
+					? acp.GetString()
+					: null;
+			double? aggregationValue = ReadOptionalDouble(backwardItem, "aggregationValue", itemPath);
 			StaticFilterGroup? subFilter = null;
 			if (backwardItem.TryGetProperty("filter", out JsonElement filterElement)
 				&& filterElement.ValueKind != JsonValueKind.Null) {
@@ -117,12 +136,39 @@ internal static class StaticFilterDeserializer {
 			result.Add(new StaticFilterBackwardReference {
 				ReferenceColumnPath = referenceColumnPath,
 				ComparisonType = comparisonType,
+				AggregationType = aggregationType,
+				AggregationColumnPath = aggregationColumnPath,
+				AggregationValue = aggregationValue,
 				Filter = subFilter
 			});
 			index++;
 		}
 
 		return result;
+	}
+
+	private static double? ReadOptionalDouble(JsonElement element, string propertyName, string path) {
+		if (!element.TryGetProperty(propertyName, out JsonElement value) || value.ValueKind == JsonValueKind.Null) {
+			return null;
+		}
+
+		if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double parsed)) {
+			throw new ArgumentException($"{path}.{propertyName}: must be a number.");
+		}
+
+		return parsed;
+	}
+
+	private static int? ReadOptionalInt(JsonElement element, string propertyName, string path) {
+		if (!element.TryGetProperty(propertyName, out JsonElement value) || value.ValueKind == JsonValueKind.Null) {
+			return null;
+		}
+
+		if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int parsed)) {
+			throw new ArgumentException($"{path}.{propertyName}: must be an integer.");
+		}
+
+		return parsed;
 	}
 
 	private static string ReadRequiredString(JsonElement element, string propertyName, string path) {

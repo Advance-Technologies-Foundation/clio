@@ -67,6 +67,7 @@ internal sealed class FilterSchemaProvider : IFilterSchemaProvider {
 			result[pair.Key] = new FilterSchemaColumn {
 				Name = pair.Key,
 				DataValueTypeName = MapDataValueTypeName(pair.Value.DataValueType),
+				DataValueTypeCode = pair.Value.DataValueType ?? 0,
 				ReferenceSchemaName = pair.Value.ReferenceSchema?.Name
 			};
 		}

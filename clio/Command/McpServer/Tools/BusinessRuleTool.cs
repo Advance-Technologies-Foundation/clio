@@ -20,7 +20,7 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates an entity-level Freedom UI business rule. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rule.")]
+	[Description("Creates an entity-level Freedom UI business rule. Use for: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter — limit/restrict a lookup field to records matching a fixed condition (e.g. 'show only accounts that have at least one contact', 'limit owner to contacts with mobile phone', 'only active users'). PREFER this tool over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where ...' request on a Freedom UI section/page — entity business rules apply everywhere the lookup is used and are the documented Creatio no-code surface. Phrases like 'business entity rule', 'apply static filter', 'apply-static-filter', 'limit lookup to', 'restrict lookup', 'show only ... that have ...' route here. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
