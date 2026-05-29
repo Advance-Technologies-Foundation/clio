@@ -29,7 +29,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Returns valid for a well-formed mobile JSON body (plain JSON starting with '{') without AMD markers.")]
-	public void ValidatePage_WhenBodyIsValidMobileJson_ReturnsValid() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyIsValidMobileJson_ReturnsValid() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBody = """
@@ -42,7 +42,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBody, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeTrue(
@@ -57,7 +57,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Returns invalid for a mobile JSON body that contains a 'validators' section.")]
-	public void ValidatePage_WhenMobileBodyContainsValidators_ReturnsInvalid() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileBodyContainsValidators_ReturnsInvalid() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBodyWithValidators = """
@@ -69,7 +69,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBodyWithValidators, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeFalse(
@@ -82,7 +82,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Returns invalid for a mobile JSON body that contains a 'handlers' section.")]
-	public void ValidatePage_WhenMobileBodyContainsHandlers_ReturnsInvalid() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileBodyContainsHandlers_ReturnsInvalid() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBodyWithHandlers = """
@@ -94,7 +94,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBodyWithHandlers, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeFalse(
@@ -107,7 +107,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Returns invalid for a mobile JSON body that contains a 'converters' section.")]
-	public void ValidatePage_WhenMobileBodyContainsConverters_ReturnsInvalid() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileBodyContainsConverters_ReturnsInvalid() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBodyWithConverters = """
@@ -119,7 +119,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBodyWithConverters, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeFalse(
@@ -132,7 +132,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Returns all errors when mobile body contains multiple disallowed sections.")]
-	public void ValidatePage_WhenMobileBodyContainsMultipleDisallowedSections_ReturnsAllErrors() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileBodyContainsMultipleDisallowedSections_ReturnsAllErrors() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBodyWithMultiple = """
@@ -145,7 +145,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBodyWithMultiple, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeFalse(
@@ -156,7 +156,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Mobile path: warns when a label references a $Resources.Strings key that is not DS-auto-provided and is not present in the supplied resources argument.")]
-	public void ValidatePage_WhenMobileLabelResourceKeyMissingFromSuppliedResources_ReturnsWarning() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileLabelResourceKeyMissingFromSuppliedResources_ReturnsWarning() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBody = """
@@ -173,7 +173,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBody, "{}");
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert — proves resources are threaded into mobile validation: the empty object opts in, the label-warning fires.
 		response.Valid.Should().BeTrue(
@@ -186,7 +186,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Mobile path: suppresses the label-warning when the resources argument supplies the referenced key — proves that args.Resources is threaded into mobile validation.")]
-	public void ValidatePage_WhenMobileLabelResourceKeyDeclaredInResources_ReturnsNoWarning() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenMobileLabelResourceKeyDeclaredInResources_ReturnsNoWarning() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string mobileBody = """
@@ -204,7 +204,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(mobileBody, resources);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeTrue();
@@ -214,7 +214,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Routes AMD bodies through AMD validation (not mobile path) when body starts with 'define('.")]
-	public void ValidatePage_WhenBodyIsAmd_UsesAmdValidation() {
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyIsAmd_UsesAmdValidation() {
 		// Arrange
 		PageValidateTool tool = CreateTool();
 		string amdBody =
@@ -229,7 +229,7 @@ public sealed class ValidatePageToolTests {
 		PageValidateArgs args = new(amdBody, null);
 
 		// Act
-		PageValidateResponse response = tool.ValidatePage(args);
+		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
 		response.Valid.Should().BeTrue(

@@ -72,7 +72,9 @@ public sealed class MobilePageGuidanceResource {
 		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
 
 		       OFFLINE LIMITATION:
-		         In offline mode, not all business rule conditions and actions are guaranteed to work.
+		         Mobile business rules support a limited set of conditions and actions compared
+		         to the web runtime. In offline mode, not all business rule conditions and actions
+		         are guaranteed to work.
 		         When creating or modifying business rules for a mobile page, always ask the user
 		         whether the page is used in offline mode. If yes, warn the user that some rules
 		         may not function correctly offline and recommend verifying each rule on a real

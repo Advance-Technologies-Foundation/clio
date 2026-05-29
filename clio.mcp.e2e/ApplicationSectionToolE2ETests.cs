@@ -21,6 +21,7 @@ namespace Clio.Mcp.E2E;
 public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
+	private const string ApplicationCode = "AutoTestClioMcp";
 
 	[Test]
 	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
@@ -200,13 +201,12 @@ public sealed class ApplicationSectionToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		string? applicationCode = settings.Sandbox.ApplicationCode;
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
 		}
 
-		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationCode)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationCode to point at the seeded installed application before running this test.");
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
 		}
 
 		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
@@ -220,7 +220,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["environment-name"] = environmentName,
-						["application-code"] = applicationCode,
+						["application-code"] = ApplicationCode,
 						["caption"] = caption
 					}
 				},
@@ -249,7 +249,7 @@ public sealed class ApplicationSectionToolE2ETests {
 						new Dictionary<string, object?> {
 							["args"] = new Dictionary<string, object?> {
 								["environment-name"] = environmentName,
-								["application-code"] = applicationCode,
+								["application-code"] = ApplicationCode,
 								["section-code"] = createdSectionCode
 							}
 						},
@@ -268,13 +268,12 @@ public sealed class ApplicationSectionToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		string? applicationCode = settings.Sandbox.ApplicationCode;
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
 		}
 
-		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationCode)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationCode to point at the seeded installed application before running this test.");
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
 		}
 
 		const string platformEntitySchemaName = "Case";
@@ -289,7 +288,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["environment-name"] = environmentName,
-						["application-code"] = applicationCode,
+						["application-code"] = ApplicationCode,
 						["caption"] = caption,
 						["entity-schema-name"] = platformEntitySchemaName
 					}
@@ -319,7 +318,7 @@ public sealed class ApplicationSectionToolE2ETests {
 						new Dictionary<string, object?> {
 							["args"] = new Dictionary<string, object?> {
 								["environment-name"] = environmentName,
-								["application-code"] = applicationCode,
+								["application-code"] = ApplicationCode,
 								["section-code"] = createdSectionCode
 							}
 						},

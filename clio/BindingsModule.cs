@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ATF.Repository;
@@ -105,6 +106,12 @@ public class BindingsModule {
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
+		// configured once here so callers never mutate HttpClient.Timeout after construction
+		// (avoids `InvalidOperationException` on reused instances and races on a shared
+		// mutable property — see code-review #1 on PR #599).
+		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -257,8 +264,33 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddSingleton<TimeProvider>(TimeProvider.System);
+		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
+		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
+		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();
+		// Mobile shares the same client implementation but uses a separate cache
+		// subdirectory + a different CDN file + its own local-override env var. The
+		// cache store is registered as a flavor-specific factory to keep the disk
+		// layout web/mobile-isolated.
+		services.AddSingleton<IMobileComponentRegistryClient>(sp => new MobileComponentRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Mobile.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
+		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
+		// get-component-info MCP tool and the CLI verb resolve the platform version from
+		// per-call arguments (environment-name / uri / version), never from an ambient
+		// singleton bound to the server's startup environment. A singleton resolver would
+		// probe the wrong environment and report a falsely authoritative "environment" tier.
+		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
+		services.AddTransient<ComponentRegistryRefreshCommand>();
+		services.AddTransient<ComponentInfoCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -292,6 +324,7 @@ public class BindingsModule {
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
@@ -307,6 +340,9 @@ public class BindingsModule {
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
+		services.AddTransient<ODataCreateTool>();
+		services.AddTransient<ODataUpdateTool>();
+		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();

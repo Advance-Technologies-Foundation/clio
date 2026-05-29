@@ -205,6 +205,7 @@ internal static class ToolContractCatalog {
 	private const string ColumnsFieldName = "columns";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
+	private const string ConfirmFieldName = "confirm";
 	private const string EntityFieldName = "entity";
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
@@ -313,6 +314,9 @@ internal static class ToolContractCatalog {
 			[DataForgeTool.DataForgeInitializeToolName] = BuildDataForgeInitialize(),
 			[DataForgeTool.DataForgeUpdateToolName] = BuildDataForgeUpdate(),
 			[ODataReadTool.ToolName] = BuildODataRead(),
+			[ODataCreateTool.ToolName] = BuildODataCreate(),
+			[ODataUpdateTool.ToolName] = BuildODataUpdate(),
+			[ODataDeleteTool.ToolName] = BuildODataDelete(),
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[PageListTool.ToolName] = BuildPageList(),
@@ -338,6 +342,7 @@ internal static class ToolContractCatalog {
 			[CreatePageBusinessRuleTool.BusinessRuleCreateToolName] = BuildPageBusinessRuleCreate(),
 			[SchemaNamePrefixTool.GetSchemaNamePrefixToolName] = BuildGetSchemaNamePrefix(),
 			[CompileCreatioTool.CompileCreatioToolName] = BuildCompileCreatio(),
+			[CreateUiProjectTool.CreateUiProjectToolName] = BuildNewUiProject(),
 			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
@@ -363,6 +368,9 @@ internal static class ToolContractCatalog {
 		DataForgeTool.DataForgeGetTableColumnsToolName,
 		DataForgeTool.DataForgeContextToolName,
 		ODataReadTool.ToolName,
+		ODataCreateTool.ToolName,
+		ODataUpdateTool.ToolName,
+		ODataDeleteTool.ToolName,
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		PageListTool.ToolName,
@@ -383,6 +391,7 @@ internal static class ToolContractCatalog {
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
+		CreateUiProjectTool.CreateUiProjectToolName,
 		SysSettingGetTool.GetSysSettingToolName,
 		SysSettingsListTool.ListSysSettingsToolName,
 		SysSettingCreateTool.CreateSysSettingToolName,
@@ -1279,6 +1288,127 @@ internal static class ToolContractCatalog {
 				Flow(
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataCreate() {
+		return new ToolContractDefinition(
+			ODataCreateTool.ToolName,
+			"Creates a Creatio record through OData v4 (POST). Returns the created record including its generated Id.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "data", EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
+					Field("data", ObjectType, "Object of field/value pairs for the new record. Lookup fields are set with their GUID, for example { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData create succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "Generated GUID of the created record."),
+				Field("record", ObjectType, "The created record returned by Creatio.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Create a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" }
+				})
+			],
+			Flow([ODataCreateTool.ToolName], "Use to insert a new Creatio record when field values are known."),
+			[
+				Flow(
+					[DataForgeTool.DataForgeFindTablesToolName, DataForgeTool.DataForgeGetTableColumnsToolName, ODataCreateTool.ToolName],
+					"Discover the entity and column names first when they are unknown, then create."),
+				Flow(
+					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
+					"Create the record, then read it back by the returned id to confirm persisted values.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataUpdate() {
+		return new ToolContractDefinition(
+			ODataUpdateTool.ToolName,
+			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; only supplied fields change. Never performs a keyless mass update.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", "data", ConfirmFieldName, EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to update. Required; a keyless mass update is rejected."),
+					Field("data", ObjectType, "Object of field/value pairs to change. Only supplied fields are updated."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the updated record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Rename a contact", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Smith" },
+					[ConfirmFieldName] = true
+				})
+			],
+			Flow([ODataUpdateTool.ToolName], "Use to change fields of an existing Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataUpdateTool.ToolName],
+					"Read the record to obtain its Id, then update the desired fields by that Id.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildODataDelete() {
+		return new ToolContractDefinition(
+			ODataDeleteTool.ToolName,
+			"Deletes a single Creatio record through OData v4 (DELETE). Requires the record GUID and confirm=true; never performs a keyless mass delete.",
+			new ToolInputSchemaContract(
+				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
+				[
+					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
+					Field("id", StringType, "GUID of the record to delete. Required; a keyless mass delete is rejected."),
+					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("id", StringType, "GUID of the deleted record.")
+			),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Delete a contact by id", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = ExampleContactSchemaName,
+					["id"] = ExampleLookupValueId,
+					[ConfirmFieldName] = true
+				})
+			],
+			Flow([ODataDeleteTool.ToolName], "Use to remove a single Creatio record identified by its GUID."),
+			[
+				Flow(
+					[ODataReadTool.ToolName, ODataDeleteTool.ToolName],
+					"Read to confirm the target record and obtain its Id, then delete by that Id.")
 			],
 			[]);
 	}
@@ -3381,6 +3511,114 @@ internal static class ToolContractCatalog {
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rule`, or `create-page-business-rule`."
+			]);
+	}
+
+	private const string WorkspaceDirectoryFieldName = "workspaceDirectory";
+	private const string ProjectNameFieldName = "projectName";
+	private const string VendorPrefixFieldName = "vendorPrefix";
+	private const string EmptyFieldName = "empty";
+	private const string CreatioVersionFieldName = "creatioVersion";
+
+	private static ToolContractDefinition BuildNewUiProject() {
+		return new ToolContractDefinition(
+			CreateUiProjectTool.CreateUiProjectToolName,
+			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Pure local file-system scaffolding under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>; no Creatio environment is contacted. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
+			new ToolInputSchemaContract(
+				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
+				[
+					Field(WorkspaceDirectoryFieldName, StringType,
+						"Absolute path to an existing clio workspace directory. MUST contain '.clio/workspaceSettings.json'. Relative paths, network-share paths, and non-workspace directories are rejected. Call 'create-workspace' first when the target directory is not yet a workspace."),
+					Field(ProjectNameFieldName, StringType,
+						"Angular project name in snake_case. MUST match '^[0-9a-z_]+$' (lowercase letters, digits, underscores). Examples: 'rss_reader', 'task_board'. Translate any PascalCase/camelCase/kebab-case user input into snake_case before sending."),
+					Field("packageName", StringType,
+						"Clio package name that will host the project. MUST be a simple identifier matching '^[A-Za-z0-9_]+$' — path separators, '..', and absolute paths are rejected so scaffolding cannot escape the workspace. Conventionally PascalCase (e.g., 'UsrRssReader', 'RssReader'). Created if missing; reused if it already exists."),
+					Field(VendorPrefixFieldName, StringType,
+						"Vendor prefix; 1-50 lowercase letters only ('^[a-z]{1,50}$'). Examples: 'usr', 'crt', 'acme'. Uppercase and digits are rejected by the options validator."),
+					Field(EmptyFieldName, BooleanType,
+						"When true, scaffold the 'ui-project-Empty' minimal template instead of the default 'ui-project' template. Default false."),
+					Field(CreatioVersionFieldName, StringType,
+						"Optional Creatio version to pick a matching UI project template. Omit to use the template provider's current default.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"absolute-path",
+						"invalid-workspace-directory",
+						Field: WorkspaceDirectoryFieldName,
+						Context: "workspaceDirectory must be a fully-qualified absolute path (Path.IsPathFullyQualified). Drive-relative ('C:ws') and root-relative ('\\ws') paths are rejected. It must also point at an existing directory containing '.clio/workspaceSettings.json'.",
+						Required: true),
+					new ToolContractValidator(
+						"regex",
+						"invalid-project-name",
+						Field: ProjectNameFieldName,
+						Context: "projectName must match ^[0-9a-z_]+$ (snake_case). Uppercase, hyphens, dots and spaces are rejected.",
+						Required: true),
+					new ToolContractValidator(
+						"regex",
+						"invalid-package-name",
+						Field: "packageName",
+						Context: "packageName must match ^[A-Za-z0-9_]+$ (simple identifier). Path separators, '..', and absolute paths are rejected so scaffolding stays inside the workspace.",
+						Required: true),
+					new ToolContractValidator(
+						"regex",
+						"invalid-vendor-prefix",
+						Field: VendorPrefixFieldName,
+						Context: "vendorPrefix must match ^[a-z]{1,50}$ (lowercase letters only, 1-50 chars).",
+						Required: true)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[
+				Default(EmptyFieldName, BooleanFalseLiteral,
+					"Use the default Freedom UI remote-module template unless the caller asks for the minimal shell.")
+			],
+			[
+				Example("Scaffold a default RSS reader remote module", new Dictionary<string, object?> {
+					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\newModule",
+					[ProjectNameFieldName] = "rss_reader",
+					["packageName"] = "RssReader",
+					[VendorPrefixFieldName] = "usr"
+				}),
+				Example("Scaffold an empty-template project for a specific Creatio version", new Dictionary<string, object?> {
+					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\son",
+					[ProjectNameFieldName] = "kpi_widget",
+					["packageName"] = "UsrKpiWidgets",
+					[VendorPrefixFieldName] = "usr",
+					[EmptyFieldName] = true,
+					[CreatioVersionFieldName] = "8.1.2"
+				})
+			],
+			Flow(
+				[
+					CreateWorkspaceTool.CreateWorkspaceToolName,
+					CreateUiProjectTool.CreateUiProjectToolName
+				],
+				"Ensure the target directory is a clio workspace first (skip when '.clio/workspaceSettings.json' already exists), then scaffold the Angular project. No compile-creatio or restart follow-up is required — Angular tooling is invoked by the user outside clio."),
+			[
+				Flow(
+					[
+						CreateUiProjectTool.CreateUiProjectToolName
+					],
+					"Use this single-step flow when the workspace already exists and only the UI project needs scaffolding.")
+			],
+			[],
+			AntiPatterns: [
+				new ToolAntiPattern(
+					$"{CreateUiProjectTool.CreateUiProjectToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"new-ui-project is local file-system scaffolding only. No Creatio assemblies change and no environment is contacted, so a compile-creatio follow-up serves no purpose."),
+				new ToolAntiPattern(
+					$"{ApplicationCreateTool.ApplicationCreateToolName} → {CreateUiProjectTool.CreateUiProjectToolName}",
+					"create-app installs an application into a Creatio environment; new-ui-project scaffolds an Angular remote module on the local file system. They address different artifacts and should not be chained as if one followed from the other."),
+				new ToolAntiPattern(
+					$"PascalCase or hyphenated {ProjectNameFieldName}",
+					"The underlying creator enforces snake_case via '^[0-9a-z_]+$'. Translate user-supplied names like 'RssReader' or 'rss-reader' into 'rss_reader' before calling the tool; do not pass the raw display name through.")
+			],
+			Preconditions: [
+				$"`{WorkspaceDirectoryFieldName}` is a fully-qualified absolute path to an existing directory containing `.clio/workspaceSettings.json` (call `create-workspace` first when it is not).",
+				$"`{ProjectNameFieldName}` is snake_case matching `^[0-9a-z_]+$`.",
+				"`packageName` is a simple identifier matching `^[A-Za-z0-9_]+$`.",
+				$"`{VendorPrefixFieldName}` is lowercase-only matching `^[a-z]{{1,50}}$`."
 			]);
 	}
 

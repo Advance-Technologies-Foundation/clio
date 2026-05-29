@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clio MCP — tools inventory</title>
+<style>
+  :root {
+    --bg:#0f1116; --panel:#151823; --border:#262b3a;
+    --text:#e7ecf3; --muted:#9aa3b2; --accent:#7aa2f7; --accent2:#c0caf5;
+    --good:#9ece6a; --warn:#e0af68; --bad:#f7768e; --deprecated:#7a4444;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.5; }
+  header { padding:24px 32px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:10;}
+  header h1 { margin:0 0 4px 0; font-size:22px; }
+  header .meta { color:var(--muted); font-size:13px; }
+  main { padding:24px 32px; max-width: 1600px; margin:0 auto; }
+  h2 { margin-top:32px; font-size:18px; border-bottom:1px solid var(--border); padding-bottom:8px; }
+  section.summary { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:24px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; }
+  .card .num { font-size:28px; font-weight:600; color:var(--accent2); }
+  .card .lbl { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  thead th { background:#1d2233; color:var(--accent2); text-align:left; padding:8px 10px; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; font-weight:600; border-bottom:1px solid var(--border); position:sticky; top:0; }
+  tbody td { padding:8px 10px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:top; }
+  tbody tr:hover { background:#1a1e2c; }
+  tbody tr.deprecated td:first-child::after { content:" deprecated"; background:var(--deprecated); color:#fbb; font-size:10px; padding:1px 6px; border-radius:3px; margin-left:6px; }
+  code, .mono { font-family: "SF Mono", "Monaco", "Cascadia Code", "Roboto Mono", monospace; font-size:12px; }
+  .tool-name { font-weight:600; color:#fff; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration: underline; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; }
+  .badge.read { background:#1d3a4a; color:#7dd3fc; }
+  .badge.write { background:#3a1d2a; color:#fda4af; }
+  .badge.idem { background:#1d3a2c; color:#86efac; }
+  .desc { color:var(--text); max-width: 560px; white-space: pre-wrap; }
+  .desc.collapsed { max-height: 3.6em; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+  .controls { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
+  .controls input, .controls select { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 10px; font-size:13px; }
+  .controls input[type=search] { min-width: 240px; }
+  .controls .hint { color:var(--muted); font-size:12px; margin-left:auto; }
+  .author-tag { font-size:11px; background:#1d2233; color:var(--accent2); padding:1px 6px; border-radius:3px; }
+  .pr-tag { font-size:11px; color:var(--accent); }
+  details { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin-bottom:8px; }
+  details summary { cursor:pointer; font-weight:600; color:var(--accent2); }
+  .matrix { font-size:12px; }
+  .matrix th, .matrix td { text-align:center; padding:6px 10px; }
+  .matrix tbody td:first-child { text-align:left; font-weight:600; }
+  .matrix td.zero { color:#3a4256; }
+  .matrix td.nonzero { background:rgba(122,162,247,0.08); color:var(--accent2); font-weight:600; }
+  footer { color:var(--muted); padding:24px 32px; font-size:12px; border-top:1px solid var(--border); margin-top:32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Clio MCP — tools inventory</h1>
+  <div class="meta">Snapshot 2026-05-22 · branch <code>research/mcp-components-cdn</code> · repo <a href="https://github.com/Advance-Technologies-Foundation/clio">Advance-Technologies-Foundation/clio</a></div>
+</header>
+<main>
+
+<section class="summary">
+  <div class="card"><div class="num">105</div><div class="lbl">Tool registrations</div></div>
+  <div class="card"><div class="num">105</div><div class="lbl">Unique tool names</div></div>
+  <div class="card"><div class="num">8</div><div class="lbl">Authors</div></div>
+  <div class="card"><div class="num">3</div><div class="lbl">Months active</div></div>
+  <div class="card"><div class="num">2</div><div class="lbl">Deprecated aliases</div></div>
+  <div class="card"><div class="num">31</div><div class="lbl">Read-only tools</div></div>
+  <div class="card"><div class="num">58</div><div class="lbl">Destructive tools</div></div>
+</section>
+
+<h2>Authors</h2>
+<table>
+<thead><tr><th>Author</th><th>Tools</th><th>First contribution</th><th>Last contribution</th><th>Unique PRs</th></tr></thead>
+<tbody>
+<tr><td><strong>Kyryl Krylov</strong></td><td>46</td><td>2026-03-03</td><td>2026-03-27</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/455">#455</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460">#460</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462">#462</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/464">#464</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465">#465</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/469">#469</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/491">#491</a></td></tr>
+<tr><td><strong>Alex Kravchuk</strong></td><td>41</td><td>2026-03-20</td><td>2026-04-28</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476">#476</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527">#527</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549">#549</a>, <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/554">#554</a></td></tr>
+<tr><td><strong>Tetiana Moshon</strong></td><td>8</td><td>2026-04-10</td><td>2026-04-10</td><td>—</td></tr>
+<tr><td><strong>Artem Kulykov</strong></td><td>4</td><td>2026-05-20</td><td>2026-05-20</td><td>—</td></tr>
+<tr><td><strong>Vladimir</strong></td><td>2</td><td>2026-04-09</td><td>2026-05-07</td><td>—</td></tr>
+<tr><td><strong>Dmytro Baranovskyi</strong></td><td>2</td><td>2026-04-15</td><td>2026-05-06</td><td>—</td></tr>
+<tr><td><strong>d-krestov</strong></td><td>1</td><td>2026-04-20</td><td>2026-04-20</td><td>—</td></tr>
+<tr><td><strong>Marharyta Dymytrova</strong></td><td>1</td><td>2026-05-04</td><td>2026-05-04</td><td>—</td></tr>
+</tbody></table>
+
+<h2>Cadence by month</h2>
+<table class='matrix'><thead><tr><th>Author</th><th>2026-03</th><th>2026-04</th><th>2026-05</th><th>Total</th></tr></thead><tbody><tr><td>Kyryl Krylov</td><td class='nonzero'>46</td><td class='zero'>·</td><td class='zero'>·</td><td><strong>46</strong></td></tr>
+<tr><td>Alex Kravchuk</td><td class='nonzero'>5</td><td class='nonzero'>36</td><td class='zero'>·</td><td><strong>41</strong></td></tr>
+<tr><td>Tetiana Moshon</td><td class='zero'>·</td><td class='nonzero'>8</td><td class='zero'>·</td><td><strong>8</strong></td></tr>
+<tr><td>Artem Kulykov</td><td class='zero'>·</td><td class='zero'>·</td><td class='nonzero'>4</td><td><strong>4</strong></td></tr>
+<tr><td>Vladimir</td><td class='zero'>·</td><td class='nonzero'>1</td><td class='nonzero'>1</td><td><strong>2</strong></td></tr>
+<tr><td>Dmytro Baranovskyi</td><td class='zero'>·</td><td class='nonzero'>1</td><td class='nonzero'>1</td><td><strong>2</strong></td></tr>
+<tr><td>d-krestov</td><td class='zero'>·</td><td class='nonzero'>1</td><td class='zero'>·</td><td><strong>1</strong></td></tr>
+<tr><td>Marharyta Dymytrova</td><td class='zero'>·</td><td class='zero'>·</td><td class='nonzero'>1</td><td><strong>1</strong></td></tr>
+<tr><td><strong>Total</strong></td><td><strong>51</strong></td><td><strong>47</strong></td><td><strong>7</strong></td><td><strong>105</strong></td></tr></tbody></table>
+<h2>Largest batch PRs</h2>
+<table>
+<thead><tr><th>Tools</th><th>Subject</th><th>PR</th></tr></thead><tbody>
+<tr><td><strong>18</strong></td><td>Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527">#527</a></td></tr>
+<tr><td><strong>14</strong></td><td>feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549">#549</a></td></tr>
+<tr><td><strong>8</strong></td><td>ENG-87092 Clio MCP: Data forge</td><td>—</td></tr>
+<tr><td><strong>7</strong></td><td>agentic-dev-flow (#465)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465">#465</a></td></tr>
+<tr><td><strong>7</strong></td><td>Codex/common (#460)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460">#460</a></td></tr>
+<tr><td><strong>6</strong></td><td>feat: add MCP tools for workspace package management and unit testing (#462)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462">#462</a></td></tr>
+<tr><td><strong>5</strong></td><td>Eng 87085 adac clio (#476)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476">#476</a></td></tr>
+<tr><td><strong>4</strong></td><td>feat(mcp): add SysSettings CRU support for AI agents (ENG-88957)</td><td>—</td></tr>
+<tr><td><strong>3</strong></td><td>Clio mcp e2e (#464)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/464">#464</a></td></tr>
+<tr><td><strong>3</strong></td><td>feat: add FSM mode and compile MCP tools</td><td>—</td></tr>
+<tr><td><strong>3</strong></td><td>feat: implement data binding commands and related files</td><td>—</td></tr>
+<tr><td><strong>3</strong></td><td>Enhance logging for PushWorkspace command and add entity schema commands (#469)</td><td><a href="https://github.com/Advance-Technologies-Foundation/clio/pull/469">#469</a></td></tr>
+</tbody></table>
+
+<h2>All tools — details</h2>
+<div class="controls">
+  <input type="search" id="search" placeholder="Search (name, description, author, file…)" oninput="filterRows()"/>
+  <select id="cat" onchange="filterRows()"><option value="">All categories</option><option value="App lifecycle">App lifecycle</option><option value="Workspace &amp; packages">Workspace &amp; packages</option><option value="Apps &amp; Sections">Apps &amp; Sections</option><option value="Pages (Freedom UI)">Pages (Freedom UI)</option><option value="Schemas (generic)">Schemas (generic)</option><option value="Entity schemas">Entity schemas</option><option value="Client unit schemas">Client unit schemas</option><option value="SQL schemas">SQL schemas</option><option value="Data binding">Data binding</option><option value="System settings">System settings</option><option value="Business rules">Business rules</option><option value="Data Forge">Data Forge</option><option value="Process / Modeling">Process / Modeling</option><option value="DB ops">DB ops</option><option value="AI / Guidance">AI / Guidance</option></select>
+  <select id="author" onchange="filterRows()"><option value="">All authors</option><option value="Kyryl Krylov">Kyryl Krylov (46)</option><option value="Alex Kravchuk">Alex Kravchuk (41)</option><option value="Tetiana Moshon">Tetiana Moshon (8)</option><option value="Artem Kulykov">Artem Kulykov (4)</option><option value="Vladimir">Vladimir (2)</option><option value="Dmytro Baranovskyi">Dmytro Baranovskyi (2)</option><option value="d-krestov">d-krestov (1)</option><option value="Marharyta Dymytrova">Marharyta Dymytrova (1)</option></select>
+  <label><input type="checkbox" id="dep" onchange="filterRows()"> Deprecated only</label>
+  <span class="hint">Click ► to expand the description</span>
+</div>
+<table id="tools">
+<thead>
+<tr>
+  <th>Tool</th>
+  <th>Category</th>
+  <th>File</th>
+  <th>Flags</th>
+  <th>Author</th>
+  <th>Date</th>
+  <th>Commit / PR</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class='deprecated' data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="1">
+  <td><code class="tool-name">StopAllCreatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/StopTool.cs#L52" class="mono">StopTool.cs:52</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-03</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/69de4159e07ea111a0a7b8fe63f29c95f82b95f2" class="mono">69de4159</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/455" class="pr-tag">#455</a></td>
+  <td><details><summary>[Deprecated: use stop-all-creatio] Stops all Creatio instances</summary><div class="desc">[Deprecated: use stop-all-creatio] Stops all Creatio instances</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Clio mcp (#455)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">deploy-creatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/InstallerCommandTool.cs#L27" class="mono">InstallerCommandTool.cs:27</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-05</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/54e8f3a2cd01952e0271b56b2c79bc8e4d59ba84" class="mono">54e8f3a2</a> </td>
+  <td><details><summary>Deploys Creatio from a zip archive using the real deploy-creatio command path.
+
+Before calling this tool, first run `ass…</summary><div class="desc">Deploys Creatio from a zip archive using the real deploy-creatio command path.
+
+Before calling this tool, first run `assert-infrastructure` for full infrastructure visibility,
+then run `show-passing-infrastructure` for deployable choices and recommendations.
+If you are deploying locally to IIS, also run `find-empty-iis-port` to choose a safe `sitePort`.
+Review the failing areas from `assert-infrastructure`, prefer the recommended bundle from
+`show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: enhance Redis server configuration and validation</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">uninstall-creatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/UninstallCreatioTool.cs#L11" class="mono">UninstallCreatioTool.cs:11</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-05</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/54e8f3a2cd01952e0271b56b2c79bc8e4d59ba84" class="mono">54e8f3a2</a> </td>
+  <td><details><summary>uninstall-creatio command completely removes local Creatio instance from
+the machine, including the IIS site and applica…</summary><div class="desc">uninstall-creatio command completely removes local Creatio instance from
+the machine, including the IIS site and application pool, database (both
+local and containerized), application files, and application pool user
+profile data.
+
+The command reads the database connection string from ConnectionStrings.config
+in the Creatio installation directory and uses it to connect and drop the
+database. This works for both local databases (PostgreSQL, MSSQL) and
+containerized databases (Kubernetes/Rancher).</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: enhance Redis server configuration and validation</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">add-package</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/WorkspacePackageTool.cs#L21" class="mono">WorkspacePackageTool.cs:21</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>Adds a package to a specified local workspace.
+
+The workspace path is required because the command updates local workspa…</summary><div class="desc">Adds a package to a specified local workspace.
+
+The workspace path is required because the command updates local workspace state and may
+trigger follow-up configuration download behavior. When `build-zip-path` is omitted, the
+follow-up flow may need the requested environment to download configuration from Creatio.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">create-entity-schema</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L30" class="mono">EntitySchemaTool.cs:30</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
+
+Use this when the sc…</summary><div class="desc">Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
+
+Use this when the schema should be created directly on the target environment instead of generating
+local source files. The package must already exist on the target environment.
+
+Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="Process / Modeling" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">create-user-task</code></td>
+  <td>Process / Modeling</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/UserTaskTool.cs#L23" class="mono">UserTaskTool.cs:23</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Creates a new user task in a package from the specified local workspace and builds that package.
+
+The tool can create an…</summary><div class="desc">Creates a new user task in a package from the specified local workspace and builds that package.
+
+The tool can create an empty task or create it with initial parameters in one operation.
+The workspace path is required because the package must exist in the local workspace.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">delete-schema</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DeleteSchemaTool.cs#L15" class="mono">DeleteSchemaTool.cs:15</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Deletes a schema from a Creatio environment.
+
+Two modes:
+- workspace (default): schema must belong to a package listed i…</summary><div class="desc">Deletes a schema from a Creatio environment.
+
+Two modes:
+- workspace (default): schema must belong to a package listed in the supplied workspace path.
+  Uses WorkspaceExplorerService.svc/GetWorkspaceItems + Delete.
+- remote (`remote: true`): deletes the schema directly from the target environment by name,
+  bypassing workspace validation. Supply only `schema-name` and `environment-name`.
+
+Supports any workspace item type, including entity, client unit, source code, process,
+DCM, process user task, campaign, service, addon, Copilot intent, localization schemas,
+as well as SQL scripts, data bindings, and assemblies.
+
+This operation is destructive and cannot be undone.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="Process / Modeling" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">modify-user-task-parameters</code></td>
+  <td>Process / Modeling</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/UserTaskTool.cs#L60" class="mono">UserTaskTool.cs:60</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Modifies parameters on an existing workspace-owned user task in Creatio.
+
+This tool can add parameters, remove parameter…</summary><div class="desc">Modifies parameters on an existing workspace-owned user task in Creatio.
+
+This tool can add parameters, remove parameters, or do both in one call.
+Because it can remove parameters from an existing schema, treat it as destructive.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">new-test-project</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/WorkspacePackageTool.cs#L55" class="mono">WorkspacePackageTool.cs:55</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>Creates a new unit test project for a package in the specified local workspace.
+
+The workspace path is required because …</summary><div class="desc">Creates a new unit test project for a package in the specified local workspace.
+
+The workspace path is required because the command generates files under that workspace and
+updates the workspace solution structure.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">pkg-to-db</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/LoadPackagesTool.cs#L38" class="mono">LoadPackagesTool.cs:38</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Loads packages from the file system into the database on a Creatio web application</summary><div class="desc">Loads packages from the file system into the database on a Creatio web application</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">pkg-to-file-system</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/LoadPackagesTool.cs#L22" class="mono">LoadPackagesTool.cs:22</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Loads packages from the database into the file system on a Creatio web application</summary><div class="desc">Loads packages from the database into the file system on a Creatio web application</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">reg-web-app</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RegWebAppTool.cs#L20" class="mono">RegWebAppTool.cs:20</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3810552b7c4ca3bd2a59330a5a171a018981bfbb" class="mono">3810552b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/460" class="pr-tag">#460</a></td>
+  <td><details><summary>Registers or updates a local clio web application configuration.
+
+This command updates clio&#x27;s local environment set…</summary><div class="desc">Registers or updates a local clio web application configuration.
+
+This command updates clio&#x27;s local environment settings. It does not modify Creatio metadata.
+The tool also supports setting the active environment and importing environments from IIS.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Codex/common (#460)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">restart-by-credentials</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestartTool.cs#L39" class="mono">RestartTool.cs:39</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>Restarts Creatio instance by credentials</summary><div class="desc">Restarts Creatio instance by credentials</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr class='deprecated' data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="1">
+  <td><code class="tool-name">restart-by-environmentName</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestartTool.cs#L33" class="mono">RestartTool.cs:33</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>[Deprecated: use restart-by-environment-name] Restarts Creatio instance by environment name</summary><div class="desc">[Deprecated: use restart-by-environment-name] Restarts Creatio instance by environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">start-creatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/StartTool.cs#L18" class="mono">StartTool.cs:18</a></td>
+  <td><span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>Starts Creatio instance by environment name</summary><div class="desc">Starts Creatio instance by environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">stop-creatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/StopTool.cs#L18" class="mono">StopTool.cs:18</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-08</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/1f4203f781b5d0af66e93b941c4493e4ced331d7" class="mono">1f4203f7</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/462" class="pr-tag">#462</a></td>
+  <td><details><summary>Stops Creatio instance by environment name</summary><div class="desc">Stops Creatio instance by environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add MCP tools for workspace package management and unit testing (#462)</div></details></td>
+</tr>
+<tr data-cat="DB ops" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">clear-redis-db-by-credentials</code></td>
+  <td>DB ops</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ClearRedisTool.cs#L31" class="mono">ClearRedisTool.cs:31</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-09</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0369f16e74a5ec8e79d31689e4817566fabb2cb8" class="mono">0369f16e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/464" class="pr-tag">#464</a></td>
+  <td><details><summary>Empties redis database used by creatio instance</summary><div class="desc">Empties redis database used by creatio instance</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Clio mcp e2e (#464)</div></details></td>
+</tr>
+<tr data-cat="DB ops" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">clear-redis-db-by-environment</code></td>
+  <td>DB ops</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ClearRedisTool.cs#L16" class="mono">ClearRedisTool.cs:16</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-09</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0369f16e74a5ec8e79d31689e4817566fabb2cb8" class="mono">0369f16e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/464" class="pr-tag">#464</a></td>
+  <td><details><summary>Empties redis database used by creatio instance</summary><div class="desc">Empties redis database used by creatio instance</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Clio mcp e2e (#464)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">create-workspace</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/CreateWorkspaceTool.cs#L22" class="mono">CreateWorkspaceTool.cs:22</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-09</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0369f16e74a5ec8e79d31689e4817566fabb2cb8" class="mono">0369f16e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/464" class="pr-tag">#464</a></td>
+  <td><details><summary>Creates a new empty clio workspace in a local directory.
+
+To create a workspace in C:\Projects\Workspaces\son directory,…</summary><div class="desc">Creates a new empty clio workspace in a local directory.
+
+To create a workspace in C:\Projects\Workspaces\son directory, use:
+workspaceName: son, directory: C:\Projects\Workspaces</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Clio mcp e2e (#464)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">assert-infrastructure</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/AssertInfrastructureTool.cs#L34" class="mono">AssertInfrastructureTool.cs:34</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Runs the full infrastructure assertion sweep in one call and returns a machine-readable aggregate result.
+
+The tool eval…</summary><div class="desc">Runs the full infrastructure assertion sweep in one call and returns a machine-readable aggregate result.
+
+The tool evaluates Kubernetes infrastructure, local infrastructure, and filesystem readiness using
+the same assertion components as the CLI assert command presets. The response includes per-section
+assertion results plus normalized database candidates that an agent can use to choose a deployment target.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">compile-creatio</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/CompileCreatioTool.cs#L31" class="mono">CompileCreatioTool.cs:31</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e6bc971c80e15de77c83eebfab6abb19847bc151" class="mono">e6bc971c</a> </td>
+  <td><details><summary>Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `p…</summary><div class="desc">Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package. Call only when: (1) C# schemas were added or modified, (2) `set-fsm-mode` has just been toggled, or (3) the runtime reports a missing-in-runtime/schema-not-found error. Do NOT call after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, or any Freedom UI page-body edit — those changes are AMD modules applied at runtime and DDL is handled by `update-entity-schema`.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add FSM mode and compile MCP tools</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">download-configuration-by-build</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DownloadConfigurationTool.cs#L44" class="mono">DownloadConfigurationTool.cs:44</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Downloads Creatio configuration into the workspace `.application` folder from a Creatio zip file or extracted directory</summary><div class="desc">Downloads Creatio configuration into the workspace `.application` folder from a Creatio zip file or extracted directory</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">download-configuration-by-environment</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DownloadConfigurationTool.cs#L29" class="mono">DownloadConfigurationTool.cs:29</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Downloads Creatio configuration into the workspace `.application` folder from a registered environment name</summary><div class="desc">Downloads Creatio configuration into the workspace `.application` folder from a registered environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">find-empty-iis-port</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs#L37" class="mono">FindEmptyIisPortTool.cs:37</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Finds the first free IIS deployment port between 40000 and 42000.
+
+Use this before `deploy-creatio` when you need a safe…</summary><div class="desc">Finds the first free IIS deployment port between 40000 and 42000.
+
+Use this before `deploy-creatio` when you need a safe local IIS `sitePort`. Run
+`assert-infrastructure` for full visibility, run `show-passing-infrastructure` to choose
+database and Redis targets, and then run `find-empty-iis-port` to choose the local IIS port.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">get-fsm-mode</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/FsmModeTool.cs#L33" class="mono">FsmModeTool.cs:33</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e6bc971c80e15de77c83eebfab6abb19847bc151" class="mono">e6bc971c</a> </td>
+  <td><details><summary>Detects whether a registered Creatio environment is currently in FSM mode on or off. Use `set-fsm-mode` to activate or d…</summary><div class="desc">Detects whether a registered Creatio environment is currently in FSM mode on or off. Use `set-fsm-mode` to activate or deactivate FSM mode when needed.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add FSM mode and compile MCP tools</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">link-from-repository-by-env-package-path</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs#L46" class="mono">LinkFromRepositoryTool.cs:46</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Links repository package content into a Creatio environment package directory resolved by explicit environment package p…</summary><div class="desc">Links repository package content into a Creatio environment package directory resolved by explicit environment package path</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">link-from-repository-by-environment</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs#L23" class="mono">LinkFromRepositoryTool.cs:23</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Links repository package content into a Creatio environment package directory resolved by registered environment name</summary><div class="desc">Links repository package content into a Creatio environment package directory resolved by registered environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="DB ops" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">restore-db-by-credentials</code></td>
+  <td>DB ops</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestoreDbTool.cs#L59" class="mono">RestoreDbTool.cs:59</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/d840f1816b7ccdb10004687e734699355592bdc1" class="mono">d840f181</a> </td>
+  <td><details><summary>Restores a database by using an explicit database server URI, credentials, and backup path, and returns the temp databas…</summary><div class="desc">Restores a database by using an explicit database server URI, credentials, and backup path, and returns the temp database-operation log path.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add database operation logging for deploy and restore commands</div></details></td>
+</tr>
+<tr data-cat="DB ops" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">restore-db-by-environment</code></td>
+  <td>DB ops</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestoreDbTool.cs#L40" class="mono">RestoreDbTool.cs:40</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/d840f1816b7ccdb10004687e734699355592bdc1" class="mono">d840f181</a> </td>
+  <td><details><summary>Restores a database by using a configured clio environment and returns the temp database-operation log path.</summary><div class="desc">Restores a database by using a configured clio environment and returns the temp database-operation log path.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add database operation logging for deploy and restore commands</div></details></td>
+</tr>
+<tr data-cat="DB ops" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">restore-db-to-local-server</code></td>
+  <td>DB ops</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestoreDbTool.cs#L81" class="mono">RestoreDbTool.cs:81</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/d840f1816b7ccdb10004687e734699355592bdc1" class="mono">d840f181</a> </td>
+  <td><details><summary>Restores a database to a configured local database server and returns the temp database-operation log path.</summary><div class="desc">Restores a database to a configured local database server and returns the temp database-operation log path.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add database operation logging for deploy and restore commands</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">set-fsm-mode</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/FsmModeTool.cs#L44" class="mono">FsmModeTool.cs:44</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e6bc971c80e15de77c83eebfab6abb19847bc151" class="mono">e6bc971c</a> </td>
+  <td><details><summary>Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `p…</summary><div class="desc">Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add FSM mode and compile MCP tools</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">show-passing-infrastructure</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs#L34" class="mono">ShowPassingInfrastructureTool.cs:34</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/0566622d953cdf7719b66982c99437e945675a0e" class="mono">0566622d</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/465" class="pr-tag">#465</a></td>
+  <td><details><summary>Shows only the passing infrastructure choices that are safe to use for deployment selection.
+
+Run `assert-infrastructure…</summary><div class="desc">Shows only the passing infrastructure choices that are safe to use for deployment selection.
+
+Run `assert-infrastructure` first to inspect failing or degraded areas, then run
+`show-passing-infrastructure` to get deployable database and Redis choices plus the
+recommended `deploy-creatio` argument bundle for the current infrastructure state.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: agentic-dev-flow (#465)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">push-workspace</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/WorkspaceSyncTool.cs#L91" class="mono">WorkspaceSyncTool.cs:91</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-11</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/399bf1aba315e2dfcfb1a3bb13ea4b25282611c4" class="mono">399bf1ab</a> </td>
+  <td><details><summary>Pushes the local workspace at `workspace-path` to the specified Creatio environment</summary><div class="desc">Pushes the local workspace at `workspace-path` to the specified Creatio environment</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add get-pkg-list MCP tool and workspace sync commands</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">restore-workspace</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/WorkspaceSyncTool.cs#L121" class="mono">WorkspaceSyncTool.cs:121</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-11</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/399bf1aba315e2dfcfb1a3bb13ea4b25282611c4" class="mono">399bf1ab</a> </td>
+  <td><details><summary>Restores the local workspace at `workspace-path` from the specified Creatio environment</summary><div class="desc">Restores the local workspace at `workspace-path` from the specified Creatio environment</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add get-pkg-list MCP tool and workspace sync commands</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">add-data-binding-row</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingTool.cs#L52" class="mono">DataBindingTool.cs:52</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-15</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/a29426c687ed29f36ae40cf23a491f4d1a0e0511" class="mono">a29426c6</a> </td>
+  <td><details><summary>Adds or replaces a row in an existing local package data binding.</summary><div class="desc">Adds or replaces a row in an existing local package data binding.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: implement data binding commands and related files</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">create-data-binding</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingTool.cs#L22" class="mono">DataBindingTool.cs:22</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-15</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/a29426c687ed29f36ae40cf23a491f4d1a0e0511" class="mono">a29426c6</a> </td>
+  <td><details><summary>Creates or regenerates a package data binding from a built-in template or a runtime entity schema.</summary><div class="desc">Creates or regenerates a package data binding from a built-in template or a runtime entity schema.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: implement data binding commands and related files</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">remove-data-binding-row</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingTool.cs#L77" class="mono">DataBindingTool.cs:77</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-15</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/a29426c687ed29f36ae40cf23a491f4d1a0e0511" class="mono">a29426c6</a> </td>
+  <td><details><summary>Removes a row from an existing local package data binding by primary-key value.</summary><div class="desc">Removes a row from an existing local package data binding by primary-key value.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: implement data binding commands and related files</div></details></td>
+</tr>
+<tr data-cat="Process / Modeling" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">add-item-model</code></td>
+  <td>Process / Modeling</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/AddItemModelTool.cs#L34" class="mono">AddItemModelTool.cs:34</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/36ca6f21df95632912b167f670a9203a0e4baa4a" class="mono">36ca6f21</a> </td>
+  <td><details><summary>Generates all C# entity models from the specified Creatio environment into the provided local folder.</summary><div class="desc">Generates all C# entity models from the specified Creatio environment into the provided local folder.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add generate-process-model and add-item-model MCP tools</div></details></td>
+</tr>
+<tr data-cat="Process / Modeling" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">generate-process-model</code></td>
+  <td>Process / Modeling</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GenerateProcessModelTool.cs#L28" class="mono">GenerateProcessModelTool.cs:28</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/36ca6f21df95632912b167f670a9203a0e4baa4a" class="mono">36ca6f21</a> </td>
+  <td><details><summary>Generates a C# process model file for a process from the specified Creatio environment.</summary><div class="desc">Generates a C# process model file for a process from the specified Creatio environment.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add generate-process-model and add-item-model MCP tools</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">get-entity-schema-column-properties</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L418" class="mono">EntitySchemaTool.cs:418</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e855eb2e928fb2aef3d734401afdda7628f41a92" class="mono">e855eb2e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/469" class="pr-tag">#469</a></td>
+  <td><details><summary>Returns structured properties for the specified remote Creatio entity schema column.</summary><div class="desc">Returns structured properties for the specified remote Creatio entity schema column.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Enhance logging for PushWorkspace command and add entity schema commands (#469)</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">get-entity-schema-properties</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L352" class="mono">EntitySchemaTool.cs:352</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e855eb2e928fb2aef3d734401afdda7628f41a92" class="mono">e855eb2e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/469" class="pr-tag">#469</a></td>
+  <td><details><summary>Returns structured properties for the specified remote Creatio entity schema.</summary><div class="desc">Returns structured properties for the specified remote Creatio entity schema.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Enhance logging for PushWorkspace command and add entity schema commands (#469)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">install-application</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/InstallApplicationTool.cs#L27" class="mono">InstallApplicationTool.cs:27</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/bf11740ede4b64afe7d1963a95e0e20be289eca1" class="mono">bf11740e</a> </td>
+  <td><details><summary>Installs an application package into the specified Creatio environment.</summary><div class="desc">Installs an application package into the specified Creatio environment.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add install-application MCP tool and enhance data-binding functionality</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">modify-entity-schema-column</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L448" class="mono">EntitySchemaTool.cs:448</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-16</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e855eb2e928fb2aef3d734401afdda7628f41a92" class="mono">e855eb2e</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/469" class="pr-tag">#469</a></td>
+  <td><details><summary>Adds, modifies, or removes a column in a remote Creatio entity schema.</summary><div class="desc">Adds, modifies, or removes a column in a remote Creatio entity schema.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Enhance logging for PushWorkspace command and add entity schema commands (#469)</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-data-binding-db</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingDbTool.cs#L19" class="mono">DataBindingDbTool.cs:19</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-03-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7517ccd0d87c6d61c74f08fd98c5178b1fa9aae7" class="mono">7517ccd0</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476" class="pr-tag">#476</a></td>
+  <td><details><summary>Creates a DB-first package data binding by saving data directly to the remote Creatio database.</summary><div class="desc">Creates a DB-first package data binding by saving data directly to the remote Creatio database.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Eng 87085 adac clio (#476)</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-lookup</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L150" class="mono">EntitySchemaTool.cs:150</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-03-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7517ccd0d87c6d61c74f08fd98c5178b1fa9aae7" class="mono">7517ccd0</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476" class="pr-tag">#476</a></td>
+  <td><details><summary>Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
+
+The schema always in…</summary><div class="desc">Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
+
+The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
+entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
+not send them as custom columns.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Eng 87085 adac clio (#476)</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">remove-data-binding-row-db</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingDbTool.cs#L74" class="mono">DataBindingDbTool.cs:74</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-03-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7517ccd0d87c6d61c74f08fd98c5178b1fa9aae7" class="mono">7517ccd0</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476" class="pr-tag">#476</a></td>
+  <td><details><summary>Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when …</summary><div class="desc">Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Eng 87085 adac clio (#476)</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-entity-schema</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L234" class="mono">EntitySchemaTool.cs:234</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-03-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7517ccd0d87c6d61c74f08fd98c5178b1fa9aae7" class="mono">7517ccd0</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476" class="pr-tag">#476</a></td>
+  <td><details><summary>Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.  Entity business rules (…</summary><div class="desc">Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.  Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Eng 87085 adac clio (#476)</div></details></td>
+</tr>
+<tr data-cat="Data binding" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">upsert-data-binding-row-db</code></td>
+  <td>Data binding</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataBindingDbTool.cs#L47" class="mono">DataBindingDbTool.cs:47</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-03-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7517ccd0d87c6d61c74f08fd98c5178b1fa9aae7" class="mono">7517ccd0</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/476" class="pr-tag">#476</a></td>
+  <td><details><summary>Upserts a single row in a remote DB-first data binding.</summary><div class="desc">Upserts a single row in a remote DB-first data binding.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Eng 87085 adac clio (#476)</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">delete-skill</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SkillManagementTool.cs#L160" class="mono">SkillManagementTool.cs:160</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-27</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3970e6fb21a458edb219a5579f9fc5a8fb7c8e13" class="mono">3970e6fb</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/491" class="pr-tag">#491</a></td>
+  <td><details><summary>Deletes a managed skill from workspace or user scope</summary><div class="desc">Deletes a managed skill from workspace or user scope</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Add workspace skill install, update, and delete commands (#491)</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">install-skills</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SkillManagementTool.cs#L106" class="mono">SkillManagementTool.cs:106</a></td>
+  <td></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-27</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3970e6fb21a458edb219a5579f9fc5a8fb7c8e13" class="mono">3970e6fb</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/491" class="pr-tag">#491</a></td>
+  <td><details><summary>Installs one or more new managed skills into workspace or user scope from a local repository path or git URL</summary><div class="desc">Installs one or more new managed skills into workspace or user scope from a local repository path or git URL</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Add workspace skill install, update, and delete commands (#491)</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="Kyryl Krylov" data-deprecated="0">
+  <td><code class="tool-name">update-skill</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SkillManagementTool.cs#L133" class="mono">SkillManagementTool.cs:133</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Kyryl Krylov</span></td>
+  <td>2026-03-27</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/3970e6fb21a458edb219a5579f9fc5a8fb7c8e13" class="mono">3970e6fb</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/491" class="pr-tag">#491</a></td>
+  <td><details><summary>Updates one or more managed skills in workspace or user scope from a local repository path or git URL</summary><div class="desc">Updates one or more managed skills in workspace or user scope from a local repository path or git URL</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Add workspace skill install, update, and delete commands (#491)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Vladimir" data-deprecated="0">
+  <td><code class="tool-name">link-from-repository-unlocked</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs#L70" class="mono">LinkFromRepositoryTool.cs:70</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Vladimir</span></td>
+  <td>2026-04-09</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/a0a4c63c8def6a456ec70e904f586d0ad28a221c" class="mono">a0a4c63c</a> </td>
+  <td><details><summary>Queries the Creatio site for unlocked packages and links only those from the repository.  Supports flat (repo/PackageNam…</summary><div class="desc">Queries the Creatio site for unlocked packages and links only those from the repository.  Supports flat (repo/PackageName/) and versioned (repo/PackageName/branch/version/) repo structures.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): expose --unlocked, --dry-run, --skip-preparation in MCP tool</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-context</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L160" class="mono">DataForgeTool.cs:160</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, ta…</summary><div class="desc">Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-find-lookups</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L83" class="mono">DataForgeTool.cs:83</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references bef…</summary><div class="desc">Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-find-tables</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L58" class="mono">DataForgeTool.cs:58</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before…</summary><div class="desc">Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-get-relations</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L108" class="mono">DataForgeTool.cs:108</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Finds known relationship paths between two Creatio tables to help model references or understand existing entity links.</summary><div class="desc">Finds known relationship paths between two Creatio tables to help model references or understand existing entity links.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-get-table-columns</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L134" class="mono">DataForgeTool.cs:134</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets.</summary><div class="desc">Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-initialize</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L207" class="mono">DataForgeTool.cs:207</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Schedules a full Data Forge initialization when the index is missing, stale, or not ready.</summary><div class="desc">Schedules a full Data Forge initialization when the index is missing, stale, or not ready.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-status</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L33" class="mono">DataForgeTool.cs:33</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environmen…</summary><div class="desc">Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Data Forge" data-author="Tetiana Moshon" data-deprecated="0">
+  <td><code class="tool-name">dataforge-update</code></td>
+  <td>Data Forge</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/DataForgeTool.cs#L231" class="mono">DataForgeTool.cs:231</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Tetiana Moshon</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e9946996bfef3efeb36ca9117f6a2fac73bf4c29" class="mono">e9946996</a> </td>
+  <td><details><summary>Schedules a Data Forge index refresh after schema changes or when discovery results appear stale.</summary><div class="desc">Schedules a Data Forge index refresh after schema changes or when discovery results appear stale.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-87092 Clio MCP: Data forge</div></details></td>
+</tr>
+<tr data-cat="Entity schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">find-entity-schema</code></td>
+  <td>Entity schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/EntitySchemaTool.cs#L382" class="mono">EntitySchemaTool.cs:382</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-10</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/2b20c276525f7a7c92434e5ed3938a85a2243395" class="mono">2b20c276</a> </td>
+  <td><details><summary>Searches for entity schemas in a Creatio environment without needing to know the package name.  Returns schema name, pac…</summary><div class="desc">Searches for entity schemas in a Creatio environment without needing to know the package name.  Returns schema name, package, maintainer, and parent schema for each match.  Use the returned &#x27;package-name&#x27; field directly for follow-up MCP calls.  Use &#x27;schema-name&#x27; for exact lookup, &#x27;search-pattern&#x27; for substring search, or &#x27;uid&#x27; for Guid lookup.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add find-entity-schema command and MCP tool</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">check-settings-health</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SettingsHealthTool.cs#L14" class="mono">SettingsHealthTool.cs:14</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and wheth…</summary><div class="desc">Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and whether environment-scoped tools can execute.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-app</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L101" class="mono">ApplicationTool.cs:101</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Creates a new application in Creatio through backend MCP and returns installed application identity plus the created pac…</summary><div class="desc">Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-app-section</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L184" class="mono">ApplicationTool.cs:184</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, …</summary><div class="desc">Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">delete-app</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationDeleteTool.cs#L29" class="mono">ApplicationDeleteTool.cs:29</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only fo…</summary><div class="desc">Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">delete-app-section</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L318" class="mono">ApplicationTool.cs:318</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section rea…</summary><div class="desc">Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-app-info</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L61" class="mono">ApplicationTool.cs:61</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Gets application information from Creatio through backend MCP. Returns installed application identity plus package and e…</summary><div class="desc">Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-component-info</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ComponentInfoTool.cs#L34" class="mono">ComponentInfoTool.cs:34</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Get curated Freedom UI component metadata by component type or list all known types.  If schema-type is omitted, default…</summary><div class="desc">Get curated Freedom UI component metadata by component type or list all known types.  If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner).  Use schema-type: &#x27;mobile&#x27; to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-page</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageGetTool.cs#L21" class="mono">PageGetTool.cs:21</a></td>
+  <td><span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory a…</summary><div class="desc">Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths.  body.js contains the EDITABLE own-body of the replacing schema in the design package (empty template when no replacing schema exists yet) — this is what update-page should receive.  bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page.  IMPORTANT: bundle.json is a JSON document. Use a JSON parsing tool (jq, PowerShell ConvertFrom-Json, Python json.load) to navigate it; do NOT rely on grep or line-oriented text search — it is typically minified to a single line.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.  MOBILE PAGES: If the returned meta.json shows schema-type == &quot;mobile&quot;, this is a mobile page.  Call get-guidance with name `mobile-page-modification` BEFORE editing the body — mobile pages use plain JSON bodies (not AMD), require different components, and disallow handlers, validators, and custom converters.  Call get-guidance with name `page-modification` BEFORE editing the returned raw.body; use its pre-edit checklist to select any specialized page-authoring guides.  Before editing the returned raw.body:  if the task involves conditional visibility, editability, or required state based on field values (e.g. &quot;when Status=Closed, hide Description&quot;), use business rules instead of writing handlers or validators in page body u2014 call get-guidance with name `business-rules` to learn more;  if the task involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before touching any component type;  if the task targets SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first;  if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first;  if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-tool-contract</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ToolContractGetTool.cs#L17" class="mono">ToolContractGetTool.cs:17</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including paramete…</summary><div class="desc">Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-app-sections</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L363" class="mono">ApplicationTool.cs:363</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section l…</summary><div class="desc">Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-apps</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L26" class="mono">ApplicationTool.cs:26</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Gets list of all applications from Creatio through backend MCP.</summary><div class="desc">Gets list of all applications from Creatio through backend MCP.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-environments</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ShowWebAppListTool.cs#L21" class="mono">ShowWebAppListTool.cs:21</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Shows the list of registered web applications and their settings as structured JSON. Sensitive values such as passwords …</summary><div class="desc">Shows the list of registered web applications and their settings as structured JSON. Sensitive values such as passwords are masked.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-packages</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GetPkgListTool.cs#L30" class="mono">GetPkgListTool.cs:30</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.</summary><div class="desc">Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-pages</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageListTool.cs#L41" class="mono">PageListTool.cs:41</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connecti…</summary><div class="desc">List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">sync-pages</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageSyncTool.cs#L29" class="mono">PageSyncTool.cs:29</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Updates multiple Freedom UI page schemas in a single call.  For each page: validates body client-side (optional), runs A…</summary><div class="desc">Updates multiple Freedom UI page schemas in a single call.  For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio,  and verifies the update (optional). Continues processing remaining pages on failure.  Client-side validation, when enabled, also enforces VendorPrefix.Name format  (SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values).  Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides.  For conditional visibility, editability, or required state based on field values (e.g. &quot;when Status=Closed, hide Description&quot;), use business rules instead of writing handlers or validators in page body u2014 call get-guidance with name `business-rules` to learn more.  Section authoring rules for the body payload:  if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first;  if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first;  if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first;  if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">sync-schemas</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SchemaSyncTool.cs#L34" class="mono">SchemaSyncTool.cs:34</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Executes a batch of schema operations in a single call:  create lookups, create entities, seed data, update entities.  R…</summary><div class="desc">Executes a batch of schema operations in a single call:  create lookups, create entities, seed data, update entities.  Reduces MCP round-trips and lock overhead compared to individual tool calls.  Stops on first failure because subsequent operations may depend on earlier ones.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Apps &amp; Sections" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-app-section</code></td>
+  <td>Apps &amp; Sections</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ApplicationTool.cs#L247" class="mono">ApplicationTool.cs:247</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured secti…</summary><div class="desc">Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-page</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageUpdateTool.cs#L27" class="mono">PageUpdateTool.cs:27</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-14</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ca0d987cc5050e7a47b82cf03e62651fa81fe022" class="mono">ca0d987c</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/527" class="pr-tag">#527</a></td>
+  <td><details><summary>Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergen…</summary><div class="desc">Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.  Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides.  For conditional visibility, editability, or required state based on field values (e.g. &quot;when Status=Closed, hide Description&quot;), use business rules instead of writing handlers or validators in page body u2014 call get-guidance with name `business-rules` to learn more.  Section authoring rules for the body payload:  if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type;  if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first;  if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first;  if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first;  if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls;  if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: Improve MCP tool naming, expand delete-schema, and fix CLI aliases (#527)</div></details></td>
+</tr>
+<tr data-cat="Business rules" data-author="Dmytro Baranovskyi" data-deprecated="0">
+  <td><code class="tool-name">create-entity-business-rule</code></td>
+  <td>Business rules</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/BusinessRuleTool.cs#L20" class="mono">BusinessRuleTool.cs:20</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Dmytro Baranovskyi</span></td>
+  <td>2026-04-15</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/5cff212592207c9327bcf8c78710de776f2977fe" class="mono">5cff2125</a> </td>
+  <td><details><summary>Creates an entity-level Freedom UI business rule.</summary><div class="desc">Creates an entity-level Freedom UI business rule.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): business rules: rename tool to create-entity-business-rule</div></details></td>
+</tr>
+<tr data-cat="Client unit schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-client-unit-schema</code></td>
+  <td>Client unit schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ClientUnitSchemaUpdateTool.cs#L24" class="mono">ClientUnitSchemaUpdateTool.cs:24</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-17</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7a17744c6ca27cfab7edd6a02074d9aa5a9fdde2" class="mono">7a17744c</a> </td>
+  <td><details><summary>Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI)  without Freedom UI…</summary><div class="desc">Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI)  without Freedom UI bundle/marker validation. Use when the target is not a Freedom UI page schema, e.g. &#x27;NetworkUtilities&#x27;.  Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat: add `update-client-unit-schema` command and MCP tool</div></details></td>
+</tr>
+<tr data-cat="AI / Guidance" data-author="d-krestov" data-deprecated="0">
+  <td><code class="tool-name">get-guidance</code></td>
+  <td>AI / Guidance</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GuidanceGetTool.cs#L35" class="mono">GuidanceGetTool.cs:35</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">d-krestov</span></td>
+  <td>2026-04-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/ce2e3c0965aab1569b3a6295867cc43274d9c464" class="mono">ce2e3c09</a> </td>
+  <td><details><summary>Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown. Known …</summary><div class="desc">Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown. Known names include clio guides such as app-modeling, page-modification, and page-schema-handlers plus composable-app skill guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, and their test guides.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-88504 Add support of validators in AI instructions</div></details></td>
+</tr>
+<tr data-cat="Client unit schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-client-unit-schema</code></td>
+  <td>Client unit schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/ClientUnitSchemaCreateTool.cs#L19" class="mono">ClientUnitSchemaCreateTool.cs:19</a></td>
+  <td></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Create a new JavaScript (ClientUnit) schema on a remote Creatio environment. Use this for utility/helper JS modules — no…</summary><div class="desc">Create a new JavaScript (ClientUnit) schema on a remote Creatio environment. Use this for utility/helper JS modules — not Freedom UI pages (use create-page for those). Prefer `environment-name`; keep direct connection args only for bootstrap flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-page</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageCreateTool.cs#L19" class="mono">PageCreateTool.cs:19</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid templat…</summary><div class="desc">Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.  Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-schema</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SchemaCreateTool.cs#L19" class="mono">SchemaCreateTool.cs:19</a></td>
+  <td></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no loca…</summary><div class="desc">Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="SQL schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">create-sql-schema</code></td>
+  <td>SQL schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SqlSchemaCreateTool.cs#L19" class="mono">SqlSchemaCreateTool.cs:19</a></td>
+  <td></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Create a new SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  The schema is saved dir…</summary><div class="desc">Create a new SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  The schema is saved directly to the server — no local workspace files are created.  Prefer `environment-name`; keep direct connection args only for bootstrap flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Client unit schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-client-unit-schema</code></td>
+  <td>Client unit schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs#L19" class="mono">GetClientUnitSchemaTool.cs:19</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment.  Use before update-clie…</summary><div class="desc">Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment.  Use before update-client-unit-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-schema</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GetSchemaTool.cs#L19" class="mono">GetSchemaTool.cs:19</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Read the C# body and metadata of a source-code schema from a remote Creatio environment.  Use before update-schema to in…</summary><div class="desc">Read the C# body and metadata of a source-code schema from a remote Creatio environment.  Use before update-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="SQL schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">get-sql-schema</code></td>
+  <td>SQL schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SqlSchemaGetTool.cs#L19" class="mono">SqlSchemaGetTool.cs:19</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Read the body and metadata of a SQL script schema from a remote Creatio environment.  Use before update-sql-schema to in…</summary><div class="desc">Read the body and metadata of a SQL script schema from a remote Creatio environment.  Use before update-sql-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="SQL schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">install-sql-schema</code></td>
+  <td>SQL schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SqlSchemaInstallTool.cs#L19" class="mono">SqlSchemaInstallTool.cs:19</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Execute a SQL script schema on a remote Creatio environment.  WARNING: executes raw SQL directly on the database. Irreve…</summary><div class="desc">Execute a SQL script schema on a remote Creatio environment.  WARNING: executes raw SQL directly on the database. Irreversible.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">list-page-templates</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageTemplatesListTool.cs#L18" class="mono">PageTemplatesListTool.cs:18</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover va…</summary><div class="desc">List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">restart-by-environment-name</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/RestartTool.cs#L13" class="mono">RestartTool.cs:13</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Restarts Creatio instance by environment name</summary><div class="desc">Restarts Creatio instance by environment name</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="App lifecycle" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">stop-all-creatio</code></td>
+  <td>App lifecycle</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/StopTool.cs#L34" class="mono">StopTool.cs:34</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Stops all Creatio instances</summary><div class="desc">Stops all Creatio instances</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-schema</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SchemaUpdateTool.cs#L20" class="mono">SchemaUpdateTool.cs:20</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Update the body of a C# source-code schema on a remote Creatio environment via SourceCodeSchemaDesignerService.  Provide…</summary><div class="desc">Update the body of a C# source-code schema on a remote Creatio environment via SourceCodeSchemaDesignerService.  Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="SQL schemas" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">update-sql-schema</code></td>
+  <td>SQL schemas</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SqlSchemaUpdateTool.cs#L19" class="mono">SqlSchemaUpdateTool.cs:19</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  Provide the bod…</summary><div class="desc">Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Pages (Freedom UI)" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">validate-page</code></td>
+  <td>Pages (Freedom UI)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PageValidateTool.cs#L19" class="mono">PageValidateTool.cs:19</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-24</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/cd5ca8ecd708395b8f34faa2cecec85ad9538c85" class="mono">cd5ca8ec</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/549" class="pr-tag">#549</a></td>
+  <td><details><summary>Validates a Freedom UI page body client-side without saving to Creatio.  For web pages: checks marker integrity, JS synt…</summary><div class="desc">Validates a Freedom UI page body client-side without saving to Creatio.  For web pages: checks marker integrity, JS syntax, JSON content, field bindings, column bindings,  handler structure (SCHEMA_HANDLERS must be an array of {request, handler} entries),  and VendorPrefix.Name format for SCHEMA_CONVERTERS / SCHEMA_VALIDATORS keys and SCHEMA_HANDLERS entry `request` values —  read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them.  For mobile pages (plain JSON body starting with &#x27;{&#x27;): validates that disallowed constructs  (validators, handlers, custom converters sections) are absent.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): page operations, schema tools, DI cleanup, and IFileSystem migration (#549)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">finish-hotfix</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PackageHotfixTool.cs#L31" class="mono">PackageHotfixTool.cs:31</a></td>
+  <td></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-28</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e481d92bddb139e6daa916f1028092afcc0bb44e" class="mono">e481d92b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/554" class="pr-tag">#554</a></td>
+  <td><details><summary>Finishes hotfix state for a Creatio package, locking it back after hotfix editing.</summary><div class="desc">Finishes hotfix state for a Creatio package, locking it back after hotfix editing.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add unlock-for-hotfix and finish-hotfix MCP tools (#554)</div></details></td>
+</tr>
+<tr data-cat="Workspace &amp; packages" data-author="Alex Kravchuk" data-deprecated="0">
+  <td><code class="tool-name">unlock-for-hotfix</code></td>
+  <td>Workspace &amp; packages</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/PackageHotfixTool.cs#L18" class="mono">PackageHotfixTool.cs:18</a></td>
+  <td><span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Alex Kravchuk</span></td>
+  <td>2026-04-28</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/e481d92bddb139e6daa916f1028092afcc0bb44e" class="mono">e481d92b</a> <a href="https://github.com/Advance-Technologies-Foundation/clio/pull/554" class="pr-tag">#554</a></td>
+  <td><details><summary>Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.</summary><div class="desc">Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add unlock-for-hotfix and finish-hotfix MCP tools (#554)</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Marharyta Dymytrova" data-deprecated="0">
+  <td><code class="tool-name">get-schema-name-prefix</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SchemaNamePrefixTool.cs#L21" class="mono">SchemaNamePrefixTool.cs:21</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Marharyta Dymytrova</span></td>
+  <td>2026-05-04</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/7e873fd96464b82292e0b1bb1dbccc016575ce95" class="mono">7e873fd9</a> </td>
+  <td><details><summary>Returns the active SchemaNamePrefix system setting for the environment.  Returns empty string when no prefix is configur…</summary><div class="desc">Returns the active SchemaNamePrefix system setting for the environment.  Returns empty string when no prefix is configured (use no prefix in that case).  Default Creatio environments return &#x27;Usr&#x27;.  Note: create-app and get-app-info both read this setting automatically and return schema-name-prefix  in their responses — you only need this tool when you require the prefix before calling either of those.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: ENG-89314: dynamic SchemaNamePrefix support in clio MCP and tools</div></details></td>
+</tr>
+<tr data-cat="Business rules" data-author="Dmytro Baranovskyi" data-deprecated="0">
+  <td><code class="tool-name">create-page-business-rule</code></td>
+  <td>Business rules</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/BusinessRuleTool.cs#L466" class="mono">BusinessRuleTool.cs:466</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Dmytro Baranovskyi</span></td>
+  <td>2026-05-06</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/db4644c39c378057e1853eef8df7c58bb2e4895a" class="mono">db4644c3</a> </td>
+  <td><details><summary>Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.</summary><div class="desc">Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): create page business rule mcp tool</div></details></td>
+</tr>
+<tr data-cat="Schemas (generic)" data-author="Vladimir" data-deprecated="0">
+  <td><code class="tool-name">generate-source-code</code></td>
+  <td>Schemas (generic)</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/GenerateSourceCodeTool.cs#L29" class="mono">GenerateSourceCodeTool.cs:29</a></td>
+  <td><span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Vladimir</span></td>
+  <td>2026-05-07</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/df492624d30613b0791f55898803c26770272b5f" class="mono">df492624</a> </td>
+  <td><details><summary>Generates source code for schemas in the specified Creatio environment.  Equivalent to the &#x27;Generate source code&#x…</summary><div class="desc">Generates source code for schemas in the specified Creatio environment.  Equivalent to the &#x27;Generate source code&#x27; button in the Creatio Configuration section.  By default generates source code for all schemas (synchronous).  Use `modified` to regenerate only modified schemas, `required` for schemas that need it,  or `background` to fire-and-forget (matching the UI behaviour).</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add generate-source-code MCP tool</div></details></td>
+</tr>
+<tr data-cat="System settings" data-author="Artem Kulykov" data-deprecated="0">
+  <td><code class="tool-name">create-sys-setting</code></td>
+  <td>System settings</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SysSettingsTool.cs#L73" class="mono">SysSettingsTool.cs:73</a></td>
+  <td><span class='badge write'>destructive</span></td>
+  <td><span class="author-tag">Artem Kulykov</span></td>
+  <td>2026-05-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/4b6b72b14f97e3f375b1d2ae09da6f21da97ca5e" class="mono">4b6b72b1</a> </td>
+  <td><details><summary>Creates a new Creatio system setting and optionally assigns an initial value.  Allowed value-type-name values match Crea…</summary><div class="desc">Creates a new Creatio system setting and optionally assigns an initial value.  Allowed value-type-name values match Creatio internal names: Text, ShortText (Text 50),  MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string), MaxSizeText (Unlimited),  Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Lookup.  Aliases accepted: Currency = Money, Decimal = Float.  Binary sys-settings are not exposed through this tool set — they need a dedicated upload flow.  For Lookup type, reference-schema-name is required.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add SysSettings CRU support for AI agents (ENG-88957)</div></details></td>
+</tr>
+<tr data-cat="System settings" data-author="Artem Kulykov" data-deprecated="0">
+  <td><code class="tool-name">get-sys-setting</code></td>
+  <td>System settings</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SysSettingsTool.cs#L16" class="mono">SysSettingsTool.cs:16</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Artem Kulykov</span></td>
+  <td>2026-05-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/4b6b72b14f97e3f375b1d2ae09da6f21da97ca5e" class="mono">4b6b72b1</a> </td>
+  <td><details><summary>Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default.  Returns em…</summary><div class="desc">Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default.  Returns empty value when the setting is not configured. Use list-sys-settings to discover available codes.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add SysSettings CRU support for AI agents (ENG-88957)</div></details></td>
+</tr>
+<tr data-cat="System settings" data-author="Artem Kulykov" data-deprecated="0">
+  <td><code class="tool-name">list-sys-settings</code></td>
+  <td>System settings</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SysSettingsTool.cs#L44" class="mono">SysSettingsTool.cs:44</a></td>
+  <td><span class='badge read'>read</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Artem Kulykov</span></td>
+  <td>2026-05-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/4b6b72b14f97e3f375b1d2ae09da6f21da97ca5e" class="mono">4b6b72b1</a> </td>
+  <td><details><summary>Lists Creatio system settings with their All-Users default values.  Binary-type settings are excluded from the list — Bi…</summary><div class="desc">Lists Creatio system settings with their All-Users default values.  Binary-type settings are excluded from the list — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.  Useful to discover settings before calling get-sys-setting or update-sys-setting.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add SysSettings CRU support for AI agents (ENG-88957)</div></details></td>
+</tr>
+<tr data-cat="System settings" data-author="Artem Kulykov" data-deprecated="0">
+  <td><code class="tool-name">update-sys-setting</code></td>
+  <td>System settings</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/blob/research/mcp-components-cdn/clio/Command/McpServer/Tools/SysSettingsTool.cs#L106" class="mono">SysSettingsTool.cs:106</a></td>
+  <td><span class='badge write'>destructive</span> <span class='badge idem'>idem</span></td>
+  <td><span class="author-tag">Artem Kulykov</span></td>
+  <td>2026-05-20</td>
+  <td><a href="https://github.com/Advance-Technologies-Foundation/clio/commit/4b6b72b14f97e3f375b1d2ae09da6f21da97ca5e" class="mono">4b6b72b1</a> </td>
+  <td><details><summary>Updates the All-Users default value of an existing Creatio system setting.  The setting must already exist — use create-…</summary><div class="desc">Updates the All-Users default value of an existing Creatio system setting.  The setting must already exist — use create-sys-setting to register a new one first.</div><div style="margin-top:6px;color:var(--muted);font-size:11px;">Subject: feat(mcp): add SysSettings CRU support for AI agents (ENG-88957)</div></details></td>
+</tr>
+</tbody></table>
+<h2>Grouped by category</h2>
+<details><summary>App lifecycle — 16 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">StopAllCreatio</code></td><td>2026-03-03</td><td>Kyryl Krylov</td><td class="desc">[Deprecated: use stop-all-creatio] Stops all Creatio instances</td></tr>
+<tr><td><code class="tool-name">deploy-creatio</code></td><td>2026-03-05</td><td>Kyryl Krylov</td><td class="desc">Deploys Creatio from a zip archive using the real deploy-creatio command path.
+
+Before calling this tool, first run `assert-infrastructure` for full infrastructure visibility,
+then run `show-passing-infrastructure` for deployable choices an…</td></tr>
+<tr><td><code class="tool-name">uninstall-creatio</code></td><td>2026-03-05</td><td>Kyryl Krylov</td><td class="desc">uninstall-creatio command completely removes local Creatio instance from
+the machine, including the IIS site and application pool, database (both
+local and containerized), application files, and application pool user
+profile data.
+
+The comm…</td></tr>
+<tr><td><code class="tool-name">reg-web-app</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Registers or updates a local clio web application configuration.
+
+This command updates clio&#x27;s local environment settings. It does not modify Creatio metadata.
+The tool also supports setting the active environment and importing environments …</td></tr>
+<tr><td><code class="tool-name">restart-by-credentials</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Restarts Creatio instance by credentials</td></tr>
+<tr><td><code class="tool-name">restart-by-environmentName</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">[Deprecated: use restart-by-environment-name] Restarts Creatio instance by environment name</td></tr>
+<tr><td><code class="tool-name">start-creatio</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Starts Creatio instance by environment name</td></tr>
+<tr><td><code class="tool-name">stop-creatio</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Stops Creatio instance by environment name</td></tr>
+<tr><td><code class="tool-name">assert-infrastructure</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Runs the full infrastructure assertion sweep in one call and returns a machine-readable aggregate result.
+
+The tool evaluates Kubernetes infrastructure, local infrastructure, and filesystem readiness using
+the same assertion components as t…</td></tr>
+<tr><td><code class="tool-name">find-empty-iis-port</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Finds the first free IIS deployment port between 40000 and 42000.
+
+Use this before `deploy-creatio` when you need a safe local IIS `sitePort`. Run
+`assert-infrastructure` for full visibility, run `show-passing-infrastructure` to choose
+data…</td></tr>
+<tr><td><code class="tool-name">show-passing-infrastructure</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Shows only the passing infrastructure choices that are safe to use for deployment selection.
+
+Run `assert-infrastructure` first to inspect failing or degraded areas, then run
+`show-passing-infrastructure` to get deployable database and Redi…</td></tr>
+<tr><td><code class="tool-name">install-application</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Installs an application package into the specified Creatio environment.</td></tr>
+<tr><td><code class="tool-name">check-settings-health</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Reports the clio bootstrap health for appsettings.json, including auto-repairs, active environment resolution, and whether environment-scoped tools can execute.</td></tr>
+<tr><td><code class="tool-name">list-environments</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Shows the list of registered web applications and their settings as structured JSON. Sensitive values such as passwords are masked.</td></tr>
+<tr><td><code class="tool-name">restart-by-environment-name</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Restarts Creatio instance by environment name</td></tr>
+<tr><td><code class="tool-name">stop-all-creatio</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Stops all Creatio instances</td></tr>
+</tbody></table></details>
+<details><summary>Workspace &amp; packages — 18 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">add-package</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Adds a package to a specified local workspace.
+
+The workspace path is required because the command updates local workspace state and may
+trigger follow-up configuration download behavior. When `build-zip-path` is omitted, the
+follow-up flow…</td></tr>
+<tr><td><code class="tool-name">new-test-project</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Creates a new unit test project for a package in the specified local workspace.
+
+The workspace path is required because the command generates files under that workspace and
+updates the workspace solution structure.</td></tr>
+<tr><td><code class="tool-name">pkg-to-db</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Loads packages from the file system into the database on a Creatio web application</td></tr>
+<tr><td><code class="tool-name">pkg-to-file-system</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Loads packages from the database into the file system on a Creatio web application</td></tr>
+<tr><td><code class="tool-name">create-workspace</code></td><td>2026-03-09</td><td>Kyryl Krylov</td><td class="desc">Creates a new empty clio workspace in a local directory.
+
+To create a workspace in C:\Projects\Workspaces\son directory, use:
+workspaceName: son, directory: C:\Projects\Workspaces</td></tr>
+<tr><td><code class="tool-name">compile-creatio</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Long-running, may take several minutes; recompiles a registered Creatio environment and forces a runtime reload. Omit `package-name` to run a full compilation (`clio cc -e ENV_NAME --all`). Provide `package-name` to compile only one package…</td></tr>
+<tr><td><code class="tool-name">download-configuration-by-build</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Downloads Creatio configuration into the workspace `.application` folder from a Creatio zip file or extracted directory</td></tr>
+<tr><td><code class="tool-name">download-configuration-by-environment</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Downloads Creatio configuration into the workspace `.application` folder from a registered environment name</td></tr>
+<tr><td><code class="tool-name">get-fsm-mode</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Detects whether a registered Creatio environment is currently in FSM mode on or off. Use `set-fsm-mode` to activate or deactivate FSM mode when needed.</td></tr>
+<tr><td><code class="tool-name">link-from-repository-by-env-package-path</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Links repository package content into a Creatio environment package directory resolved by explicit environment package path</td></tr>
+<tr><td><code class="tool-name">link-from-repository-by-environment</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Links repository package content into a Creatio environment package directory resolved by registered environment name</td></tr>
+<tr><td><code class="tool-name">set-fsm-mode</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).</td></tr>
+<tr><td><code class="tool-name">push-workspace</code></td><td>2026-03-11</td><td>Kyryl Krylov</td><td class="desc">Pushes the local workspace at `workspace-path` to the specified Creatio environment</td></tr>
+<tr><td><code class="tool-name">restore-workspace</code></td><td>2026-03-11</td><td>Kyryl Krylov</td><td class="desc">Restores the local workspace at `workspace-path` from the specified Creatio environment</td></tr>
+<tr><td><code class="tool-name">link-from-repository-unlocked</code></td><td>2026-04-09</td><td>Vladimir</td><td class="desc">Queries the Creatio site for unlocked packages and links only those from the repository.  Supports flat (repo/PackageName/) and versioned (repo/PackageName/branch/version/) repo structures.</td></tr>
+<tr><td><code class="tool-name">list-packages</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Returns packages from the specified Creatio environment as structured JSON with package name, version, and maintainer.</td></tr>
+<tr><td><code class="tool-name">finish-hotfix</code></td><td>2026-04-28</td><td>Alex Kravchuk</td><td class="desc">Finishes hotfix state for a Creatio package, locking it back after hotfix editing.</td></tr>
+<tr><td><code class="tool-name">unlock-for-hotfix</code></td><td>2026-04-28</td><td>Alex Kravchuk</td><td class="desc">Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.</td></tr>
+</tbody></table></details>
+<details><summary>Apps &amp; Sections — 8 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-app</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.</td></tr>
+<tr><td><code class="tool-name">create-app-section</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.</td></tr>
+<tr><td><code class="tool-name">delete-app</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</td></tr>
+<tr><td><code class="tool-name">delete-app-section</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data.</td></tr>
+<tr><td><code class="tool-name">get-app-info</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context.</td></tr>
+<tr><td><code class="tool-name">list-app-sections</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data.</td></tr>
+<tr><td><code class="tool-name">list-apps</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Gets list of all applications from Creatio through backend MCP.</td></tr>
+<tr><td><code class="tool-name">update-app-section</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update.</td></tr>
+</tbody></table></details>
+<details><summary>Pages (Freedom UI) — 7 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">get-page</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths.  body.js contains the EDITABLE own-body of the replacing schema in the design package (empty temp…</td></tr>
+<tr><td><code class="tool-name">list-pages</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</td></tr>
+<tr><td><code class="tool-name">sync-pages</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Updates multiple Freedom UI page schemas in a single call.  For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio,  and verifies the update (optional). Continues processing remaining page…</td></tr>
+<tr><td><code class="tool-name">update-page</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.  Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and…</td></tr>
+<tr><td><code class="tool-name">create-page</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.  Page b…</td></tr>
+<tr><td><code class="tool-name">list-page-templates</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback f…</td></tr>
+<tr><td><code class="tool-name">validate-page</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Validates a Freedom UI page body client-side without saving to Creatio.  For web pages: checks marker integrity, JS syntax, JSON content, field bindings, column bindings,  handler structure (SCHEMA_HANDLERS must be an array of {request, han…</td></tr>
+</tbody></table></details>
+<details><summary>Schemas (generic) — 7 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">delete-schema</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Deletes a schema from a Creatio environment.
+
+Two modes:
+- workspace (default): schema must belong to a package listed in the supplied workspace path.
+  Uses WorkspaceExplorerService.svc/GetWorkspaceItems + Delete.
+- remote (`remote: true`)…</td></tr>
+<tr><td><code class="tool-name">sync-schemas</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Executes a batch of schema operations in a single call:  create lookups, create entities, seed data, update entities.  Reduces MCP round-trips and lock overhead compared to individual tool calls.  Stops on first failure because subsequent o…</td></tr>
+<tr><td><code class="tool-name">create-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.</td></tr>
+<tr><td><code class="tool-name">get-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Read the C# body and metadata of a source-code schema from a remote Creatio environment.  Use before update-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback …</td></tr>
+<tr><td><code class="tool-name">update-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Update the body of a C# source-code schema on a remote Creatio environment via SourceCodeSchemaDesignerService.  Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`.  Prefer `environment-name`; …</td></tr>
+<tr><td><code class="tool-name">get-schema-name-prefix</code></td><td>2026-05-04</td><td>Marharyta Dymytrova</td><td class="desc">Returns the active SchemaNamePrefix system setting for the environment.  Returns empty string when no prefix is configured (use no prefix in that case).  Default Creatio environments return &#x27;Usr&#x27;.  Note: create-app and get-app-info both rea…</td></tr>
+<tr><td><code class="tool-name">generate-source-code</code></td><td>2026-05-07</td><td>Vladimir</td><td class="desc">Generates source code for schemas in the specified Creatio environment.  Equivalent to the &#x27;Generate source code&#x27; button in the Creatio Configuration section.  By default generates source code for all schemas (synchronous).  Use `modified` …</td></tr>
+</tbody></table></details>
+<details><summary>Entity schemas — 7 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-entity-schema</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
+
+Use this when the schema should be created directly on the target environment instead of generating
+local source files. The package must alr…</td></tr>
+<tr><td><code class="tool-name">get-entity-schema-column-properties</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Returns structured properties for the specified remote Creatio entity schema column.</td></tr>
+<tr><td><code class="tool-name">get-entity-schema-properties</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Returns structured properties for the specified remote Creatio entity schema.</td></tr>
+<tr><td><code class="tool-name">modify-entity-schema-column</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Adds, modifies, or removes a column in a remote Creatio entity schema.</td></tr>
+<tr><td><code class="tool-name">create-lookup</code></td><td>2026-03-20</td><td>Alex Kravchuk</td><td class="desc">Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
+
+The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
+entity instead of a generic entity schema…</td></tr>
+<tr><td><code class="tool-name">update-entity-schema</code></td><td>2026-03-20</td><td>Alex Kravchuk</td><td class="desc">Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema.  Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn mo…</td></tr>
+<tr><td><code class="tool-name">find-entity-schema</code></td><td>2026-04-10</td><td>Alex Kravchuk</td><td class="desc">Searches for entity schemas in a Creatio environment without needing to know the package name.  Returns schema name, package, maintainer, and parent schema for each match.  Use the returned &#x27;package-name&#x27; field directly for follow-up MCP ca…</td></tr>
+</tbody></table></details>
+<details><summary>Client unit schemas — 3 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">update-client-unit-schema</code></td><td>2026-04-17</td><td>Alex Kravchuk</td><td class="desc">Update the raw body of any client unit schema (classic 7x JS mixins/modules/utilities or Freedom UI)  without Freedom UI bundle/marker validation. Use when the target is not a Freedom UI page schema, e.g. &#x27;NetworkUtilities&#x27;.  Provide the bo…</td></tr>
+<tr><td><code class="tool-name">create-client-unit-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Create a new JavaScript (ClientUnit) schema on a remote Creatio environment. Use this for utility/helper JS modules — not Freedom UI pages (use create-page for those). Prefer `environment-name`; keep direct connection args only for bootstra…</td></tr>
+<tr><td><code class="tool-name">get-client-unit-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Read the JavaScript body and metadata of a client unit schema from a remote Creatio environment.  Use before update-client-unit-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or…</td></tr>
+</tbody></table></details>
+<details><summary>SQL schemas — 4 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-sql-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Create a new SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  The schema is saved directly to the server — no local workspace files are created.  Prefer `environment-name`; keep direct connection args only…</td></tr>
+<tr><td><code class="tool-name">get-sql-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Read the body and metadata of a SQL script schema from a remote Creatio environment.  Use before update-sql-schema to inspect current content.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback …</td></tr>
+<tr><td><code class="tool-name">install-sql-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Execute a SQL script schema on a remote Creatio environment.  WARNING: executes raw SQL directly on the database. Irreversible.  Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.</td></tr>
+<tr><td><code class="tool-name">update-sql-schema</code></td><td>2026-04-24</td><td>Alex Kravchuk</td><td class="desc">Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService.  Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`.  Prefer `environment-name`; keep dir…</td></tr>
+</tbody></table></details>
+<details><summary>Data binding — 6 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">add-data-binding-row</code></td><td>2026-03-15</td><td>Kyryl Krylov</td><td class="desc">Adds or replaces a row in an existing local package data binding.</td></tr>
+<tr><td><code class="tool-name">create-data-binding</code></td><td>2026-03-15</td><td>Kyryl Krylov</td><td class="desc">Creates or regenerates a package data binding from a built-in template or a runtime entity schema.</td></tr>
+<tr><td><code class="tool-name">remove-data-binding-row</code></td><td>2026-03-15</td><td>Kyryl Krylov</td><td class="desc">Removes a row from an existing local package data binding by primary-key value.</td></tr>
+<tr><td><code class="tool-name">create-data-binding-db</code></td><td>2026-03-20</td><td>Alex Kravchuk</td><td class="desc">Creates a DB-first package data binding by saving data directly to the remote Creatio database.</td></tr>
+<tr><td><code class="tool-name">remove-data-binding-row-db</code></td><td>2026-03-20</td><td>Alex Kravchuk</td><td class="desc">Removes a row from a remote DB-first data binding by primary-key value, and deletes the package schema data record when no bound rows remain.</td></tr>
+<tr><td><code class="tool-name">upsert-data-binding-row-db</code></td><td>2026-03-20</td><td>Alex Kravchuk</td><td class="desc">Upserts a single row in a remote DB-first data binding.</td></tr>
+</tbody></table></details>
+<details><summary>System settings — 4 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-sys-setting</code></td><td>2026-05-20</td><td>Artem Kulykov</td><td class="desc">Creates a new Creatio system setting and optionally assigns an initial value.  Allowed value-type-name values match Creatio internal names: Text, ShortText (Text 50),  MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string…</td></tr>
+<tr><td><code class="tool-name">get-sys-setting</code></td><td>2026-05-20</td><td>Artem Kulykov</td><td class="desc">Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default.  Returns empty value when the setting is not configured. Use list-sys-settings to discover available codes.</td></tr>
+<tr><td><code class="tool-name">list-sys-settings</code></td><td>2026-05-20</td><td>Artem Kulykov</td><td class="desc">Lists Creatio system settings with their All-Users default values.  Binary-type settings are excluded from the list — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.  Useful to discov…</td></tr>
+<tr><td><code class="tool-name">update-sys-setting</code></td><td>2026-05-20</td><td>Artem Kulykov</td><td class="desc">Updates the All-Users default value of an existing Creatio system setting.  The setting must already exist — use create-sys-setting to register a new one first.</td></tr>
+</tbody></table></details>
+<details><summary>Business rules — 2 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-entity-business-rule</code></td><td>2026-04-15</td><td>Dmytro Baranovskyi</td><td class="desc">Creates an entity-level Freedom UI business rule.</td></tr>
+<tr><td><code class="tool-name">create-page-business-rule</code></td><td>2026-05-06</td><td>Dmytro Baranovskyi</td><td class="desc">Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.</td></tr>
+</tbody></table></details>
+<details><summary>Data Forge — 8 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">dataforge-context</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Builds a compact Data Forge context package for planning schema work: similar tables, lookup matches, relation paths, table columns, and readiness status.</td></tr>
+<tr><td><code class="tool-name">dataforge-find-lookups</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Finds lookup values and lookup schemas that match a requested business value, useful for resolving lookup references before writing data bindings.</td></tr>
+<tr><td><code class="tool-name">dataforge-find-tables</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Finds existing Creatio tables that semantically match a business concept, so callers can reuse or compare schemas before creating new ones.</td></tr>
+<tr><td><code class="tool-name">dataforge-get-relations</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Finds known relationship paths between two Creatio tables to help model references or understand existing entity links.</td></tr>
+<tr><td><code class="tool-name">dataforge-get-table-columns</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Returns the logical columns of a Creatio table, including captions, data types, required flags, and lookup targets.</td></tr>
+<tr><td><code class="tool-name">dataforge-initialize</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Schedules a full Data Forge initialization when the index is missing, stale, or not ready.</td></tr>
+<tr><td><code class="tool-name">dataforge-status</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Checks whether Data Forge is ready to provide schema, lookup, relation, and maintenance context for a Creatio environment.</td></tr>
+<tr><td><code class="tool-name">dataforge-update</code></td><td>2026-04-10</td><td>Tetiana Moshon</td><td class="desc">Schedules a Data Forge index refresh after schema changes or when discovery results appear stale.</td></tr>
+</tbody></table></details>
+<details><summary>Process / Modeling — 4 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">create-user-task</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Creates a new user task in a package from the specified local workspace and builds that package.
+
+The tool can create an empty task or create it with initial parameters in one operation.
+The workspace path is required because the package mu…</td></tr>
+<tr><td><code class="tool-name">modify-user-task-parameters</code></td><td>2026-03-08</td><td>Kyryl Krylov</td><td class="desc">Modifies parameters on an existing workspace-owned user task in Creatio.
+
+This tool can add parameters, remove parameters, or do both in one call.
+Because it can remove parameters from an existing schema, treat it as destructive.</td></tr>
+<tr><td><code class="tool-name">add-item-model</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Generates all C# entity models from the specified Creatio environment into the provided local folder.</td></tr>
+<tr><td><code class="tool-name">generate-process-model</code></td><td>2026-03-16</td><td>Kyryl Krylov</td><td class="desc">Generates a C# process model file for a process from the specified Creatio environment.</td></tr>
+</tbody></table></details>
+<details><summary>DB ops — 5 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">clear-redis-db-by-credentials</code></td><td>2026-03-09</td><td>Kyryl Krylov</td><td class="desc">Empties redis database used by creatio instance</td></tr>
+<tr><td><code class="tool-name">clear-redis-db-by-environment</code></td><td>2026-03-09</td><td>Kyryl Krylov</td><td class="desc">Empties redis database used by creatio instance</td></tr>
+<tr><td><code class="tool-name">restore-db-by-credentials</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Restores a database by using an explicit database server URI, credentials, and backup path, and returns the temp database-operation log path.</td></tr>
+<tr><td><code class="tool-name">restore-db-by-environment</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Restores a database by using a configured clio environment and returns the temp database-operation log path.</td></tr>
+<tr><td><code class="tool-name">restore-db-to-local-server</code></td><td>2026-03-10</td><td>Kyryl Krylov</td><td class="desc">Restores a database to a configured local database server and returns the temp database-operation log path.</td></tr>
+</tbody></table></details>
+<details><summary>AI / Guidance — 6 tools</summary>
+<table><thead><tr><th>Tool</th><th>Date</th><th>Author</th><th>Description</th></tr></thead><tbody>
+<tr><td><code class="tool-name">delete-skill</code></td><td>2026-03-27</td><td>Kyryl Krylov</td><td class="desc">Deletes a managed skill from workspace or user scope</td></tr>
+<tr><td><code class="tool-name">install-skills</code></td><td>2026-03-27</td><td>Kyryl Krylov</td><td class="desc">Installs one or more new managed skills into workspace or user scope from a local repository path or git URL</td></tr>
+<tr><td><code class="tool-name">update-skill</code></td><td>2026-03-27</td><td>Kyryl Krylov</td><td class="desc">Updates one or more managed skills in workspace or user scope from a local repository path or git URL</td></tr>
+<tr><td><code class="tool-name">get-component-info</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Get curated Freedom UI component metadata by component type or list all known types.  If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner).  Use schema-…</td></tr>
+<tr><td><code class="tool-name">get-tool-contract</code></td><td>2026-04-14</td><td>Alex Kravchuk</td><td class="desc">Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.</td></tr>
+<tr><td><code class="tool-name">get-guidance</code></td><td>2026-04-20</td><td>d-krestov</td><td class="desc">Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown. Known names include clio guides such as app-modeling, page-modification, and page-schema-handlers plus composable-app skill gu…</td></tr>
+</tbody></table></details>
+
+<h2>Observations</h2>
+<ul>
+  <li>Only two explicit deprecated aliases (<code>StopAllCreatio</code>, <code>restart-by-environmentName</code>) — both are still registered as full MCP tools.</li>
+  <li>Systematic <code>*-by-credentials</code> / <code>*-by-environment</code> doubling across five categories (restart, clear-redis, restore-db, download-configuration, link-from-repository).</li>
+  <li>Schema family is split into 21 tools (generic / entity / client-unit / sql) with a repeating CRUD pattern.</li>
+  <li>Cadence: 51 tools in March, 47 in April, 7 in May — sharp early burst, then a shift from new tools to restructuring (PRs #527, #549).</li>
+</ul>
+
+<script>
+function filterRows() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const cat = document.getElementById('cat').value;
+  const author = document.getElementById('author').value;
+  const depOnly = document.getElementById('dep').checked;
+  const rows = document.querySelectorAll('#tools tbody tr');
+  rows.forEach(tr => {
+    const text = tr.innerText.toLowerCase();
+    const ok = (!q || text.includes(q))
+      && (!cat || tr.dataset.cat === cat)
+      && (!author || tr.dataset.author === author)
+      && (!depOnly || tr.dataset.deprecated === '1');
+    tr.style.display = ok ? '' : 'none';
+  });
+}
+</script>
+
+</main>
+<footer>
+  Generated by Claude Code (Opus 4.7). Source: <code>git log -S</code> per tool name within <code>clio/Command/McpServer/Tools/</code>.
+</footer>
+</body>
+</html>
