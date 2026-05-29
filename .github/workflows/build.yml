@@ -8,12 +8,23 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# Runner pools (see spec/k8-omen-runner/k8-runner.md):
+#   clio-runners        → ephemeral Linux pods in the omen k3s cluster (ARC). Fast gates.
+#   [self-hosted, Windows] → persistent Windows VM. Host-bound work only (local Postgres/Creatio
+#                            for integration tests, the coverage HTML dashboard on the IIS path).
+# NOTE: both pools register as "self-hosted", so Windows jobs must pin the Windows label.
+# NOTE: the ARC scale set has no containerMode, so a `container:` directive cannot run here —
+#       the .NET SDK is provided via actions/setup-dotnet on the bare Ubuntu runner.
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
 jobs:
 
-  # ── Detect which areas of the codebase changed ────────────────────────
+  # ── Detect which areas of the codebase changed (Linux) ────────────────
   changes:
     name: Detect changes
-    runs-on: self-hosted
+    runs-on: clio-runners
     outputs:
       clio-src:    ${{ steps.filter.outputs.clio-src }}
       tests:       ${{ steps.filter.outputs.tests }}
@@ -39,7 +50,7 @@ jobs:
               - 'cliogate/**'
               - 'cliogate.tests/**'
 
-  # ── Unit tests (fast gate — runs on every push) ───────────────────────
+  # ── Unit tests (fast gate — Linux, net10) ─────────────────────────────
   unit-tests:
     name: Unit Tests
     needs: changes
@@ -47,27 +58,64 @@ jobs:
       needs.changes.outputs.clio-src == 'true' ||
       needs.changes.outputs.tests   == 'true' ||
       github.ref == 'refs/heads/master'
-    runs-on: self-hosted
+    runs-on: clio-runners
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      - name: Run unit tests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop';
-          dotnet build-server shutdown;
-          dotnet test .\clio.tests\clio.tests.csproj `
-            --filter "Category!=Integration" `
-            --collect:"XPlat Code Coverage" `
-            -p:RunAnalyzers=false;
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Publish coverage report
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test ./clio.tests/clio.tests.csproj \
+            --filter "Category!=Integration" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults \
+            -p:RunAnalyzers=false
+
+      - name: Upload coverage artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: ./TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+
+  # ── Publish coverage dashboard (Windows, best-effort) ─────────────────
+  # The HTML dashboard lives on the Windows host's IIS path and uses a
+  # Windows-only reportgenerator binary, so it cannot run on Linux. It is
+  # best-effort: a dashboard failure never reds the test gate.
+  coverage-report:
+    name: Publish Coverage Dashboard
+    needs: unit-tests
+    if: ${{ !cancelled() && needs.unit-tests.result == 'success' }}
+    runs-on: [self-hosted, Windows]
+    continue-on-error: true
+    steps:
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-coverage
+          path: ./TestResults
+
+      - name: Generate and publish report
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop';
-          $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
+          $report = Get-ChildItem -Path .\TestResults -Recurse -Filter coverage.cobertura.xml | Select-Object -First 1;
           if ($report) {
             Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
             C:\Tools\reportgenerator.exe -reports:TestResults\coverage.opencover.xml `
@@ -76,9 +124,11 @@ jobs:
               -assemblyfilters:"+Clio;-Terrasoft.*" `
               -title:"Clio Unit Tests" `
               -reporttypes:"Html;SonarQube;MarkdownSummaryGithub;Badges";
+          } else {
+            Write-Warning "No coverage report found in artifact; skipping dashboard publish.";
           }
 
-  # ── Integration tests (run on PRs and master, after unit tests pass) ──
+  # ── Integration tests (Windows — needs local Postgres/Creatio) ────────
   integration-tests:
     name: Integration Tests
     needs: [changes, unit-tests]
@@ -86,7 +136,7 @@ jobs:
       (needs.changes.outputs.clio-src == 'true' ||
        needs.changes.outputs.tests   == 'true') &&
       github.event_name == 'pull_request'
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -100,20 +150,31 @@ jobs:
             --filter "Category=Integration" `
             -p:RunAnalyzers=false;
 
-  # ── Analyzer tests (only when analyzer code changes) ──────────────────
+  # ── Analyzer tests (Linux, net10 — only when analyzer code changes) ───
   analyzer-tests:
     name: Analyzer Tests
     needs: changes
     if: needs.changes.outputs.analyzers == 'true'
-    runs-on: self-hosted
+    runs-on: clio-runners
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      - name: Run analyzer tests
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop';
-          dotnet test .\Clio.Analyzers.Tests\Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false;
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Run analyzer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet test ./Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj -p:RunAnalyzers=false

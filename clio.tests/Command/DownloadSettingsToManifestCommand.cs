@@ -66,8 +66,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
-		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
-			.Be(expectedContent.Trim());
+		// Normalize line endings (CRLF on a Windows checkout vs LF written on non-Windows hosts).
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Replace("\r\n", "\n").Trim().Should()
+			.Be(expectedContent.Replace("\r\n", "\n").Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}
@@ -204,8 +205,9 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest-WithoutSchemas.yaml");
-		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
-			.Be(expectedContent.Trim());
+		// Normalize line endings (CRLF on a Windows checkout vs LF written on non-Windows hosts).
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Replace("\r\n", "\n").Trim().Should()
+			.Be(expectedContent.Replace("\r\n", "\n").Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}
@@ -251,9 +253,10 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
-		string actualContent = FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim();
+		// Normalize line endings (CRLF on a Windows checkout vs LF written on non-Windows hosts).
+		string actualContent = FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Replace("\r\n", "\n").Trim();
 		actualContent.Should()
-			.Be(expectedContent.Trim());
+			.Be(expectedContent.Replace("\r\n", "\n").Trim());
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}

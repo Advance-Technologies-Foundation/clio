@@ -324,7 +324,9 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
 		var expectedFile = FileSystem.File.ReadAllText(expectedManifestFileName);
 		var actualFile = FileSystem.File.ReadAllText(actualManifestFileName);
-		expectedFile.Should().Be(actualFile);
+		// Normalize line endings: the committed expected file may be checked out with CRLF while the
+		// serializer writes LF on non-Windows hosts. The test asserts YAML content, not OS newlines.
+		expectedFile.Replace("\r\n", "\n").Should().Be(actualFile.Replace("\r\n", "\n"));
 	}
 
 	[Test]
@@ -353,7 +355,9 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
 		var expectedFile = FileSystem.File.ReadAllText(expectedManifestFileName);
 		var actualFile = FileSystem.File.ReadAllText(actualManifestFileName);
-		expectedFile.Should().Be(actualFile);
+		// Normalize line endings: the committed expected file may be checked out with CRLF while the
+		// serializer writes LF on non-Windows hosts. The test asserts YAML content, not OS newlines.
+		expectedFile.Replace("\r\n", "\n").Should().Be(actualFile.Replace("\r\n", "\n"));
 	}
 
 	[Test]
