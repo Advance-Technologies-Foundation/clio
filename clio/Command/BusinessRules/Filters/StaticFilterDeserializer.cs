@@ -54,10 +54,17 @@ internal static class StaticFilterDeserializer {
 			JsonElement? value = leafElement.TryGetProperty("value", out JsonElement v) && v.ValueKind != JsonValueKind.Null
 				? v
 				: null;
+			string? valueMacros = leafElement.TryGetProperty("valueMacros", out JsonElement m)
+				&& m.ValueKind == JsonValueKind.String
+					? m.GetString()
+					: null;
+			int? valueMacrosArgument = ReadOptionalInt(leafElement, "valueMacrosArgument", leafPath);
 			result.Add(new StaticFilterLeaf {
 				ColumnPath = columnPath,
 				ComparisonType = comparisonType,
-				Value = value
+				Value = value,
+				ValueMacros = valueMacros,
+				ValueMacrosArgument = valueMacrosArgument
 			});
 			index++;
 		}
@@ -98,31 +105,73 @@ internal static class StaticFilterDeserializer {
 
 		int index = 0;
 		foreach (JsonElement backwardItem in backwardElement.EnumerateArray()) {
-			string itemPath = $"{path}.backwardReferenceFilters[{index}]";
-			if (backwardItem.ValueKind != JsonValueKind.Object) {
-				throw new ArgumentException($"{itemPath}: must be a JSON object.");
-			}
-
-			string referenceColumnPath = ReadRequiredString(backwardItem, "referenceColumnPath", itemPath);
-			string comparisonType = backwardItem.TryGetProperty("comparisonType", out JsonElement ct)
-				&& ct.ValueKind == JsonValueKind.String
-					? ct.GetString() ?? StaticFilterConstants.Exists
-					: StaticFilterConstants.Exists;
-			StaticFilterGroup? subFilter = null;
-			if (backwardItem.TryGetProperty("filter", out JsonElement filterElement)
-				&& filterElement.ValueKind != JsonValueKind.Null) {
-				subFilter = DeserializeGroup(filterElement, $"{itemPath}.filter");
-			}
-
-			result.Add(new StaticFilterBackwardReference {
-				ReferenceColumnPath = referenceColumnPath,
-				ComparisonType = comparisonType,
-				Filter = subFilter
-			});
+			result.Add(ReadBackwardReference(backwardItem, $"{path}.backwardReferenceFilters[{index}]"));
 			index++;
 		}
 
 		return result;
+	}
+
+	private static StaticFilterBackwardReference ReadBackwardReference(JsonElement backwardItem, string itemPath) {
+		if (backwardItem.ValueKind != JsonValueKind.Object) {
+			throw new ArgumentException($"{itemPath}: must be a JSON object.");
+		}
+
+		string? aggregationType = ReadOptionalString(backwardItem, "aggregationType");
+		StaticFilterGroup? subFilter = null;
+		if (backwardItem.TryGetProperty("filter", out JsonElement filterElement)
+			&& filterElement.ValueKind != JsonValueKind.Null) {
+			subFilter = DeserializeGroup(filterElement, $"{itemPath}.filter");
+		}
+
+		return new StaticFilterBackwardReference {
+			ReferenceColumnPath = ReadRequiredString(backwardItem, "referenceColumnPath", itemPath),
+			ComparisonType = ResolveBackwardComparison(backwardItem, aggregationType),
+			AggregationType = aggregationType,
+			AggregationColumnPath = ReadOptionalString(backwardItem, "aggregationColumnPath"),
+			AggregationValue = ReadOptionalDouble(backwardItem, "aggregationValue", itemPath),
+			Filter = subFilter
+		};
+	}
+
+	// In EXISTS mode comparisonType defaults to EXISTS; in aggregation mode the caller must supply a
+	// relational/equality token, so it is left empty here for the validator to flag explicitly.
+	private static string ResolveBackwardComparison(JsonElement backwardItem, string? aggregationType) {
+		string? comparison = ReadOptionalString(backwardItem, "comparisonType");
+		if (comparison is not null) {
+			return comparison;
+		}
+
+		return string.IsNullOrWhiteSpace(aggregationType) ? StaticFilterConstants.Exists : string.Empty;
+	}
+
+	private static string? ReadOptionalString(JsonElement element, string propertyName) =>
+		element.TryGetProperty(propertyName, out JsonElement value) && value.ValueKind == JsonValueKind.String
+			? value.GetString()
+			: null;
+
+	private static double? ReadOptionalDouble(JsonElement element, string propertyName, string path) {
+		if (!element.TryGetProperty(propertyName, out JsonElement value) || value.ValueKind == JsonValueKind.Null) {
+			return null;
+		}
+
+		if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double parsed)) {
+			throw new ArgumentException($"{path}.{propertyName}: must be a number.");
+		}
+
+		return parsed;
+	}
+
+	private static int? ReadOptionalInt(JsonElement element, string propertyName, string path) {
+		if (!element.TryGetProperty(propertyName, out JsonElement value) || value.ValueKind == JsonValueKind.Null) {
+			return null;
+		}
+
+		if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int parsed)) {
+			throw new ArgumentException($"{path}.{propertyName}: must be an integer.");
+		}
+
+		return parsed;
 	}
 
 	private static string ReadRequiredString(JsonElement element, string propertyName, string path) {

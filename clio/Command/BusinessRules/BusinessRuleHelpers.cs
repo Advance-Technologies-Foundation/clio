@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -60,7 +61,8 @@ internal static class BusinessRuleHelpers {
 			throw new InvalidOperationException("Entity schema column dataValueType is required.");
 		}
 
-		if (!DataValueTypeNames.TryGetValue(dataValueType.Value, out string? value)) {
+		string? value = CreatioDataValueType.GetName(dataValueType.Value);
+		if (value is null) {
 			throw new InvalidOperationException($"Unsupported entity schema dataValueType '{dataValueType.Value}'.");
 		}
 
@@ -95,16 +97,16 @@ internal static class BusinessRuleHelpers {
 		!IsUnaryComparisonType(comparisonType);
 
 	internal static bool IsUnsupportedEqualityDataValueType(string dataValueTypeName) =>
-		UnsupportedEqualityDataValueTypeNames.Contains(dataValueTypeName);
+		CreatioDataValueType.IsUnsupportedForEquality(dataValueTypeName);
 
 	internal static bool IsTextDataValueType(string dataValueTypeName) =>
-		SupportedTextDataValueTypeNames.Contains(dataValueTypeName);
+		CreatioDataValueType.IsText(dataValueTypeName);
 
 	internal static bool IsNumericDataValueType(string dataValueTypeName) =>
-		SupportedNumericDataValueTypeNames.Contains(dataValueTypeName);
+		CreatioDataValueType.IsNumeric(dataValueTypeName);
 
 	internal static bool IsDateTimeDataValueType(string dataValueTypeName) =>
-		SupportedDateTimeDataValueTypeNames.Contains(dataValueTypeName);
+		CreatioDataValueType.IsDateTime(dataValueTypeName);
 
 	internal static bool IsRelationalDataValueType(string dataValueTypeName) =>
 		IsNumericDataValueType(dataValueTypeName) || IsDateTimeDataValueType(dataValueTypeName);

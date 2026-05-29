@@ -83,6 +83,10 @@ internal sealed class LocalEsqFilterBuilder {
 			return BuildIsNullFilter(comparison, normalizedColumnPath);
 		}
 
+		if (!string.IsNullOrWhiteSpace(leaf.ValueMacros)) {
+			return BuildMacrosCompareFilter(comparison, normalizedColumnPath, column, leaf);
+		}
+
 		JsonElement value = leaf.Value!.Value;
 		bool isLookup = string.Equals(column.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase);
 		if (isLookup) {
@@ -118,18 +122,34 @@ internal sealed class LocalEsqFilterBuilder {
 		return new EsqInFilterDto {
 			ComparisonType = MapEqualityComparisonToEsq(comparison),
 			LeftExpression = new EsqColumnExpressionDto { ColumnPath = columnPath },
+			IsAggregative = false,
+			DataValueType = (int)EsqDataValueType.Lookup,
+			ReferenceSchemaName = column.ReferenceSchemaName,
 			RightExpressions = rightExpressions
 		};
 	}
 
 	private EsqParameterExpressionDto BuildLookupParameter(string rawValue, FilterSchemaColumn column) {
 		Guid id = ResolveLookupId(rawValue, column);
+		string idString = id.ToString("D");
+		string? displayName = GuidRegex.IsMatch(rawValue) ? null : rawValue;
+		// When the caller passed a GUID directly we still try to enrich Name/displayValue from the lookup
+		// so the stored value matches the platform-canonical form (Name + displayValue alongside Id + value).
+		if (displayName is null
+			&& _lookupResolver is not null
+			&& !string.IsNullOrEmpty(column.ReferenceSchemaName)
+			&& _lookupResolver.TryResolveDisplayNameById(column.ReferenceSchemaName!, id, out string? resolved)) {
+			displayName = resolved;
+		}
+
 		return new EsqParameterExpressionDto {
 			Parameter = new EsqParameterDto {
 				DataValueType = (int)EsqDataValueType.Lookup,
 				Value = new EsqLookupValueDto {
-					Value = id.ToString("D"),
-					DisplayValue = GuidRegex.IsMatch(rawValue) ? null : rawValue
+					Name = displayName,
+					Id = idString,
+					Value = idString,
+					DisplayValue = displayName
 				}
 			}
 		};
@@ -171,6 +191,37 @@ internal sealed class LocalEsqFilterBuilder {
 		};
 	}
 
+	private static EsqCompareFilterDto BuildMacrosCompareFilter(
+		string comparison, string columnPath, FilterSchemaColumn column, StaticFilterLeaf leaf) {
+		MacrosCatalog.TryResolve(leaf.ValueMacros!, out EsqQueryMacrosType macrosType,
+			out MacrosCatalog.MacrosColumnKind kind, out bool requiresArgument);
+		EsqParameterExpressionDto? argument = requiresArgument
+			? new EsqParameterExpressionDto {
+				Parameter = new EsqParameterDto {
+					DataValueType = (int)EsqDataValueType.Integer,
+					Value = leaf.ValueMacrosArgument!.Value
+				}
+			}
+			: null;
+
+		bool isDateColumn = column.DataValueTypeName is "Date" or "DateTime" or "Time";
+		// Date macros (Today, Yesterday, NextNDays, ...) on a DateTime column require trimDateTimeParameterToDate=true
+		// so the comparison ignores the time portion; without it `CreatedOn EQUAL Today` matches only 00:00:00.000.
+		bool trim = kind == MacrosCatalog.MacrosColumnKind.DateTime && isDateColumn;
+
+		return new EsqCompareFilterDto {
+			ComparisonType = MapLeafComparisonToEsq(comparison),
+			TrimDateTimeParameterToDate = trim ? true : null,
+			LeftExpression = new EsqColumnExpressionDto { ColumnPath = columnPath },
+			IsAggregative = false,
+			DataValueType = column.DataValueTypeCode > 0 ? column.DataValueTypeCode : null,
+			RightExpression = new EsqMacrosFunctionExpressionDto {
+				MacrosType = (int)macrosType,
+				FunctionArgument = argument
+			}
+		};
+	}
+
 	private object BuildBackwardReference(StaticFilterBackwardReference backward, string currentSchema, int indexBase) {
 		_ = currentSchema; // currentSchema unused at envelope build (path validated upstream); left for parity.
 		(string childSchema, _) = ParseBackwardReference(backward.ReferenceColumnPath);
@@ -184,14 +235,62 @@ internal sealed class LocalEsqFilterBuilder {
 			Items = BuildGroupItems(subFilter, childSchema, indexBase)
 		};
 
+		if (!string.IsNullOrWhiteSpace(backward.AggregationType)) {
+			return BuildAggregationBackwardReference(backward, subFilters);
+		}
+
 		bool isExists = string.Equals(backward.ComparisonType, StaticFilterConstants.Exists,
 			StringComparison.OrdinalIgnoreCase);
+		// Platform-canonical EXISTS leftExpression points at the link column's Id (e.g. [Contact:Account].Id),
+		// and carries dataValueType=Integer (the aggregation-count type). The friendly contract accepts
+		// `[Schema:Column]` without the `.Id` suffix; the builder appends it here.
 		return new EsqExistsFilterDto {
 			ComparisonType = (int)(isExists ? EsqComparisonType.Exists : EsqComparisonType.NotExists),
-			LeftExpression = new EsqColumnExpressionDto { ColumnPath = backward.ReferenceColumnPath },
+			LeftExpression = new EsqColumnExpressionDto { ColumnPath = backward.ReferenceColumnPath + ".Id" },
+			DataValueType = (int)EsqDataValueType.Integer,
 			SubFilters = subFilters
 		};
 	}
+
+	private static EsqAggregationFilterDto BuildAggregationBackwardReference(
+		StaticFilterBackwardReference backward, EsqNestedGroupDto subFilters) {
+		EsqAggregationType aggregationType = MapAggregationType(backward.AggregationType!);
+		bool isCount = aggregationType == EsqAggregationType.Count;
+		// COUNT aggregates the child rows themselves (link column .Id); SUM/AVG/MIN/MAX aggregate a numeric
+		// child column appended to the backward path (e.g. [Activity:Contact].Amount).
+		string aggregatedColumn = isCount
+			? backward.ReferenceColumnPath + ".Id"
+			: backward.ReferenceColumnPath + "." + backward.AggregationColumnPath;
+		// COUNT/* compares to an Integer; SUM/AVG/MIN/MAX compare to a Float threshold.
+		EsqDataValueType valueType = isCount ? EsqDataValueType.Integer : EsqDataValueType.Float;
+		object value = isCount ? (long)backward.AggregationValue!.Value : (decimal)backward.AggregationValue!.Value;
+
+		return new EsqAggregationFilterDto {
+			ComparisonType = MapLeafComparisonToEsq(backward.ComparisonType.ToUpperInvariant()),
+			IsAggregative = true,
+			LeftExpression = new EsqAggregationExpressionDto {
+				AggregationType = (int)aggregationType,
+				ColumnPath = aggregatedColumn,
+				SubFilters = subFilters
+			},
+			RightExpression = new EsqParameterExpressionDto {
+				Parameter = new EsqParameterDto {
+					DataValueType = (int)valueType,
+					Value = value
+				}
+			},
+			SubFilters = subFilters
+		};
+	}
+
+	private static EsqAggregationType MapAggregationType(string aggregationType) => aggregationType.ToUpperInvariant() switch {
+		StaticFilterConstants.Count => EsqAggregationType.Count,
+		StaticFilterConstants.Sum => EsqAggregationType.Sum,
+		StaticFilterConstants.Avg => EsqAggregationType.Avg,
+		StaticFilterConstants.Min => EsqAggregationType.Min,
+		StaticFilterConstants.Max => EsqAggregationType.Max,
+		_ => throw new ArgumentException($"Unsupported aggregation '{aggregationType}'.")
+	};
 
 	private static int MapLogicalOperation(string logicalOperation) =>
 		string.Equals(logicalOperation, StaticFilterConstants.LogicalOr, StringComparison.OrdinalIgnoreCase)
@@ -225,7 +324,8 @@ internal sealed class LocalEsqFilterBuilder {
 		dataValueTypeName switch {
 			"Boolean" => EsqDataValueType.Boolean,
 			"Integer" => EsqDataValueType.Integer,
-			"Float" or "Money" or "Float0" or "Float1" or "Float2" or "Float3" or "Float4" or "Float8" =>
+			"Float" or "Money" or "Money0" or "Money1" or "Money3"
+				or "Float0" or "Float1" or "Float2" or "Float3" or "Float4" or "Float8" =>
 				EsqDataValueType.Float,
 			"DateTime" => EsqDataValueType.DateTime,
 			"Date" => EsqDataValueType.Date,

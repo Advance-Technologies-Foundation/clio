@@ -24,6 +24,12 @@ internal static class StaticFilterConstants {
 	internal const string Exists = "EXISTS";
 	internal const string NotExists = "NOT_EXISTS";
 
+	internal const string Count = "COUNT";
+	internal const string Sum = "SUM";
+	internal const string Avg = "AVG";
+	internal const string Min = "MIN";
+	internal const string Max = "MAX";
+
 	internal static readonly IReadOnlySet<string> AllLeafComparisons = new HashSet<string> {
 		Equal, NotEqual, IsNull, IsNotNull,
 		Greater, GreaterOrEqual, Less, LessOrEqual,
@@ -48,5 +54,20 @@ internal static class StaticFilterConstants {
 
 	internal static readonly IReadOnlySet<string> BackwardReferenceComparisons = new HashSet<string> {
 		Exists, NotExists
+	};
+
+	/// <summary>All supported aggregation functions for backward-reference filters.</summary>
+	internal static readonly IReadOnlySet<string> AggregationTypes = new HashSet<string> {
+		Count, Sum, Avg, Min, Max
+	};
+
+	/// <summary>Aggregations that operate on a numeric column (require aggregationColumnPath).</summary>
+	internal static readonly IReadOnlySet<string> ScalarAggregationTypes = new HashSet<string> {
+		Sum, Avg, Min, Max
+	};
+
+	/// <summary>Comparison tokens allowed for an aggregation threshold (e.g. COUNT GREATER 10).</summary>
+	internal static readonly IReadOnlySet<string> AggregationComparisons = new HashSet<string> {
+		Equal, NotEqual, Greater, GreaterOrEqual, Less, LessOrEqual
 	};
 }

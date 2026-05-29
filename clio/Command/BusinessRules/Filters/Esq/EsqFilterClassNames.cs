@@ -8,5 +8,7 @@ internal static class EsqFilterClassNames {
 	internal const string ExistsFilter = "Terrasoft.ExistsFilter";
 	internal const string ColumnExpression = "Terrasoft.ColumnExpression";
 	internal const string ParameterExpression = "Terrasoft.ParameterExpression";
+	internal const string FunctionExpression = "Terrasoft.FunctionExpression";
+	internal const string AggregationQueryExpression = "Terrasoft.AggregationQueryExpression";
 	internal const string Parameter = "Terrasoft.Parameter";
 }

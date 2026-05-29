@@ -15,8 +15,8 @@ internal enum EsqFilterType {
 /// Numeric values mirror Terrasoft.Nui.ServiceModel.DataContract.FilterComparisonType.
 /// </summary>
 internal enum EsqComparisonType {
-	IsNotNull = 0,
 	IsNull = 1,
+	IsNotNull = 2,
 	Equal = 3,
 	NotEqual = 4,
 	Less = 5,
@@ -47,7 +47,78 @@ internal enum EsqLogicalOperation {
 /// </summary>
 internal enum EsqExpressionType {
 	SchemaColumn = 0,
-	Parameter = 2
+	Function = 1,
+	Parameter = 2,
+	SubQuery = 3,
+	ArithmeticOperation = 4
+}
+
+/// <summary>
+/// Numeric values mirror Terrasoft.Common.AggregationType (verified by reflection against Terrasoft.Common.dll).
+/// </summary>
+internal enum EsqAggregationType {
+	None = 0,
+	Count = 1,
+	Sum = 2,
+	Avg = 3,
+	Min = 4,
+	Max = 5
+}
+
+/// <summary>
+/// Numeric values mirror Terrasoft devkit ɵFunctionType. Only Macros is emitted by static filters.
+/// </summary>
+internal enum EsqFunctionType {
+	None = 0,
+	Macros = 1,
+	Aggregation = 2,
+	DatePart = 3,
+	Length = 4,
+	Window = 5,
+	DateAdd = 6,
+	DateDiff = 7
+}
+
+/// <summary>
+/// Numeric values mirror Terrasoft devkit ɵQueryMacrosType (full set).
+/// </summary>
+internal enum EsqQueryMacrosType {
+	None = 0,
+	CurrentUser = 1,
+	CurrentUserContact = 2,
+	Yesterday = 3,
+	Today = 4,
+	Tomorrow = 5,
+	PreviousWeek = 6,
+	CurrentWeek = 7,
+	NextWeek = 8,
+	PreviousMonth = 9,
+	CurrentMonth = 10,
+	NextMonth = 11,
+	PreviousQuarter = 12,
+	CurrentQuarter = 13,
+	NextQuarter = 14,
+	PreviousHalfYear = 15,
+	CurrentHalfYear = 16,
+	NextHalfYear = 17,
+	PreviousYear = 18,
+	CurrentYear = 19,
+	PreviousHour = 20,
+	CurrentHour = 21,
+	NextHour = 22,
+	NextYear = 23,
+	NextNDays = 24,
+	PreviousNDays = 25,
+	NextNHours = 26,
+	PreviousNHours = 27,
+	PrimaryColumn = 34,
+	PrimaryDisplayColumn = 35,
+	PrimaryImageColumn = 36,
+	DayOfYearToday = 37,
+	DayOfYearTodayPlusDaysOffset = 38,
+	NextNDaysOfYear = 39,
+	PreviousNDaysOfYear = 40,
+	PrimaryColorColumn = 41
 }
 
 /// <summary>

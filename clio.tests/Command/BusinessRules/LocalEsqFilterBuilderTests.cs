@@ -52,9 +52,27 @@ public sealed class LocalEsqFilterBuilderTests {
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
 
 		filter0.GetProperty("filterType").GetInt32().Should().Be(2);
-		filter0.GetProperty("comparisonType").GetInt32().Should().Be(0);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(2,
+			because: "Terrasoft FilterComparisonType.IsNotNull is 2; emitting 0 (None) makes the platform reject the IsNullFilter");
 		filter0.GetProperty("isNull").GetBoolean().Should().BeFalse();
 		filter0.GetProperty("className").GetString().Should().Be("Terrasoft.IsNullFilter");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits an IsNullFilter with comparisonType 1 for IS_NULL.")]
+	public void Build_Should_Emit_IsNullFilter_For_IsNull() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "MobilePhone", "comparisonType": "IS_NULL" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("MobilePhone", "PhoneText", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(2);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(1, because: "FilterComparisonType.IsNull is 1");
+		filter0.GetProperty("isNull").GetBoolean().Should().BeTrue();
 	}
 
 	[Test]
@@ -154,7 +172,7 @@ public sealed class LocalEsqFilterBuilderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Emits an ExistsFilter for a backward reference EXISTS clause with nested filter group.")]
+	[Description("Emits an ExistsFilter for a backward reference EXISTS clause with nested filter group; columnPath is suffixed with .Id and dataValueType=Integer per platform canonical shape.")]
 	public void Build_Should_Emit_Backward_Exists() {
 		StaticFilterGroup group = Deserialize("""
 			{
@@ -176,8 +194,196 @@ public sealed class LocalEsqFilterBuilderTests {
 		backward.GetProperty("filterType").GetInt32().Should().Be(5);
 		backward.GetProperty("comparisonType").GetInt32().Should().Be(15);
 		backward.GetProperty("isAggregative").GetBoolean().Should().BeTrue();
-		backward.GetProperty("leftExpression").GetProperty("columnPath").GetString().Should().Be("[Activity:Owner]");
+		backward.GetProperty("dataValueType").GetInt32().Should().Be(4,
+			because: "platform EXISTS carries dataValueType=Integer (aggregation-count type)");
+		backward.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeFalse();
+		backward.GetProperty("leftExpression").GetProperty("columnPath").GetString().Should().Be("[Activity:Owner].Id",
+			because: "platform EXISTS leftExpression points at the link column Id; the friendly contract supplies `[Schema:Column]` and the builder appends `.Id`");
 		backward.GetProperty("subFilters").GetProperty("className").GetString().Should().Be("Terrasoft.FilterGroup");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Matches the canonical platform wire shape for 'Accounts that have at least one Contact' (backward EXISTS from Account via [Contact:Account]).")]
+	public void Build_Should_Match_Canonical_Backward_Exists_Contact_To_Account() {
+		StaticFilterGroup group = Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Contact:Account]", "comparisonType": "EXISTS" }
+			  ]
+			}
+			""");
+		IFilterSchemaProvider schema = SchemaWith(
+			("Account", []),
+			("Contact", [("Account", "Lookup", "Account")]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Account");
+		JsonElement root = JsonDocument.Parse(json).RootElement;
+
+		root.GetProperty("rootSchemaName").GetString().Should().Be("Account");
+		root.GetProperty("filterType").GetInt32().Should().Be(6);
+		root.GetProperty("logicalOperation").GetInt32().Should().Be(0);
+
+		JsonElement backward = root.GetProperty("items").GetProperty("BackwardReferenceFilter_0");
+		backward.GetProperty("filterType").GetInt32().Should().Be(5);
+		backward.GetProperty("comparisonType").GetInt32().Should().Be(15);
+		backward.GetProperty("isEnabled").GetBoolean().Should().BeTrue();
+		backward.GetProperty("isAggregative").GetBoolean().Should().BeTrue();
+		backward.GetProperty("dataValueType").GetInt32().Should().Be(4);
+		backward.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeFalse();
+
+		JsonElement left = backward.GetProperty("leftExpression");
+		left.GetProperty("expressionType").GetInt32().Should().Be(0);
+		left.GetProperty("columnPath").GetString().Should().Be("[Contact:Account].Id");
+
+		JsonElement subFilters = backward.GetProperty("subFilters");
+		subFilters.GetProperty("rootSchemaName").GetString().Should().Be("Contact");
+		subFilters.GetProperty("filterType").GetInt32().Should().Be(6);
+		subFilters.GetProperty("logicalOperation").GetInt32().Should().Be(0);
+		subFilters.GetProperty("isEnabled").GetBoolean().Should().BeTrue();
+		subFilters.GetProperty("items").EnumerateObject().Should().BeEmpty();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits an aggregation CompareFilter (COUNT GREATER 10) for a backward reference with aggregationType=COUNT.")]
+	public void Build_Should_Emit_Aggregation_Count_Backward_Reference() {
+		StaticFilterGroup group = Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Activity:Contact]", "aggregationType": "COUNT", "comparisonType": "GREATER", "aggregationValue": 10 }
+			  ]
+			}
+			""");
+		IFilterSchemaProvider schema = SchemaWith(
+			("Contact", []),
+			("Activity", [("Contact", "Lookup", "Contact")]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement backward = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("BackwardReferenceFilter_0");
+
+		backward.GetProperty("filterType").GetInt32().Should().Be(1, because: "aggregation emits a CompareFilter, not ExistsFilter");
+		backward.GetProperty("comparisonType").GetInt32().Should().Be(7, because: "GREATER maps to 7");
+		backward.GetProperty("isAggregative").GetBoolean().Should().BeTrue();
+		backward.GetProperty("className").GetString().Should().Be("Terrasoft.CompareFilter");
+
+		JsonElement left = backward.GetProperty("leftExpression");
+		left.GetProperty("expressionType").GetInt32().Should().Be(3, because: "SubQuery is 3");
+		left.GetProperty("functionType").GetInt32().Should().Be(2, because: "Aggregation is 2");
+		left.GetProperty("aggregationType").GetInt32().Should().Be(1, because: "Count is 1");
+		left.GetProperty("columnPath").GetString().Should().Be("[Activity:Contact].Id");
+		left.GetProperty("className").GetString().Should().Be("Terrasoft.AggregationQueryExpression");
+		left.GetProperty("subFilters").GetProperty("rootSchemaName").GetString().Should().Be("Activity");
+
+		JsonElement param = backward.GetProperty("rightExpression").GetProperty("parameter");
+		param.GetProperty("dataValueType").GetInt32().Should().Be(4, because: "COUNT threshold is Integer (4)");
+		param.GetProperty("value").GetInt64().Should().Be(10);
+
+		backward.GetProperty("subFilters").GetProperty("rootSchemaName").GetString().Should().Be("Activity");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a SUM aggregation over a numeric child column with a Float threshold and aggregationColumnPath appended to the backward path.")]
+	public void Build_Should_Emit_Aggregation_Sum_Backward_Reference() {
+		StaticFilterGroup group = Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Order:Customer]", "aggregationType": "SUM", "aggregationColumnPath": "Amount", "comparisonType": "GREATER_OR_EQUAL", "aggregationValue": 1000 }
+			  ]
+			}
+			""");
+		IFilterSchemaProvider schema = SchemaWith(
+			("Contact", []),
+			("Order", [("Customer", "Lookup", "Contact"), ("Amount", "Float", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement backward = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("BackwardReferenceFilter_0");
+
+		backward.GetProperty("comparisonType").GetInt32().Should().Be(8, because: "GREATER_OR_EQUAL maps to 8");
+		JsonElement left = backward.GetProperty("leftExpression");
+		left.GetProperty("aggregationType").GetInt32().Should().Be(2, because: "Sum is 2");
+		left.GetProperty("columnPath").GetString().Should().Be("[Order:Customer].Amount");
+		backward.GetProperty("rightExpression").GetProperty("parameter").GetProperty("dataValueType").GetInt32()
+			.Should().Be(5, because: "scalar aggregation threshold is Float (5)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects COUNT aggregation without aggregationValue during structural validation.")]
+	public void Build_Should_Reject_Aggregation_Without_Value() {
+		Action act = () => Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Activity:Contact]", "aggregationType": "COUNT", "comparisonType": "GREATER" }
+			  ]
+			}
+			""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*aggregationValue: required*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects COUNT aggregation with an aggregationColumnPath (COUNT must not carry a scalar column).")]
+	public void Build_Should_Reject_Count_With_ColumnPath() {
+		Action act = () => Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Activity:Contact]", "aggregationType": "COUNT", "aggregationColumnPath": "Amount", "comparisonType": "GREATER", "aggregationValue": 1 }
+			  ]
+			}
+			""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*aggregationColumnPath: must be omitted for COUNT*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects EXISTS comparison with an aggregation token, and aggregation with EXISTS comparison.")]
+	public void Build_Should_Reject_Aggregation_With_Exists_Comparison() {
+		Action act = () => Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Activity:Contact]", "aggregationType": "COUNT", "comparisonType": "EXISTS", "aggregationValue": 1 }
+			  ]
+			}
+			""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*relational/equality token*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Schema-aware validation rejects SUM over a non-numeric child column.")]
+	public void SchemaValidation_Should_Reject_Sum_Over_NonNumeric_Column() {
+		StaticFilterGroup group = Deserialize("""
+			{
+			  "logicalOperation": "AND",
+			  "backwardReferenceFilters": [
+			    { "referenceColumnPath": "[Order:Customer]", "aggregationType": "SUM", "aggregationColumnPath": "Note", "comparisonType": "GREATER", "aggregationValue": 1 }
+			  ]
+			}
+			""");
+		IFilterSchemaProvider schema = SchemaWith(
+			("Contact", []),
+			("Order", [("Customer", "Lookup", "Contact"), ("Note", "Text", null)]));
+		SchemaAwareFilterValidator validator = new(schema);
+
+		Action act = () => validator.Validate(group, "Contact");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*requires a numeric column*");
 	}
 
 	[Test]
@@ -229,6 +435,229 @@ public sealed class LocalEsqFilterBuilderTests {
 		JsonDocument.Parse(json).RootElement.GetProperty("logicalOperation").GetInt32().Should().Be(1);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a macros FunctionExpression rightExpression for a date macros on a DateTime column.")]
+	public void Build_Should_Emit_Macros_For_Date() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "valueMacros": "Today" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Account");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+		JsonElement right = filter0.GetProperty("rightExpression");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(1);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(7);
+		filter0.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeTrue(
+			because: "date macros on a DateTime column must trim time so `CreatedOn EQUAL Today` matches the whole day");
+		filter0.GetProperty("isAggregative").GetBoolean().Should().BeFalse();
+		filter0.GetProperty("dataValueType").GetInt32().Should().Be(7, because: "DateTime numeric code is 7");
+		right.GetProperty("expressionType").GetInt32().Should().Be(1, because: "ExpressionType.Function is 1");
+		right.GetProperty("functionType").GetInt32().Should().Be(1, because: "FunctionType.Macros is 1");
+		right.GetProperty("macrosType").GetInt32().Should().Be(4, because: "QueryMacrosType.Today is 4");
+		right.GetProperty("className").GetString().Should().Be("Terrasoft.FunctionExpression");
+		right.TryGetProperty("functionArgument", out _).Should().BeFalse();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Matches the canonical platform shape for 'CreatedOn EQUAL Today' on a DateTime column.")]
+	public void Build_Should_Match_Canonical_CreatedOn_Equal_Today() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "valueMacros": "Today" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement root = JsonDocument.Parse(json).RootElement;
+		root.GetProperty("rootSchemaName").GetString().Should().Be("Contact");
+		root.GetProperty("filterType").GetInt32().Should().Be(6);
+		root.GetProperty("logicalOperation").GetInt32().Should().Be(0);
+
+		JsonElement filter0 = root.GetProperty("items").GetProperty("Filter_0");
+		filter0.GetProperty("filterType").GetInt32().Should().Be(1);
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(3, because: "EQUAL maps to FilterComparisonType.Equal=3");
+		filter0.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeTrue();
+		filter0.GetProperty("isAggregative").GetBoolean().Should().BeFalse();
+		filter0.GetProperty("dataValueType").GetInt32().Should().Be(7);
+		filter0.GetProperty("leftExpression").GetProperty("columnPath").GetString().Should().Be("CreatedOn");
+		JsonElement right = filter0.GetProperty("rightExpression");
+		right.GetProperty("expressionType").GetInt32().Should().Be(1);
+		right.GetProperty("functionType").GetInt32().Should().Be(1);
+		right.GetProperty("macrosType").GetInt32().Should().Be(4);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a functionArgument ParameterExpression for an N-style date macros.")]
+	public void Build_Should_Emit_Macros_Argument_For_NextNDays() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "DueDate", "comparisonType": "LESS_OR_EQUAL", "valueMacros": "NextNDays", "valueMacrosArgument": 5 } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Activity", [("DueDate", "Date", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Activity");
+		JsonElement right = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("Filter_0").GetProperty("rightExpression");
+
+		right.GetProperty("macrosType").GetInt32().Should().Be(24, because: "QueryMacrosType.NextNDays is 24");
+		JsonElement argument = right.GetProperty("functionArgument");
+		argument.GetProperty("expressionType").GetInt32().Should().Be(2, because: "ExpressionType.Parameter is 2");
+		argument.GetProperty("parameter").GetProperty("dataValueType").GetInt32().Should().Be(4, because: "Integer is 4");
+		argument.GetProperty("parameter").GetProperty("value").GetInt32().Should().Be(5);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a CompareFilter (not InFilter) with a macros rightExpression for CurrentUserContact on a Lookup column.")]
+	public void Build_Should_Emit_Macros_CompareFilter_For_Lookup() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Owner", "comparisonType": "EQUAL", "valueMacros": "CurrentUserContact" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Activity", [("Owner", "Lookup", "Contact")]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Activity");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(1, because: "macros use CompareFilter, not InFilter");
+		filter0.GetProperty("className").GetString().Should().Be("Terrasoft.CompareFilter");
+		filter0.GetProperty("rightExpression").GetProperty("macrosType").GetInt32().Should().Be(2,
+			because: "QueryMacrosType.CurrentUserContact is 2");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an unknown macros name during structural validation.")]
+	public void Build_Should_Reject_Unknown_Macros() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "valueMacros": "Nonsense" } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*unknown macros 'Nonsense'*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an N-style macros without the required argument.")]
+	public void Build_Should_Reject_NMacros_Without_Argument() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "DueDate", "comparisonType": "LESS", "valueMacros": "NextNDays" } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*valueMacrosArgument: required*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects providing both value and valueMacros on the same leaf.")]
+	public void Build_Should_Reject_Value_And_Macros_Together() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "value": "2026-01-01T00:00:00Z", "valueMacros": "Today" } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*either value or valueMacros, not both*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a date macros on a non-date column via schema-aware validation.")]
+	public void SchemaValidation_Should_Reject_Date_Macros_On_Text_Column() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Name", "comparisonType": "EQUAL", "valueMacros": "Today" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Name", "Text", null)]));
+		SchemaAwareFilterValidator validator = new(schema);
+
+		Action act = () => validator.Validate(group, "Account");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*applies only to Date/DateTime/Time columns*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lookup InFilter carries canonical platform metadata: isAggregative=false, dataValueType=10, referenceSchemaName; lookup value carries Name/Id alongside value/displayValue.")]
+	public void Build_Should_Emit_Canonical_Lookup_InFilter() {
+		Guid resolved = Guid.NewGuid();
+		ILookupValueResolver resolver = Substitute.For<ILookupValueResolver>();
+		resolver.ResolveIdByDisplayName("AccountType", "Customer").Returns(resolved);
+
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "Customer" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
+		LocalEsqFilterBuilder builder = new(schema, resolver);
+
+		string json = builder.Build(group, "Account");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(4);
+		filter0.GetProperty("isAggregative").GetBoolean().Should().BeFalse();
+		filter0.GetProperty("dataValueType").GetInt32().Should().Be(10, because: "Lookup data value type is 10");
+		filter0.GetProperty("referenceSchemaName").GetString().Should().Be("AccountType");
+
+		JsonElement lookupValue = filter0.GetProperty("rightExpressions")[0]
+			.GetProperty("parameter").GetProperty("value");
+		string guidString = resolved.ToString("D");
+		lookupValue.GetProperty("Name").GetString().Should().Be("Customer");
+		lookupValue.GetProperty("Id").GetString().Should().Be(guidString);
+		lookupValue.GetProperty("value").GetString().Should().Be(guidString);
+		lookupValue.GetProperty("displayValue").GetString().Should().Be("Customer");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the caller passes a raw GUID for a Lookup, the builder reverse-resolves the display name to populate Name/displayValue (canonical store form).")]
+	public void Build_Should_Reverse_Resolve_DisplayName_For_Guid_Input() {
+		Guid id = Guid.NewGuid();
+		ILookupValueResolver resolver = Substitute.For<ILookupValueResolver>();
+		resolver.TryResolveDisplayNameById("AccountType", id, out Arg.Any<string?>())
+			.Returns(call => { call[2] = "Customer"; return true; });
+
+		StaticFilterGroup group = Deserialize(
+			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{id:D}}" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
+		LocalEsqFilterBuilder builder = new(schema, resolver);
+
+		string json = builder.Build(group, "Account");
+		JsonElement lookupValue = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("Filter_0")
+			.GetProperty("rightExpressions")[0]
+			.GetProperty("parameter").GetProperty("value");
+
+		lookupValue.GetProperty("Name").GetString().Should().Be("Customer");
+		lookupValue.GetProperty("displayValue").GetString().Should().Be("Customer");
+		lookupValue.GetProperty("Id").GetString().Should().Be(id.ToString("D"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats a Money0 (dataValueType 48) column as numeric and emits a Float parameter.")]
+	public void Build_Should_Treat_Money0_As_Numeric() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Amount", "comparisonType": "GREATER", "value": 100 } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Amount", "Money0", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Account");
+		JsonElement param = JsonDocument.Parse(json).RootElement
+			.GetProperty("items").GetProperty("Filter_0")
+			.GetProperty("rightExpression").GetProperty("parameter");
+
+		param.GetProperty("dataValueType").GetInt32().Should().Be(5, because: "Money0 is numeric and maps to EsqDataValueType.Float");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a non-filterable column (e.g. Blob) with a clear message.")]
+	public void SchemaValidation_Should_Reject_NonFilterable_Column() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Data", "comparisonType": "EQUAL", "value": "x" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Data", "Blob", null)]));
+		SchemaAwareFilterValidator validator = new(schema);
+
+		Action act = () => validator.Validate(group, "Account");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*cannot be used as a filter value*");
+	}
+
 	private static StaticFilterGroup Deserialize(string json) {
 		JsonElement element = JsonDocument.Parse(json).RootElement.Clone();
 		StaticFilterGroup group = StaticFilterDeserializer.Deserialize(element);
@@ -245,6 +674,7 @@ public sealed class LocalEsqFilterBuilderTests {
 				columns[col.Name] = new FilterSchemaColumn {
 					Name = col.Name,
 					DataValueTypeName = col.Type,
+					DataValueTypeCode = Clio.Common.CreatioDataValueType.GetCode(col.Type) ?? 0,
 					ReferenceSchemaName = col.Ref
 				};
 			}
