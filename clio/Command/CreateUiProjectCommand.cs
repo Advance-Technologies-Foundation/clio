@@ -54,6 +54,12 @@ public class CreateUiProjectOptionsValidator : AbstractValidator<CreateUiProject
 				+ Environment.NewLine +
 				"See more: https://academy.creatio.com/docs/developer/front_end_development_freedom_ui/remote_module/implement_a_remote_module/overview");
 		RuleFor(x => x.PackageName).NotEmpty().WithMessage("Package name is required.");
+		RuleFor(x => x.PackageName).Matches("^[A-Za-z0-9_]+$")
+			.When(x => !string.IsNullOrEmpty(x.PackageName))
+			.WithMessage(
+				"'{PropertyName}' must contain only letters, digits and underscores. You entered: '{PropertyValue}'. "
+				+ "The package name is embedded into generated build scripts and folder paths, so path "
+				+ "separators, quotes and other special characters are rejected.");
 	}
 
 	#endregion
