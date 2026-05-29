@@ -27,7 +27,8 @@ public sealed class BusinessRulesGuidanceResource {
 		       clio MCP business rules guide
 
 		       Scope
-		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, auto-assignment based on another field's value, or lookup filtering.
+		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, auto-assignment of a field value, CLEARING a field value, or lookup filtering.
+		       - Writing into a column or clearing a column when another field changes IS a business rule. This is the most common case for two interdependent fields (changing field A auto-fills or wipes field B). Do NOT narrow business rules to only show/hide/enable/require — value population and clearing are first-class business-rule actions (`set-values`), no handler required.
 		       - Business rules are SEPARATE first-class artifacts in Creatio Freedom UI. They are NOT implemented as page JavaScript code, handlers, validators, or converters.
 		       - Do NOT write JavaScript handler or validator code to implement business-rule behavior. Use the dedicated MCP tools instead.
 
@@ -96,7 +97,8 @@ public sealed class BusinessRulesGuidanceResource {
 
 		       Decision tree — when to use business rules vs handlers/validators
 		       - If the requirement is "when field X equals Y, then hide/show/enable/disable/require/unrequire field Z" (the field itself appears/disappears or becomes editable/required) → use a BUSINESS RULE with hide-element/show-element/make-* actions.
-		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action.
+		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action. Do NOT write a handler for this.
+		       - If the requirement is "when field X equals Y, clear field Z" → use an ENTITY BUSINESS RULE with set-values action and an empty value for Z. Clearing a field is the same action as setting one — NO handler is needed.
 		       - If the requirement is "filter lookup A by the current value of another lookup B on the same record (dependent lookups)" → use an ENTITY BUSINESS RULE with apply-filter action.
 		       - If the requirement is "limit / restrict a lookup field to records matching a fixed condition" (e.g. "let users select only contacts that have a mobile phone", "show only accounts where Type = Customer", "only active users", "show only contacts in the Assignee field who ...", "show the <Field> field only for <records> where ...", "show only <records> that have at least one / more than N <children>") → use an ENTITY BUSINESS RULE with apply-static-filter action. The condition can be unconditional (always filter) or gated: "WHEN field X is Y, limit lookup Z to ..." → put X=Y in the rule's condition group and the apply-static-filter action on Z.
 		         - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rule` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
