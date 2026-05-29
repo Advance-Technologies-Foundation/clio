@@ -92,7 +92,10 @@ public sealed class PageSyncTool(
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
-			validationResult = MobilePageValidation.Run(page.Body, mobileComponentCatalog, webComponentCatalog);
+			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
+			validationResult = MobilePageValidation
+				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.GetAwaiter().GetResult();
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,

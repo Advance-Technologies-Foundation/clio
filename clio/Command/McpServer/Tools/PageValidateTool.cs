@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -23,13 +25,14 @@ public sealed class PageValidateTool(
 		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them. " +
 		"For mobile pages (plain JSON body starting with '{'): validates that disallowed constructs " +
 		"(validators, handlers, custom converters sections) are absent.")]
-	public PageValidateResponse ValidatePage(
+	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
-		[Required] PageValidateArgs args) {
+		[Required] PageValidateArgs args,
+		CancellationToken cancellationToken = default) {
 		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
-			PageSyncValidationResult mobileResult = MobilePageValidation.Run(
-				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources);
+			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
+				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
 				Validation = mobileResult
@@ -60,6 +63,8 @@ public sealed class PageValidateTool(
 		new(
 			Field: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
+			InsertSelfConsistency: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
 			Binding: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateColumnBindings(body)),
 			ConverterDecl: RunContentValidation(contentResult,
@@ -82,7 +87,7 @@ public sealed class PageValidateTool(
 		ContentValidationResults content) {
 		List<string> errors = CollectErrors(
 			markerResult, syntaxResult, contentResult,
-			content.Field, content.ConverterDecl, content.ConverterFunctionShape,
+			content.Field, content.InsertSelfConsistency, content.ConverterDecl, content.ConverterFunctionShape,
 			content.HandlerStructure, content.ValidatorDecl, content.ValidatorFactoryShape);
 		var warnings = new List<string>();
 		warnings.AddRange(content.Field.Warnings);
@@ -90,7 +95,8 @@ public sealed class PageValidateTool(
 			warnings.AddRange(content.Binding.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
-		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.ConverterDecl.IsValid &&
+		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
+			content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
 		return new PageSyncValidationResult {
@@ -132,6 +138,7 @@ public sealed class PageValidateTool(
 
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
+		SchemaValidationResult InsertSelfConsistency,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,
 		SchemaValidationResult ConverterFunctionShape,

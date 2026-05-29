@@ -23,6 +23,7 @@ namespace Clio.Mcp.E2E;
 public sealed class PageCreateToolE2ETests {
 	private const string ToolName = PageCreateTool.ToolName;
 	private const string ListTemplatesToolName = PageTemplatesListTool.ToolName;
+	private const string PackageName = "Custom";
 
 	[Test]
 	[Description("Advertises create-page and list-page-templates in the MCP tool manifest.")]
@@ -145,7 +146,6 @@ public sealed class PageCreateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
-		string packageName = await ResolveWritablePackageAsync(settings, environmentName, arrangeContext.CancellationTokenSource.Token);
 		string schemaName = $"UsrE2E_BlankPage_{Guid.NewGuid():N}".Substring(0, 40);
 
 		// Act
@@ -156,7 +156,7 @@ public sealed class PageCreateToolE2ETests {
 				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
-					["package-name"] = packageName,
+					["package-name"] = PackageName,
 					["caption"] = "E2E blank page",
 					["environment-name"] = environmentName
 				}
@@ -166,11 +166,11 @@ public sealed class PageCreateToolE2ETests {
 
 		// Assert create
 		createResult.IsError.Should().NotBeTrue();
-		createResponse.Success.Should().BeTrue(because: $"create-page must succeed for a fresh schema name '{schemaName}' in package '{packageName}'. Error: {createResponse.Error}");
+		createResponse.Success.Should().BeTrue(because: $"create-page must succeed for a fresh schema name '{schemaName}' in the editable '{PackageName}' package. Error: {createResponse.Error}");
 		createResponse.SchemaName.Should().Be(schemaName);
 		createResponse.SchemaUId.Should().NotBeNullOrWhiteSpace();
 		createResponse.TemplateName.Should().Be("BlankPageTemplate");
-		createResponse.PackageName.Should().Be(packageName);
+		createResponse.PackageName.Should().Be(PackageName);
 
 		// Act read-back
 		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
@@ -204,7 +204,6 @@ public sealed class PageCreateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
-		string packageName = await ResolveWritablePackageAsync(settings, environmentName, arrangeContext.CancellationTokenSource.Token);
 		string schemaName = $"UsrE2E_DupPage_{Guid.NewGuid():N}".Substring(0, 40);
 
 		// Create the page first
@@ -215,7 +214,7 @@ public sealed class PageCreateToolE2ETests {
 				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
-					["package-name"] = packageName,
+					["package-name"] = PackageName,
 					["environment-name"] = environmentName
 				}
 			},
@@ -231,7 +230,7 @@ public sealed class PageCreateToolE2ETests {
 				["command"] = ToolName,
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
-					["package-name"] = packageName,
+					["package-name"] = PackageName,
 					["environment-name"] = environmentName
 				}
 			},
@@ -306,24 +305,6 @@ public sealed class PageCreateToolE2ETests {
 		} catch (OperationCanceledException) {
 			return false;
 		}
-	}
-
-	private static async Task<string> ResolveWritablePackageAsync(
-		McpE2ESettings settings, string environmentName, CancellationToken cancellationToken) {
-		string? configured = settings.Sandbox.PackageName;
-		if (!string.IsNullOrWhiteSpace(configured)) {
-			return configured;
-		}
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["get-pkg-list", "-e", environmentName],
-			cancellationToken: cancellationToken);
-		if (result.ExitCode == 0 && result.StandardOutput.Contains("Custom")) {
-			return "Custom";
-		}
-		Assert.Ignore(
-			$"create-page MCP E2E requires a writable package. Configure McpE2E:Sandbox:PackageName or ensure a 'Custom' package exists in environment '{environmentName}'.");
-		return string.Empty;
 	}
 
 	private sealed record ArrangeContext(

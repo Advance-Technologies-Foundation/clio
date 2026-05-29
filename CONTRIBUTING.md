@@ -82,6 +82,87 @@ If you change command behavior, also review the MCP surface:
 `clio/Command/McpServer/Tools/`, `Prompts/`, `Resources/`, and E2E tests in `clio.mcp.e2e/`.
 See [AGENTS.md — MCP maintenance policy](AGENTS.md#mcp-maintenance-policy) for the full checklist.
 
+## Feature development workflow (BMAD)
+
+Non-trivial features follow a structured pipeline before any code is written. The pipeline
+is enforced via Claude Code slash commands and specialized agents.
+
+### When to use the pipeline
+
+| Work type | Command | Produces |
+|-----------|---------|---------|
+| Small fix / enhancement (< 5 stories) | `/bmad-spec` | SPEC kernel — 5-field distillation |
+| New command, significant change | `/bmad` | PRD → ADR → Stories → Test plan |
+| Quick status check | `/bmad-status` | Read-only view of all in-flight features |
+
+### Pipeline phases
+
+```
+/bmad "add export-workspace command"
+        │
+        ▼
+  [pm-agent]          → spec/prd/prd-{feature}.md
+  Product manager: problem statement, FR-N requirements,
+  AC-N acceptance criteria, CLI flag specification
+        │
+        ▼
+  [architect-agent]   → spec/adr/adr-{feature}.md
+  Architect: codebase analysis, design decisions, file list,
+  MediatR handler contract, test strategy
+        │
+        ▼
+  [story-writer]      → spec/stories/story-{feature}-N.md
+                        spec/sprint-status.yaml (updated)
+  Stories: one PR per story, Definition of Done included
+        │
+        ▼
+  [qa-planner]        → spec/test-plans/tp-{feature}.md
+  QA: Unit/Integration/E2E test cases, regression guard,
+  ready-to-implement NUnit test stubs
+```
+
+**Optional adversarial review** at any phase:
+use `bmad-reviewer` agent on a PRD, ADR, or story to get
+a 3-lens critique (Blind Hunter / Edge Case Hunter / Acceptance Auditor)
+before moving to the next phase.
+
+### Facilitator vs autonomous mode
+
+By default the pipeline pauses at checkpoint gates for your approval:
+
+```bash
+/bmad "add export-workspace command"          # pauses between phases
+/bmad --auto "add export-workspace command"   # runs all phases without stopping
+```
+
+Autonomous mode is opt-in and does not persist across sessions.
+
+### Artifact locations
+
+| Type | Path | Naming |
+|------|------|--------|
+| PRD / SPEC | `spec/prd/` | `prd-{name}.md` / `spec-{name}.md` |
+| ADR | `spec/adr/` | `adr-{name}.md` |
+| Stories | `spec/stories/` | `story-{name}-{N}.md` |
+| Sprint tracker | `spec/` | `sprint-status.yaml` |
+| Test plans | `spec/test-plans/` | `tp-{name}.md` |
+| Review results | `spec/reviews/` | `review-{artifact}-{date}.md` |
+
+### CI pipeline
+
+Every push triggers GitHub Actions (`.github/workflows/`):
+
+| Stage | Runs on | What fails the build |
+|-------|---------|---------------------|
+| Build + Roslyn analyzers | Every push | CLIO001-CLIO004 warnings |
+| Unit tests (`Category=Unit`) | Every push | Any failing test |
+| Integration tests | PR merge | Any failing test |
+| SonarCloud | PR | New code smells / duplications |
+| MCP E2E tests | Manual / release | Failing MCP tool contracts |
+
+Smart regression: run only the module you changed before pushing.
+See [Test targets](#test-targets) above and [AGENTS.md](AGENTS.md#smart-regression-testing-policy).
+
 ## PR workflow
 
 ```bash

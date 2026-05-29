@@ -110,22 +110,29 @@ public class RegAppCommand : Command<RegAppOptions> {
 			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
 				? null
 				: _settingsRepository.FindEnvironment(options.EnvironmentName);
-			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
+			
 			EnvironmentSettings environment = new() {
 				Login = options.Login,
 				Password = options.Password,
 				Uri = options.Uri?.TrimEnd('/'),
 				Maintainer = options.Maintainer,
 				Safe = options.SafeValue ?? false,
-				IsNetCore = resolvedIsNetCore,
+				IsNetCore = options.IsNetCore ?? existingEnvironment?.IsNetCore ?? false,
 				DeveloperModeEnabled = options.DeveloperModeEnabled,
 				ClientId = options.ClientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
-				WorkspacePathes = options.WorkspacePathes, 
+				WorkspacePathes = options.WorkspacePathes,
 				EnvironmentPath = options.EnvironmentPath
 			};
 			_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
+
+			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
+			if (resolvedIsNetCore != environment.IsNetCore) {
+				environment.IsNetCore = resolvedIsNetCore;
+				_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
+			}
+
 			_logger.WriteInfo($"Environment {options.EnvironmentName} was configured...");
 			environment = _settingsRepository.GetEnvironment(options);
 

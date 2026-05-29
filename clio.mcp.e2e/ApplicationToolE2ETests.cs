@@ -29,6 +29,10 @@ public sealed class ApplicationToolE2ETests {
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
 	private const string DeleteToolName = ApplicationDeleteTool.ToolName;
 	private const string SchemaSyncToolName = SchemaSyncTool.ToolName;
+	private const string ApplicationTemplateCode = "AppFreedomUI";
+	private const string ApplicationIconId = "00199a08-771c-46cd-b7e4-27f0171f8a6b";
+	private const string ApplicationIconBackground = "#0058EF";
+	private const string ApplicationCode = "AutoTestClioMcp";
 
 
 	[Test]
@@ -36,7 +40,7 @@ public sealed class ApplicationToolE2ETests {
 	[AllureFeature(ListToolName)]
 	[AllureTag(ListToolName)]
 	[AllureName("Application get list returns structured installed applications")]
-	[AllureDescription("Uses the real clio MCP server to call list-apps for the configured environment, resolves the seeded installed application configured via Sandbox.ApplicationCode, and verifies that the seeded application exposes the expected structured selectors and metadata fields.")]
+	[AllureDescription("Uses the real clio MCP server to call list-apps for the configured environment, resolves the seeded installed application AutoTestClioMcp, and verifies that the seeded application exposes the expected structured selectors and metadata fields.")]
 	public async Task ApplicationGetList_Should_Return_Structured_Applications() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -48,7 +52,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Assert
 		listResult.CallResult.IsError.Should().NotBeTrue(
@@ -66,11 +70,11 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, resolves the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application get info returns structured package and entity metadata")]
-	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that get-app-info returns the expected structured metadata envelope for that application.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application AutoTestClioMcp through list-apps, and verifies that get-app-info returns the expected structured metadata envelope for that application.")]
 	public async Task ApplicationGetInfo_Should_Return_Structured_Metadata() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -80,7 +84,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
 		ApplicationInfoActResult infoResult = await ActInfoAsync(
@@ -153,13 +157,13 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, resolves the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that its id can be reused with get-app-info.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that its id can be reused with get-app-info.")]
 	[AllureFeature(ListToolName)]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(ListToolName)]
 	[AllureTag(InfoToolName)]
 	[AllureName("Application list returns ids usable by get-app-info when applications exist")]
-	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application configured via Sandbox.ApplicationCode through list-apps, and verifies that the returned application id is accepted by get-app-info and resolves the same application.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application AutoTestClioMcp through list-apps, and verifies that the returned application id is accepted by get-app-info and resolves the same application.")]
 	public async Task ApplicationGetList_Should_Return_Ids_Usable_By_GetAppInfo_When_Applications_Exist() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -169,7 +173,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, settings.Sandbox.ApplicationCode, arrangeContext.EnvironmentName);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
 		ApplicationInfoActResult infoResult = await ActInfoAsync(
@@ -287,14 +291,8 @@ public sealed class ApplicationToolE2ETests {
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
-		string applicationCode = $"UsrCodex{suffix}";
+		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
-
-		if (string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationTemplateCode) ||
-			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconId) ||
-			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconBackground)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run create-app success E2E.");
-		}
 
 		// Act
 		ApplicationInfoActResult actResult = await ActCreateAsync(
@@ -302,11 +300,11 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
 			applicationName,
-			applicationCode,
+			createdApplicationCode,
 			description: null,
-			settings.Sandbox.ApplicationTemplateCode!,
-			settings.Sandbox.ApplicationIconId!,
-			settings.Sandbox.ApplicationIconBackground!,
+			ApplicationTemplateCode,
+			ApplicationIconId,
+			ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Assert
@@ -318,9 +316,9 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful create-app calls should return the created application's primary package identifier");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
 			because: "successful create-app calls should return the created application's primary package name");
-		actResult.Result.CanonicalMainEntityName.Should().Be(applicationCode,
+		actResult.Result.CanonicalMainEntityName.Should().Be(createdApplicationCode,
 			because: "create-app should surface the canonical main entity explicitly for MCP clients");
-		actResult.Result.ApplicationCode.Should().Be(applicationCode,
+		actResult.Result.ApplicationCode.Should().Be(createdApplicationCode,
 			because: "create-app should return the created installed application code in the same envelope shape as get-app-info");
 		actResult.Result.ApplicationName.Should().Be(applicationName,
 			because: "create-app should return the created installed application display name");
@@ -335,7 +333,7 @@ public sealed class ApplicationToolE2ETests {
 		actResult.Result.DataForge.Coverage.Should().NotBeNull(
 			because: "create-app should expose Data Forge coverage flags even when the enrichment stage is degraded");
 		ApplicationEntityEnvelope? canonicalMainEntity = actResult.Result.Entities?
-			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
+			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 		canonicalMainEntity.Should().NotBeNull(
 			because: "successful create-app calls should include the canonical main entity payload");
 		canonicalMainEntity!.Caption.Should().Be(applicationName,
@@ -364,26 +362,20 @@ public sealed class ApplicationToolE2ETests {
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
-		string applicationCode = $"UsrCodex{suffix}";
+		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
 		string addedColumnName = $"UsrStatus{suffix[..4]}";
-
-		if (string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationTemplateCode) ||
-			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconId) ||
-			string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationIconBackground)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:ApplicationTemplateCode, ApplicationIconId, and ApplicationIconBackground to run application/sync-schemas regression E2E.");
-		}
 
 		ApplicationInfoActResult createResult = await ActCreateAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
 			applicationName,
-			applicationCode,
+			createdApplicationCode,
 			description: null,
-			settings.Sandbox.ApplicationTemplateCode!,
-			settings.Sandbox.ApplicationIconId!,
-			settings.Sandbox.ApplicationIconBackground!,
+			ApplicationTemplateCode,
+			ApplicationIconId,
+			ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Act
@@ -392,7 +384,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
 			createResult.Result.PackageName!,
-			applicationCode,
+			createdApplicationCode,
 			addedColumnName);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
 		ApplicationInfoActResult infoResult = await ActInfoAsync(
@@ -400,9 +392,9 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
 			id: null,
-			code: applicationCode);
+			code: createdApplicationCode);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
-			.FirstOrDefault(entity => string.Equals(entity.Name, applicationCode, StringComparison.OrdinalIgnoreCase));
+			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 
 		// Assert
 		createResult.Result.Success.Should().BeTrue(
@@ -522,8 +514,8 @@ public sealed class ApplicationToolE2ETests {
 			$"UsrBad{Guid.NewGuid():N}"[..14],
 			description: null,
 			invalidTemplateCode,
-			settings.Sandbox.ApplicationIconId ?? "11111111-1111-1111-1111-111111111111",
-			settings.Sandbox.ApplicationIconBackground,
+			ApplicationIconId,
+			ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Assert
@@ -555,9 +547,9 @@ public sealed class ApplicationToolE2ETests {
 			name: $"Codex Invalid Json {suffix}",
 			code: $"UsrBadJson{suffix}",
 			description: null,
-			templateCode: settings.Sandbox.ApplicationTemplateCode ?? "AppFreedomUI",
-			iconId: settings.Sandbox.ApplicationIconId ?? "11111111-1111-1111-1111-111111111111",
-			iconBackground: settings.Sandbox.ApplicationIconBackground,
+			templateCode: ApplicationTemplateCode,
+			iconId: ApplicationIconId,
+			iconBackground: ApplicationIconBackground,
 			optionalTemplateDataJson: "{not-json");
 
 		// Assert
@@ -593,9 +585,9 @@ public sealed class ApplicationToolE2ETests {
 			name: $"Codex Auto Icon {suffix}",
 			code: $"UsrAutoIcon{suffix}",
 			description: null,
-			templateCode: settings.Sandbox.ApplicationTemplateCode ?? "AppFreedomUI",
+			templateCode: ApplicationTemplateCode,
 			iconId: "auto",
-			iconBackground: settings.Sandbox.ApplicationIconBackground,
+			iconBackground: ApplicationIconBackground,
 			optionalTemplateDataJson: null);
 
 		// Assert

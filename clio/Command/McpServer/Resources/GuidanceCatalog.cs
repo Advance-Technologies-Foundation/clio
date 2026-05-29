@@ -81,7 +81,11 @@ internal static class GuidanceCatalog {
 			["sys-settings"] = Create(
 				"sys-settings",
 				"Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.",
-				SysSettingsGuidanceResource.Guide)
+				SysSettingsGuidanceResource.Guide),
+			["ui-project"] = Create(
+				"ui-project",
+				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
+				WorkspaceUiProjectGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -9,122 +12,166 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// Provides the curated Freedom UI component catalog used by MCP tools.
+/// Backed by the CDN → file cache → embedded snapshot chain, async because the
+/// CDN tier and the per-version selection both happen at request time.
 /// </summary>
 public interface IComponentInfoCatalog {
 	/// <summary>
-	/// Returns every curated component definition.
+	/// Returns the parsed catalog state for the requested version, including the source
+	/// tier that produced the bytes (CDN, cache, or embedded fallback).
 	/// </summary>
-	/// <returns>The full curated component catalog.</returns>
-	IReadOnlyList<ComponentRegistryEntry> GetAll();
+	Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default);
 
-	/// <summary>
-	/// Returns component definitions matching the provided search text.
-	/// </summary>
-	/// <param name="search">Optional free-text search.</param>
-	/// <returns>The filtered component catalog.</returns>
-	IReadOnlyList<ComponentRegistryEntry> Search(string? search);
+	/// <summary>Returns every curated component definition for the requested version.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default);
 
-	/// <summary>
-	/// Finds a curated component definition by its type name.
-	/// </summary>
-	/// <param name="componentType">The Freedom UI component type to resolve.</param>
-	/// <returns>The component definition when it exists; otherwise <see langword="null"/>.</returns>
-	ComponentRegistryEntry? Find(string componentType);
+	/// <summary>Returns component definitions matching <paramref name="search"/>.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default);
+
+	/// <summary>Finds a curated component by its type name.</summary>
+	Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Loads the curated Freedom UI component catalog from the shipped JSON registry.
+/// Loads the curated Freedom UI component catalog through
+/// <see cref="IComponentRegistryClient"/>. Re-parses on every request so background CDN
+/// refreshes and <c>clio component-registry-refresh</c> writes become visible to AI without
+/// a process restart. The byte-level cache lives in the registry client; the catalog is
+/// only responsible for turning bytes into POCOs (parse cost is sub-millisecond).
 /// </summary>
-public sealed class ComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
-	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "ComponentRegistry.json", "Component") { }
+public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
+	private readonly IComponentRegistryClient _registryClient;
 
-/// <summary>
-/// Marker interface for the mobile Freedom UI component catalog.
-/// Allows a distinct DI registration without duplicating method signatures.
-/// </summary>
-public interface IMobileComponentInfoCatalog : IComponentInfoCatalog { }
-
-/// <summary>
-/// Loads the curated mobile Freedom UI component catalog from the shipped JSON registry.
-/// </summary>
-public sealed class MobileComponentInfoCatalog(IFileSystem fileSystem, IWorkingDirectoriesProvider workingDirectoriesProvider)
-	: ComponentInfoCatalogBase(fileSystem, workingDirectoriesProvider, "MobileComponentRegistry.json", "Mobile component"),
-		IMobileComponentInfoCatalog { }
-
-/// <summary>
-/// Base implementation for Freedom UI component catalogs loaded from a JSON registry file.
-/// Subclasses supply the registry file name and the error message prefix.
-/// </summary>
-public abstract class ComponentInfoCatalogBase : IComponentInfoCatalog {
-	private static readonly string[] DefaultCategoryOrder = ["containers", "fields", "interactive", "display", "filtering"];
-	private readonly Lazy<ComponentCatalogState> _catalogState;
-
-	/// <summary>
-	/// Initializes the catalog base with the given file system, directories provider, registry file name, and label.
-	/// </summary>
-	/// <param name="fileSystem">The file system abstraction used to read the registry.</param>
-	/// <param name="workingDirectoriesProvider">Provides the executing directory where the registry lives.</param>
-	/// <param name="registryFileName">File name of the JSON registry (e.g. <c>ComponentRegistry.json</c>).</param>
-	/// <param name="registryLabel">Human-readable label used in error messages (e.g. <c>"Component"</c>).</param>
-	protected ComponentInfoCatalogBase(
-		IFileSystem fileSystem,
-		IWorkingDirectoriesProvider workingDirectoriesProvider,
-		string registryFileName,
-		string registryLabel) {
-		_catalogState = new Lazy<ComponentCatalogState>(
-			() => LoadCatalogState(fileSystem, workingDirectoriesProvider, registryFileName, registryLabel),
-			isThreadSafe: true);
+	public ComponentInfoCatalog(IComponentRegistryClient registryClient) {
+		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<ComponentRegistryEntry> GetAll() => _catalogState.Value.Entries;
-
-	/// <inheritdoc />
-	public IReadOnlyList<ComponentRegistryEntry> Search(string? search) {
-		if (string.IsNullOrWhiteSpace(search)) {
-			return GetAll();
-		}
-		string query = search.Trim();
-		return _catalogState.Value.Entries
-			.Where(entry => Matches(entry, query))
-			.ToArray();
+	public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		string key = NormaliseVersion(requestedVersion);
+		return LoadCatalogStateAsync(key, cancellationToken);
 	}
 
 	/// <inheritdoc />
-	public ComponentRegistryEntry? Find(string componentType) {
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Entries;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return ComponentInfoGrouping.FilterEntries(state.Entries, search);
+	}
+
+	/// <inheritdoc />
+	public async Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) {
 		if (string.IsNullOrWhiteSpace(componentType)) {
 			return null;
 		}
-		return _catalogState.Value.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry)
-			? entry
-			: null;
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
 	}
 
-	private static ComponentCatalogState LoadCatalogState(
-		IFileSystem fileSystem,
-		IWorkingDirectoriesProvider workingDirectoriesProvider,
-		string registryFileName,
-		string registryLabel) {
-		string registryPath = fileSystem.Path.Combine(
-			workingDirectoriesProvider.ExecutingDirectory,
-			"Command",
-			"McpServer",
-			"Data",
-			registryFileName);
-		if (!fileSystem.File.Exists(registryPath)) {
-			throw new InvalidOperationException(
-				$"{registryLabel} registry file was not found at '{registryPath}'.");
+	/// <summary>
+	/// Default deserialiser options for the registry payload. Case-insensitive (the
+	/// producer is camelCase but legacy localisations may slip in lower/upper case)
+	/// and lets <c>JsonExtensionData</c> buckets soak up any unmapped producer key,
+	/// so the snapshot guard test can detect them in CI rather than the deserialiser
+	/// crashing at runtime.
+	/// </summary>
+	internal static readonly JsonSerializerOptions DeserializerOptions = new() {
+		PropertyNameCaseInsensitive = true
+	};
+
+	/// <summary>
+	/// Parses a registry stream into the in-memory catalog state. Exposed for hermetic
+	/// tests and for callers that want to bypass the CDN/cache/embedded chain entirely.
+	/// Accepts both supported JSON shapes: a top-level array of
+	/// <see cref="ComponentRegistryEntry"/> (legacy CDN format) and an object wrapper
+	/// <c>{ "components": [...], "content": {...} }</c>.
+	/// </summary>
+	public static ComponentCatalogState LoadFromStream(
+		Stream stream,
+		string resolvedVersion = "latest",
+		ComponentRegistrySource source = ComponentRegistrySource.Cdn) {
+		if (stream is null) {
+			throw new ArgumentNullException(nameof(stream));
 		}
 
-		string json = fileSystem.File.ReadAllText(registryPath);
-		ComponentRegistryEntry[]? rawEntries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
-			json,
-			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-		if (rawEntries is null || rawEntries.Length == 0) {
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences) =
+			DeserializeEnvelope(stream, "Component registry stream");
+		return BuildState(rawEntries, globalReferences, "Component registry stream", resolvedVersion, source);
+	}
+
+	/// <summary>
+	/// Deserialises a component-registry payload into entries + the global
+	/// <c>content</c> block (when present). Supports the legacy top-level array
+	/// (<c>[{...}, {...}]</c>) and the wrapped object shape
+	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
+	/// <c>null</c> global content — there is no envelope to carry it.
+	/// </summary>
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences) DeserializeEnvelope(
+		Stream stream, string sourceDescription) {
+		using JsonDocument document = JsonDocument.Parse(stream);
+		ComponentRegistryEntry[] entries;
+		RegistryGlobalReferences? globalReferences = null;
+
+		if (document.RootElement.ValueKind == JsonValueKind.Array) {
+			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
+				?? throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
+		} else if (document.RootElement.ValueKind == JsonValueKind.Object) {
+			// The wrapped envelope requires a 'components' array. Reject early
+			// with the same diagnostic the legacy shape-validation produced so
+			// callers can keep pattern-matching on the error wording.
+			if (!document.RootElement.TryGetProperty("components", out JsonElement componentsArray)
+				|| componentsArray.ValueKind != JsonValueKind.Array) {
+				throw new InvalidOperationException(
+					$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
+			}
+			ComponentRegistryEnvelope envelope = document.RootElement.Deserialize<ComponentRegistryEnvelope>(DeserializerOptions)
+				?? throw new InvalidOperationException($"{sourceDescription} envelope was empty or invalid.");
+			entries = envelope.Components;
+			globalReferences = envelope.References;
+		} else {
 			throw new InvalidOperationException(
-				$"{registryLabel} registry file '{registryPath}' is empty or invalid.");
+				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
 		}
 
+		if (entries is null || entries.Length == 0) {
+			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
+		}
+		return (entries, globalReferences);
+	}
+
+	/// <summary>
+	/// Back-compat shim used by hermetic mobile-catalog tests that consume only the
+	/// entries (mobile registry has no global <c>content</c> block).
+	/// </summary>
+	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
+		(ComponentRegistryEntry[] entries, _) = DeserializeEnvelope(stream, sourceDescription);
+		return entries;
+	}
+
+	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
+		ComponentRegistryFetchResult fetch = await _registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		using (fetch.Content) {
+			return LoadFromStream(fetch.Content, fetch.ResolvedVersion, fetch.Source);
+		}
+	}
+
+	private static string NormaliseVersion(string? requestedVersion) {
+		return string.IsNullOrWhiteSpace(requestedVersion)
+			? ComponentRegistryClient.LatestVersion
+			: requestedVersion.Trim();
+	}
+
+	internal static ComponentCatalogState BuildState(
+		ComponentRegistryEntry[] rawEntries,
+		RegistryGlobalReferences? globalReferences,
+		string sourceDescription,
+		string resolvedVersion,
+		ComponentRegistrySource source) {
 		string[] duplicateTypes = rawEntries
 			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
 			.GroupBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
@@ -134,50 +181,127 @@ public abstract class ComponentInfoCatalogBase : IComponentInfoCatalog {
 			.ToArray();
 		if (duplicateTypes.Length > 0) {
 			throw new InvalidOperationException(
-				$"{registryLabel} registry contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
+				$"{sourceDescription} contains duplicate component types: {string.Join(", ", duplicateTypes)}.");
 		}
 
 		ComponentRegistryEntry[] orderedEntries = rawEntries
 			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
-			.OrderBy(entry => GetCategorySortKey(entry.Category))
-			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		if (orderedEntries.Length == 0) {
-			throw new InvalidOperationException(
-				$"{registryLabel} registry file '{registryPath}' does not contain valid component types.");
+			throw new InvalidOperationException($"{sourceDescription} does not contain valid component types.");
 		}
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup);
+		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalReferences);
 	}
 
-	private static bool Matches(ComponentRegistryEntry entry, string query) {
-		return Contains(entry.ComponentType, query)
-			|| Contains(entry.Category, query)
-			|| Contains(entry.Description, query)
-			|| entry.ParentTypes.Any(parentType => Contains(parentType, query))
-			|| entry.TypicalChildren.Any(childType => Contains(childType, query))
-			|| entry.Properties.Any(property =>
-				Contains(property.Key, query)
-				|| Contains(property.Value.Type, query)
-				|| Contains(property.Value.Description, query)
-				|| property.Value.Values?.Any(value => Contains(value, query)) == true);
-	}
-
-	private static bool Contains(string? value, string query) {
-		return !string.IsNullOrWhiteSpace(value)
-			&& value.Contains(query, StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static int GetCategorySortKey(string? category) {
-		int index = Array.FindIndex(
-			DefaultCategoryOrder,
-			item => string.Equals(item, category, StringComparison.OrdinalIgnoreCase));
-		return index >= 0 ? index : DefaultCategoryOrder.Length;
-	}
-
-	private sealed record ComponentCatalogState(
-		IReadOnlyList<ComponentRegistryEntry> Entries,
-		IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup);
+	/// <summary>
+	/// Overload that accepts pre-deserialised entries (legacy mobile path) and
+	/// builds the state without a global content block. Kept adjacent to the
+	/// canonical 5-arg overload above to keep the SonarCloud S4136 'overloads
+	/// should be adjacent' rule happy.
+	/// </summary>
+	internal static ComponentCatalogState BuildState(
+		ComponentRegistryEntry[] rawEntries,
+		string sourceDescription,
+		string resolvedVersion,
+		ComponentRegistrySource source) =>
+		BuildState(rawEntries, globalReferences: null, sourceDescription, resolvedVersion, source);
 }
+
+/// <summary>
+/// Mobile Freedom UI component catalog. Backed by the same wrapped-envelope
+/// contract and the same CDN → cache fallback chain as the web catalog, with two
+/// flavor-specific differences enforced by <see cref="RegistryFlavor.Mobile"/>:
+/// the producer file is <c>MobileComponentRegistry.json</c>, the cache lives
+/// under a dedicated <c>mobile/</c> subdirectory, and the operator override
+/// reads <c>CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE</c>.
+/// </summary>
+public interface IMobileComponentInfoCatalog {
+	/// <summary>
+	/// Returns the parsed catalog state for the requested version, including the
+	/// source tier that produced the bytes. Symmetric with
+	/// <see cref="IComponentInfoCatalog.LoadAsync"/>.
+	/// </summary>
+	Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default);
+
+	/// <summary>Returns every curated mobile component definition.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default);
+
+	/// <summary>Returns mobile component definitions matching <paramref name="search"/>.</summary>
+	Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default);
+
+	/// <summary>Finds a mobile component definition by its type name.</summary>
+	Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Default mobile catalog implementation. Reuses
+/// <see cref="ComponentInfoCatalog.LoadFromStream"/> over the same wrapped
+/// envelope, so AI consumers see the same response shape on both flavors. The
+/// underlying <see cref="IMobileComponentRegistryClient"/> handles tier resolution
+/// (cache → CDN → bundled file).
+/// </summary>
+public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
+	private readonly IMobileComponentRegistryClient _registryClient;
+
+	public MobileComponentInfoCatalog(IMobileComponentRegistryClient registryClient) {
+		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
+	}
+
+	/// <inheritdoc />
+	public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		string key = string.IsNullOrWhiteSpace(requestedVersion) ? ComponentRegistryClient.LatestVersion : requestedVersion.Trim();
+		return LoadCatalogStateAsync(key, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Entries;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) {
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return ComponentInfoGrouping.FilterEntries(state.Entries, search);
+	}
+
+	/// <inheritdoc />
+	public async Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) {
+		if (string.IsNullOrWhiteSpace(componentType)) {
+			return null;
+		}
+		ComponentCatalogState state = await LoadAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		return state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null;
+	}
+
+	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
+		ComponentRegistryFetchResult fetch = await _registryClient.GetAsync(requestedVersion, cancellationToken).ConfigureAwait(false);
+		using (fetch.Content) {
+			return ComponentInfoCatalog.LoadFromStream(fetch.Content, fetch.ResolvedVersion, fetch.Source);
+		}
+	}
+}
+
+/// <summary>
+/// Parsed snapshot of a component registry ready for catalog operations.
+/// </summary>
+/// <param name="Entries">Ordered list of catalog entries.</param>
+/// <param name="Lookup">Case-insensitive map of componentType → entry.</param>
+/// <param name="ResolvedVersion">The version actually loaded; may differ from the requested version on fallback.</param>
+/// <param name="Source">Which tier of the fallback chain produced the bytes.</param>
+/// <param name="GlobalReferences">
+/// Optional global <c>references</c> block from the wrapped envelope shape; carries
+/// the shared <c>baseInputs</c> and <c>typeDefinitions</c> producer metadata. Null
+/// for the legacy top-level-array shape and for the mobile catalog (which has no
+/// envelope).
+/// </param>
+public sealed record ComponentCatalogState(
+	IReadOnlyList<ComponentRegistryEntry> Entries,
+	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
+	string ResolvedVersion,
+	ComponentRegistrySource Source,
+	RegistryGlobalReferences? GlobalReferences = null);
