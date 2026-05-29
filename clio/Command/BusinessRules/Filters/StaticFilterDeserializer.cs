@@ -105,47 +105,50 @@ internal static class StaticFilterDeserializer {
 
 		int index = 0;
 		foreach (JsonElement backwardItem in backwardElement.EnumerateArray()) {
-			string itemPath = $"{path}.backwardReferenceFilters[{index}]";
-			if (backwardItem.ValueKind != JsonValueKind.Object) {
-				throw new ArgumentException($"{itemPath}: must be a JSON object.");
-			}
-
-			string referenceColumnPath = ReadRequiredString(backwardItem, "referenceColumnPath", itemPath);
-			string? aggregationType = backwardItem.TryGetProperty("aggregationType", out JsonElement at)
-				&& at.ValueKind == JsonValueKind.String
-					? at.GetString()
-					: null;
-			// In EXISTS mode comparisonType defaults to EXISTS; in aggregation mode the caller must supply
-			// a relational/equality token, so do not silently default it there.
-			bool hasComparison = backwardItem.TryGetProperty("comparisonType", out JsonElement ct)
-				&& ct.ValueKind == JsonValueKind.String;
-			string comparisonType = hasComparison
-				? ct.GetString() ?? StaticFilterConstants.Exists
-				: string.IsNullOrWhiteSpace(aggregationType) ? StaticFilterConstants.Exists : string.Empty;
-			string? aggregationColumnPath = backwardItem.TryGetProperty("aggregationColumnPath", out JsonElement acp)
-				&& acp.ValueKind == JsonValueKind.String
-					? acp.GetString()
-					: null;
-			double? aggregationValue = ReadOptionalDouble(backwardItem, "aggregationValue", itemPath);
-			StaticFilterGroup? subFilter = null;
-			if (backwardItem.TryGetProperty("filter", out JsonElement filterElement)
-				&& filterElement.ValueKind != JsonValueKind.Null) {
-				subFilter = DeserializeGroup(filterElement, $"{itemPath}.filter");
-			}
-
-			result.Add(new StaticFilterBackwardReference {
-				ReferenceColumnPath = referenceColumnPath,
-				ComparisonType = comparisonType,
-				AggregationType = aggregationType,
-				AggregationColumnPath = aggregationColumnPath,
-				AggregationValue = aggregationValue,
-				Filter = subFilter
-			});
+			result.Add(ReadBackwardReference(backwardItem, $"{path}.backwardReferenceFilters[{index}]"));
 			index++;
 		}
 
 		return result;
 	}
+
+	private static StaticFilterBackwardReference ReadBackwardReference(JsonElement backwardItem, string itemPath) {
+		if (backwardItem.ValueKind != JsonValueKind.Object) {
+			throw new ArgumentException($"{itemPath}: must be a JSON object.");
+		}
+
+		string? aggregationType = ReadOptionalString(backwardItem, "aggregationType");
+		StaticFilterGroup? subFilter = null;
+		if (backwardItem.TryGetProperty("filter", out JsonElement filterElement)
+			&& filterElement.ValueKind != JsonValueKind.Null) {
+			subFilter = DeserializeGroup(filterElement, $"{itemPath}.filter");
+		}
+
+		return new StaticFilterBackwardReference {
+			ReferenceColumnPath = ReadRequiredString(backwardItem, "referenceColumnPath", itemPath),
+			ComparisonType = ResolveBackwardComparison(backwardItem, aggregationType),
+			AggregationType = aggregationType,
+			AggregationColumnPath = ReadOptionalString(backwardItem, "aggregationColumnPath"),
+			AggregationValue = ReadOptionalDouble(backwardItem, "aggregationValue", itemPath),
+			Filter = subFilter
+		};
+	}
+
+	// In EXISTS mode comparisonType defaults to EXISTS; in aggregation mode the caller must supply a
+	// relational/equality token, so it is left empty here for the validator to flag explicitly.
+	private static string ResolveBackwardComparison(JsonElement backwardItem, string? aggregationType) {
+		string? comparison = ReadOptionalString(backwardItem, "comparisonType");
+		if (comparison is not null) {
+			return comparison;
+		}
+
+		return string.IsNullOrWhiteSpace(aggregationType) ? StaticFilterConstants.Exists : string.Empty;
+	}
+
+	private static string? ReadOptionalString(JsonElement element, string propertyName) =>
+		element.TryGetProperty(propertyName, out JsonElement value) && value.ValueKind == JsonValueKind.String
+			? value.GetString()
+			: null;
 
 	private static double? ReadOptionalDouble(JsonElement element, string propertyName, string path) {
 		if (!element.TryGetProperty(propertyName, out JsonElement value) || value.ValueKind == JsonValueKind.Null) {

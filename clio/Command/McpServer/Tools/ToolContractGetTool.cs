@@ -220,6 +220,13 @@ internal static class ToolContractCatalog {
 	private const string FailureMessageDescription = "Human-readable failure message.";
 	private const string FieldFieldName = "field";
 	private const string FiltersFieldName = "filters";
+	private const string LogicalOperationFieldName = "logicalOperation";
+	private const string ConditionFieldName = "condition";
+	private const string ConditionsFieldName = "conditions";
+	private const string ActionsFieldName = "actions";
+	private const string ExampleEqualComparison = "EQUAL";
+	private const string ExampleOwnerAttributeName = "Owner";
+	private const string ExampleAssigneeAttributeName = "Assignee";
 	private const string IconBackgroundFieldName = "icon-background";
 	private const string InvalidLocalizationMapCode = "invalid-localization-map";
 	private const string KeyValueFieldName = "key-value";
@@ -1076,7 +1083,7 @@ internal static class ToolContractCatalog {
 				Examples = [
 					Example("Read Contact-to-Account relations for a configured environment", new Dictionary<string, object?> {
 						["source-table"] = ExampleContactSchemaName,
-						["target-table"] = "Account",
+						["target-table"] = ExampleAccountSchemaName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
@@ -1598,7 +1605,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
-					"UsrTask", "Require status for a specific owner", "Owner", "equal",
+					"UsrTask", "Require status for a specific owner", ExampleOwnerAttributeName, "equal",
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
@@ -1607,11 +1614,11 @@ internal static class ToolContractCatalog {
 					"UsrTask", "Lock name and description when completed", "Completed", "equal",
 					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
-					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
-					MakeRequiredActionTypeName, ["Owner"], 1000000),
+					ExampleAccountSchemaName, "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
+					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
 					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
-					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
+					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
@@ -1662,20 +1669,20 @@ internal static class ToolContractCatalog {
 					"Limit city to USA cities",
 					"City",
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
-							StaticFilterLeaf("Country.Name", "EQUAL", "USA")
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Country.Name", ExampleEqualComparison, "USA")
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to contacts whose type is one of several lookup values (multi-value IN)",
 					"UsrTask",
 					"Limit owner to selected contact types",
-					"Owner",
+					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
-							StaticFilterLeaf("Type", "EQUAL", new[] {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Type", ExampleEqualComparison, new[] {
 								ExampleLookupValueId,
 								"00000000-0000-0000-0000-000000000002"
 							})
@@ -1685,10 +1692,10 @@ internal static class ToolContractCatalog {
 					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
 					"UsrTask",
 					"Limit owner to contacts with a mobile phone",
-					"Owner",
+					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
 							StaticFilterLeaf("MobilePhone", "IS_NOT_NULL")
 						}
 					}),
@@ -1696,9 +1703,9 @@ internal static class ToolContractCatalog {
 					"Apply a static filter limiting an Account lookup to accounts that have at least one related contact (backward EXISTS)",
 					"UsrOrder",
 					"Limit account to accounts with contacts",
-					"Account",
+					ExampleAccountSchemaName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
+						[LogicalOperationFieldName] = "AND",
 						["backwardReferenceFilters"] = new object[] {
 							new Dictionary<string, object?> {
 								["referenceColumnPath"] = "[Contact:Account]",
@@ -1710,20 +1717,20 @@ internal static class ToolContractCatalog {
 					"Apply a static filter limiting an Assignee lookup to contacts whose Age equals 30 ('show the Assignee field only for contacts where Age = 30' is a lookup restriction, NOT field visibility; filter the Age column directly when it exists)",
 					"UsrTask",
 					"Limit assignee to contacts aged 30",
-					"Assignee",
+					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
-							StaticFilterLeaf("Age", "EQUAL", 30)
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Age", ExampleEqualComparison, 30)
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts that have more than 10 activities (backward COUNT aggregation)",
 					"UsrTask",
 					"Limit assignee to contacts with more than 10 activities",
-					"Assignee",
+					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
+						[LogicalOperationFieldName] = "AND",
 						["backwardReferenceFilters"] = new object[] {
 							new Dictionary<string, object?> {
 								["referenceColumnPath"] = "[Activity:Contact]",
@@ -1737,10 +1744,10 @@ internal static class ToolContractCatalog {
 					"Apply a static filter limiting an Assignee lookup to contacts whose account was created this year (forward path + relative-date macros)",
 					"UsrTask",
 					"Limit assignee to contacts whose account is created this year",
-					"Assignee",
+					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
 							StaticFilterMacrosLeaf("Account.CreatedOn", "GREATER_OR_EQUAL", "CurrentYear")
 						}
 					}),
@@ -1748,22 +1755,22 @@ internal static class ToolContractCatalog {
 					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
 					"UsrTask",
 					"Limit assignee to contacts with a birthday tomorrow",
-					"Assignee",
+					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
-							StaticFilterMacrosLeaf("BirthDate", "EQUAL", "DayOfYearTodayPlusDaysOffset", 1)
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("BirthDate", ExampleEqualComparison, "DayOfYearTodayPlusDaysOffset", 1)
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to the current user's contact (CurrentUserContact macros)",
 					"UsrTask",
 					"Limit owner to current user",
-					"Owner",
+					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
-							StaticFilterMacrosLeaf("Id", "EQUAL", "CurrentUserContact")
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("Id", ExampleEqualComparison, "CurrentUserContact")
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
@@ -1772,8 +1779,8 @@ internal static class ToolContractCatalog {
 					"Limit activity to next 5 days",
 					"Activity",
 					new Dictionary<string, object?> {
-						["logicalOperation"] = "AND",
-						["filters"] = new object[] {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
 							StaticFilterMacrosLeaf("DueDate", "LESS_OR_EQUAL", "NextNDays", 5)
 						}
 					})
@@ -2034,11 +2041,11 @@ internal static class ToolContractCatalog {
 			[EntitySchemaNameFieldName] = entitySchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = System.Array.Empty<object>()
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
-				["actions"] = new object[] { action }
+				[ActionsFieldName] = new object[] { action }
 			}
 		});
 	}
@@ -2061,11 +2068,11 @@ internal static class ToolContractCatalog {
 			[EntitySchemaNameFieldName] = entitySchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = System.Array.Empty<object>()
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
-				["actions"] = new object[] { action }
+				[ActionsFieldName] = new object[] { action }
 			}
 		});
 	}
@@ -2137,13 +2144,13 @@ internal static class ToolContractCatalog {
 			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] {
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
 						condition
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = actionType,
 						["items"] = actionItems
@@ -2160,9 +2167,9 @@ internal static class ToolContractCatalog {
 			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] {
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							["leftExpression"] = new Dictionary<string, object?> {
 								["type"] = "AttributeValue",
@@ -2176,7 +2183,7 @@ internal static class ToolContractCatalog {
 						}
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = "hide-element",
 						["items"] = new object[] { "DateMismatchWarningLabel" }
