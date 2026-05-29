@@ -10,6 +10,10 @@ jobs:
   build:
     name: release-to-nuget
     runs-on: clio-runners
+    # ARC runner pods run as the non-root "runner" user, so setup-dotnet cannot write to its default
+    # /usr/share/dotnet. Install the SDK into the runner-writable temp dir instead.
+    env:
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
     steps:
       - uses: actions/checkout@v5
         with:
