@@ -132,7 +132,7 @@ public sealed class ClearRedisToolE2ETests {
 	private static async Task<ClearRedisActResult> ActAsync(ClearRedisArrangeContext arrangeContext) {
 		return await AllureApi.Step("Act by invoking clear-redis through MCP", async () => {
 			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
+			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ClearRedisTool.ClearRedisToolName),
 				because: "the sandbox test path depends on the environment-name clear-redis tool being advertised by the MCP server");
 
 			return await ActWithEnvironmentNameAsync(arrangeContext, arrangeContext.SandboxContext.EnvironmentName);
@@ -147,7 +147,7 @@ public sealed class ClearRedisToolE2ETests {
 				ClioRunTool.ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
-						["command"] = ToolName,
+						["command"] = ClearRedisTool.ClearRedisToolName,
 						["mode"] = ClearRedisTool.ModeEnvironment,
 						["environment-name"] = environmentName
 					}
@@ -165,7 +165,7 @@ public sealed class ClearRedisToolE2ETests {
 		bool? isNetCore = null) {
 		return await AllureApi.Step("Act by invoking clear-redis-db with credentials mode", async () => {
 			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ToolName),
+			tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ClearRedisTool.ClearRedisToolName),
 				because: "the consolidated clear-redis-db tool must be advertised by the MCP server for the credentials-path end-to-end coverage");
 
 			Dictionary<string, object?> argsObject = new() {
@@ -182,7 +182,7 @@ public sealed class ClearRedisToolE2ETests {
 				ClioRunTool.ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?>(argsObject) {
-						["command"] = ToolName
+						["command"] = ClearRedisTool.ClearRedisToolName
 					}
 				},
 				arrangeContext.CancellationTokenSource.Token);
