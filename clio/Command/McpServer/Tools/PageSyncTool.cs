@@ -247,6 +247,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
 		SchemaValidationResult schemaDepsResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
+		SchemaValidationResult contextAwaitResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateContextAccessAwait(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			syntaxResult,
@@ -262,7 +264,7 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
@@ -326,7 +328,8 @@ public sealed class PageSyncTool(
 	private static List<string> CollectWarnings(
 		SchemaValidationResult fieldResult,
 		SchemaValidationResult bindingResult,
-		SchemaValidationResult schemaDepsResult) {
+		SchemaValidationResult schemaDepsResult,
+		SchemaValidationResult contextAwaitResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -338,6 +341,10 @@ public sealed class PageSyncTool(
 
 		if (schemaDepsResult.Warnings.Count > 0) {
 			warnings.AddRange(schemaDepsResult.Warnings);
+		}
+
+		if (contextAwaitResult.Warnings.Count > 0) {
+			warnings.AddRange(contextAwaitResult.Warnings);
 		}
 
 		return warnings;

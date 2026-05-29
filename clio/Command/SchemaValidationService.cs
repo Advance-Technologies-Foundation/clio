@@ -63,6 +63,17 @@ public static class SchemaValidationService
 
 	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>
+	/// Matches a reactive view-model context attribute read of the form
+	/// <c>$context["Attr"]</c> or <c>request.$context["Attr"]</c>, capturing an optional
+	/// immediately-preceding <c>await</c> keyword so the validator can tell awaited reads
+	/// from un-awaited ones. The <c>name</c> group holds the attribute name.
+	/// </summary>
+	private static readonly Regex ContextBracketReadPattern = new(
+		@"(?<await>\bawait\s+)?(?:request\s*\.\s*)?\$context\s*\[\s*(?<quote>[""'])(?<name>[^""']+)\k<quote>\s*\]",
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		RegexTimeout);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
@@ -559,6 +570,77 @@ public static class SchemaValidationService
 			return false;
 		}
 		return SdkUsagePattern.IsMatch(convertersContent);
+	}
+
+	/// <summary>
+	/// Detects reactive context attribute reads of the form <c>$context["Attr"]</c> or
+	/// <c>request.$context["Attr"]</c> that are NOT preceded by <c>await</c>, anywhere in the
+	/// page body (handler bodies, converters, and free module-scope helper functions alike).
+	/// </summary>
+	/// <remarks>
+	/// In a Freedom UI page body the bracket accessor on <c>$context</c> is asynchronous: it
+	/// returns a <c>Promise</c>, so the read MUST be awaited (<c>await request.$context["Attr"]</c>).
+	/// An un-awaited read yields a <c>Promise</c> object instead of the value; because a Promise is
+	/// always truthy and never nullish, it silently breaks the surrounding expression — most often a
+	/// <c>?? fallback</c> chain that never reaches its fallback, a comparison that is always false, or
+	/// an argument passed on un-resolved. The mistake is valid JavaScript, so neither marker, JSON,
+	/// nor JS-syntax validation catches it; this heuristic does.
+	/// <para>
+	/// All findings are WARNINGS, not errors. The check is a regex heuristic over raw text, so it
+	/// cannot exclude an occurrence inside a string literal or comment, and it does not resolve a
+	/// <c>$context</c> handle aliased to another variable. It therefore advises rather than blocks,
+	/// matching the fail-open posture of <see cref="ValidateSchemaDepsCompleteness"/>. Bracket reads
+	/// used as an assignment target (<c>$context["X"] = ...</c>) are skipped because that is a write,
+	/// not a read; the dedicated write API is <c>$context.set(...)</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is always valid; its warnings list one entry per
+	/// distinct attribute name read without <c>await</c>.
+	/// </returns>
+	public static SchemaValidationResult ValidateContextAccessAwait(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		var reported = new HashSet<string>(StringComparer.Ordinal);
+		foreach (Match match in ContextBracketReadPattern.Matches(jsBody)) {
+			if (match.Groups["await"].Success) {
+				continue;
+			}
+			if (IsAssignmentTarget(jsBody, match.Index + match.Length)) {
+				continue;
+			}
+			string attributeName = match.Groups["name"].Value;
+			if (!reported.Add(attributeName)) {
+				continue;
+			}
+			result.Warnings.Add(
+				$"Page body reads '$context[\"{attributeName}\"]' without 'await'. Reactive context attribute reads " +
+				"are asynchronous and return a Promise; an un-awaited read yields a Promise object — always truthy and " +
+				"never nullish — which silently breaks '??' fallbacks, comparisons, and arguments built from it. " +
+				$"Change it to 'await $context[\"{attributeName}\"]' (e.g. 'const x = arg ?? (await $context[\"{attributeName}\"]) ?? fallback;'). " +
+				"Call get-guidance with name 'page-schema-handlers' for the read/write contract.");
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Reports whether the first non-whitespace character at or after <paramref name="indexAfterRead"/>
+	/// begins a plain assignment (<c>=</c> not followed by <c>=</c> or <c>&gt;</c>), which marks the
+	/// preceding bracket access as a write target rather than an un-awaited read.
+	/// </summary>
+	private static bool IsAssignmentTarget(string jsBody, int indexAfterRead) {
+		int i = indexAfterRead;
+		while (i < jsBody.Length && char.IsWhiteSpace(jsBody[i])) {
+			i++;
+		}
+		if (i >= jsBody.Length || jsBody[i] != '=') {
+			return false;
+		}
+		// Distinguish assignment '=' from comparison '=='/'===' and arrow '=>', which are reads.
+		return i + 1 >= jsBody.Length || (jsBody[i + 1] != '=' && jsBody[i + 1] != '>');
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {

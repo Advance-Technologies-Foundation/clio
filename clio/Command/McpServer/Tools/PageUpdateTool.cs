@@ -164,10 +164,11 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
-		SchemaValidationResult depsResult = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
-		List<string> warnings = depsResult.Warnings.Count > 0 ? depsResult.Warnings : null;
+		var warnings = new List<string>();
+		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
+		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
 		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
-		return (error, warnings);
+		return (error, warnings.Count > 0 ? warnings : null);
 	}
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {

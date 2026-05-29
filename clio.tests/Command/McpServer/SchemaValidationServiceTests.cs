@@ -5864,6 +5864,253 @@ public sealed class SchemaValidationServiceTests
 
 	#endregion
 
+	#region ValidateContextAccessAwait
+
+	[Test]
+	[Description("Warns when a module-scope helper reads $context[\"Attr\"] without await inside a ?? chain.")]
+	public void ValidateContextAccessAwait_WhenHelperReadsContextWithoutAwait_ReturnsWarning() {
+		// Arrange — reproduces the real bug: the un-awaited read lives in a free helper function,
+		// not inside the SCHEMA_HANDLERS array, so a handler-only scan would miss it.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/["@creatio-devkit/common"]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/ {
+						const sync = async ($context, fmt) => {
+							const current = fmt ?? $context["UsrPhoneFormatMode"] ?? await getFormat();
+							await $context.set("UsrCountryCode", current);
+						};
+						return {/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an un-awaited read is a warning, not a blocking error");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrPhoneFormatMode") && w.Contains("await"),
+			because: "the helper reads $context[\"UsrPhoneFormatMode\"] without awaiting the asynchronous accessor");
+	}
+
+	[Test]
+	[Description("Warns when an un-awaited $context read is passed as a call argument.")]
+	public void ValidateContextAccessAwait_WhenUnAwaitedReadPassedAsArgument_ReturnsWarning() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										sync(request.$context, request.$context["UsrPhoneNumber"]);
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrPhoneNumber"),
+			because: "request.$context[\"UsrPhoneNumber\"] is passed on without await, yielding a Promise argument");
+	}
+
+	[Test]
+	[Description("Does not warn when every $context read is awaited.")]
+	public void ValidateContextAccessAwait_WhenReadsAreAwaited_ReturnsClean() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const v = await request.$context["UsrPhoneNumber"];
+										const m = await $context["UsrMode"];
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because all reads are awaited");
+		result.Warnings.Should().BeEmpty("because every $context bracket read is preceded by await");
+	}
+
+	[Test]
+	[Description("Does not warn for a bracket assignment target, which is a write rather than a read.")]
+	public void ValidateContextAccessAwait_WhenBracketIsAssignmentTarget_ReturnsClean() {
+		// Arrange — '$context["X"] =' is a write target, not an un-awaited read.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										request.$context["UsrTransient"] = next;
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because a write target is not flagged");
+		result.Warnings.Should().BeEmpty("because '$context[\"UsrTransient\"] =' is an assignment, not a read");
+	}
+
+	[Test]
+	[Description("Still warns when an un-awaited read is used in an equality comparison.")]
+	public void ValidateContextAccessAwait_WhenUnAwaitedReadInComparison_ReturnsWarning() {
+		// Arrange — '==' must not be mistaken for an assignment '='.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										if ($context["UsrMode"] === "local") {
+											return;
+										}
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "an un-awaited read compared with === resolves the Promise object, never the value");
+	}
+
+	[Test]
+	[Description("Does not warn for $context.set or $context.executeRequest method calls.")]
+	public void ValidateContextAccessAwait_WhenMethodCallsOnly_ReturnsClean() {
+		// Arrange — '.set(' / '.executeRequest(' are method calls, not bracket reads.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										await request.$context.set("UsrName", "x");
+										await request.$context.executeRequest({
+											type: "usr.Req",
+											$context: request.$context
+										});
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there are no bracket reads at all");
+		result.Warnings.Should().BeEmpty("because method-call forms on $context are not bracket attribute reads");
+	}
+
+	[Test]
+	[Description("Reports each distinct un-awaited attribute name once, even across multiple reads.")]
+	public void ValidateContextAccessAwait_WhenSameAttributeReadTwice_WarnsOnce() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const a = $context["UsrMode"];
+										const b = $context["UsrMode"];
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "duplicate reads of the same attribute are de-duplicated into a single warning");
+	}
+
+	[Test]
+	[Description("Returns clean result for null or empty body.")]
+	public void ValidateContextAccessAwait_WhenBodyEmpty_ReturnsClean() {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(string.Empty);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an empty body has nothing to scan");
+		result.Warnings.Should().BeEmpty("because there is no content to flag");
+	}
+
+	#endregion
+
 	#region CollectMobileViewModelPaths
 
 	[Test]
