@@ -1433,6 +1433,61 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage surfaces an advisory warning (without blocking) when a replace body downgrades an own-body insert to a merge")]
+	public void TryUpdatePage_WhenInsertDowngradedToMerge_ReturnsWarningAndSaves() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDowngrade_FormPage",
+				"downgrade-schema-uid",
+				"downgrade-package-uid",
+				"UsrDowngradePackage",
+				"BasePage").ToString());
+		// The schema currently stored on the server inserts UsrName in its own body.
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		// The incoming replace body changes that same UsrName from insert to merge.
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDowngrade_FormPage",
+			Body = CreatePageBody("""[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the downgrade is advisory only and must not block the save");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "demoting an own-body insert to a merge orphans the component and must surface as a warning");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {

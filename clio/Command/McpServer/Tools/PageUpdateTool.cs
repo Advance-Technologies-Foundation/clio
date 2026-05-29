@@ -70,8 +70,24 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		response.SamplingReview = samplingReview;
-		response.Warnings = validationWarnings;
+		response.Warnings = MergeWarnings(validationWarnings, response.Warnings);
 		return response;
+	}
+
+	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {
+		bool firstEmpty = first == null || first.Count == 0;
+		bool secondEmpty = second == null || second.Count == 0;
+		if (firstEmpty && secondEmpty) {
+			return null;
+		}
+		var combined = new List<string>();
+		if (!firstEmpty) {
+			combined.AddRange(first);
+		}
+		if (!secondEmpty) {
+			combined.AddRange(second);
+		}
+		return combined;
 	}
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {

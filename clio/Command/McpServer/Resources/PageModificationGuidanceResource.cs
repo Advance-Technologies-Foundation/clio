@@ -97,6 +97,7 @@ public sealed class PageModificationGuidanceResource {
 		         * `handlers` — concat + dedupe by `request` string (incoming wins)
 		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
+		       - Modifying an existing component: edit the operation that introduces it. Changing an own-body `insert` to a same-`name` `merge`/`move`/`remove` discards the insert, so unless a parent schema inserts that name the component is orphaned (disappears at runtime). Identify own-body inserts via `ownBodySummary.viewConfigDiffOps` (`operation: insert`) and edit their `values`; reserve `merge`/`move`/`remove` for parent-introduced elements. `update-page`/`sync-pages` warn (advisory, never block) when they detect this against the prior body.
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
 		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`.
 
@@ -146,6 +147,8 @@ public sealed class PageModificationGuidanceResource {
 		       """
 		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"
 		       + """
+		       Validation is fragment-scoped and runs BEFORE the append merge: in append mode too, all three edits below must be present in the SAME payload you send, regardless of what the current server body already contains. (If the binding attribute is genuinely supplied by a parent schema or already declared in the current body, use `operation:"merge"` for the viewConfigDiff entry instead of `insert` — the contract above does not apply to merge.)
+
 		       Three required edits for a single new field:
 
 		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.

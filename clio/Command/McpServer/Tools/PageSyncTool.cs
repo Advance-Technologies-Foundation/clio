@@ -166,6 +166,7 @@ public sealed class PageSyncTool(
 					Error = updateResponse.Error
 				};
 			}
+			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 			if (verify && getCommand != null) {
 				PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
 				getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -340,6 +341,25 @@ public sealed class PageSyncTool(
 		}
 
 		return warnings;
+	}
+
+	private static PageSyncValidationResult AppendCommandWarnings(
+		PageSyncValidationResult validation, IReadOnlyList<string> commandWarnings) {
+		if (commandWarnings == null || commandWarnings.Count == 0) {
+			return validation;
+		}
+		var warnings = new List<string>();
+		if (validation?.Warnings != null) {
+			warnings.AddRange(validation.Warnings);
+		}
+		warnings.AddRange(commandWarnings);
+		return new PageSyncValidationResult {
+			MarkersOk = validation?.MarkersOk ?? true,
+			JsSyntaxOk = validation?.JsSyntaxOk ?? true,
+			ContentOk = validation?.ContentOk ?? true,
+			Errors = validation?.Errors,
+			Warnings = warnings
+		};
 	}
 
 	private static PageSyncValidationResult BuildValidationResult(
