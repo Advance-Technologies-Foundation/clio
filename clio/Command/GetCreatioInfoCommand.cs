@@ -34,17 +34,9 @@ namespace Clio.Command
 
 		#region Properties: Protected
 
-		protected override string ServicePath => "/rest/CreatioApiGateway/GetSysInfo";
+		protected override string ServicePath => CreatioServicePaths.GetSysInfo;
 
 		protected override string ClioGateMinVersion { get; } = "2.0.0.32";
-
-		/// <summary>
-		/// Standard Creatio service used for the no-cliogate fallback. Requires only an
-		/// authenticated session and exposes the core version plus locale/user/workspace
-		/// metadata — but not the cliogate-only fields (Runtime, DbEngineType, LicenseInfo,
-		/// ProductName).
-		/// </summary>
-		private const string GetApplicationInfoServicePath = "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo";
 
 		#endregion
 
@@ -75,8 +67,11 @@ namespace Clio.Command
 
 		protected override void ProceedResponse(string response, GetCreatioInfoCommandOptions options){
 			base.ProceedResponse(response, options);
-			JObject jResponse = JObject.Parse(response);
-			JToken sysInfo = jResponse["SysInfo"];
+			JToken sysInfo = JObject.Parse(response)["SysInfo"];
+			if (sysInfo is null){
+				Logger.WriteError("cliogate GetSysInfo returned an unexpected response (no SysInfo node).");
+				return;
+			}
 			Logger.WriteLine(sysInfo.ToString());
 		}
 
@@ -91,7 +86,7 @@ namespace Clio.Command
 		/// </summary>
 		private int ExecuteApplicationInfoFallback(GetCreatioInfoCommandOptions options){
 			try {
-				string url = RootPath + GetApplicationInfoServicePath;
+				string url = RootPath + CreatioServicePaths.GetApplicationInfo;
 				string response = ApplicationClient.ExecutePostRequest(
 					url, "{}", options.TimeOut, options.RetryCount, options.RetryDelay);
 				JToken sysValues = JObject.Parse(response)["applicationInfo"]?["sysValues"];

@@ -118,14 +118,23 @@ public sealed class ComponentInfoTool(
 				Items = []
 			};
 		}
+		if (hasExplicitVersion && !PlatformVersionResolver.TryNormaliseToThreePartSemver(args.Version!, out _)) {
+			return new ComponentInfoResponse {
+				Success = false,
+				Mode = "list",
+				Error = $"'version' value '{args.Version}' is not a valid platform version. Use a 3-part semver, for example '8.3.3'.",
+				Count = 0,
+				Items = []
+			};
+		}
 
-		PlatformVersionResolution version = await ResolveVersionAsync(args, hasExplicitVersion, hasEnvironment, cancellationToken)
+		PlatformVersionResolution versionResolution = await ResolveVersionAsync(args, hasExplicitVersion, hasEnvironment, cancellationToken)
 			.ConfigureAwait(false);
 		ComponentCatalogState state = isMobile
-			? await mobileCatalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false)
-			: await catalog.LoadAsync(version.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			? await mobileCatalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false)
+			: await catalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
-			version.Source, version.ResolvedVersion, state.ResolvedVersion);
+			versionResolution.Source, versionResolution.ResolvedVersion, state.ResolvedVersion);
 
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
 			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {

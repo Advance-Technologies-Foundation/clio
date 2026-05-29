@@ -26,7 +26,8 @@ public static class ComponentInfoResolution {
 		+ "A component listed here may not exist in the target environment's actual platform version, "
 		+ "so a page built against it can fail to render at runtime. "
 		+ "To scope results to a real version, pass an explicit version or target a registered "
-		+ "environment so clio can resolve its platform version via cliogate GetSysInfo.";
+		+ "environment so clio can resolve its platform version (no cliogate required — resolved via "
+		+ "ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).";
 
 	/// <summary>
 	/// Returns the <see cref="LatestFallbackWarning"/> when <paramref name="resolvedFrom"/> is the

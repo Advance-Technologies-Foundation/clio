@@ -485,6 +485,22 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("A malformed explicit version is rejected up front with a readable error instead of silently degrading to latest-fallback when the CDN load fails.")]
+	public async Task ComponentInfoTool_Should_Reject_Malformed_Explicit_Version() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(version: "not-a-version");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unparseable version must surface a clear error rather than a silent latest-fallback");
+		response.Error.Should().Contain("not a valid platform version",
+			because: "the caller must be told the version value is malformed");
+	}
+
+	[Test]
 	[Description("Passing both version and environment-name is rejected with a readable error — the two version sources are mutually exclusive, mirroring the CLI verb guard.")]
 	public async Task ComponentInfoTool_Should_Reject_Both_Version_And_Environment() {
 		// Arrange

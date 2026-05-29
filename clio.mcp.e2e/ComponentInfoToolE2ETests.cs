@@ -230,20 +230,19 @@ public sealed class ComponentInfoToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
-		// Act — no environment-name / version, so the server cannot scope to a real platform version.
+		// Act — no environment-name / version passed. Version resolution is driven solely by
+		// per-call arguments (the ambient singleton was removed), so the server deterministically
+		// reports latest-fallback regardless of any environment registered on the CI runner.
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
 
-		// Assert — warning presence must track the resolver tier exactly.
-		if (string.Equals(response.ResolvedFrom, "latest-fallback", StringComparison.OrdinalIgnoreCase)) {
-			response.VersionWarning.Should().NotBeNullOrWhiteSpace(
-				because: "a latest-fallback catalog is a superset of the target version and the caveat must warn AI the component may not exist there");
-		} else {
-			response.VersionWarning.Should().BeNull(
-				because: "an environment-matched catalog carries no superset risk, so the warning must be omitted");
-		}
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "with no environment-name/version the resolver cannot scope to a real version and must report latest-fallback");
+		response.VersionWarning.Should().NotBeNullOrWhiteSpace(
+			because: "a latest-fallback catalog is a superset of the target version and the caveat must warn AI the component may not exist there");
 	}
 
 	[Test]

@@ -35,7 +35,11 @@ public interface IPlatformVersionResolver {
 public sealed record PlatformVersionResolution(string ResolvedVersion, VersionResolutionSource Source);
 
 public enum VersionResolutionSource {
-	/// <summary>Probe of cliogate <c>GetSysInfo</c> succeeded and the version parsed cleanly.</summary>
+	/// <summary>
+	/// A platform version was successfully resolved from the environment and parsed cleanly —
+	/// via the standard <c>ApplicationInfoService</c> (primary, no cliogate) or the cliogate
+	/// <c>GetSysInfo</c> fallback.
+	/// </summary>
 	Environment,
 	/// <summary>No usable version could be determined; the catalog is loaded against <c>latest.json</c>.</summary>
 	LatestFallback
@@ -54,9 +58,9 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	/// version resolution works on environments where cliogate is not installed.
 	/// Returns <c>{ applicationInfo: { sysValues: { coreVersion: "8.3.3.xxxx" } } }</c>.
 	/// </summary>
-	internal const string GetApplicationInfoServicePath = "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo";
+	internal const string GetApplicationInfoServicePath = CreatioServicePaths.GetApplicationInfo;
 	/// <summary>cliogate fallback probe — used only when <see cref="GetApplicationInfoServicePath"/> yields no version.</summary>
-	internal const string GetSysInfoServicePath = "/rest/CreatioApiGateway/GetSysInfo";
+	internal const string GetSysInfoServicePath = CreatioServicePaths.GetSysInfo;
 	internal const string LatestVersion = "latest";
 	internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
