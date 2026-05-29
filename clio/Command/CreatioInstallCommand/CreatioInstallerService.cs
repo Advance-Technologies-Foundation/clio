@@ -26,7 +26,7 @@ namespace Clio.Command.CreatioInstallCommand;
 ///     Defines operations for deploying a Creatio application and restoring its database.
 /// </summary>
 public interface ICreatioInstallerService {
-	
+
 	#region Methods: Public
 
 	/// <summary>
@@ -1073,9 +1073,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			   };
 	}
 
-	private bool WaitForServerReady(string environmentName) {
-		const int initialDelaySeconds = 15; // Initial delay to allow server to start
-		const int maxAttempts = 10; // Increased attempts for longer wait time
+	private bool WaitForServerReady(string baseUri, bool isNetCore) {
+		const int initialDelaySeconds = 15;
+		const int maxAttempts = 10;
 		const int delaySeconds = 3;
 
 		_logger.WriteInfo($"Waiting {initialDelaySeconds} seconds for server to start...");
@@ -1083,7 +1083,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			HealthCheckOptions healthOptions = new() {
-				Environment = environmentName
+				Uri = baseUri,
+				IsNetCore = isNetCore
 			};
 			int result = _healthCheckCommand.Execute(healthOptions);
 			if (result == 0) {
@@ -1172,7 +1173,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	//
 	// 		string str = $"""
 	// 					  [Copy deployment files]
-	// 					      From: {unzippedDirectoryPath} 
+	// 					      From: {unzippedDirectoryPath}
 	// 					      To:   {deploymentFolder}
 	// 					  """;
 	// 		_logger.WriteInfo(str);
@@ -1410,7 +1411,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 		string str = $"""
 					  [Copy deployment files]
-					      From: {unzippedDirectoryPath} 
+					      From: {unzippedDirectoryPath}
 					      To:   {deploymentFolder}
 					  """;
 		_logger.WriteInfo(str);
@@ -1476,20 +1477,20 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
 		}
 
+		bool isNetCore = InstallerHelper.DetectFrameworkByPath(deploymentFolder) == InstallerHelper.FrameworkType.NetCore;
 		_registerCommand.Execute(new RegAppOptions {
 			EnvironmentName = options.SiteName,
 			Login = "Supervisor",
 			Password = "Supervisor",
 			Uri = uri,
-			IsNetCore
-				= InstallerHelper.DetectFrameworkByPath(deploymentFolder) == InstallerHelper.FrameworkType.NetCore,
+			IsNetCore = isNetCore,
 			EnvironmentPath = deploymentFolder
 		});
 
 		// For DotNet deployments, wait for the server to become ready before proceeding
 		if (!isIisDeployment) {
 			_logger.WriteInfo("Waiting for server to become ready...");
-			if (!WaitForServerReady(options.SiteName)) {
+			if (!WaitForServerReady(uri, isNetCore)) {
 				_logger.WriteWarning("Server did not become ready within the timeout period.");
 			}
 		}
