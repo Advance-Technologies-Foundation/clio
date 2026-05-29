@@ -179,13 +179,12 @@ namespace Clio.Package
 
 		private void CreateEsprojFile(string projectName, string packageName) {
 			string esprojPath = Path.Combine(ProjectsPath, projectName, $"{projectName}.esproj");
-			// BuildOutputFolder is combined with $(MSBuildProjectDirectory); use OS separators so the
-			// path reads naturally on the host (MSBuild normalizes either way).
-			string buildOutputFolder = BuildDistPath(packageName, projectName)
-				.Replace('/', Path.DirectorySeparatorChar);
+			// Keep forward slashes in BuildOutputFolder: they are POSIX-native and MSBuild normalizes
+			// them on Windows. A hard-coded backslash would be treated as a literal character on
+			// macOS/Linux and break the bundle path.
 			string content = _templateProvider.GetTemplate(esprojTemplateName)
 				.Replace("<%projectName%>", projectName)
-				.Replace("<%distPath%>", buildOutputFolder);
+				.Replace("<%distPath%>", BuildDistPath(packageName, projectName));
 			_fileSystem.WriteAllTextToFile(esprojPath, content);
 		}
 

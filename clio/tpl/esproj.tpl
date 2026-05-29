@@ -27,7 +27,7 @@
       deleteOutputPath at its default (true), so every build recreates this folder. `dotnet clean`
       runs the npm `clean` script below to remove the bundle; the next build regenerates it.
     -->
-    <BuildOutputFolder>$(MSBuildProjectDirectory)\<%distPath%></BuildOutputFolder>
+    <BuildOutputFolder>$(MSBuildProjectDirectory)/<%distPath%></BuildOutputFolder>
     <CleanCommand>npm run clean</CleanCommand>
 
     <!-- Unit tests run through Jest (see jest.config.ts / `npm test`). -->

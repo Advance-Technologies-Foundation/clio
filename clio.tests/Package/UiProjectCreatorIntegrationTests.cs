@@ -97,8 +97,8 @@ public class UiProjectCreatorIntegrationTests {
 		loadEsproj.Should().NotThrow("the generated .esproj must be valid XML");
 		esprojDoc.DocumentElement.GetAttribute("Sdk").Should()
 			.Be("Microsoft.VisualStudio.JavaScript.Sdk", "the Sdk reference must be version-less (version lives in global.json)");
-		esprojContent.Should().Contain(
-			Path.Combine("..", "..", "packages", PackageName, "Files", "src", "js", ProjectName));
+		// Forward slashes are used on every platform (POSIX-native, normalized by MSBuild on Windows).
+		esprojContent.Should().Contain($"../../packages/{PackageName}/Files/src/js/{ProjectName}");
 
 		// Assert — 2. global.json pins the JavaScript SDK
 		string globalJsonPath = Path.Combine(_tempDir, "global.json");
@@ -112,8 +112,11 @@ public class UiProjectCreatorIntegrationTests {
 		File.Exists(solutionPath).Should().BeTrue();
 		XmlDocument solutionDoc = new();
 		solutionDoc.Load(solutionPath);
-		XmlNode esprojNode = solutionDoc.SelectSingleNode(
-			"Solution/Project[@Path='projects\\rss_reader\\rss_reader.esproj']");
+		// The .slnx stores the path produced by Path.GetRelativePath, which uses the OS separator
+		// (backslash on Windows, forward slash on POSIX). Compare in C# rather than embedding a fixed
+		// separator in an XPath predicate so the assertion holds on every platform.
+		string expectedRelativePath = Path.Combine("projects", ProjectName, $"{ProjectName}.esproj");
+		XmlNode esprojNode = FindProjectNode(solutionDoc, expectedRelativePath);
 		esprojNode.Should().NotBeNull("the esproj must be registered in the main solution");
 		esprojNode.SelectSingleNode("Build").Should()
 			.NotBeNull("the empty <Build /> element forces participation in every solution configuration");
@@ -125,6 +128,19 @@ public class UiProjectCreatorIntegrationTests {
 		string cleanScript = packageJson["scripts"]["clean"].GetValue<string>();
 		cleanScript.Should().NotContain("<%distPath%>", "the dist path token must be substituted");
 		cleanScript.Should().Contain("packages/UsrRssReader/Files/src/js/rss_reader");
+	}
+
+	#endregion
+
+	#region Methods: Private
+
+	private static XmlNode FindProjectNode(XmlDocument solutionDoc, string relativePath) {
+		foreach (XmlNode project in solutionDoc.SelectNodes("Solution/Project")) {
+			if (project.Attributes?["Path"]?.Value == relativePath) {
+				return project;
+			}
+		}
+		return null;
 	}
 
 	#endregion

@@ -104,7 +104,8 @@ public class UiProjectCreatorTests {
 		esproj.Should().Contain("Sdk=\"Microsoft.VisualStudio.JavaScript.Sdk\"")
 			.And.NotContain("<%projectName%>")
 			.And.NotContain("<%distPath%>");
-		esproj.Should().Contain(Path.Combine("..", "..", "packages", PackageName, "Files", "src", "js", ProjectName));
+		// Forward slashes are used on every platform (POSIX-native, normalized by MSBuild on Windows).
+		esproj.Should().Contain($"../../packages/{PackageName}/Files/src/js/{ProjectName}");
 	}
 
 	[Test]
