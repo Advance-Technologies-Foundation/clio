@@ -1707,6 +1707,17 @@ internal static class ToolContractCatalog {
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Assignee lookup to contacts whose Age equals 30 ('show the Assignee field only for contacts where Age = 30' is a lookup restriction, NOT field visibility; filter the Age column directly when it exists)",
+					"UsrTask",
+					"Limit assignee to contacts aged 30",
+					"Assignee",
+					new Dictionary<string, object?> {
+						["logicalOperation"] = "AND",
+						["filters"] = new object[] {
+							StaticFilterLeaf("Age", "EQUAL", 30)
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts that have more than 10 activities (backward COUNT aggregation)",
 					"UsrTask",
 					"Limit assignee to contacts with more than 10 activities",
