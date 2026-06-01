@@ -242,6 +242,7 @@ internal static class ToolContractCatalog {
 	private const string SelectorCodeFieldName = "code";
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
+	private const string SchemaTypeFieldName = "schema-type";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
 	private const string SkipSamplingFieldName = "skip-sampling";
@@ -3238,8 +3239,8 @@ internal static class ToolContractCatalog {
 					["uid"]
 				]),
 			StructuredResultOutput(
-				Field("schema-name", StringType, "Entity schema name."),
-				Field("package-name", StringType, "Package that owns the schema."),
+				Field(SchemaNameFieldName, StringType, "Entity schema name."),
+				Field(PackageNameFieldName, StringType, "Package that owns the schema."),
 				Field("package-maintainer", StringType, "Package maintainer."),
 				Field(ParentSchemaNameFieldName, StringType, "Parent schema name, if any.")),
 			CommonErrorContract,
@@ -3741,7 +3742,7 @@ internal static class ToolContractCatalog {
 					Field("kind", StringType, "Discriminator: 'tables' or 'lookups'."),
 					Field(QueryFieldName, StringType, "Search term."),
 					Field(LimitFieldName, NumberType, "Optional result limit."),
-					Field("schema-name", StringType, "Optional schema name filter (kind='lookups' only).")),
+					Field(SchemaNameFieldName, StringType, "Optional schema name filter (kind='lookups' only).")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
 					Field("similar-tables", ArrayType, "Table results (kind='tables'): name, caption, description."),
@@ -3772,18 +3773,18 @@ internal static class ToolContractCatalog {
 			GetSchemaTool.ToolName,
 			"Reads a Creatio schema. schema-type discriminator selects the flavor: 'source-code' reads C# source, 'entity' reads entity schema JSON, 'client-unit' reads client-side JS, 'sql' reads SQL body.",
 			new ToolInputSchemaContract(
-				["schema-type", "schema-name"],
+				[SchemaTypeFieldName, SchemaNameFieldName],
 				[
-					Field("schema-type", StringType, "Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'."),
-					Field("schema-name", StringType, "Schema name to read."),
-					Field("package-name", StringType, "Required when schema-type='entity'."),
+					Field(SchemaTypeFieldName, StringType, "Discriminator: 'source-code' | 'entity' | 'client-unit' | 'sql'."),
+					Field(SchemaNameFieldName, StringType, "Schema name to read."),
+					Field(PackageNameFieldName, StringType, "Required when schema-type='entity'."),
 					Field(EnvironmentNameFieldName, StringType, "Required when schema-type='entity'. Registered clio environment name.")
 				],
 				[
-					["source-code", "schema-name"],
-					["entity", "schema-name", "package-name", EnvironmentNameFieldName],
-					["client-unit", "schema-name"],
-					["sql", "schema-name"]
+					["source-code", SchemaNameFieldName],
+					[EntityFieldName, SchemaNameFieldName, PackageNameFieldName, EnvironmentNameFieldName],
+					["client-unit", SchemaNameFieldName],
+					["sql", SchemaNameFieldName]
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3797,9 +3798,9 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Read entity schema", new Dictionary<string, object?> {
-					["schema-type"] = "entity",
-					["schema-name"] = "Contact",
-					["package-name"] = "CrtBase",
+					[SchemaTypeFieldName] = EntityFieldName,
+					[SchemaNameFieldName] = "Contact",
+					[PackageNameFieldName] = "CrtBase",
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -3899,9 +3900,9 @@ internal static class ToolContractCatalog {
 			SchemaListTool.ToolName,
 			"Lists or searches schemas of the requested type. Currently supports schema-type=entity. Provide environment-name plus exactly one of schema-name (exact), search-pattern (contains), or uid (Guid).",
 			new ToolInputSchemaContract(
-				["schema-type", EnvironmentNameFieldName],
+				[SchemaTypeFieldName, EnvironmentNameFieldName],
 				[
-					Field("schema-type", StringType, "Discriminator: currently only 'entity' is supported."),
+					Field(SchemaTypeFieldName, StringType, "Discriminator: currently only 'entity' is supported."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SchemaNameFieldName, StringType, "Optional exact schema name match."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive substring search."),
@@ -3913,15 +3914,15 @@ internal static class ToolContractCatalog {
 					["uid"]
 				]),
 			StructuredResultOutput(
-				Field("schema-name", StringType, "Entity schema name."),
-				Field("package-name", StringType, "Package that owns the schema."),
+				Field(SchemaNameFieldName, StringType, "Entity schema name."),
+				Field(PackageNameFieldName, StringType, "Package that owns the schema."),
 				Field("uid", StringType, "Schema UId.")),
 			CommonErrorContract,
 			[],
 			[],
 			[
 				Example("Search entity schemas by pattern", new Dictionary<string, object?> {
-					["schema-type"] = "entity",
+					[SchemaTypeFieldName] = EntityFieldName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[SearchPatternFieldName] = "Contact"
 				})
