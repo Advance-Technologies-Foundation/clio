@@ -44,43 +44,10 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 
 			string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
 			string responseJson = client.ExecutePostRequest(url, data.GetRawText(), 30_000);
-			return ParseCreated(responseJson);
+			return ODataResponseParser.ParseODataCreated(responseJson);
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(ex.Message);
 		}
-	}
-
-	private static ODataWriteResponse ParseCreated(string json) {
-		if (string.IsNullOrWhiteSpace(json)) {
-			return new ODataWriteResponse(true);
-		}
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataWriteResponse.Failure(serverError);
-			}
-			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
-				? idEl.GetString()
-				: null;
-			if (string.IsNullOrEmpty(id)) {
-				// A successful OData create always echoes the new record with its Id; its absence
-				// means the body is not a created record (an unrecognized error or empty payload).
-				return ODataWriteResponse.Failure(
-					$"OData create did not return a record Id. Response: {Truncate(json)}");
-			}
-			return new ODataWriteResponse(true, null, id, root.Clone());
-		} catch (JsonException) {
-			// A non-JSON body on a successful POST still means the record was created.
-			return new ODataWriteResponse(true);
-		}
-	}
-
-	private static string Truncate(string value) {
-		if (string.IsNullOrEmpty(value)) {
-			return "<empty>";
-		}
-		return value.Length > 500 ? value[..500] + "..." : value;
 	}
 }
 

@@ -108,48 +108,10 @@ internal static class PrintableSupport {
 	}
 
 	/// <summary>Parses a Creatio OData read response into an <see cref="ODataReadResponse"/>.</summary>
-	internal static ODataReadResponse ParseRead(string json) {
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataReadResponse.Failure(serverError);
-			}
-			if (root.TryGetProperty("value", out JsonElement valueEl)) {
-				int count = valueEl.ValueKind == JsonValueKind.Array ? valueEl.GetArrayLength() : 1;
-				string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nl) ? nl.GetString() : null;
-				return new ODataReadResponse(true, null, count, valueEl.Clone(), nextLink);
-			}
-			// Single-entity response (no value wrapper).
-			return new ODataReadResponse(true, null, 1, root.Clone(), null);
-		} catch (Exception ex) {
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {Truncate(json)}");
-		}
-	}
+	internal static ODataReadResponse ParseRead(string json) => ODataResponseParser.ParseODataRead(json);
 
 	/// <summary>Parses a Creatio OData create response into an <see cref="ODataWriteResponse"/>.</summary>
-	internal static ODataWriteResponse ParseCreated(string json) {
-		if (string.IsNullOrWhiteSpace(json)) {
-			return new ODataWriteResponse(true);
-		}
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataWriteResponse.Failure(serverError);
-			}
-			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
-				? idEl.GetString()
-				: null;
-			if (string.IsNullOrEmpty(id)) {
-				return ODataWriteResponse.Failure($"OData create did not return a record Id. Response: {Truncate(json)}");
-			}
-			return new ODataWriteResponse(true, null, id, root.Clone());
-		} catch (JsonException) {
-			// A non-JSON body on a successful POST still means the record was created.
-			return new ODataWriteResponse(true);
-		}
-	}
+	internal static ODataWriteResponse ParseCreated(string json) => ODataResponseParser.ParseODataCreated(json);
 
 	/// <summary>
 	/// Builds the fully-qualified query string for the chunked template upload, mirroring the
@@ -200,10 +162,4 @@ internal static class PrintableSupport {
 		}
 	}
 
-	private static string Truncate(string value) {
-		if (string.IsNullOrEmpty(value)) {
-			return "<empty>";
-		}
-		return value.Length > 500 ? value[..500] + "..." : value;
-	}
 }

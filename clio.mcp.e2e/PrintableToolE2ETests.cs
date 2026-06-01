@@ -1,7 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -19,76 +18,26 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class PrintableToolE2ETests {
-	[Test]
-	[Description("Advertises list-printables as a read-only MCP tool.")]
-	[AllureTag(PrintableListTool.ToolName)]
-	[AllureName("list-printables MCP tool is advertised")]
-	public async Task ListPrintables_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableListTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse();
-	}
 
-	[Test]
-	[Description("Advertises get-printable as a read-only MCP tool.")]
-	[AllureTag(PrintableGetTool.ToolName)]
-	[AllureName("get-printable MCP tool is advertised")]
-	public async Task GetPrintable_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+	[TestCase(PrintableListTool.ToolName, true, false,
+		TestName = "list-printables MCP tool is advertised read-only and non-destructive")]
+	[TestCase(PrintableGetTool.ToolName, true, false,
+		TestName = "get-printable MCP tool is advertised read-only and non-destructive")]
+	[TestCase(PrintableCreateTool.ToolName, false, false,
+		TestName = "create-printable MCP tool is advertised non-read-only and non-destructive")]
+	[TestCase(PrintableUpdateTool.ToolName, false, true,
+		TestName = "update-printable MCP tool is advertised as destructive")]
+	[TestCase(PrintableDeleteTool.ToolName, false, true,
+		TestName = "delete-printable MCP tool is advertised as destructive")]
+	[TestCase(PrintableTemplateUploadTool.ToolName, false, true,
+		TestName = "upload-report-template MCP tool is advertised as destructive")]
+	[Description("Verifies that each printable MCP tool is advertised with the expected read-only and destructive annotations.")]
+	public async Task PrintableTool_Should_Be_Advertised(string toolName, bool expectedReadOnly, bool expectedDestructive) {
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableGetTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse();
-	}
-
-	[Test]
-	[Description("Advertises create-printable as a non-read-only, non-destructive MCP tool.")]
-	[AllureTag(PrintableCreateTool.ToolName)]
-	[AllureName("create-printable MCP tool is advertised")]
-	public async Task CreatePrintable_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableCreateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse();
-	}
-
-	[Test]
-	[Description("Advertises update-printable as a destructive MCP tool.")]
-	[AllureTag(PrintableUpdateTool.ToolName)]
-	[AllureName("update-printable MCP tool is advertised")]
-	public async Task UpdatePrintable_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableUpdateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
-	}
-
-	[Test]
-	[Description("Advertises delete-printable as a destructive MCP tool.")]
-	[AllureTag(PrintableDeleteTool.ToolName)]
-	[AllureName("delete-printable MCP tool is advertised")]
-	public async Task DeletePrintable_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableDeleteTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
-	}
-
-	[Test]
-	[Description("Advertises upload-report-template as a destructive MCP tool.")]
-	[AllureTag(PrintableTemplateUploadTool.ToolName)]
-	[AllureName("upload-report-template MCP tool is advertised")]
-	public async Task UploadReportTemplate_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == PrintableTemplateUploadTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
+		McpClientTool tool = tools.Single(t => t.Name == toolName);
+		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().Be(expectedReadOnly);
+		tool.ProtocolTool.Annotations.DestructiveHint.Should().Be(expectedDestructive);
 	}
 
 	[Test]
@@ -96,7 +45,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableListTool.ToolName)]
 	[AllureName("list-printables MCP tool binds arguments")]
 	public async Task ListPrintables_Should_Bind_Arguments_And_Report_Invalid_Environment() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-printable-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
@@ -120,7 +69,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableCreateTool.ToolName)]
 	[AllureName("create-printable MCP tool binds arguments")]
 	public async Task CreatePrintable_Should_Bind_Arguments_And_Report_Invalid_Environment() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-printable-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
@@ -145,7 +94,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableCreateTool.ToolName)]
 	[AllureName("create-printable MCP tool validates entity-schema-id")]
 	public async Task CreatePrintable_Should_Reject_NonGuid_EntitySchemaId() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableCreateTool.ToolName,
@@ -169,7 +118,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableUpdateTool.ToolName)]
 	[AllureName("update-printable MCP tool guards keyless updates")]
 	public async Task UpdatePrintable_Should_Reject_NonGuid_Id() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableUpdateTool.ToolName,
@@ -194,7 +143,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableDeleteTool.ToolName)]
 	[AllureName("delete-printable MCP tool guards keyless deletes")]
 	public async Task DeletePrintable_Should_Reject_NonGuid_Id() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableDeleteTool.ToolName,
@@ -218,7 +167,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableDeleteTool.ToolName)]
 	[AllureName("delete-printable MCP tool requires confirmation")]
 	public async Task DeletePrintable_Should_Require_Confirmation() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableDeleteTool.ToolName,
@@ -241,7 +190,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableTemplateUploadTool.ToolName)]
 	[AllureName("upload-report-template MCP tool validates file extension")]
 	public async Task UploadReportTemplate_Should_Reject_Non_Docx() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableTemplateUploadTool.ToolName,
@@ -267,7 +216,7 @@ public sealed class PrintableToolE2ETests {
 	[AllureTag(PrintableTemplateUploadTool.ToolName)]
 	[AllureName("upload-report-template MCP tool requires confirmation")]
 	public async Task UploadReportTemplate_Should_Require_Confirmation() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			PrintableTemplateUploadTool.ToolName,
@@ -285,22 +234,5 @@ public sealed class PrintableToolE2ETests {
 		callResult.IsError.Should().NotBeTrue();
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("without confirmation");
-	}
-
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 }
