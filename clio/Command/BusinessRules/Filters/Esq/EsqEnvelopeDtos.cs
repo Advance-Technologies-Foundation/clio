@@ -73,8 +73,20 @@ internal sealed class EsqCompareFilterDto {
 	[JsonPropertyName("leftExpression")]
 	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
 
+	[JsonPropertyName("isAggregative")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IsAggregative { get; set; }
+
+	[JsonPropertyName("dataValueType")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? DataValueType { get; set; }
+
+	/// <summary>
+	/// Either an <see cref="EsqParameterExpressionDto"/> (constant) or an
+	/// <see cref="EsqMacrosFunctionExpressionDto"/> (dynamic macros value).
+	/// </summary>
 	[JsonPropertyName("rightExpression")]
-	public EsqParameterExpressionDto RightExpression { get; set; } = new();
+	public object RightExpression { get; set; } = new EsqParameterExpressionDto();
 
 	[JsonPropertyName("key")]
 	public string Key { get; set; } = string.Empty;
@@ -119,6 +131,18 @@ internal sealed class EsqInFilterDto {
 	[JsonPropertyName("leftExpression")]
 	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
 
+	[JsonPropertyName("isAggregative")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IsAggregative { get; set; }
+
+	[JsonPropertyName("dataValueType")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? DataValueType { get; set; }
+
+	[JsonPropertyName("referenceSchemaName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ReferenceSchemaName { get; set; }
+
 	[JsonPropertyName("rightExpressions")]
 	public List<EsqParameterExpressionDto> RightExpressions { get; set; } = [];
 
@@ -139,20 +163,84 @@ internal sealed class EsqExistsFilterDto {
 	[JsonPropertyName("isEnabled")]
 	public bool IsEnabled { get; set; } = true;
 
-	[JsonPropertyName("subFilters")]
-	public EsqNestedGroupDto SubFilters { get; set; } = new();
+	[JsonPropertyName("trimDateTimeParameterToDate")]
+	public bool TrimDateTimeParameterToDate { get; set; }
 
 	[JsonPropertyName("leftExpression")]
 	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
 
+	[JsonPropertyName("isAggregative")]
+	public bool IsAggregative { get; set; } = true;
+
+	[JsonPropertyName("dataValueType")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? DataValueType { get; set; }
+
+	[JsonPropertyName("subFilters")]
+	public EsqNestedGroupDto SubFilters { get; set; } = new();
+
 	[JsonPropertyName("key")]
 	public string Key { get; set; } = string.Empty;
+
+	[JsonPropertyName("className")]
+	public string ClassName { get; set; } = EsqFilterClassNames.ExistsFilter;
+}
+
+/// <summary>
+/// Backward-reference aggregation filter (COUNT/SUM/AVG/MIN/MAX over a child schema), emitted as a
+/// CompareFilter whose leftExpression is an aggregation sub-query. Mirrors the CrtCopilot
+/// LlmEsqFiltersConverter aggregation branch.
+/// </summary>
+internal sealed class EsqAggregationFilterDto {
+	[JsonPropertyName("filterType")]
+	public int FilterType { get; set; } = (int)EsqFilterType.CompareFilter;
+
+	[JsonPropertyName("comparisonType")]
+	public int ComparisonType { get; set; }
+
+	[JsonPropertyName("isEnabled")]
+	public bool IsEnabled { get; set; } = true;
 
 	[JsonPropertyName("isAggregative")]
 	public bool IsAggregative { get; set; } = true;
 
+	[JsonPropertyName("leftExpression")]
+	public EsqAggregationExpressionDto LeftExpression { get; set; } = new();
+
+	[JsonPropertyName("rightExpression")]
+	public EsqParameterExpressionDto RightExpression { get; set; } = new();
+
+	[JsonPropertyName("subFilters")]
+	public EsqNestedGroupDto SubFilters { get; set; } = new();
+
+	[JsonPropertyName("key")]
+	public string Key { get; set; } = string.Empty;
+
 	[JsonPropertyName("className")]
-	public string ClassName { get; set; } = EsqFilterClassNames.ExistsFilter;
+	public string ClassName { get; set; } = EsqFilterClassNames.CompareFilter;
+}
+
+/// <summary>
+/// Aggregation sub-query expression used as the leftExpression of <see cref="EsqAggregationFilterDto"/>.
+/// </summary>
+internal sealed class EsqAggregationExpressionDto {
+	[JsonPropertyName("expressionType")]
+	public int ExpressionType { get; set; } = (int)EsqExpressionType.SubQuery;
+
+	[JsonPropertyName("functionType")]
+	public int FunctionType { get; set; } = (int)EsqFunctionType.Aggregation;
+
+	[JsonPropertyName("aggregationType")]
+	public int AggregationType { get; set; }
+
+	[JsonPropertyName("columnPath")]
+	public string ColumnPath { get; set; } = string.Empty;
+
+	[JsonPropertyName("subFilters")]
+	public EsqNestedGroupDto SubFilters { get; set; } = new();
+
+	[JsonPropertyName("className")]
+	public string ClassName { get; set; } = EsqFilterClassNames.AggregationQueryExpression;
 }
 
 internal sealed class EsqColumnExpressionDto {
@@ -177,6 +265,28 @@ internal sealed class EsqParameterExpressionDto {
 	public string ClassName { get; set; } = EsqFilterClassNames.ParameterExpression;
 }
 
+/// <summary>
+/// Macros function expression used as a CompareFilter rightExpression for dynamic values
+/// (e.g. Today, CurrentUser). Mirrors devkit ɵMacrosFunctionExpression.toJson wire shape.
+/// </summary>
+internal sealed class EsqMacrosFunctionExpressionDto {
+	[JsonPropertyName("expressionType")]
+	public int ExpressionType { get; set; } = (int)EsqExpressionType.Function;
+
+	[JsonPropertyName("functionType")]
+	public int FunctionType { get; set; } = (int)EsqFunctionType.Macros;
+
+	[JsonPropertyName("macrosType")]
+	public int MacrosType { get; set; }
+
+	[JsonPropertyName("functionArgument")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public EsqParameterExpressionDto? FunctionArgument { get; set; }
+
+	[JsonPropertyName("className")]
+	public string ClassName { get; set; } = EsqFilterClassNames.FunctionExpression;
+}
+
 internal sealed class EsqParameterDto {
 	[JsonPropertyName("dataValueType")]
 	public int DataValueType { get; set; }
@@ -189,9 +299,17 @@ internal sealed class EsqParameterDto {
 }
 
 /// <summary>
-/// Lookup value envelope used by InFilter parameters: { value: Guid, displayValue: optional }.
+/// Lookup value envelope used by InFilter parameters. The platform-canonical form carries the GUID twice
+/// (Id + value) and the display name twice (Name + displayValue) so both PascalCase and camelCase consumers resolve.
 /// </summary>
 internal sealed class EsqLookupValueDto {
+	[JsonPropertyName("Name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Name { get; set; }
+
+	[JsonPropertyName("Id")]
+	public string Id { get; set; } = string.Empty;
+
 	[JsonPropertyName("value")]
 	public string Value { get; set; } = string.Empty;
 

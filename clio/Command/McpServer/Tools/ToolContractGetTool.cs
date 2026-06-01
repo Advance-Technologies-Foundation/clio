@@ -220,6 +220,13 @@ internal static class ToolContractCatalog {
 	private const string FailureMessageDescription = "Human-readable failure message.";
 	private const string FieldFieldName = "field";
 	private const string FiltersFieldName = "filters";
+	private const string LogicalOperationFieldName = "logicalOperation";
+	private const string ConditionFieldName = "condition";
+	private const string ConditionsFieldName = "conditions";
+	private const string ActionsFieldName = "actions";
+	private const string ExampleEqualComparison = "EQUAL";
+	private const string ExampleOwnerAttributeName = "Owner";
+	private const string ExampleAssigneeAttributeName = "Assignee";
 	private const string IconBackgroundFieldName = "icon-background";
 	private const string InvalidLocalizationMapCode = "invalid-localization-map";
 	private const string KeyValueFieldName = "key-value";
@@ -1093,7 +1100,7 @@ internal static class ToolContractCatalog {
 				Examples = [
 					Example("Read Contact-to-Account relations for a configured environment", new Dictionary<string, object?> {
 						["source-table"] = ExampleContactSchemaName,
-						["target-table"] = "Account",
+						["target-table"] = ExampleAccountSchemaName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
@@ -1603,8 +1610,8 @@ internal static class ToolContractCatalog {
 						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
 					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-static-filter-filter", "invalid-apply-static-filter-filter", "rule.actions[*].filter",
-						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[] (EXISTS or NOT_EXISTS only in this release). Leaf comparisons: EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath supports forward paths through Lookup chains. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. See guidance resource business-rules for the full contract."),
+					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
+						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on BirthDate; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). 'aged between X and Y'/'age = N' has no Age column: translate to a BirthDate range with computed ISO date constants. See guidance resource business-rules for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
 						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
 				]),
@@ -1615,7 +1622,7 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
-					ExampleTaskSchemaName, "Require status for a specific owner", "Owner", EqualComparisonType,
+					ExampleTaskSchemaName, "Require status for a specific owner", ExampleOwnerAttributeName, EqualComparisonType,
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
 					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", "is-filled-in",
@@ -1624,11 +1631,11 @@ internal static class ToolContractCatalog {
 					ExampleTaskSchemaName, "Lock name and description when completed", "Completed", EqualComparisonType,
 					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
-					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
-					MakeRequiredActionTypeName, ["Owner"], 1000000),
+					ExampleAccountSchemaName, "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
+					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
 					ExampleTaskSchemaName, "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
-					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
+					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
@@ -1672,7 +1679,128 @@ internal static class ToolContractCatalog {
 					"Country",
 					"TimeZone",
 					true,
-					false)
+					false),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting a City lookup to cities in a country resolved by display name (forward path)",
+					"UsrAddress",
+					"Limit city to USA cities",
+					"City",
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Country.Name", ExampleEqualComparison, "USA")
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Owner lookup to contacts whose type is one of several lookup values (multi-value IN)",
+					"UsrTask",
+					"Limit owner to selected contact types",
+					ExampleOwnerAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Type", ExampleEqualComparison, new[] {
+								ExampleLookupValueId,
+								"00000000-0000-0000-0000-000000000002"
+							})
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
+					"UsrTask",
+					"Limit owner to contacts with a mobile phone",
+					ExampleOwnerAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("MobilePhone", "IS_NOT_NULL")
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Account lookup to accounts that have at least one related contact (backward EXISTS)",
+					"UsrOrder",
+					"Limit account to accounts with contacts",
+					ExampleAccountSchemaName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						["backwardReferenceFilters"] = new object[] {
+							new Dictionary<string, object?> {
+								["referenceColumnPath"] = "[Contact:Account]",
+								["comparisonType"] = "EXISTS"
+							}
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Assignee lookup to contacts whose Age equals 30 ('show the Assignee field only for contacts where Age = 30' is a lookup restriction, NOT field visibility; filter the Age column directly when it exists)",
+					"UsrTask",
+					"Limit assignee to contacts aged 30",
+					ExampleAssigneeAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterLeaf("Age", ExampleEqualComparison, 30)
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Assignee lookup to contacts that have more than 10 activities (backward COUNT aggregation)",
+					"UsrTask",
+					"Limit assignee to contacts with more than 10 activities",
+					ExampleAssigneeAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						["backwardReferenceFilters"] = new object[] {
+							new Dictionary<string, object?> {
+								["referenceColumnPath"] = "[Activity:Contact]",
+								["aggregationType"] = "COUNT",
+								["comparisonType"] = "GREATER",
+								["aggregationValue"] = 10
+							}
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Assignee lookup to contacts whose account was created this year (forward path + relative-date macros)",
+					"UsrTask",
+					"Limit assignee to contacts whose account is created this year",
+					ExampleAssigneeAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("Account.CreatedOn", "GREATER_OR_EQUAL", "CurrentYear")
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
+					"UsrTask",
+					"Limit assignee to contacts with a birthday tomorrow",
+					ExampleAssigneeAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("BirthDate", ExampleEqualComparison, "DayOfYearTodayPlusDaysOffset", 1)
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Owner lookup to the current user's contact (CurrentUserContact macros)",
+					"UsrTask",
+					"Limit owner to current user",
+					ExampleOwnerAttributeName,
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("Id", ExampleEqualComparison, "CurrentUserContact")
+						}
+					}),
+				ApplyStaticFilterBusinessRuleExample(
+					"Apply a static filter limiting an Activity lookup to records due within the next 5 days (NextNDays date macros with argument)",
+					"UsrOrder",
+					"Limit activity to next 5 days",
+					"Activity",
+					new Dictionary<string, object?> {
+						[LogicalOperationFieldName] = "AND",
+						[FiltersFieldName] = new object[] {
+							StaticFilterMacrosLeaf("DueDate", "LESS_OR_EQUAL", "NextNDays", 5)
+						}
+					})
 			],
 			Flow(
 				[
@@ -1925,13 +2053,65 @@ internal static class ToolContractCatalog {
 			[EntitySchemaNameFieldName] = entitySchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = System.Array.Empty<object>()
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
-				["actions"] = new object[] { action }
+				[ActionsFieldName] = new object[] { action }
 			}
 		});
+	}
+
+	private static ToolContractExample ApplyStaticFilterBusinessRuleExample(
+		string summary,
+		string entitySchemaName,
+		string caption,
+		string targetAttribute,
+		Dictionary<string, object?> filter) {
+		Dictionary<string, object?> action = new() {
+			["type"] = BusinessRuleConstants.ApplyStaticFilterActionTypeName,
+			["targetAttribute"] = targetAttribute,
+			["filter"] = filter
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[EntitySchemaNameFieldName] = entitySchemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = System.Array.Empty<object>()
+				},
+				[ActionsFieldName] = new object[] { action }
+			}
+		});
+	}
+
+	private static Dictionary<string, object?> StaticFilterLeaf(
+		string columnPath, string comparisonType, object? value = null) {
+		Dictionary<string, object?> leaf = new() {
+			["columnPath"] = columnPath,
+			["comparisonType"] = comparisonType
+		};
+		if (value is not null) {
+			leaf[ValueFieldName] = value;
+		}
+		return leaf;
+	}
+
+	private static Dictionary<string, object?> StaticFilterMacrosLeaf(
+		string columnPath, string comparisonType, string valueMacros, int? valueMacrosArgument = null) {
+		Dictionary<string, object?> leaf = new() {
+			["columnPath"] = columnPath,
+			["comparisonType"] = comparisonType,
+			["valueMacros"] = valueMacros
+		};
+		if (valueMacrosArgument is not null) {
+			leaf["valueMacrosArgument"] = valueMacrosArgument;
+		}
+		return leaf;
 	}
 
 	private static ToolContractExample PageBusinessRuleExample(
@@ -1976,13 +2156,13 @@ internal static class ToolContractCatalog {
 			[schemaFieldName] = schemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = caption,
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] {
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
 						condition
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = actionType,
 						["items"] = actionItems
@@ -1999,9 +2179,9 @@ internal static class ToolContractCatalog {
 			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
 			[RuleFieldName] = new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
-				["condition"] = new Dictionary<string, object?> {
-					["logicalOperation"] = "AND",
-					["conditions"] = new object[] {
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
 						new Dictionary<string, object?> {
 							["leftExpression"] = new Dictionary<string, object?> {
 								["type"] = "AttributeValue",
@@ -2015,7 +2195,7 @@ internal static class ToolContractCatalog {
 						}
 					}
 				},
-				["actions"] = new object[] {
+				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
 						["type"] = "hide-element",
 						["items"] = new object[] { "DateMismatchWarningLabel" }

@@ -32,8 +32,14 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
 		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
 
+		       BUSINESS RULES FIRST — mandatory triage before authoring any handler
+		       - Before writing a handler, check whether the task can be closed with a business rule. If it can, CLOSE IT WITH A BUSINESS RULE — do NOT write a handler. A handler is only justified when no business rule covers the requirement.
+		       - Business rules are not limited to show/hide/enable/require. They can also WRITE values into columns and CLEAR columns (the `set-values` action; an empty value clears the column). This is the most common case for two interdependent fields — when changing field A should auto-fill or wipe field B, that is a business rule, not an attribute-change handler.
+		       - Do NOT mentally narrow business rules to "visibility/editability/required" and fall back to a handler for value population/clearing. Resist reaching for `crt.HandleViewModelAttributeChangeRequest` + `$context.set(...)` when a `set-values` business rule does the same job declaratively.
+
 		       Decision tree
 		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
@@ -178,6 +184,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
+		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rule`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
 		       - Mirror one text field into another on attribute change:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {

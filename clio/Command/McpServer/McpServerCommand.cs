@@ -25,6 +25,12 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 		} catch (OperationCanceledException) {
 			// Graceful shutdown — expected when CancellationToken is triggered.
 		} finally {
+			// Flush any in-flight background CDN refreshes before the process
+			// exits. Without this, the fire-and-forget Task.Run tasks are killed
+			// by the runtime as soon as the main (foreground) thread exits,
+			// leaving the on-disk cache stale indefinitely.
+			ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10))
+				.GetAwaiter().GetResult();
 			McpLogNotifier.Reset();
 		}
 		return 0;

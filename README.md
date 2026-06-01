@@ -102,7 +102,95 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for build setup, test targets, code style
 
 ## MCP Server
 
-Clio supports Model Context Protocol (MCP) for integration with AI assistants.
+Clio supports Model Context Protocol (MCP) for integration with AI code agents.
+
+### Prerequisites
+
+Install clio as a global .NET tool (see [Installation](#installation-and-features) above), then verify:
+
+```bash
+clio mcp-server --help
+```
+
+### Registering in AI Code Agents
+
+All agents use **stdio transport** with the same command: `clio mcp-server`.
+
+#### Claude Code
+
+```bash
+claude mcp add clio -- clio mcp-server
+```
+
+Or add to `.claude/settings.json` in your project (or `~/.claude/settings.json` globally):
+
+```json
+{
+  "mcpServers": {
+    "clio": {
+      "command": "clio",
+      "args": ["mcp-server"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+#### GitHub Copilot (VS Code)
+
+Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run **MCP: Add Server**, then follow the guided flow.
+
+Alternatively, add to `.vscode/mcp.json` manually:
+
+```json
+{
+  "servers": {
+    "clio": {
+      "type": "stdio",
+      "command": "clio",
+      "args": ["mcp-server"]
+    }
+  }
+}
+```
+
+#### GitHub Copilot CLI
+
+Inside a Copilot CLI session, run the interactive command:
+
+```
+/mcp add
+```
+
+Then follow the guided flow to register a stdio server with command `clio` and argument `mcp-server`.
+
+Alternatively, add to `~/.copilot/mcp-config.json` (global) or `.mcp.json` (project root) manually:
+
+```json
+{
+  "servers": {
+    "clio": {
+      "type": "stdio",
+      "command": "clio",
+      "args": ["mcp-server"]
+    }
+  }
+}
+```
+
+#### Codex CLI
+
+```bash
+codex mcp add clio -- clio mcp-server
+```
+
+Alternatively, add to `~/.codex/config.toml` manually:
+
+```toml
+[mcp_servers.clio]
+command = "clio"
+args = ["mcp-server"]
+```
 
 ### Testing with MCP Inspector
 

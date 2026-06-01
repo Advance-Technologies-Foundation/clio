@@ -4,6 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command.McpServer.Tools;
 
+file static class ExtrasPropNames
+{
+	internal const string EnvironmentNameProp = "environment-name";
+}
+
 /// <summary>
 /// ENG-90312 Phase 2 — derived <see cref="ClioRunArgs"/> variants that do not have a
 /// one-to-one Phase-1 record they can simply be renamed from. Includes split records for
@@ -17,7 +22,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <see cref="DataForgeMaintenanceArgs"/>; split into a distinct record so the polymorphic
 /// dispatcher can route by discriminator.</summary>
 public sealed record DataForgeInitializeRunArgs(
-	[property: JsonPropertyName("environment-name"), Description("Registered clio environment name."), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Registered clio environment name."), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
@@ -25,7 +30,7 @@ public sealed record DataForgeInitializeRunArgs(
 /// <see cref="DataForgeMaintenanceArgs"/>; split into a distinct record so the polymorphic
 /// dispatcher can route by discriminator.</summary>
 public sealed record DataForgeUpdateRunArgs(
-	[property: JsonPropertyName("environment-name"), Description("Registered clio environment name."), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Registered clio environment name."), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
@@ -36,7 +41,7 @@ public sealed record DataForgeUpdateRunArgs(
 public sealed record FinishHotfixRunArgs(
 	[property: JsonPropertyName("package-name"), Description("Package name"), Required]
 	string PackageName,
-	[property: JsonPropertyName("environment-name"), Description("Target Creatio environment name"), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Target Creatio environment name"), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
@@ -45,7 +50,7 @@ public sealed record FinishHotfixRunArgs(
 public sealed record UnlockForHotfixRunArgs(
 	[property: JsonPropertyName("package-name"), Description("Package name"), Required]
 	string PackageName,
-	[property: JsonPropertyName("environment-name"), Description("Target Creatio environment name"), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Target Creatio environment name"), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
@@ -54,14 +59,14 @@ public sealed record UnlockForHotfixRunArgs(
 /// <summary>clio-run variant for <c>start-creatio</c>. Wraps the previously-bare
 /// <c>environmentName</c> string parameter.</summary>
 public sealed record StartCreatioRunArgs(
-	[property: JsonPropertyName("environment-name"), Description("Target Creatio environment name."), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Target Creatio environment name."), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
 /// <summary>clio-run variant for <c>stop-creatio</c>. Wraps the previously-bare
 /// <c>environmentName</c> string parameter.</summary>
 public sealed record StopCreatioRunArgs(
-	[property: JsonPropertyName("environment-name"), Description("Target Creatio environment name."), Required]
+	[property: JsonPropertyName(ExtrasPropNames.EnvironmentNameProp), Description("Target Creatio environment name."), Required]
 	string EnvironmentName
 ) : ClioRunArgs;
 
