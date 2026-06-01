@@ -50,6 +50,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	private readonly Lazy<CreatioClient> _lazyClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly JsonConverter _jsonConverter;
+	private readonly object _reauthSyncRoot = new();
 
 	private CreatioClient Client => _lazyClient.Value;
 
@@ -96,9 +97,48 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Methods: Public
 
+	/// <summary>
+	/// Executes a Creatio service call and, when the response is a login redirect caused by an
+	/// expired Forms-auth session, re-authenticates once via <see cref="CreatioClient.Login()"/>
+	/// and retries the call exactly once. The re-login is serialized through
+	/// <see cref="_reauthSyncRoot"/> because the adapter is a DI singleton shared across calls.
+	/// </summary>
+	/// <remarks>
+	/// Scope: this recovers Forms-auth (cookie) sessions only. OAuth bearer expiry returns a 401
+	/// (not a login-page redirect) and has no public token-refresh entry point on the client, so it
+	/// is not covered here. Sessions held by <c>RemoteDataProvider</c> (ATF.Repository) are separate
+	/// and are likewise not covered by this adapter.
+	/// </remarks>
+	private string ExecuteWithReauthRetry(Func<string> serviceCall) =>
+		ExecuteWithReauthRetry(serviceCall, () => {
+			lock (_reauthSyncRoot) {
+				Client.Login();
+			}
+		});
+
+	/// <summary>
+	/// Core re-auth-and-retry logic, separated from the live client so it can be unit tested.
+	/// Runs <paramref name="serviceCall"/>; if the response is a Creatio login redirect, invokes
+	/// <paramref name="reauthenticate"/> once and runs the call again exactly once. The second
+	/// result is returned as-is (no further detection) to guarantee termination. A login redirect
+	/// proves the request never reached the service (Forms auth bounces it before the handler), so
+	/// the retry is side-effect-safe even for non-idempotent writes; an
+	/// <see cref="UnauthorizedAccessException"/> raised by <paramref name="reauthenticate"/> (wrong
+	/// credentials, not expiry) propagates and is never retried.
+	/// </summary>
+	internal static string ExecuteWithReauthRetry(Func<string> serviceCall, Action reauthenticate) {
+		string response = serviceCall();
+		if (!CreatioAuthResponseGuard.IsLikelyAuthRedirect(response)) {
+			return response;
+		}
+		reauthenticate();
+		return serviceCall();
+	}
+
 	public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
 		int requestTimeout = Timeout.Infinite) {
-		return Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
+		return ExecuteWithReauthRetry(() =>
+			Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout));
 	}
 
 	public void DownloadFile(string url, string filePath, string requestData) {
@@ -112,29 +152,36 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return ExecuteWithReauthRetry(() =>
+			Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec));
 	}
 
 	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1,
 		int delaySec = 1) {
-		return Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
+		return ExecuteWithReauthRetry(() =>
+			Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec));
 	}
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return ExecuteWithReauthRetry(() =>
+			Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec));
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
-		string response = Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		// Re-auth on the raw string boundary so an expired session is recovered BEFORE
+		// deserialization runs on the (now valid) response rather than throwing on login HTML.
+		string response = ExecuteWithReauthRetry(() =>
+			Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec));
 		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return ExecuteWithReauthRetry(() =>
+			Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec));
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
