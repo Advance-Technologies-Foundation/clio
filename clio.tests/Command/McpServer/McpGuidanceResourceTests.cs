@@ -430,6 +430,40 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should carry over the built-in copy-input request entry");
 		article.Text.Should().Contain("crt.GetSidebarStateRequest",
 			because: "handler guidance should carry over the built-in sidebar entries");
+		article.Text.Should().Contain("crt.PrintablesRequest",
+			because: "handler guidance should include the built-in printables request in the catalog");
+		article.Text.Should().Contain("crt.GoToPrintablesRequest",
+			because: "handler guidance should include the go-to-printables navigation request in the catalog");
+		article.Text.Should().Contain("crt.ExportDataGridToExcelRequest",
+			because: "handler guidance should include the Excel export request in the catalog");
+		article.Text.Should().Contain("crt.ImportDataRequest",
+			because: "handler guidance should include the import data request in the catalog");
+		article.Text.Should().Contain("crt.DeleteRecordsRequest",
+			because: "handler guidance should include the bulk delete request in the catalog");
+		article.Text.Should().Contain("crt.CopyRecordRequest",
+			because: "handler guidance should include the copy/duplicate record request in the catalog");
+		article.Text.Should().Contain("crt.ShowDialogRequest",
+			because: "handler guidance should include the show-dialog request in the built-in catalog");
+		article.Text.Should().Contain("| print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep printables on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep Excel export on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep import on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should distinguish bulk list delete from single-record delete in the decision table");
+		article.Text.Should().Contain("| duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep record duplication on direct request wiring");
+		article.Text.Should().Contain("| `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |",
+			because: "handler guidance should expose the printables request contract with its required and optional fields");
+		article.Text.Should().Contain("| `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |",
+			because: "handler guidance should expose the Excel export request contract");
+		article.Text.Should().Contain("| `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |",
+			because: "handler guidance should expose the import data request contract");
+		article.Text.Should().Contain("| `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |",
+			because: "handler guidance should expose the bulk delete request contract and clarify when to prefer it over the single-record variant");
+		article.Text.Should().Contain("| `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |",
+			because: "handler guidance should expose the copy record request contract");
 		article.Text.Should().Contain("Standard handler parameter catalog",
 			because: "handler guidance should expose concrete payload contracts, not only the built-in request name list");
 		article.Text.Should().Contain("| Request | Kind | Params for AI authoring | Notes |",
