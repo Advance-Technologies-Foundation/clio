@@ -31,9 +31,7 @@ public sealed class PrintableListTool(IToolCommandResolver commandResolver) {
 				return ODataReadResponse.Failure("entity-schema-id must be a GUID when provided.");
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
 
 			string filter = PrintableSupport.BuildMsWordFilter(args.EntitySchemaId, args.EntitySchemaName);
 			int top = args.Top is > 0 and <= 100 ? args.Top.Value : 25;
@@ -74,9 +72,7 @@ public sealed class PrintableGetTool(IToolCommandResolver commandResolver) {
 				return ODataReadResponse.Failure("id is required and must be a record GUID.");
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
 
 			string expand = Uri.EscapeDataString("Type($select=Name),SysEntitySchema($select=Name),SysModule($select=Caption)");
 			string path = $"{ODataKeyFormatter.KeyPath(PrintableSupport.EntityName, args.Id)}?$expand={expand}";
@@ -119,9 +115,7 @@ public sealed class PrintableCreateTool(IToolCommandResolver commandResolver) {
 				return ODataWriteResponse.Failure("sys-module-id must be a GUID when provided.");
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
 
 			string typeId = PrintableSupport.ResolveMsWordTypeId(client, urlBuilder);
 			var body = new Dictionary<string, object?> {

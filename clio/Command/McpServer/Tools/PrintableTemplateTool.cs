@@ -48,9 +48,7 @@ public sealed class PrintableTemplateUploadTool(IToolCommandResolver commandReso
 				return PrintableTemplateUploadResponse.Failure($"File not found: {filePath}");
 			}
 
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			var (client, urlBuilder) = ODataKeyedWrite.ResolveClients(commandResolver, args.EnvironmentName);
 
 			string reportId = args.Id.Trim();
 			string fileName = Path.GetFileName(filePath);
