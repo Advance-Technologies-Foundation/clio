@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using Clio;
 using FluentAssertions;
 using NUnit.Framework;
@@ -40,13 +41,38 @@ public sealed class ClioRuntimePathsTests {
 		// Arrange
 		System.Environment.SetEnvironmentVariable("CLIO_HOME", "   ");
 
-		// Act
-		string home = ClioRuntimePaths.Home;
+		// Act / Assert
+		AssertFallbackHome(ClioRuntimePaths.Home);
+	}
 
-		// Assert
+	[Test]
+	[Description("An unset CLIO_HOME falls back to the default Company/Product path.")]
+	public void Home_Falls_Back_When_ClioHome_Not_Set() {
+		// Arrange
+		System.Environment.SetEnvironmentVariable("CLIO_HOME", null);
+
+		// Act / Assert
+		AssertFallbackHome(ClioRuntimePaths.Home);
+	}
+
+	// The fallback path is AppSettingsFolderPath = <userRoot>/<Company>/<Product>. We assert that
+	// structure (absolute + ends with the entry assembly's Company/Product segments) rather than a
+	// hardcoded "creatio/clio": under `dotnet test` the entry assembly is the test host, so the
+	// segments resolve to "Microsoft Corporation/testhost", not the clio assembly's values. This
+	// still guards against the real regression — the fallback silently resolving to an unrelated
+	// location (e.g. temp) or an empty string.
+	private static void AssertFallbackHome(string home) {
 		home.Should().NotBeNullOrWhiteSpace(
-			because: "a blank override must be ignored so the default Company/Product path is resolved instead");
-		home.Trim().Should().NotBe("",
-			because: "a whitespace-only CLIO_HOME must not leak through as the home root");
+			because: "a missing/blank CLIO_HOME must resolve to the default Company/Product path, not an empty string");
+		Path.IsPathRooted(home).Should().BeTrue(
+			because: "the fallback must be an absolute path under the user's home/local-app-data root");
+
+		Assembly entryAssembly = Assembly.GetEntryAssembly();
+		string? company = entryAssembly?.GetCustomAttribute<AssemblyCompanyAttribute>()?.Company;
+		string? product = entryAssembly?.GetCustomAttribute<AssemblyProductAttribute>()?.Product;
+		if (!string.IsNullOrEmpty(company) && !string.IsNullOrEmpty(product)) {
+			home.Should().EndWith(Path.Combine(company, product),
+				because: "the fallback path is composed as <userRoot>/<Company>/<Product>");
+		}
 	}
 }
