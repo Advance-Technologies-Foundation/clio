@@ -113,40 +113,16 @@ public sealed class PrintableToolE2ETests {
 		response.Error.Should().Contain("entity-schema-id");
 	}
 
-	[Test]
-	[Description("update-printable rejects a non-GUID id through the real MCP server without touching an environment.")]
-	[AllureTag(PrintableUpdateTool.ToolName)]
-	[AllureName("update-printable MCP tool guards keyless updates")]
-	public async Task UpdatePrintable_Should_Reject_NonGuid_Id() {
+	[TestCase(PrintableUpdateTool.ToolName,
+		TestName = "update-printable MCP tool guards keyless updates")]
+	[TestCase(PrintableDeleteTool.ToolName,
+		TestName = "delete-printable MCP tool guards keyless deletes")]
+	[Description("Rejects a non-GUID id through the real MCP server without touching an environment.")]
+	public async Task PrintableTool_Should_Reject_NonGuid_Id(string toolName) {
 		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
-			PrintableUpdateTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = $"missing-{Guid.NewGuid():N}",
-					["id"] = "all",
-					["caption"] = "E2E",
-					["confirm"] = true
-				}
-			},
-			arrange.CancellationTokenSource.Token);
-		ODataWriteResponse response = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
-
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("must be a record GUID");
-	}
-
-	[Test]
-	[Description("delete-printable rejects a non-GUID id through the real MCP server without touching an environment.")]
-	[AllureTag(PrintableDeleteTool.ToolName)]
-	[AllureName("delete-printable MCP tool guards keyless deletes")]
-	public async Task DeletePrintable_Should_Reject_NonGuid_Id() {
-		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
-
-		CallToolResult callResult = await arrange.Session.CallToolAsync(
-			PrintableDeleteTool.ToolName,
+			toolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",

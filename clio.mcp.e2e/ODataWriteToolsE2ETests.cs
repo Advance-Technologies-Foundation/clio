@@ -16,40 +16,19 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ODataWriteToolsE2ETests {
-	[Test]
-	[Description("Advertises odata-create as a non-read-only, non-destructive MCP tool.")]
-	[AllureTag(ODataCreateTool.ToolName)]
-	[AllureName("odata-create MCP tool is advertised")]
-	public async Task ODataCreate_Should_Be_Advertised() {
+	[TestCase(ODataCreateTool.ToolName, false, false,
+		TestName = "odata-create MCP tool is advertised non-read-only and non-destructive")]
+	[TestCase(ODataUpdateTool.ToolName, false, true,
+		TestName = "odata-update MCP tool is advertised as destructive")]
+	[TestCase(ODataDeleteTool.ToolName, false, true,
+		TestName = "odata-delete MCP tool is advertised as destructive")]
+	[Description("Verifies that each OData write MCP tool is advertised with the expected read-only and destructive annotations.")]
+	public async Task ODataWriteTool_Should_Be_Advertised(string toolName, bool expectedReadOnly, bool expectedDestructive) {
 		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataCreateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse();
-	}
-
-	[Test]
-	[Description("Advertises odata-update as a destructive MCP tool.")]
-	[AllureTag(ODataUpdateTool.ToolName)]
-	[AllureName("odata-update MCP tool is advertised")]
-	public async Task ODataUpdate_Should_Be_Advertised() {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataUpdateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
-	}
-
-	[Test]
-	[Description("Advertises odata-delete as a destructive MCP tool.")]
-	[AllureTag(ODataDeleteTool.ToolName)]
-	[AllureName("odata-delete MCP tool is advertised")]
-	public async Task ODataDelete_Should_Be_Advertised() {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataDeleteTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
+		McpClientTool tool = tools.Single(t => t.Name == toolName);
+		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().Be(expectedReadOnly);
+		tool.ProtocolTool.Annotations.DestructiveHint.Should().Be(expectedDestructive);
 	}
 
 	[Test]
