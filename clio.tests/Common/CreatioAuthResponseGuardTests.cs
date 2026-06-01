@@ -79,4 +79,14 @@ public class CreatioAuthResponseGuardTests {
 		CreatioAuthResponseGuard.IsLikelyAuthRedirect(body)
 			.Should().BeFalse("because re-login must not be triggered by ordinary service errors");
 	}
+
+	[Test]
+	[Description("Documented bounded false positive: a valid JSON body that legitimately contains 'Authentication failed' is reported as an auth failure. Pinning it guards the real JSON-401 case against a refactor that 'fixes' it and regresses detection.")]
+	public void IsLikelyAuthRedirect_JsonContainingAuthFailedText_ReturnsTrue_DocumentedFalsePositive() {
+		// The content-first check fires before the JSON short-circuit. Cost of this false positive is
+		// one redundant re-login; the retry-once contract guarantees it cannot loop.
+		string body = "{\"description\":\"Authentication failed for impersonated user\",\"success\":false}";
+		CreatioAuthResponseGuard.IsLikelyAuthRedirect(body)
+			.Should().BeTrue("known, documented false positive — see CreatioAuthResponseGuard.IsLikelyAuthRedirect remarks");
+	}
 }

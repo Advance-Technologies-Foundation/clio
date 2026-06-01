@@ -51,6 +51,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly JsonConverter _jsonConverter;
 	private readonly object _reauthSyncRoot = new();
+	private volatile int _sessionVersion;
 
 	private CreatioClient Client => _lazyClient.Value;
 
@@ -99,22 +100,41 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	/// <summary>
 	/// Executes a Creatio service call and, when the response is a login redirect caused by an
-	/// expired Forms-auth session, re-authenticates once via <see cref="CreatioClient.Login()"/>
-	/// and retries the call exactly once. The re-login is serialized through
-	/// <see cref="_reauthSyncRoot"/> because the adapter is a DI singleton shared across calls.
+	/// expired Forms-auth session, re-authenticates once and retries the call exactly once. Re-login
+	/// is serialized through <see cref="_reauthSyncRoot"/> and gated by <see cref="_sessionVersion"/>
+	/// (the adapter is a DI singleton), so a burst of concurrent stale calls triggers a single
+	/// <see cref="CreatioClient.Login()"/> rather than one login per thread.
 	/// </summary>
 	/// <remarks>
 	/// Scope: this recovers Forms-auth (cookie) sessions only. OAuth bearer expiry returns a 401
 	/// (not a login-page redirect) and has no public token-refresh entry point on the client, so it
 	/// is not covered here. Sessions held by <c>RemoteDataProvider</c> (ATF.Repository) are separate
 	/// and are likewise not covered by this adapter.
+	/// Call budget: the wrapped methods also forward <c>retryCount</c> to the underlying client's own
+	/// HTTP retry loop, so on the worst path a single logical call issues up to <c>2 × retryCount</c>
+	/// HTTP requests (inner transport retries followed by one outer re-auth retry).
 	/// </remarks>
-	private string ExecuteWithReauthRetry(Func<string> serviceCall) =>
-		ExecuteWithReauthRetry(serviceCall, () => {
-			lock (_reauthSyncRoot) {
-				Client.Login();
+	private string ExecuteWithReauthRetry(Func<string> serviceCall) {
+		int observedSessionVersion = _sessionVersion;
+		return ExecuteWithReauthRetry(serviceCall, () => ReauthenticateOnce(observedSessionVersion));
+	}
+
+	/// <summary>
+	/// Re-authenticates under <see cref="_reauthSyncRoot"/>, but only if no other thread has already
+	/// renewed the session since the caller observed <paramref name="observedSessionVersion"/>. Under a
+	/// burst of concurrent calls that all hit the same expired session this collapses N would-be logins
+	/// into one: the first thread logs in and bumps the version; the others see the new version and skip,
+	/// their retry reusing the freshly renewed session.
+	/// </summary>
+	private void ReauthenticateOnce(int observedSessionVersion) {
+		lock (_reauthSyncRoot) {
+			if (_sessionVersion != observedSessionVersion) {
+				return;
 			}
-		});
+			Client.Login();
+			_sessionVersion++;
+		}
+	}
 
 	/// <summary>
 	/// Core re-auth-and-retry logic, separated from the live client so it can be unit tested.
