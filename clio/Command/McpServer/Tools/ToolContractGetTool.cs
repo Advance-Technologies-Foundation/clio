@@ -272,7 +272,9 @@ internal static class ToolContractCatalog {
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string EqualComparisonType = "equal";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
+	private const string ExampleTaskSchemaName = "UsrTask";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
@@ -1613,25 +1615,25 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
-					"UsrTask", "Require status for a specific owner", "Owner", "equal",
+					ExampleTaskSchemaName, "Require status for a specific owner", "Owner", EqualComparisonType,
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
-					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", "is-filled-in",
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
-					"UsrTask", "Lock name and description when completed", "Completed", "equal",
+					ExampleTaskSchemaName, "Lock name and description when completed", "Completed", EqualComparisonType,
 					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
 					"Account", "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
 					MakeRequiredActionTypeName, ["Owner"], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
-					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
+					ExampleTaskSchemaName, "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
 					MakeRequiredActionTypeName, ["Owner"], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
-					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
+					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
-					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
 						BusinessRuleSetValueItem("UsrScore", 42),
@@ -1642,12 +1644,12 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
-					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
 					]),
 				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
-					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
 					]),
@@ -1760,7 +1762,7 @@ internal static class ToolContractCatalog {
 					ExampleOrderPageSchemaName,
 					"Require close date for closed stage",
 					"PDS_UsrStage",
-					"equal",
+					EqualComparisonType,
 					MakeRequiredActionTypeName,
 					["CloseDateInput"],
 					"Closed"),
@@ -1769,7 +1771,7 @@ internal static class ToolContractCatalog {
 					ExampleOrderPageSchemaName,
 					"Make comment optional when flag is false",
 					"PDS_UsrFlag",
-					"equal",
+					EqualComparisonType,
 					"make-optional",
 					["CommentInput"],
 					false),
@@ -1778,7 +1780,7 @@ internal static class ToolContractCatalog {
 					"Case_FormPage",
 					"Hide Escalate when priority matches",
 					"PDS_Priority",
-					"equal",
+					EqualComparisonType,
 					"hide-element",
 					["EscalateButton"],
 					ExampleLookupValueId),
@@ -2005,7 +2007,7 @@ internal static class ToolContractCatalog {
 								["type"] = "AttributeValue",
 								["path"] = "PDS_UsrPlannedDate"
 							},
-							["comparisonType"] = "equal",
+							["comparisonType"] = EqualComparisonType,
 							["rightExpression"] = new Dictionary<string, object?> {
 								["type"] = "AttributeValue",
 								["path"] = "PDS_UsrActualDate"
@@ -3249,7 +3251,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Search for schemas containing a substring", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[SearchPatternFieldName] = "UsrTask"
+					[SearchPatternFieldName] = ExampleTaskSchemaName
 				}),
 				Example("Look up a schema by exact name", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
