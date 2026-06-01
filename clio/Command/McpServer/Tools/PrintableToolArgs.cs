@@ -13,6 +13,38 @@ public abstract record PrintableBaseArgs {
 	public required string EnvironmentName { get; init; }
 }
 
+/// <summary>
+/// Shared optional fields written by both create-printable and update-printable. On create an omitted
+/// field is left at its default; on update an omitted field is left unchanged. The tools only send a
+/// field to Creatio when it is supplied, so the same definitions serve both flows.
+/// </summary>
+public abstract record PrintableWritableArgs : PrintableBaseArgs {
+	/// <summary>SysModule (section) GUID the report belongs to.</summary>
+	[JsonPropertyName("sys-module-id")]
+	[Description("GUID of the SysModule (section) the report belongs to. Omit to leave unset/unchanged.")]
+	public string? SysModuleId { get; init; }
+
+	/// <summary>Whether the report is offered from the section list.</summary>
+	[JsonPropertyName("show-in-section")]
+	[Description("Whether the report is offered from the section (list) print menu. Omit to leave unchanged.")]
+	public bool? ShowInSection { get; init; }
+
+	/// <summary>Whether the report is offered from the record page.</summary>
+	[JsonPropertyName("show-in-card")]
+	[Description("Whether the report is offered from the record (card) print menu. Omit to leave unchanged.")]
+	public bool? ShowInCard { get; init; }
+
+	/// <summary>Whether the generated document is converted to PDF.</summary>
+	[JsonPropertyName("convert-in-pdf")]
+	[Description("Whether the generated document is converted to PDF. Omit to leave unchanged.")]
+	public bool? ConvertInPdf { get; init; }
+
+	/// <summary>Raw MacrosSettings JSON describing the report columns (passthrough).</summary>
+	[JsonPropertyName("macros-settings")]
+	[Description("Raw MacrosSettings value describing the report's columns/macros, stored verbatim. This is Creatio's internal column-mapping format (column UIds, value types, filters) and is NOT validated or parsed — supply a value copied from an existing report. Omit to leave unset/unchanged.")]
+	public string? MacrosSettings { get; init; }
+}
+
 /// <summary>Arguments for <see cref="PrintableListTool"/>.</summary>
 public sealed record PrintableListArgs : PrintableBaseArgs {
 	/// <summary>Optional filter: SysEntitySchema name the report is bound to (e.g. Contact, Account).</summary>
@@ -41,7 +73,7 @@ public sealed record PrintableGetArgs : PrintableBaseArgs {
 }
 
 /// <summary>Arguments for <see cref="PrintableCreateTool"/>.</summary>
-public sealed record PrintableCreateArgs : PrintableBaseArgs {
+public sealed record PrintableCreateArgs : PrintableWritableArgs {
 	/// <summary>Display caption of the report.</summary>
 	[JsonPropertyName("caption")]
 	[Description("Display caption of the MS Word report.")]
@@ -53,35 +85,10 @@ public sealed record PrintableCreateArgs : PrintableBaseArgs {
 	[Description("GUID of the SysEntitySchema (object) the report is built for. Required — this is the primary link that makes the report appear for that entity.")]
 	[Required]
 	public required string EntitySchemaId { get; init; }
-
-	/// <summary>Optional SysModule GUID (section) the report belongs to.</summary>
-	[JsonPropertyName("sys-module-id")]
-	[Description("Optional GUID of the SysModule (section) the report belongs to.")]
-	public string? SysModuleId { get; init; }
-
-	/// <summary>Whether the report is offered from the section list.</summary>
-	[JsonPropertyName("show-in-section")]
-	[Description("Whether the report is offered from the section (list) print menu.")]
-	public bool? ShowInSection { get; init; }
-
-	/// <summary>Whether the report is offered from the record page.</summary>
-	[JsonPropertyName("show-in-card")]
-	[Description("Whether the report is offered from the record (card) print menu.")]
-	public bool? ShowInCard { get; init; }
-
-	/// <summary>Whether the generated document is converted to PDF.</summary>
-	[JsonPropertyName("convert-in-pdf")]
-	[Description("Whether the generated document is converted to PDF.")]
-	public bool? ConvertInPdf { get; init; }
-
-	/// <summary>Raw MacrosSettings JSON describing the report columns (passthrough).</summary>
-	[JsonPropertyName("macros-settings")]
-	[Description("Optional. Raw MacrosSettings value describing the report's columns/macros, stored verbatim. This is Creatio's internal column-mapping format (column UIds, value types, filters) and is NOT validated or parsed — supply a value copied from an existing report, or omit it for a static template.")]
-	public string? MacrosSettings { get; init; }
 }
 
 /// <summary>Arguments for <see cref="PrintableUpdateTool"/>.</summary>
-public sealed record PrintableUpdateArgs : PrintableBaseArgs {
+public sealed record PrintableUpdateArgs : PrintableWritableArgs {
 	/// <summary>GUID of the printable to update.</summary>
 	[JsonPropertyName("id")]
 	[Description("GUID of the printable (SysModuleReport) to update. Required — a keyless mass update is rejected.")]
@@ -97,31 +104,6 @@ public sealed record PrintableUpdateArgs : PrintableBaseArgs {
 	[JsonPropertyName("entity-schema-id")]
 	[Description("New SysEntitySchema GUID the report is bound to. Omit to leave unchanged.")]
 	public string? EntitySchemaId { get; init; }
-
-	/// <summary>New SysModule GUID (optional).</summary>
-	[JsonPropertyName("sys-module-id")]
-	[Description("New SysModule (section) GUID. Omit to leave unchanged.")]
-	public string? SysModuleId { get; init; }
-
-	/// <summary>Whether the report is offered from the section list (optional).</summary>
-	[JsonPropertyName("show-in-section")]
-	[Description("Whether the report is offered from the section print menu. Omit to leave unchanged.")]
-	public bool? ShowInSection { get; init; }
-
-	/// <summary>Whether the report is offered from the record page (optional).</summary>
-	[JsonPropertyName("show-in-card")]
-	[Description("Whether the report is offered from the record print menu. Omit to leave unchanged.")]
-	public bool? ShowInCard { get; init; }
-
-	/// <summary>Whether the generated document is converted to PDF (optional).</summary>
-	[JsonPropertyName("convert-in-pdf")]
-	[Description("Whether the generated document is converted to PDF. Omit to leave unchanged.")]
-	public bool? ConvertInPdf { get; init; }
-
-	/// <summary>Raw MacrosSettings JSON (passthrough, optional).</summary>
-	[JsonPropertyName("macros-settings")]
-	[Description("Raw MacrosSettings value (report columns/macros), stored verbatim and NOT validated. Omit to leave unchanged.")]
-	public string? MacrosSettings { get; init; }
 
 	/// <summary>Explicit confirmation gate for this destructive operation.</summary>
 	[JsonPropertyName("confirm")]
