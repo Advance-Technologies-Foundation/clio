@@ -280,6 +280,7 @@ internal static class ToolContractCatalog {
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EqualComparisonType = "equal";
+	private const string IsFilledInComparisonType = "is-filled-in";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleTaskSchemaName = "UsrTask";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
@@ -1625,7 +1626,7 @@ internal static class ToolContractCatalog {
 					ExampleTaskSchemaName, "Require status for a specific owner", ExampleOwnerAttributeName, EqualComparisonType,
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
-					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", IsFilledInComparisonType,
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
 					ExampleTaskSchemaName, "Lock name and description when completed", "Completed", EqualComparisonType,
@@ -1640,7 +1641,7 @@ internal static class ToolContractCatalog {
 					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
-					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
 						BusinessRuleSetValueItem("UsrScore", 42),
@@ -1651,12 +1652,12 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
-					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
 					]),
 				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
-					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
 					]),
@@ -1693,7 +1694,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to contacts whose type is one of several lookup values (multi-value IN)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to selected contact types",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1707,7 +1708,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to contacts with a mobile phone",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1732,7 +1733,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts whose Age equals 30 ('show the Assignee field only for contacts where Age = 30' is a lookup restriction, NOT field visibility; filter the Age column directly when it exists)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts aged 30",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1743,7 +1744,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts that have more than 10 activities (backward COUNT aggregation)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts with more than 10 activities",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1759,7 +1760,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts whose account was created this year (forward path + relative-date macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts whose account is created this year",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1770,7 +1771,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts with a birthday tomorrow",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1781,7 +1782,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to the current user's contact (CurrentUserContact macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to current user",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1873,7 +1874,7 @@ internal static class ToolContractCatalog {
 					"Case_FormPage",
 					"Make priority editable when status is filled",
 					"PDS_Status",
-					"is-filled-in",
+					IsFilledInComparisonType,
 					"make-editable",
 					["PriorityInput"]),
 				PageBusinessRuleExample(
