@@ -20,9 +20,8 @@ internal class ReauthExecutorTests {
 		"<!DOCTYPE html><html><head><title>Login</title></head><body>" +
 		"<form action=\"/Login/NuiLogin.aspx\"><input id=\"LoginEdit\" name=\"UserName\"/></form></body></html>";
 
-	private static ReauthExecutor CreateExecutor(Action login, ILogger logger = null,
-		Func<DateTime> utcNow = null, TimeSpan? dedupeWindow = null) {
-		return new ReauthExecutor(login, logger, utcNow, dedupeWindow);
+	private static ReauthExecutor CreateExecutor(Action login, ILogger logger = null) {
+		return new ReauthExecutor(login, logger);
 	}
 
 	#endregion
@@ -165,24 +164,65 @@ internal class ReauthExecutorTests {
 	}
 
 	[Test]
-	[Description("Execute re-authenticates again on a later failure that falls outside the dedupe window")]
-	public void Execute_ShouldReauthAgain_WhenSubsequentFailureOccursAfterDedupeWindow() {
-		// Arrange
-		DateTime now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-		int loginCallCount = 0;
-		ReauthExecutor sut = CreateExecutor(() => loginCallCount++, utcNow: () => now,
-			dedupeWindow: TimeSpan.FromSeconds(2));
-		int callCount = 0;
-		string[] responses = { LoginPageBody, "{}", LoginPageBody, "{}" };
+	[Description("Execute re-authenticates on every serial expired-session response — no time-window dedupe that could swallow successive kick-outs")]
+	public void Execute_ShouldReauthOnEverySerialFailure_WhenServerKeepsInvalidatingSession() {
+		// Arrange — model a server that invalidates the session after every successful
+		// response: clientToken == authToken means the cookie is valid; after Login the
+		// client realigns with the server token, and the server bumps its token right
+		// after returning the JSON so the very next call fails again.
+		int loginCount = 0;
+		int authToken = 0;
+		int clientToken = -1;
+		ReauthExecutor sut = CreateExecutor(() => {
+			loginCount++;
+			clientToken = authToken;
+		});
+		string Call() {
+			bool valid = clientToken == authToken && clientToken >= 0;
+			if (!valid) {
+				return LoginPageBody;
+			}
+			authToken++;
+			return "{\"ok\":true}";
+		}
 
-		// Act
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsHtmlLoginPage);
-		now = now.AddSeconds(5);
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsHtmlLoginPage);
+		// Act — three successive Execute calls, each starting with an invalidated session.
+		string r1 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
+		string r2 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
+		string r3 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
 
 		// Assert
-		loginCallCount.Should().Be(2,
-			because: "after the dedupe window elapses a fresh expired-session response must trigger a new Login");
+		r1.Should().Be("{\"ok\":true}",
+			because: "the first kick-out must reauth and the retry must reach the caller as JSON");
+		r2.Should().Be("{\"ok\":true}",
+			because: "a second kick-out must also reauth even though it happens right after the first");
+		r3.Should().Be("{\"ok\":true}",
+			because: "the third successive kick-out must still reauth — no time-based dedupe may swallow it");
+		loginCount.Should().Be(3,
+			because: "each successive expired-session response must trigger exactly one Login");
+	}
+
+	[Test]
+	[Description("Execute never invokes Login more than once per call, even when the retry also fails — bounded behavior, no DDoS")]
+	public void Execute_ShouldCallLoginAtMostOncePerExecute_WhenRetryAlsoReturnsLoginPage() {
+		// Arrange — every underlying call returns the login page, so the retry never succeeds.
+		int loginCount = 0;
+		int callCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCount++);
+
+		// Act
+		string result = sut.Execute(() => {
+			callCount++;
+			return LoginPageBody;
+		}, ReauthExecutor.IsHtmlLoginPage);
+
+		// Assert
+		result.Should().Be(LoginPageBody,
+			because: "after one retry the executor must surface the login page to the caller, not loop");
+		loginCount.Should().Be(1,
+			because: "a single Execute call must trigger at most one Login regardless of retry outcome");
+		callCount.Should().Be(2,
+			because: "underlying call count must be bounded to the initial attempt plus one retry");
 	}
 
 	[Test]

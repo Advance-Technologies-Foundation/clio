@@ -1,12 +1,14 @@
 using System;
+using System.Threading;
 
 namespace Clio.Common;
 
 /// <summary>
 /// Detects a stale Creatio session (server returned the HTML login page instead of JSON)
-/// and performs a single Login + retry. Login() invocations are serialized and deduped
-/// across concurrent callers within a short time window so a burst of failing requests
-/// triggers at most one authentication round.
+/// and performs a single Login + retry per call. Login invocations are serialized across
+/// concurrent callers using a monotonically increasing version token, so a parallel burst
+/// of failing requests triggers exactly one Login while serial bursts that each observe a
+/// fresh expired-session response each get their own Login.
 /// </summary>
 internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Constants: Private
@@ -21,10 +23,8 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 
 	private readonly Action _login;
 	private readonly ILogger _logger;
-	private readonly Func<DateTime> _utcNow;
-	private readonly TimeSpan _dedupeWindow;
 	private readonly object _reauthLock = new();
-	private DateTime _lastReauthAt = DateTime.MinValue;
+	private int _loginVersion;
 
 	#endregion
 
@@ -35,14 +35,9 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// </summary>
 	/// <param name="login">Callback that re-authenticates the underlying client. Required.</param>
 	/// <param name="logger">Optional logger; a single warning is written each time a re-auth is performed.</param>
-	/// <param name="utcNow">Optional clock; defaults to <see cref="DateTime.UtcNow"/>. Intended for tests.</param>
-	/// <param name="dedupeWindow">Optional dedupe window for concurrent re-auth attempts; defaults to 2 seconds.</param>
-	public ReauthExecutor(Action login, ILogger logger = null, Func<DateTime> utcNow = null,
-		TimeSpan? dedupeWindow = null) {
+	public ReauthExecutor(Action login, ILogger logger = null) {
 		_login = login ?? throw new ArgumentNullException(nameof(login));
 		_logger = logger;
-		_utcNow = utcNow ?? (() => DateTime.UtcNow);
-		_dedupeWindow = dedupeWindow ?? TimeSpan.FromSeconds(2);
 	}
 
 	#endregion
@@ -57,11 +52,18 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (isUnauthorized is null) {
 			throw new ArgumentNullException(nameof(isUnauthorized));
 		}
+		// Capture the login version BEFORE the first call. If another concurrent caller
+		// performs Login while we are mid-flight, we observe the version change and skip
+		// our own Login (avoiding a redundant authentication round on a parallel burst).
+		int versionAtStart = Volatile.Read(ref _loginVersion);
 		T result = call();
 		if (!isUnauthorized(result)) {
 			return result;
 		}
-		TryReauthenticate();
+		TryReauthenticate(versionAtStart);
+		// At most one retry, regardless of the retry's outcome. The caller observes the
+		// second response as-is; if it is still the login page (Login failed, or the
+		// session was invalidated again between Login and retry) the caller decides.
 		return call();
 	}
 
@@ -105,13 +107,14 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		return haystack.IndexOf(needle.AsSpan(), StringComparison.OrdinalIgnoreCase) >= 0;
 	}
 
-	private void TryReauthenticate() {
+	private void TryReauthenticate(int versionAtStart) {
 		bool reauthPerformed = false;
 		lock (_reauthLock) {
-			DateTime now = _utcNow();
-			if (now - _lastReauthAt > _dedupeWindow) {
+			// If the version has advanced while we waited on the lock, another caller has
+			// already re-authenticated for us; skip our own Login and proceed to retry.
+			if (_loginVersion == versionAtStart) {
 				_login();
-				_lastReauthAt = now;
+				_loginVersion = unchecked(_loginVersion + 1);
 				reauthPerformed = true;
 			}
 		}
