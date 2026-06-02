@@ -95,4 +95,18 @@ public class CreatioAuthResponseGuardTests {
 		CreatioAuthResponseGuard.IsLikelyAuthRedirect(body)
 			.Should().BeFalse("because the top-level Message must EQUAL 'Authentication failed.', not just contain the phrase");
 	}
+
+	[Test]
+	[Description("Regression guard pinning the Creatio login-failure signatures the detector depends on. If a Creatio upgrade or localization renames these tokens, this test fails as a prompt to re-capture against the live login contract.")]
+	public void IsLikelyAuthRedirect_PinsKnownCreatioLoginContract() {
+		CreatioAuthResponseGuard.IsLikelyAuthRedirect(
+				"{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}")
+			.Should().BeTrue("the JSON-401 'Authentication failed.' envelope is a pinned login-failure signature");
+		CreatioAuthResponseGuard.IsLikelyAuthRedirect(
+				"<!DOCTYPE html><html><head><title>Creatio</title></head><body>NuiLogin</body></html>")
+			.Should().BeTrue("the NuiLogin login page is a pinned login-failure signature");
+		CreatioAuthResponseGuard.IsLikelyAuthRedirect(
+				"<!DOCTYPE html><html><a href=\"/Login/NuiLogin.aspx\">login</a></html>")
+			.Should().BeTrue("the /Login/ path marker is a pinned login-failure signature");
+	}
 }

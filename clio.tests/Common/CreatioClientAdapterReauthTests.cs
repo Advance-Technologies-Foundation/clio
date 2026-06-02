@@ -42,18 +42,18 @@ public class CreatioClientAdapterReauthTests {
 	}
 
 	[Test]
-	[Description("A persistent login redirect does not loop: the call runs at most twice and the second body is returned as-is.")]
-	public void ExecuteWithReauthRetry_PersistentRedirect_DoesNotLoop() {
+	[Description("A persistent auth failure (re-auth did not restore the session) does not loop: the call runs exactly twice, then a typed auth error is thrown instead of returning the login/401 body to a deserializer.")]
+	public void ExecuteWithReauthRetry_PersistentAuthFailure_ThrowsTypedAuthError() {
 		int calls = 0;
 		int reauths = 0;
 		const string login = "<!DOCTYPE html><html>NuiLogin</html>";
 
-		string result = CreatioClientAdapter.ExecuteWithReauthRetry(
+		Action act = () => CreatioClientAdapter.ExecuteWithReauthRetry(
 			() => { calls++; return login; },
 			() => reauths++);
 
-		result.Should().Be(login, "because the second result is returned without further detection");
-		calls.Should().Be(2, "because there is exactly one retry");
+		act.Should().Throw<UnauthorizedAccessException>("because re-auth did not restore the session");
+		calls.Should().Be(2, "because there is exactly one retry — no third attempt");
 		reauths.Should().Be(1, "because re-auth is attempted once");
 	}
 

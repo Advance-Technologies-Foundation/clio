@@ -145,13 +145,15 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	/// <summary>
 	/// Core re-auth-and-retry logic, separated from the live client so it can be unit tested.
-	/// Runs <paramref name="serviceCall"/>; if the response is a Creatio login redirect, invokes
-	/// <paramref name="reauthenticate"/> once and runs the call again exactly once. The second
-	/// result is returned as-is (no further detection) to guarantee termination. A login redirect
-	/// proves the request never reached the service (Forms auth bounces it before the handler), so
-	/// the retry is side-effect-safe even for non-idempotent writes; an
-	/// <see cref="UnauthorizedAccessException"/> raised by <paramref name="reauthenticate"/> (wrong
-	/// credentials, not expiry) propagates and is never retried.
+	/// Runs <paramref name="serviceCall"/>; if the response is a Creatio auth failure, invokes
+	/// <paramref name="reauthenticate"/> once and runs the call again exactly once (termination is
+	/// guaranteed — there is no third attempt). An auth failure proves the request never reached the
+	/// service (Forms auth / 401 rejects it before the handler), so the retry is side-effect-safe even
+	/// for non-idempotent writes. If re-auth did not restore the session — the retry still returns an
+	/// auth-failure body — a typed <see cref="UnauthorizedAccessException"/> is thrown instead of
+	/// letting the login/401 body reach a JSON deserializer as an opaque "unexpected '&lt;'" error.
+	/// A wrong-credentials <see cref="UnauthorizedAccessException"/> raised by
+	/// <paramref name="reauthenticate"/> propagates and is never retried.
 	/// </summary>
 	internal static string ExecuteWithReauthRetry(Func<string> serviceCall, Action reauthenticate) {
 		string response = serviceCall();
@@ -159,7 +161,12 @@ public class CreatioClientAdapter : IApplicationClient{
 			return response;
 		}
 		reauthenticate();
-		return serviceCall();
+		response = serviceCall();
+		if (CreatioAuthResponseGuard.IsLikelyAuthRedirect(response)) {
+			throw new UnauthorizedAccessException(
+				"Creatio re-authentication did not restore the session; the service still returned a login/401 response.");
+		}
+		return response;
 	}
 
 	public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
