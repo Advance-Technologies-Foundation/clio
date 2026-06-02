@@ -333,6 +333,14 @@ namespace Clio
 			get; set;
 		}
 
+		/// <summary>
+		/// Settings schema version used to apply one-time settings migrations.
+		/// A null value denotes a legacy file written before migrations were introduced.
+		/// </summary>
+		public int? SettingsVersion {
+			get; set;
+		}
+
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
