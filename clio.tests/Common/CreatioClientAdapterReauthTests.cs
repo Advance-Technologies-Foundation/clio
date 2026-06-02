@@ -138,6 +138,28 @@ internal class CreatioClientAdapterReauthTests {
 	}
 
 	[Test]
+	[Description("Generic ExecutePostRequest throws a clear exception (not JsonException) when the retry response is still a session-expired HTML page")]
+	public void ExecutePostRequestGeneric_ShouldThrowInvalidOperation_WhenRetryStillReturnsSessionExpiredHtml() {
+		// Arrange — simulate the unrecoverable case: ReauthExecutor's retry also produced
+		// the login HTML page (e.g. the Login() call itself failed to refresh the session).
+		// Without the explicit check, JsonConverter.DeserializeObject<T> would throw the
+		// opaque JsonException ("Invalid response format") that triggered ENG-90393 in the
+		// first place.
+		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+			.Returns(LoginPageBody);
+		CreatioClientAdapter adapter = CreateAdapter(executor);
+
+		// Act
+		Action act = () => adapter.ExecutePostRequest<BaseResponse>("/x", "data");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the unrecoverable session-expired case must surface as a clear auth error, not as an opaque JSON parsing failure that hides the root cause from the operator")
+			.WithMessage("*session expired*and*re-authentication*");
+	}
+
+	[Test]
 	[Description("Generic ExecutePostRequest hands the login-page predicate to the executor so HTML can be detected before JSON deserialization")]
 	public void ExecutePostRequestGeneric_ShouldPassLoginPagePredicateToExecutor_WhenInvoked() {
 		// Arrange
@@ -173,6 +195,76 @@ internal class CreatioClientAdapterReauthTests {
 			because: "the adapter must return what the reauth executor produced, unchanged");
 		captured.Predicate.Should().NotBeNull(
 			because: "the adapter must hand the predicate to the executor");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	#endregion
+
+	#region Tests: CallConfigurationService + Upload* routed through reauth
+
+	[Test]
+	[Description("CallConfigurationService routes through IReauthExecutor with the session-expired predicate — covers the long-running path most likely to hit session expiry")]
+	public void CallConfigurationService_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"ok\":true}");
+
+		// Act
+		string result = adapter.CallConfigurationService("Svc", "Method", "{}");
+
+		// Assert
+		result.Should().Be("{\"ok\":true}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "without a predicate the long-running CallConfigurationService cannot recover from a mid-call session expiry");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	[Test]
+	[Description("UploadFile routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadFile_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
+
+		// Act
+		string result = adapter.UploadFile("/x", "/tmp/file");
+
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	[Test]
+	[Description("UploadAlmFile routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadAlmFile_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
+
+		// Act
+		string result = adapter.UploadAlmFile("/x", "/tmp/file");
+
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	[Test]
+	[Description("UploadAlmFileByChunk routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadAlmFileByChunk_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
+
+		// Act
+		string result = adapter.UploadAlmFileByChunk("/x", "/tmp/file");
+
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
 		captured.Predicate(LoginPageBody).Should().BeTrue(
 			because: "the predicate must classify Creatio login HTML as an expired session");
 	}

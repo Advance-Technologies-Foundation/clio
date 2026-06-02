@@ -62,6 +62,13 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		// Capture the login version BEFORE the first call. If another concurrent caller
 		// performs Login while we are mid-flight, we observe the version change and skip
 		// our own Login (avoiding a redundant authentication round on a parallel burst).
+		//
+		// Narrow-window tradeoff: if a parallel reauth completes between this capture and
+		// our HTML response, we'll skip Login() and retry with what may still be a stale
+		// cookie — losing one re-auth attempt. The behavior stays bounded (≤1 retry, never
+		// loops, never amplifies traffic) and matches the original pre-fix fallback for
+		// this edge case, so this is an intentional choice to avoid login storms during
+		// concurrent expiry bursts, not an oversight to "optimize" away.
 		int versionAtStart = Volatile.Read(ref _loginVersion);
 		T result = call();
 		if (!isUnauthorized(result)) {

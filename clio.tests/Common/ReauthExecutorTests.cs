@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -92,6 +93,9 @@ internal class ReauthExecutorTests {
 	public void Execute_ShouldLogSingleWarning_WhenReauthIsPerformed() {
 		// Arrange
 		ILogger logger = Substitute.For<ILogger>();
+		List<string> warnings = [];
+		logger.When(l => l.WriteWarning(Arg.Any<string>()))
+			.Do(ci => warnings.Add(ci.Arg<string>()));
 		ReauthExecutor sut = CreateExecutor(() => { }, logger);
 		int callCount = 0;
 		string[] responses = { LoginPageBody, "{}" };
@@ -99,8 +103,13 @@ internal class ReauthExecutorTests {
 		// Act
 		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
 
-		// Assert
-		logger.Received(1).WriteWarning(Arg.Is<string>(s => s.Contains("re-authenticated")));
+		// Assert — capture+inspect pattern (instead of logger.Received(1)) so the
+		// FluentAssertions `because:` rationale is recorded on the assertion itself,
+		// per AGENTS.md test-style policy.
+		warnings.Should().ContainSingle(
+			because: "the reauth path must emit exactly one operator-facing warning so a session refresh is visible without flooding the log on serial kick-outs");
+		warnings[0].Should().Contain("re-authenticated",
+			because: "the warning text must name the action that was performed so the operator can correlate it with the response delay");
 	}
 
 	[Test]

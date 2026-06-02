@@ -90,7 +90,13 @@ public class CreatioClientAdapter : IApplicationClient{
 	public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
 		int requestTimeout = Timeout.Infinite) {
 #pragma warning restore S1006
-		return Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
+		// The minutes-long profile of this call (package install, long compile triggers) is
+		// exactly the scenario that expires the session, so the call MUST route through the
+		// reauth executor — otherwise a stale-cookie response surfaces directly as raw HTML
+		// to the caller.
+		return _reauthExecutor.Execute(
+			() => Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout),
+			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	public void DownloadFile(string url, string filePath, string requestData) {
@@ -99,6 +105,15 @@ public class CreatioClientAdapter : IApplicationClient{
 			absoluteUrl = _serviceUrlBuilder.Build(url);
 		}
 
+		// DownloadFile is intentionally NOT wrapped through ReauthExecutor: the underlying
+		// NuGet method returns void and writes the response body directly to disk, so the
+		// session-expired detector — which works on the in-memory response string — has no
+		// hook to inspect. If the session is stale, the file on disk will contain the HTML
+		// login page; the caller (the download initiator) is responsible for verifying the
+		// payload before consuming it. Fortunately downloads in clio go through cookie-bound
+		// short-lived flows (cliogate file fetch) where session expiry mid-download is
+		// uncommon; wrapping it would require either a pre-flight probe or a post-download
+		// file-content sniff, both of which add I/O for very little practical gain.
 		Client.DownloadFile(absoluteUrl, filePath, requestData);
 	}
 
@@ -131,6 +146,15 @@ public class CreatioClientAdapter : IApplicationClient{
 		string response = _reauthExecutor.Execute(
 			() => Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
+		// If the retry also returned the session-expired HTML page, the JSON deserializer
+		// below would surface the same opaque "Invalid response format" symptom that
+		// triggered ENG-90393. Throw a clearer message so the caller (and the user) can
+		// distinguish an unrecoverable auth failure from a real bad payload.
+		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
+			throw new InvalidOperationException(
+				"Creatio session expired and the automatic re-authentication did not restore it. " +
+				"Verify the environment credentials (e.g. via 'clio reg-web-app --check-login') and retry.");
+		}
 		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
@@ -154,15 +178,21 @@ public class CreatioClientAdapter : IApplicationClient{
 	}
 
 	public string UploadAlmFile(string url, string filePath) {
-		return Client.UploadAlmFile(url, filePath);
+		return _reauthExecutor.Execute(
+			() => Client.UploadAlmFile(url, filePath),
+			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	public string UploadAlmFileByChunk(string url, string filePath) {
-		return Client.UploadAlmFileByChunk(url, filePath);
+		return _reauthExecutor.Execute(
+			() => Client.UploadAlmFileByChunk(url, filePath),
+			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	public string UploadFile(string url, string filePath) {
-		return Client.UploadFile(url, filePath);
+		return _reauthExecutor.Execute(
+			() => Client.UploadFile(url, filePath),
+			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	#endregion
