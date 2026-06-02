@@ -26,6 +26,9 @@ Available MCP tool categories:
 - get-component-info  Inspect curated Freedom UI component contracts
 - sync-pages       Batch page operations in a single call
 - data-binding    Manage data bindings and seed data
+- telemetry       Record local product telemetry for app-creation workflows:
+  - get-measurements-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
+  - send-measurements         Store one workflow measurement as a local OpenTelemetry-shaped event once consent is granted
 
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling

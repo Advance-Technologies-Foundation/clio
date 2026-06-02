@@ -21,15 +21,13 @@ internal static class McpServerInstructions
 
 		## Typical workflows
 
-		### ADAC product telemetry
-		When an agent is running a Creatio ADAC/app-creation workflow, use `send-measurements` for product telemetry milestones.
-		At the start of the workflow, before requirements gathering or Business Plan generation:
-		1. Generate one UUID `session_id` and reuse it for every ADAC telemetry event in the conversation.
-		2. Check locally stored consent by calling read-only `get-measurements-consent`.
-		3. Ask the developer whether diagnostic product telemetry may be collected only when consent status is `unknown`.
-		4. When consent is already `granted`, call `send-measurements` with `event_name=session_started` and omit `telemetry_consent`.
-		5. On first run, after asking the developer, call `send-measurements` with `event_name=session_started` and `telemetry_consent=granted` or `telemetry_consent=denied` so Clio can store the local consent decision.
-		6. If consent is denied, the tool is missing, or telemetry is unavailable, continue the user workflow without blocking.
+		### Product telemetry
+		Two read-only-aware tools record local product telemetry for app-creation workflows:
+		- `get-measurements-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
+		- `send-measurements` validates and stores a single workflow measurement event as a local OpenTelemetry-shaped file once consent is `granted`.
+
+		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
+		Call `get-tool-contract` for `get-measurements-consent` and `send-measurements` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
 
 		### Inspect an environment
 		1. `list-environments` → pick an environment name

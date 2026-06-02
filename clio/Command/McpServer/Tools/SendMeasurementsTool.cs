@@ -7,7 +7,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool for ADAC product telemetry measurement events.
+/// MCP tool for product telemetry measurement events.
 /// </summary>
 [McpServerToolType]
 public sealed class SendMeasurementsTool
@@ -28,17 +28,17 @@ public sealed class SendMeasurementsTool
 	}
 
 	/// <summary>
-	/// Stores an ADAC product telemetry measurement as a local event file.
+	/// Stores a product telemetry measurement as a local event file.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
 	[Description("""
-				 Stores an ADAC product telemetry measurement event as a local OpenTelemetry-shaped JSON file.
-				 
+				 Stores a product telemetry measurement event as a local OpenTelemetry-shaped JSON file.
+
 				 Call get-measurements-consent before using this tool. Use telemetry_consent only on first run
 				 after asking the developer, so Clio can store the local consent decision.
 				 """)]
 	public MeasurementResult SendMeasurements(
-		[Description("ADAC product workflow measurement metadata. Include telemetry_consent only when storing the first-run consent decision.")]
+		[Description("Product workflow measurement metadata. Include telemetry_consent only when storing the first-run consent decision.")]
 		[Required]
 		MeasurementRequest args)
 	{

@@ -48,7 +48,7 @@ public sealed class SendMeasurementsToolTests
 
 		// Assert
 		SendMeasurementsTool.ToolName.Should().Be("send-measurements",
-			because: "the ADAC skill contract calls this stable MCP tool name");
+			because: "the product telemetry skill contract calls this stable MCP tool name");
 		attribute.Name.Should().Be(SendMeasurementsTool.ToolName,
 			because: "MCP discovery should advertise the same stable tool name that tests and agents use");
 	}
@@ -73,25 +73,23 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises the ADAC telemetry startup behavior in MCP server instructions so chat agents see it before tool calls.")]
-	public void McpServerInstructions_Should_Advertise_Adac_Telemetry_Startup()
+	[Description("Advertises the product telemetry tools in MCP server instructions while deferring consent orchestration to the skill/contract.")]
+	public void McpServerInstructions_Should_Advertise_Product_Telemetry_Tools()
 	{
 		// Arrange
 		string instructions = McpServerInstructions.Text;
 
 		// Act / Assert
-		instructions.Should().Contain("ADAC product telemetry",
-			because: "Copilot and other chat agents receive MCP server instructions even before loading ADAC skill files");
+		instructions.Should().Contain("Product telemetry",
+			because: "Copilot and other chat agents receive MCP server instructions even before loading skill files");
 		instructions.Should().Contain("send-measurements",
-			because: "the chat model needs to know which MCP tool starts product telemetry");
+			because: "the chat model needs to know which MCP tool stores product telemetry");
 		instructions.Should().Contain("get-measurements-consent",
 			because: "agents should inspect local consent with a read-only tool before sending analytics");
-		instructions.Should().Contain("event_name=session_started",
-			because: "session_started is the first chat-level product event");
-		instructions.Should().Contain("consent status is `unknown`",
-			because: "agents should ask consent only when no local decision exists");
-		instructions.Should().Contain("telemetry_consent=granted",
-			because: "the startup instruction must include the consent payload shape");
+		instructions.Should().Contain("get-tool-contract",
+			because: "the authoritative payload shape and emission order live in the tool contract, not the server instructions");
+		instructions.Should().NotContain("event_name=session_started",
+			because: "the per-step consent prompt and event sequence are owned by the skill/contract to avoid two sources of truth");
 	}
 
 	[Test]
@@ -239,10 +237,12 @@ public sealed class SendMeasurementsToolTests
 			because: "the service should write one local event file").Subject;
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile));
 		document.RootElement.GetProperty("severity_text").GetString().Should().Be("INFO",
-			because: "ADAC measurements are product telemetry info logs");
+			because: "product measurements are telemetry info logs");
 		document.RootElement.GetProperty("body").GetProperty("string_value").GetString().Should().Be("session_started",
 			because: "the OTel body should carry the event name");
 		JsonElement attributes = document.RootElement.GetProperty("attributes");
+		AttributeValue(attributes, "schema_version").Should().Be("1",
+			because: "every event must carry a schema_version so consumers can parse evolving payloads");
 		AttributeValue(attributes, "duration_ms").Should().Be("12345",
 			because: "duration_ms should be stored when the agent supplies it");
 		AttributeValue(attributes, "installation_id").Should().NotBeNullOrWhiteSpace(
@@ -331,7 +331,7 @@ public sealed class SendMeasurementsToolTests
 
 		// Assert
 		requested.Success.Should().BeTrue(
-			because: "post-completion rework requests are part of the ADAC product funnel");
+			because: "post-completion rework requests are part of the product funnel");
 		applied.Success.Should().BeTrue(
 			because: "post-completion changes applied should be measurable separately from initial completion");
 		EventFiles().Should().HaveCount(2,
@@ -352,7 +352,7 @@ public sealed class SendMeasurementsToolTests
 
 		// Assert
 		unknownEvent.Error!.Code.Should().Be("unknown-event-name",
-			because: "only the ADAC product funnel event enum should be accepted");
+			because: "only the product funnel event enum should be accepted");
 		unsupportedField.Error!.Code.Should().Be("unsupported-fields",
 			because: "the tool must accept only the allowlisted product telemetry fields");
 		EventFiles().Should().BeEmpty(
@@ -375,7 +375,7 @@ public sealed class SendMeasurementsToolTests
 			}
 		};
 
-	private MeasurementService CreateService() => new(_telemetryHome);
+	private MeasurementService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
 
 	private string[] EventFiles()
 	{

@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the ADAC product telemetry measurement MCP tool.
+/// End-to-end tests for the product telemetry measurement MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -29,11 +29,12 @@ public sealed class SendMeasurementsToolE2ETests
 	{
 		// Arrange
 		string sessionId = Guid.NewGuid().ToString();
-		string telemetryHome = DefaultTelemetryHome();
-		string consentPath = Path.Combine(telemetryHome, "consent.json");
-		string installationIdPath = Path.Combine(telemetryHome, "installation-id.txt");
-		string? consentBackup = File.Exists(consentPath) ? File.ReadAllText(consentPath) : null;
-		string? installationIdBackup = File.Exists(installationIdPath) ? File.ReadAllText(installationIdPath) : null;
+		// Redirect telemetry to a test-owned temp directory so the test never reads or mutates
+		// the developer's real consent/installation state. The clio MCP subprocess inherits this
+		// environment variable and uses it as its telemetry storage root.
+		string telemetryHome = Path.Combine(Path.GetTempPath(), "clio-telemetry-e2e", Guid.NewGuid().ToString("N"));
+		string? previousTelemetryHome = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
+		Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, telemetryHome);
 		await using RawMcpSession session = RawMcpSession.Start();
 
 		try {
@@ -62,23 +63,24 @@ public sealed class SendMeasurementsToolE2ETests
 				because: "send-measurements should return a normal MCP response when the event is persisted locally");
 			string? eventFile = FindEventFile(telemetryHome, sessionId);
 			eventFile.Should().NotBeNull(
-				because: "one ADAC product event should be persisted locally");
+				because: "one product event should be persisted locally");
 			using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile!));
 			document.RootElement.GetProperty("severity_text").GetString().Should().Be("INFO",
 				because: "product telemetry is represented as an OpenTelemetry info log");
 			document.RootElement.GetProperty("body").GetProperty("string_value").GetString().Should().Be("session_started",
 				because: "the OTel body should carry the event name");
 		} finally {
-			DeleteEventFile(telemetryHome, sessionId);
-			DeleteSessionState(telemetryHome, sessionId);
-			RestoreFile(consentPath, consentBackup);
-			RestoreFile(installationIdPath, installationIdBackup);
+			Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, previousTelemetryHome);
+			if (Directory.Exists(telemetryHome)) {
+				Directory.Delete(telemetryHome, recursive: true);
+			}
 		}
 	}
 
-	private static string DefaultTelemetryHome() =>
-		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			".creatio-ai-app-development-toolkit", "telemetry");
+	/// <summary>
+	/// Environment variable understood by <c>MeasurementService</c> to redirect its local storage root.
+	/// </summary>
+	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
 
 	private static string? FindEventFile(string telemetryHome, string sessionId)
 	{
@@ -88,34 +90,6 @@ public sealed class SendMeasurementsToolE2ETests
 		}
 		return Directory.GetFiles(eventsDirectory, "*.json")
 			.SingleOrDefault(path => File.ReadAllText(path).Contains(sessionId, StringComparison.Ordinal));
-	}
-
-	private static void DeleteEventFile(string telemetryHome, string sessionId)
-	{
-		string? eventFile = FindEventFile(telemetryHome, sessionId);
-		if (eventFile is not null) {
-			File.Delete(eventFile);
-		}
-	}
-
-	private static void DeleteSessionState(string telemetryHome, string sessionId)
-	{
-		string sessionState = Path.Combine(telemetryHome, "sessions", $"{sessionId}.json");
-		if (File.Exists(sessionState)) {
-			File.Delete(sessionState);
-		}
-	}
-
-	private static void RestoreFile(string path, string? content)
-	{
-		if (content is null) {
-			if (File.Exists(path)) {
-				File.Delete(path);
-			}
-			return;
-		}
-		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-		File.WriteAllText(path, content);
 	}
 
 	private sealed class RawMcpSession : IAsyncDisposable

@@ -516,18 +516,18 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildSendMeasurements() {
-		return BuildSendMeasurementsContract(SendMeasurementsTool.ToolName, "Use at ADAC workflow milestones after the user has granted product telemetry consent.");
+		return BuildSendMeasurementsContract(SendMeasurementsTool.ToolName, "Use at product workflow milestones after the user has granted product telemetry consent.");
 	}
 
 	private static ToolContractDefinition BuildGetMeasurementsConsent() {
 		return BuildGetMeasurementsConsentContract(GetMeasurementsConsentTool.ToolName,
-			"Use before sending the first ADAC measurement event to check whether telemetry consent is already stored locally.");
+			"Use before sending the first product measurement event to check whether telemetry consent is already stored locally.");
 	}
 
 	private static ToolContractDefinition BuildGetMeasurementsConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Reads locally persisted ADAC product telemetry consent without storing any measurement event.",
+			"Reads locally persisted product telemetry consent without storing any measurement event.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -554,21 +554,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendMeasurementsContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores an ADAC product telemetry measurement as a local OpenTelemetry-shaped JSON file after user consent.",
+			"Stores a product telemetry measurement as a local OpenTelemetry-shaped JSON file after user consent.",
 			new ToolInputSchemaContract(
 				["session_id", "event_name", "coding_agent", "skill_version", "plugin_version"],
 				[
-					Field("session_id", StringType, "Stable ADAC workflow session identifier reused across all events in one app-creation conversation."),
-					Field("event_name", StringType, "ADAC product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
+					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field("event_name", StringType, "Product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
 					Field("coding_agent", StringType, "Agent or host name, for example Codex, Claude Code, Cursor, Copilot, or VS Code."),
-					Field("skill_version", StringType, "ADAC skill version."),
-					Field("plugin_version", StringType, "ADAC plugin version."),
+					Field("skill_version", StringType, "Product skill version."),
+					Field("plugin_version", StringType, "Product plugin version."),
 					Field("duration_ms", NumberType, "Optional step duration for meaningful workflow transitions in milliseconds."),
 					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", "event_name",
-						Context: "event_name must be one of the documented ADAC product event names.")
+						Context: "event_name must be one of the documented product event names.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

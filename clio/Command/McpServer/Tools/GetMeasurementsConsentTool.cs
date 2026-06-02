@@ -6,7 +6,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool for reading local ADAC product telemetry consent state.
+/// MCP tool for reading local product telemetry consent state.
 /// </summary>
 [McpServerToolType]
 public sealed class GetMeasurementsConsentTool
@@ -27,10 +27,10 @@ public sealed class GetMeasurementsConsentTool
 	}
 
 	/// <summary>
-	/// Reads locally persisted ADAC product telemetry consent without writing analytics.
+	/// Reads locally persisted product telemetry consent without writing analytics.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Reads locally persisted ADAC product telemetry consent without storing any measurement event.")]
+	[Description("Reads locally persisted product telemetry consent without storing any measurement event.")]
 	public MeasurementConsentResult GetMeasurementsConsent()
 	{
 		return _measurementService.GetConsentStatus();

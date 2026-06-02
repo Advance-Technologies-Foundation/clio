@@ -268,7 +268,7 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
-		services.AddTransient<IMeasurementService, MeasurementService>();
+		services.AddTransient<IMeasurementService>(sp => new MeasurementService(sp.GetRequiredService<IFileSystem>()));
 		services.AddTransient<GetMeasurementsConsentTool>();
 		services.AddTransient<SendMeasurementsTool>();
 		services.AddTransient<PageGetTool>();

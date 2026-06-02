@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ms = System.IO.Abstractions;
 
 namespace Clio.Common.Telemetry;
 
@@ -31,11 +32,24 @@ public sealed class MeasurementService : IMeasurementService
 {
 	private const string ConsentGranted = "granted";
 	private const string ConsentDenied = "denied";
+
+	/// <summary>
+	/// Version of the persisted event payload shape. Bump when attributes are added or renamed
+	/// so downstream consumers can parse events without relying on their creation date.
+	/// </summary>
+	private const string SchemaVersion = "1";
+
+	/// <summary>
+	/// Environment variable that redirects the local telemetry storage root (used by tests).
+	/// </summary>
+	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
+
 	private static readonly object SyncRoot = new();
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		WriteIndented = true,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
+	private readonly Ms.IFileSystem _fileSystem;
 	private readonly string _telemetryRoot;
 
 	private static readonly HashSet<string> AllowedEventNames = new(StringComparer.Ordinal) {
@@ -62,16 +76,14 @@ public sealed class MeasurementService : IMeasurementService
 	/// <summary>
 	/// Initializes a new instance of the <see cref="MeasurementService"/> class.
 	/// </summary>
-	public MeasurementService()
-		: this(DefaultTelemetryRoot)
+	/// <param name="fileSystem">Filesystem abstraction used for all local telemetry I/O.</param>
+	/// <param name="telemetryRoot">
+	/// Optional local storage root. When omitted, the root is taken from the
+	/// <c>CLIO_TELEMETRY_HOME</c> environment variable or the default user-profile location.
+	/// </param>
+	public MeasurementService(Ms.IFileSystem fileSystem, string telemetryRoot = null)
 	{
-	}
-
-	/// <summary>
-	/// Initializes a new instance of the <see cref="MeasurementService"/> class with a custom local storage root.
-	/// </summary>
-	public MeasurementService(string telemetryRoot)
-	{
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_telemetryRoot = string.IsNullOrWhiteSpace(telemetryRoot)
 			? DefaultTelemetryRoot
 			: telemetryRoot;
@@ -168,11 +180,11 @@ public sealed class MeasurementService : IMeasurementService
 
 	private ConsentState ReadConsent()
 	{
-		if (!File.Exists(ConsentPath)) {
+		if (!_fileSystem.File.Exists(ConsentPath)) {
 			return new ConsentState("unknown", DateTimeOffset.MinValue);
 		}
 		try {
-			return JsonSerializer.Deserialize<ConsentState>(File.ReadAllText(ConsentPath, Encoding.UTF8), JsonOptions)
+			return JsonSerializer.Deserialize<ConsentState>(_fileSystem.File.ReadAllText(ConsentPath, Encoding.UTF8), JsonOptions)
 				?? new ConsentState("unknown", DateTimeOffset.MinValue);
 		} catch {
 			return new ConsentState("unknown", DateTimeOffset.MinValue);
@@ -183,6 +195,7 @@ public sealed class MeasurementService : IMeasurementService
 		long? durationSinceSessionStartMs)
 	{
 		List<OpenTelemetryAttribute> attributes = [
+			StringAttribute("schema_version", SchemaVersion),
 			StringAttribute("session_id", request.SessionId),
 			StringAttribute("event_name", request.EventName),
 			StringAttribute("event_timestamp", timestamp.ToString("O")),
@@ -211,11 +224,11 @@ public sealed class MeasurementService : IMeasurementService
 	private MeasurementSessionState ReadSessionState(string sessionId)
 	{
 		string path = SessionStatePath(sessionId);
-		if (!File.Exists(path)) {
+		if (!_fileSystem.File.Exists(path)) {
 			return new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
 		}
 		try {
-			return JsonSerializer.Deserialize<MeasurementSessionState>(File.ReadAllText(path, Encoding.UTF8), JsonOptions)
+			return JsonSerializer.Deserialize<MeasurementSessionState>(_fileSystem.File.ReadAllText(path, Encoding.UTF8), JsonOptions)
 				?? new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
 		} catch {
 			return new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
@@ -271,34 +284,34 @@ public sealed class MeasurementService : IMeasurementService
 		string tempPath = Path.Combine(EventsDirectory, fileName + ".tmp");
 		string finalPath = Path.Combine(EventsDirectory, fileName);
 		WriteJson(tempPath, logEvent);
-		File.Move(tempPath, finalPath);
+		_fileSystem.File.Move(tempPath, finalPath);
 		return finalPath;
 	}
 
 	private void EnsureDirectories()
 	{
-		Directory.CreateDirectory(TelemetryRoot);
-		Directory.CreateDirectory(EventsDirectory);
-		Directory.CreateDirectory(SessionsDirectory);
+		_fileSystem.Directory.CreateDirectory(TelemetryRoot);
+		_fileSystem.Directory.CreateDirectory(EventsDirectory);
+		_fileSystem.Directory.CreateDirectory(SessionsDirectory);
 	}
 
-	private static void WriteJson<T>(string path, T value)
+	private void WriteJson<T>(string path, T value)
 	{
-		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+		_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 		string json = JsonSerializer.Serialize(value, JsonOptions);
-		File.WriteAllText(path, json, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(path, json, Encoding.UTF8);
 	}
 
 	private string GetOrCreateInstallationId()
 	{
-		if (File.Exists(InstallationIdPath)) {
-			string current = File.ReadAllText(InstallationIdPath, Encoding.UTF8).Trim();
+		if (_fileSystem.File.Exists(InstallationIdPath)) {
+			string current = _fileSystem.File.ReadAllText(InstallationIdPath, Encoding.UTF8).Trim();
 			if (!string.IsNullOrWhiteSpace(current)) {
 				return current;
 			}
 		}
 		string installationId = Guid.NewGuid().ToString("N");
-		File.WriteAllText(InstallationIdPath, installationId, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(InstallationIdPath, installationId, Encoding.UTF8);
 		return installationId;
 	}
 
@@ -321,9 +334,16 @@ public sealed class MeasurementService : IMeasurementService
 		return "unknown";
 	}
 
-	private static string DefaultTelemetryRoot =>
-		Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			".creatio-ai-app-development-toolkit", "telemetry");
+	private static string DefaultTelemetryRoot
+	{
+		get {
+			string overridePath = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
+			return string.IsNullOrWhiteSpace(overridePath)
+				? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+					".creatio-ai-app-development-toolkit", "telemetry")
+				: overridePath;
+		}
+	}
 
 	private string TelemetryRoot => _telemetryRoot;
 	private string ConsentPath => Path.Combine(TelemetryRoot, "consent.json");
