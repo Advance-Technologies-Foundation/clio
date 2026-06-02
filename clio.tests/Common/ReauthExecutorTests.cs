@@ -352,6 +352,54 @@ internal class ReauthExecutorTests {
 			because: "generic server-error HTML (500, 502, WAF) must not be misclassified as session-expired — re-auth cannot fix it and the caller must see the original error");
 	}
 
+	// Canonical JSON 401 envelope returned by Creatio ServiceModel *.svc endpoints on an
+	// expired/invalid Forms-auth cookie (verified empirically against .NET Framework). The
+	// HTML arm (Gate 2) misses this body because the first non-whitespace char is `{`, not `<`.
+	[TestCase("{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}")]
+	// Same envelope with leading whitespace must still classify as auth failure.
+	[TestCase("  \n\t{\"Message\":\"Authentication failed.\",\"ExceptionType\":\"System.InvalidOperationException\"}")]
+	[Description("IsSessionExpiredResponse returns true for the JSON 401 auth-failure envelope returned by ServiceModel *.svc endpoints on an expired Forms-auth session")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenBodyIsJsonAuthFailureEnvelope(string body) {
+		// Act / Assert
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeTrue(
+			because: "ServiceModel *.svc endpoints return a JSON 401 envelope with Message=\"Authentication failed.\" when the cookie is stale; this MUST trigger re-auth or commands like push-pkg / compile-creatio / clear-redis-db silently break after expiry");
+	}
+
+	[Test]
+	[Description("IsSessionExpiredResponse returns false for a JSON payload whose Message merely *contains* the auth phrase — substring matching would re-run a non-idempotent write whose response embeds the phrase")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenJsonMessageMerelyContainsAuthPhrase() {
+		// Arrange — a hypothetical service write whose response narrates an auth event in
+		// a sentence; the top-level "Message" is NOT the exact "Authentication failed."
+		// envelope. Substring matching would misclassify this and re-issue the write.
+		string body = "{\"success\":true,\"Message\":\"User account 'svc' is healthy: last Authentication failed event was 3 days ago.\"}";
+
+		// Act / Assert
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
+			because: "the auth-failure envelope is identified by EXACT equality on top-level Message — substring matching would re-run non-idempotent writes whose response embeds the phrase");
+	}
+
+	[Test]
+	[Description("IsSessionExpiredResponse returns false for malformed JSON that happens to contain the auth phrase")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenBodyIsMalformedJsonContainingAuthPhrase() {
+		// Arrange — broken JSON; JObject.Parse throws and the catch-arm returns false.
+		string body = "{ this is not really JSON Authentication failed and the parser will choke";
+
+		// Act / Assert
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
+			because: "an unparseable body cannot be confirmed as the auth-failure envelope and must NOT be misclassified — the caller will surface the malformed response, which is the correct signal");
+	}
+
+	[Test]
+	[Description("IsSessionExpiredResponse skips the JSON parse on payloads that do not mention the auth phrase at all — fast path for the overwhelming majority of service responses")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenJsonBodyDoesNotMentionAuthPhrase() {
+		// Arrange — a typical service-success payload that should be cheap to reject.
+		string body = "{\"rowConfig\":{\"Id\":{\"dataValueType\":0}},\"rows\":[{\"Id\":\"00000000-0000-0000-0000-000000000000\"}],\"notFoundColumns\":[]}";
+
+		// Act / Assert
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
+			because: "responses that do not mention auth at all must be rejected by the cheap substring pre-filter without paying the JSON-parse cost");
+	}
+
 	[Test]
 	[Description("IsSessionExpiredResponse returns false for JSON that happens to embed a login marker inside a string")]
 	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenJsonPayloadEmbedsMarkerAsStringContent() {

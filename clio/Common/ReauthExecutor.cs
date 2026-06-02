@@ -1,5 +1,7 @@
 using System;
 using System.Threading;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Common;
 
@@ -79,36 +81,41 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	}
 
 	/// <summary>
-	/// Strict, allocation-light check that the body looks like a Creatio session-expired
-	/// response rather than JSON. Detection runs through two gates:
+	/// Strict, allocation-light check that the body indicates a Creatio session-expired
+	/// response. Detection runs through two arms keyed off the response body's leading
+	/// character, both verified empirically on the on-prem .NET Framework surface:
 	/// <list type="bullet">
-	/// <item><b>Gate 1 (shape)</b> — the body is HTML rather than JSON. All wrapped endpoints
-	/// return JSON, so an HTML response from one of them already means "something redirected
-	/// us"; JSON payloads (first non-whitespace char <c>{</c>, <c>[</c>, <c>"</c>) exit
-	/// immediately and cannot be misclassified.</item>
-	/// <item><b>Gate 2 (auth route)</b> — the HTML body references Creatio's auth-routing
-	/// namespace. Either the literal <c>/Login/</c> appears (in the rendered .NET Framework
-	/// login page's form action AND in every "Object moved" 302 redirect target, FW
-	/// <c>…/Login/NuiLogin.aspx</c> + Core <c>…/Login/Login.html</c>), or the literal
-	/// <c>"bootstrap.login"</c> appears (the auto-followed .NET Core login shell, which has
-	/// no <c>/Login/</c> in its body because the form is rendered client-side).</item>
+	/// <item><b>HTML arm</b> — body starts with <c>&lt;</c> (rendered login page or 302
+	/// redirect body). Classified as expired session when the HTML body references
+	/// Creatio's auth-routing namespace: the literal <c>/Login/</c> (in the .NET FW
+	/// rendered login form action AND in every "Object moved" redirect target, FW
+	/// <c>…/Login/NuiLogin.aspx</c> + Core <c>…/Login/Login.html</c>), OR the literal
+	/// <c>"bootstrap.login"</c> (the auto-followed .NET Core login shell, which has no
+	/// <c>/Login/</c> literal in its body because the form is rendered client-side).</item>
+	/// <item><b>JSON arm</b> — body starts with <c>{</c>. ServiceModel <c>.svc</c> endpoints
+	/// (e.g. <c>WorkspaceExplorerService.svc/Build</c>, <c>AppInstallerService.svc/ClearRedisDb</c>,
+	/// <c>PackageInstallerService.svc/GetZipPackages</c>) return a JSON 401 fault envelope
+	/// <c>{"Message":"Authentication failed.","StackTrace":null,"ExceptionType":"..."}</c>
+	/// on an expired Forms-auth cookie. A cheap substring pre-filter skips JSON parsing
+	/// for the overwhelming majority of payloads that do not mention auth; matched ones
+	/// are parsed once and the top-level <c>Message</c> field is compared by <i>equality</i>
+	/// to <c>"Authentication failed."</c> — substring matching here would re-run a
+	/// non-idempotent write whose response merely contains the phrase.</item>
 	/// </list>
-	/// Keying off the platform's auth-routing tokens rather than login-page DOM (form input
-	/// IDs, page titles, "Object moved" alone) keeps detection stable across login-page
-	/// redesigns and correctly ignores generic 5xx / IIS / WAF error HTML — those surface
-	/// to the caller unchanged because re-authentication could not fix them. Uses only
-	/// cheap span-based <see cref="ReadOnlySpan{T}.IndexOf{T}(ReadOnlySpan{T}, System.StringComparison)"/>
-	/// calls — no regex, no HTML parser — to avoid ReDoS, XXE and large-input pitfalls.
+	/// Keying off the platform's auth-routing tokens (rather than login-page DOM such as
+	/// form input IDs, page titles, "Object moved" alone) keeps the HTML arm stable across
+	/// login-page redesigns and ignores generic 5xx / IIS / WAF error HTML (those surface
+	/// to the caller unchanged — re-authentication could not fix them). JSON arrays
+	/// (<c>[</c>) and plain-text bodies always return false.
 	/// </summary>
 	/// <remarks>
 	/// Detection is body-based. The NuGet creatio.client auto-follows 302/307 redirects on
-	/// .NET Core, so the body it returns to the caller is the rendered <c>Login.html</c>
-	/// shell rather than an empty 302/307 envelope. Truly empty redirect bodies (a
-	/// hypothetical client configured with <c>AllowAutoRedirect = false</c>) are out of
-	/// scope and would surface to the caller as-is, mirroring the original (pre-fix)
-	/// behavior. Full markup-independence would require keying off the HTTP status / final
-	/// <c>ResponseUri</c>, which the NuGet client does not expose — worth a follow-up if
-	/// that surface is ever added.
+	/// .NET Core, so the HTML body it returns is the rendered <c>Login.html</c> shell
+	/// rather than an empty redirect envelope. Truly empty redirect bodies (a hypothetical
+	/// client configured with <c>AllowAutoRedirect = false</c>) are out of scope and would
+	/// surface as-is, mirroring the original (pre-fix) behavior. Full markup-independence
+	/// would require keying off the HTTP status / final <c>ResponseUri</c>, which the
+	/// NuGet client does not expose — worth a follow-up if that surface is ever added.
 	/// </remarks>
 	public static bool IsSessionExpiredResponse(string body) {
 		if (string.IsNullOrEmpty(body)) {
@@ -121,20 +128,16 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (start >= body.Length) {
 			return false;
 		}
-		// Gate 1: anything that does not start with an HTML tag is not a kick-out.
-		// JSON (`{`, `[`, `"`) and plain text exit here so the predicate cannot
-		// misclassify legitimate service responses regardless of their content.
-		if (body[start] != '<') {
-			return false;
+		char first = body[start];
+		if (first == '<') {
+			return IsHtmlAuthRedirect(body, start);
 		}
-		int scanLength = Math.Min(body.Length - start, MaxBodyScanCharacters);
-		ReadOnlySpan<char> head = body.AsSpan(start, scanLength);
-		// Gate 2: the HTML body must reference Creatio's auth-routing namespace.
-		// Both tokens survive a login-page DOM redesign; neither appears in a 500
-		// stack-trace page, a 502 proxy page, or a WAF block, so genuine server
-		// errors are correctly NOT flagged as an expired session.
-		return ContainsOrdinalIgnoreCase(head, "/Login/")
-			|| ContainsOrdinalIgnoreCase(head, "\"bootstrap.login\"");
+		if (first == '{') {
+			return IsJsonAuthFailureEnvelope(body);
+		}
+		// JSON arrays, quoted strings, and plain-text bodies cannot be a session-expired
+		// response — they are never produced by Creatio's auth-rejection path.
+		return false;
 	}
 
 	#endregion
@@ -143,6 +146,45 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 
 	private static bool ContainsOrdinalIgnoreCase(ReadOnlySpan<char> haystack, string needle) {
 		return haystack.IndexOf(needle.AsSpan(), StringComparison.OrdinalIgnoreCase) >= 0;
+	}
+
+	private static bool IsHtmlAuthRedirect(string body, int start) {
+		int scanLength = Math.Min(body.Length - start, MaxBodyScanCharacters);
+		ReadOnlySpan<char> head = body.AsSpan(start, scanLength);
+		// Both tokens survive a login-page DOM redesign; neither appears in a 500
+		// stack-trace page, a 502 proxy page, or a WAF block, so genuine server
+		// errors are correctly NOT flagged as an expired session.
+		return ContainsOrdinalIgnoreCase(head, "/Login/")
+			|| ContainsOrdinalIgnoreCase(head, "\"bootstrap.login\"");
+	}
+
+	// Cheap pre-filter substring used to skip JSON parsing on the overwhelming majority of
+	// JSON bodies that do not mention auth. Present in the 401 envelope and in any other
+	// fault that happens to mention authentication.
+	private const string AuthFailedSubstring = "Authentication failed";
+
+	// Exact value of the top-level "Message" field in the JSON 401 fault envelope. Matched
+	// by structural equality — substring matching would fire on a valid, already-executed
+	// write whose response happens to embed the phrase, and re-auth would re-run the write.
+	private const string AuthFailedMessage = "Authentication failed.";
+
+	private static bool IsJsonAuthFailureEnvelope(string body) {
+		// Two-stage filter: cheap substring first, then a single JObject parse only when
+		// the phrase is present. The substring index hit caps at <body.Length so it stays
+		// O(N), and the parse path is reserved for the rare body that actually mentions
+		// auth — keeping the happy-path cost essentially zero for JSON service responses.
+		if (body.IndexOf(AuthFailedSubstring, StringComparison.OrdinalIgnoreCase) < 0) {
+			return false;
+		}
+		try {
+			JObject envelope = JObject.Parse(body);
+			return string.Equals(
+				(string)envelope["Message"],
+				AuthFailedMessage,
+				StringComparison.OrdinalIgnoreCase);
+		} catch (JsonException) {
+			return false;
+		}
 	}
 
 	private void TryReauthenticate(int observedVersion) {
