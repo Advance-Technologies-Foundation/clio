@@ -68,12 +68,29 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	}
 
 	/// <summary>
-	/// Strict, allocation-light check that the body is a Creatio login HTML page rather than
-	/// JSON. Intentionally uses only cheap string operations (no regex, no HTML parser) to
-	/// avoid ReDoS, XXE and large-input pitfalls. Returns false for empty, null, or anything
-	/// that does not start with an HTML tag.
+	/// Strict, allocation-light check that the body looks like a Creatio session-expired
+	/// response rather than JSON. Both .NET Framework and .NET Core Creatio surfaces return
+	/// two HTML shapes for an invalidated session, both of which mean the cookie is stale
+	/// and the request must be retried after Login:
+	/// <list type="bullet">
+	/// <item>the rendered Creatio login page on .NET Framework (markers <c>id="LoginEdit"</c>, <c>name="UserName"</c>, link to <c>/Login/NuiLogin.aspx</c> or <c>/Login/Login.aspx</c>, <c>&lt;title&gt;Login&lt;/title&gt;</c>);</item>
+	/// <item>the rendered Creatio login page on .NET Core, which is a thin JS-bootstrap shell with the generic <c>&lt;title&gt;Creatio&lt;/title&gt;</c> — identified by the bootstrap loader attribute <c>data-loadbootstrap="bootstrap.login"</c> and by the redirect target <c>/Login/Login.html</c>;</item>
+	/// <item>the ASP.NET 302 redirect body (<c>&lt;title&gt;Object moved&lt;/title&gt;</c>) returned by the platform when the underlying HTTP client does not auto-follow the redirect to the login page.</item>
+	/// </list>
+	/// Intentionally uses only cheap string operations (no regex, no HTML parser) to avoid
+	/// ReDoS, XXE and large-input pitfalls. Returns false for null, empty, whitespace-only
+	/// payloads, and anything that does not begin with an HTML tag — so JSON responses can
+	/// never be misclassified regardless of their content.
 	/// </summary>
-	public static bool IsHtmlLoginPage(string body) {
+	/// <remarks>
+	/// Detection is body-based. The NuGet creatio.client auto-follows 302/307 redirects on
+	/// .NET Core, so the body it returns to the caller is the rendered <c>Login.html</c>
+	/// shell rather than an empty 302/307 envelope. Truly empty redirect bodies (a
+	/// hypothetical client configured with <c>AllowAutoRedirect = false</c>) are out of
+	/// scope and would surface to the caller as-is, mirroring the original (pre-fix)
+	/// behavior.
+	/// </remarks>
+	public static bool IsSessionExpiredResponse(string body) {
 		if (string.IsNullOrEmpty(body)) {
 			return false;
 		}
@@ -86,7 +103,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		}
 		char first = body[start];
 		// Early-exit on anything that does not look like an HTML/XML payload.
-		// JSON (`{`, `[`, `"`) and plain text never qualify as a login page.
+		// JSON (`{`, `[`, `"`) and plain text never qualify as a session-expired response.
 		if (first != '<') {
 			return false;
 		}
@@ -95,8 +112,18 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		return ContainsOrdinalIgnoreCase(head, "id=\"LoginEdit\"")
 			|| ContainsOrdinalIgnoreCase(head, "name=\"UserName\"")
 			|| ContainsOrdinalIgnoreCase(head, "/Login/NuiLogin.aspx")
-			|| ContainsOrdinalIgnoreCase(head, "/Login/Login.aspx")
-			|| ContainsOrdinalIgnoreCase(head, "<title>Login");
+			// `/Login/Login` covers both the .NET Framework redirect target (`Login.aspx`)
+			// and the .NET Core redirect target (`Login.html`) without listing each
+			// extension separately.
+			|| ContainsOrdinalIgnoreCase(head, "/Login/Login")
+			|| ContainsOrdinalIgnoreCase(head, "<title>Login")
+			|| ContainsOrdinalIgnoreCase(head, "<title>Object moved")
+			// .NET Core Creatio renders Login.html as a thin JS-bootstrap shell whose
+			// `<title>` is the generic "Creatio". The only stable marker that uniquely
+			// identifies the page is the full bootstrap loader attribute — using the bare
+			// string "bootstrap.login" would risk false positives on admin pages that
+			// happen to mention the same identifier outside the loader attribute.
+			|| ContainsOrdinalIgnoreCase(head, "data-loadbootstrap=\"bootstrap.login\"");
 	}
 
 	#endregion

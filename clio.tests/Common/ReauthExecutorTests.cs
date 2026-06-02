@@ -40,13 +40,13 @@ internal class ReauthExecutorTests {
 		string result = sut.Execute(() => {
 			callCount++;
 			return "{\"success\":true}";
-		}, ReauthExecutor.IsHtmlLoginPage);
+		}, ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		result.Should().Be("{\"success\":true}",
-			because: "a non-login-page response must be returned unchanged");
+			because: "a non-session-expired response must be returned unchanged");
 		callCount.Should().Be(1,
-			because: "Execute must not retry when the response is not a login page");
+			because: "Execute must not retry when the response is not a session-expired response");
 		loginCallCount.Should().Be(0,
 			because: "Login must not be invoked for healthy responses");
 	}
@@ -61,7 +61,7 @@ internal class ReauthExecutorTests {
 		string[] responses = { LoginPageBody, "{\"ok\":true}" };
 
 		// Act
-		string result = sut.Execute(() => responses[callCount++], ReauthExecutor.IsHtmlLoginPage);
+		string result = sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		result.Should().Be("{\"ok\":true}",
@@ -79,7 +79,7 @@ internal class ReauthExecutorTests {
 		ReauthExecutor sut = CreateExecutor(() => throw new InvalidOperationException("login failed"));
 
 		// Act
-		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsHtmlLoginPage);
+		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -97,7 +97,7 @@ internal class ReauthExecutorTests {
 		string[] responses = { LoginPageBody, "{}" };
 
 		// Act
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsHtmlLoginPage);
+		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		logger.Received(1).WriteWarning(Arg.Is<string>(s => s.Contains("re-authenticated")));
@@ -124,11 +124,11 @@ internal class ReauthExecutorTests {
 		string Call() => Volatile.Read(ref serverAuthenticated) ? "{}" : LoginPageBody;
 
 		// Act
-		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage));
+		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse));
 		aEnteredLogin.Wait(TimeSpan.FromSeconds(2));
 		// A is now parked inside Login() while holding the reauth lock with versionAtStart
 		// still equal to the executor's current version.
-		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage));
+		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse));
 		// Flip the simulated server state to authenticated BEFORE releasing A, so that the
 		// retry call() returns JSON regardless of which thread reaches it first.
 		Volatile.Write(ref serverAuthenticated, true);
@@ -168,9 +168,9 @@ internal class ReauthExecutorTests {
 		}
 
 		// Act — three successive Execute calls, each starting with an invalidated session.
-		string r1 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
-		string r2 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
-		string r3 = sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
+		string r1 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
+		string r2 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
+		string r3 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		r1.Should().Be("{\"ok\":true}",
@@ -195,11 +195,11 @@ internal class ReauthExecutorTests {
 		string result = sut.Execute(() => {
 			callCount++;
 			return LoginPageBody;
-		}, ReauthExecutor.IsHtmlLoginPage);
+		}, ReauthExecutor.IsSessionExpiredResponse);
 
 		// Assert
 		result.Should().Be(LoginPageBody,
-			because: "after one retry the executor must surface the login page to the caller, not loop");
+			because: "after one retry the executor must surface the session-expired response to the caller, not loop");
 		loginCount.Should().Be(1,
 			because: "a single Execute call must trigger at most one Login regardless of retry outcome");
 		callCount.Should().Be(2,
@@ -236,18 +236,18 @@ internal class ReauthExecutorTests {
 
 	#endregion
 
-	#region Tests: IsHtmlLoginPage
+	#region Tests: IsSessionExpiredResponse
 
 	[Test]
-	[Description("IsHtmlLoginPage returns false for null, empty, and whitespace-only bodies")]
-	public void IsHtmlLoginPage_ShouldReturnFalse_WhenBodyIsNullEmptyOrWhitespace() {
+	[Description("IsSessionExpiredResponse returns false for null, empty, and whitespace-only bodies")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenBodyIsNullEmptyOrWhitespace() {
 		// Arrange / Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(null).Should().BeFalse(
-			because: "a null body cannot be a login page");
-		ReauthExecutor.IsHtmlLoginPage(string.Empty).Should().BeFalse(
-			because: "an empty body cannot be a login page");
-		ReauthExecutor.IsHtmlLoginPage("   ").Should().BeFalse(
-			because: "a whitespace-only body has no content and cannot be a login page");
+		ReauthExecutor.IsSessionExpiredResponse(null).Should().BeFalse(
+			because: "a null body cannot be a session-expired response");
+		ReauthExecutor.IsSessionExpiredResponse(string.Empty).Should().BeFalse(
+			because: "an empty body cannot be a session-expired response");
+		ReauthExecutor.IsSessionExpiredResponse("   ").Should().BeFalse(
+			because: "a whitespace-only body has no content and cannot be a session-expired response");
 	}
 
 	[TestCase("{\"success\":true}")]
@@ -257,68 +257,82 @@ internal class ReauthExecutorTests {
 	[TestCase("\"plain string\"")]
 	[TestCase("true")]
 	[TestCase("123")]
-	[Description("IsHtmlLoginPage returns false for any JSON payload regardless of leading whitespace")]
-	public void IsHtmlLoginPage_ShouldReturnFalse_WhenBodyIsJsonPayload(string body) {
+	[Description("IsSessionExpiredResponse returns false for any JSON payload regardless of leading whitespace")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenBodyIsJsonPayload(string body) {
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeFalse(
-			because: "JSON payloads must never be classified as login pages");
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
+			because: "JSON payloads must never be classified as session-expired responses");
 	}
 
 	[Test]
-	[Description("IsHtmlLoginPage returns false for arbitrary HTML that lacks Creatio login markers")]
-	public void IsHtmlLoginPage_ShouldReturnFalse_WhenHtmlContainsNoLoginMarkers() {
+	[Description("IsSessionExpiredResponse returns false for arbitrary HTML that lacks Creatio login markers")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenHtmlContainsNoLoginMarkers() {
 		// Arrange
 		string body = "<html><body><h1>Not a login page</h1></body></html>";
 
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeFalse(
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
 			because: "HTML without Creatio login markers must not be misclassified as an expired session");
 	}
 
 	[TestCase("<html><body><form><input id=\"LoginEdit\"/></form></body></html>")]
 	[TestCase("<html><body><form><input name=\"UserName\"/></form></body></html>")]
 	[TestCase("<form action=\"/Login/NuiLogin.aspx\"></form>")]
+	// .NET Framework Creatio redirect target.
 	[TestCase("<form action=\"/Login/Login.aspx\"></form>")]
+	// .NET Core Creatio redirect target — the marker is intentionally extension-less so
+	// both `.aspx` and `.html` variants resolve via the same check.
+	[TestCase("<form action=\"/Login/Login.html\"></form>")]
 	[TestCase("<html><head><title>Login</title></head><body></body></html>")]
 	[TestCase("  \n\t<html><body><form><input id=\"LoginEdit\"/></form></body></html>")]
-	[Description("IsHtmlLoginPage returns true when the body contains at least one Creatio login marker")]
-	public void IsHtmlLoginPage_ShouldReturnTrue_WhenBodyContainsLoginMarker(string body) {
+	// ASP.NET 302 redirect body returned by the underlying HTTP client when redirects are
+	// not auto-followed and the server kicks the singleton client to the login URL.
+	[TestCase("<html><head><title>Object moved</title></head><body>  <h2>Object moved to <a href=\"/app/0/DataService/json/SyncReply/SelectQuery\">here</a>.</h2></body></html>")]
+	[TestCase("<html><head><title>Object moved</title></head><body><h2>Object moved to <a href=\"/Login/NuiLogin.aspx?ReturnUrl=%2fapp%2f0%2fDataService%2f\">here</a>.</h2></body></html>")]
+	// .NET Core 302 redirect body pointing to /Login/Login.html.
+	[TestCase("<html><head><title>Object moved</title></head><body><h2>Object moved to <a href=\"/Login/Login.html?ReturnUrl=%2fapp%2f\">here</a>.</h2></body></html>")]
+	// .NET Core rendered Login.html — a JS-bootstrap shell with the generic <title>Creatio</title>;
+	// no DOM markers for the login form (it's rendered client-side). The stable signature
+	// is the bootstrap loader attribute data-loadbootstrap="bootstrap.login".
+	[TestCase("<!DOCTYPE html><html lang=\"en\" culture=\"en-US\"><head><title>Creatio</title><script src=\"/core/hash/Terrasoft/amd/bootstrap-loader.js\" data-loadbootstrap=\"bootstrap.login\" data-baseurl=\"http://host\"></script></head><body></body></html>")]
+	[Description("IsSessionExpiredResponse returns true for the rendered Creatio login page (.NET Framework + .NET Core) and the ASP.NET 302 'Object moved' redirect body")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenBodyContainsSessionExpiredMarker(string body) {
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeTrue(
-			because: "responses with Creatio login markers must trigger re-authentication");
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeTrue(
+			because: "responses with Creatio session-expired markers must trigger re-authentication");
 	}
 
 	[Test]
-	[Description("IsHtmlLoginPage matches login markers case-insensitively")]
-	public void IsHtmlLoginPage_ShouldReturnTrue_WhenMarkerCasingDiffersFromCanonicalForm() {
+	[Description("IsSessionExpiredResponse matches login markers case-insensitively")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenMarkerCasingDiffersFromCanonicalForm() {
 		// Arrange
 		string body = "<HTML><BODY><FORM><INPUT ID=\"LOGINEDIT\"/></FORM></BODY></HTML>";
 
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeTrue(
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeTrue(
 			because: "case variations in markup must not bypass detection");
 	}
 
 	[Test]
-	[Description("IsHtmlLoginPage ignores markers that appear past the bounded scan window")]
-	public void IsHtmlLoginPage_ShouldReturnFalse_WhenMarkerLiesBeyondScanWindow() {
+	[Description("IsSessionExpiredResponse ignores markers that appear past the bounded scan window")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenMarkerLiesBeyondScanWindow() {
 		// Arrange — login marker is placed after 5 000 chars of filler, past the 4 KB head.
 		string filler = new('x', 5000);
 		string body = "<html><body>" + filler + "<input id=\"LoginEdit\"/></body></html>";
 
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeFalse(
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
 			because: "scanning is bounded to the head of the body to prevent unbounded work on large payloads");
 	}
 
 	[Test]
-	[Description("IsHtmlLoginPage returns false for JSON that happens to embed a login marker inside a string")]
-	public void IsHtmlLoginPage_ShouldReturnFalse_WhenJsonPayloadEmbedsMarkerAsStringContent() {
+	[Description("IsSessionExpiredResponse returns false for JSON that happens to embed a login marker inside a string")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenJsonPayloadEmbedsMarkerAsStringContent() {
 		// Arrange
 		string body = "{\"description\":\"<input id=\\\"LoginEdit\\\"/>\"}";
 
 		// Act / Assert
-		ReauthExecutor.IsHtmlLoginPage(body).Should().BeFalse(
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
 			because: "early-exit on the leading JSON brace prevents false positives from marker-shaped string content");
 	}
 
