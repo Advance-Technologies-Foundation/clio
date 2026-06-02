@@ -119,22 +119,29 @@ public class CreatioClientAdapter : IApplicationClient{
 		return ExecuteWithReauthRetry(serviceCall, () => ReauthenticateOnce(observedSessionVersion));
 	}
 
+	private void ReauthenticateOnce(int observedSessionVersion) =>
+		ReauthenticateOnce(observedSessionVersion, () => Client.Login());
+
 	/// <summary>
-	/// Re-authenticates under <see cref="_reauthSyncRoot"/>, but only if no other thread has already
-	/// renewed the session since the caller observed <paramref name="observedSessionVersion"/>. Under a
-	/// burst of concurrent calls that all hit the same expired session this collapses N would-be logins
-	/// into one: the first thread logs in and bumps the version; the others see the new version and skip,
-	/// their retry reusing the freshly renewed session.
+	/// Version-gated single re-login, separated from the live client so it can be unit tested.
+	/// Under <see cref="_reauthSyncRoot"/>, re-authenticates only if no other thread has renewed the
+	/// session since <paramref name="observedSessionVersion"/> was read — collapsing a burst of
+	/// concurrent stale calls into one login. The version is bumped only AFTER <paramref name="login"/>
+	/// returns, so a failed login leaves <see cref="_sessionVersion"/> untouched and the next caller
+	/// still re-authenticates.
 	/// </summary>
-	private void ReauthenticateOnce(int observedSessionVersion) {
+	internal void ReauthenticateOnce(int observedSessionVersion, Action login) {
 		lock (_reauthSyncRoot) {
 			if (_sessionVersion != observedSessionVersion) {
 				return;
 			}
-			Client.Login();
+			login();
 			_sessionVersion++;
 		}
 	}
+
+	/// <summary>Current re-authentication generation. Test seam for the version gate.</summary>
+	internal int SessionVersion => _sessionVersion;
 
 	/// <summary>
 	/// Core re-auth-and-retry logic, separated from the live client so it can be unit tested.

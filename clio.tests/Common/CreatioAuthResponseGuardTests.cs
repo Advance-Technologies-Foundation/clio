@@ -81,12 +81,18 @@ public class CreatioAuthResponseGuardTests {
 	}
 
 	[Test]
-	[Description("Documented bounded false positive: a valid JSON body that legitimately contains 'Authentication failed' is reported as an auth failure. Pinning it guards the real JSON-401 case against a refactor that 'fixes' it and regresses detection.")]
-	public void IsLikelyAuthRedirect_JsonContainingAuthFailedText_ReturnsTrue_DocumentedFalsePositive() {
-		// The content-first check fires before the JSON short-circuit. Cost of this false positive is
-		// one redundant re-login; the retry-once contract guarantees it cannot loop.
+	[Description("A valid JSON body that merely mentions 'Authentication failed' in a non-Message field is NOT an auth failure (structural match prevents re-running an executed write).")]
+	public void IsLikelyAuthRedirect_JsonMentioningAuthFailedInOtherField_ReturnsFalse() {
 		string body = "{\"description\":\"Authentication failed for impersonated user\",\"success\":false}";
 		CreatioAuthResponseGuard.IsLikelyAuthRedirect(body)
-			.Should().BeTrue("known, documented false positive — see CreatioAuthResponseGuard.IsLikelyAuthRedirect remarks");
+			.Should().BeFalse("because only a top-level Message equal to the 401 value is an auth failure");
+	}
+
+	[Test]
+	[Description("Exact-match discriminator: a fault envelope whose top-level Message merely STARTS WITH 'Authentication failed' but is not equal to it is a real error, not the 401 envelope. This is the case a substring match would wrongly retry — a write duplication.")]
+	public void IsLikelyAuthRedirect_FaultEnvelopeWithDifferentMessage_ReturnsFalse() {
+		string body = "{\"Message\":\"Authentication failed for the linked account.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}";
+		CreatioAuthResponseGuard.IsLikelyAuthRedirect(body)
+			.Should().BeFalse("because the top-level Message must EQUAL 'Authentication failed.', not just contain the phrase");
 	}
 }
