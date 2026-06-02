@@ -81,8 +81,15 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Methods: Public
 
+	// Sonar S1006: the implementation deliberately defaults to Timeout.Infinite even though
+	// the interface defaults to 10_000 ms. Configuration-service calls can legitimately run
+	// for minutes (package install, long compile triggers); the runtime behavior pre-dates
+	// this PR and is preserved to avoid surprising direct callers of CreatioClientAdapter
+	// with a tighter timeout. Interface callers (the common path) keep the 10-second default.
+#pragma warning disable S1006
 	public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
 		int requestTimeout = Timeout.Infinite) {
+#pragma warning restore S1006
 		return Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout);
 	}
 
