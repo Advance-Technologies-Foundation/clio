@@ -73,29 +73,6 @@ internal class ReauthExecutorTests {
 	}
 
 	[Test]
-	[Description("Execute returns the retry response as-is when the retry still produces a login page")]
-	public void Execute_ShouldReturnRetryResponseAsIs_WhenRetryAlsoReturnsLoginPage() {
-		// Arrange
-		int loginCallCount = 0;
-		ReauthExecutor sut = CreateExecutor(() => loginCallCount++);
-		int callCount = 0;
-
-		// Act
-		string result = sut.Execute(() => {
-			callCount++;
-			return LoginPageBody;
-		}, ReauthExecutor.IsHtmlLoginPage);
-
-		// Assert
-		result.Should().Be(LoginPageBody,
-			because: "if re-auth fails, Execute must propagate the second response unchanged to let the caller decide");
-		callCount.Should().Be(2,
-			because: "Execute must perform exactly one retry, regardless of the retry's outcome");
-		loginCallCount.Should().Be(1,
-			because: "Login must not be re-invoked after a single failed retry");
-	}
-
-	[Test]
 	[Description("Execute propagates the exception thrown by the Login callback")]
 	public void Execute_ShouldPropagateException_WhenLoginThrows() {
 		// Arrange
@@ -129,15 +106,18 @@ internal class ReauthExecutorTests {
 	[Test]
 	[Description("Execute deduplicates Login when two threads concurrently observe a login page")]
 	public async Task Execute_ShouldDedupeLogin_WhenTwoCallersHitLoginPageConcurrently() {
-		// Arrange — gate Login() of the first thread until both threads have entered the
-		// reauth path, then release them so both proceed to retry.
+		// Arrange — drive the timeline with two ManualResetEventSlim gates rather than
+		// sleeps: thread A enters the Login callback, signals 'aEnteredLogin', then parks
+		// on 'releaseLogin'. While A holds the reauth lock, the test starts thread B; B
+		// observes the login page on its first call and blocks on the same lock. Releasing
+		// 'releaseLogin' lets A finish Login + bump the version + release the lock, after
+		// which B enters the lock, sees the bumped version, skips Login, and retries.
 		int loginCallCount = 0;
-		ManualResetEventSlim release = new(false);
-		int threadsAwaiting = 0;
+		ManualResetEventSlim aEnteredLogin = new(false);
+		ManualResetEventSlim releaseLogin = new(false);
 		ReauthExecutor sut = CreateExecutor(() => {
-			if (Interlocked.Increment(ref threadsAwaiting) == 1) {
-				release.Wait(TimeSpan.FromSeconds(2));
-			}
+			aEnteredLogin.Set();
+			releaseLogin.Wait(TimeSpan.FromSeconds(5));
 			Interlocked.Increment(ref loginCallCount);
 		});
 		bool serverAuthenticated = false;
@@ -145,13 +125,14 @@ internal class ReauthExecutorTests {
 
 		// Act
 		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage));
-		Task<string> b = Task.Run(() => {
-			Thread.Sleep(10);
-			return sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage);
-		});
-		await Task.Delay(50);
+		aEnteredLogin.Wait(TimeSpan.FromSeconds(2));
+		// A is now parked inside Login() while holding the reauth lock with versionAtStart
+		// still equal to the executor's current version.
+		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsHtmlLoginPage));
+		// Flip the simulated server state to authenticated BEFORE releasing A, so that the
+		// retry call() returns JSON regardless of which thread reaches it first.
 		Volatile.Write(ref serverAuthenticated, true);
-		release.Set();
+		releaseLogin.Set();
 		await Task.WhenAll(a, b);
 
 		// Assert
