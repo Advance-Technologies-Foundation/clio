@@ -61,6 +61,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | compose an email from current context | `crt.CreateEmailRequest` | button/menu `clicked.request` | no |
 		         | copy a prepared literal value to clipboard | `crt.CopyClipboardRequest` | button/menu `clicked.request` | no |
 		         | copy a page attribute value to clipboard | `crt.CopyInputToClipboardRequest` | button/menu `clicked.request` | no |
+		         | print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |
+		         | open the printables management page | `crt.GoToPrintablesRequest` | button/menu `clicked.request` | no |
+		         | export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |
+		         | import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |
+		         | delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |
+		         | duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |
 		         | page init, destroy, attribute-change orchestration, editor interaction, or domain-specific workflow | handler in `SCHEMA_HANDLERS` | handlers runtime | yes |
 
 		       Request shape quick reference
@@ -350,6 +356,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use `crt.HandleViewModelAttributeChangeRequest` when one field should update dependent page state.
 		       - Use `crt.LoadDataRequest` when the handler must prepare or refresh backing collections/data.
 		       - Use `crt.CancelRecordChangesRequest` when the page must discard unsaved edits and return to the clean state.
+		       - Use `crt.PrintablesRequest` when a button should generate a printable document for the current record or selected records from a data source.
+		       - Use `crt.GoToPrintablesRequest` when a button should navigate to the printables management page.
+		       - Use `crt.ExportDataGridToExcelRequest` when a button should export list data to an Excel file.
+		       - Use `crt.ImportDataRequest` when a button should open the import wizard for a given entity.
+		       - Use `crt.DeleteRecordsRequest` for bulk deletion of multiple selected records from a list (with optional filter or recordIds).
+		       - Use `crt.CopyRecordRequest` to duplicate an existing record.
 		       - When dispatching another request imperatively from a handler, pass both `$context: request.$context` and `scopes: [...request.scopes]` unless the target request intentionally changes scope.
 		       - Use a custom `usr.*Request` only when no built-in request type matches the domain workflow.
 
@@ -380,6 +392,13 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         - `crt.OpenSidebarRequest`
 		         - `crt.CloseSidebarRequest`
 		         - `crt.GetSidebarStateRequest`
+		         - `crt.PrintablesRequest`
+		         - `crt.GoToPrintablesRequest`
+		         - `crt.ExportDataGridToExcelRequest`
+		         - `crt.ImportDataRequest`
+		         - `crt.DeleteRecordsRequest`
+		         - `crt.CopyRecordRequest`
+		         - `crt.ShowDialogRequest`
 		       - Treat this catalog as the first place to look before inventing custom `usr.*Request` names.
 		       - Prefer the exact built-in request name from this catalog when the requirement matches it directly.
 
@@ -403,6 +422,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |
 		         | `crt.CopyInputToClipboardRequest` | config | `attribute` required, `successMessageArea?` | copy the value of a page attribute |
 		         | `crt.ClosePageRequest` | config | `none` | close current page |
+		         | `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |
+		         | `crt.GoToPrintablesRequest` | config | `none` | open printables management page in a new tab |
+		         | `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |
+		         | `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |
+		         | `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |
+		         | `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |
 		       - Lifecycle and attribute-change requests:
 		         | Request | Kind | Params visible in handler | Notes |
 		         | --- | --- | --- | --- |
