@@ -1,116 +1,345 @@
 using System;
+using System.Threading;
 using Clio.Common;
+using Clio.Common.Responses;
 using Creatio.Client;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
 
 [TestFixture]
-[Property("Module", "Common")]
 [Category("Unit")]
-public class CreatioClientAdapterReauthTests {
+[Property("Module", "Common")]
+internal class CreatioClientAdapterReauthTests {
+
+	#region Methods: Private
+
+	// .NET Framework kick-out: rendered NuiLogin.aspx page; trips Gate 2 via the `/Login/`
+	// substring in the form action.
+	private const string NetFrameworkLoginPageBody =
+		"<!DOCTYPE html><html><head><title>Login</title></head>" +
+		"<body><form action=\"/0/Login/NuiLogin.aspx\">" +
+		"<input/></form></body></html>";
+
+	// .NET Core kick-out: auto-followed Login.html JS-bootstrap shell whose `<title>` is the
+	// generic "Creatio" and which carries no `/Login/` literal in its body. Trips Gate 2
+	// via the `"bootstrap.login"` loader-id substring.
+	private const string NetCoreLoginShellBody =
+		"<!DOCTYPE html><html lang=\"en\" culture=\"en-US\"><head><title>Creatio</title>" +
+		"<script src=\"/core/hash/Terrasoft/amd/bootstrap-loader.js\" data-loadbootstrap=\"bootstrap.login\"" +
+		" data-baseurl=\"http://host\"></script></head><body></body></html>";
+
+	// Default representative kick-out body for tests that just need *any* session-expired
+	// response — the .NET Framework shape is the original ENG-90393 trigger and the more
+	// readable of the two.
+	private const string LoginPageBody = NetFrameworkLoginPageBody;
+
+	private sealed record class CapturedExecute {
+
+		public Func<string> Call { get; set; }
+		public Func<string, bool> Predicate { get; set; }
+	}
+
+	private static CreatioClientAdapter CreateAdapter(IReauthExecutor executor) {
+		// The Lazy is intentionally never resolved: the substituted executor never invokes
+		// the wrapped callback, so Client is never dereferenced inside the adapter.
+		Lazy<CreatioClient> lazyClient = new(() => null);
+		return new CreatioClientAdapter(lazyClient, executor);
+	}
+
+	private static (CreatioClientAdapter Adapter, CapturedExecute Captured) CreateAdapterWithCapture(
+		string canned) {
+		CapturedExecute captured = new();
+		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+			.Returns(ci => {
+				captured.Call = ci.Arg<Func<string>>();
+				captured.Predicate = ci.Arg<Func<string, bool>>();
+				return canned;
+			});
+		return (CreateAdapter(executor), captured);
+	}
+
+	#endregion
+
+	#region Tests: ExecuteDeleteRequest
 
 	[Test]
-	[Description("When the first response is valid, the service call runs once and re-auth is not invoked.")]
-	public void ExecuteWithReauthRetry_ValidResponse_DoesNotReauthenticate() {
-		int calls = 0;
-		int reauths = 0;
+	[Description("ExecuteDeleteRequest routes through IReauthExecutor with the HTML login-page predicate")]
+	public void ExecuteDeleteRequest_ShouldRouteThroughReauthExecutorWithLoginPagePredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
 
-		string result = CreatioClientAdapter.ExecuteWithReauthRetry(
-			() => { calls++; return "{\"success\":true}"; },
-			() => reauths++);
+		// Act
+		string result = adapter.ExecuteDeleteRequest("/x", "data");
 
-		result.Should().Be("{\"success\":true}");
-		calls.Should().Be(1, "because a valid response needs no retry");
-		reauths.Should().Be(0, "because the session was alive");
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand a predicate to the executor for unauthorized detection");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+		captured.Predicate("{\"ok\":true}").Should().BeFalse(
+			because: "the predicate must accept JSON payloads as healthy responses");
+	}
+
+	#endregion
+
+	#region Tests: ExecuteGetRequest
+
+	[Test]
+	[Description("ExecuteGetRequest routes through IReauthExecutor with the HTML login-page predicate")]
+	public void ExecuteGetRequest_ShouldRouteThroughReauthExecutorWithLoginPagePredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"a\":1}");
+
+		// Act
+		string result = adapter.ExecuteGetRequest("/x");
+
+		// Assert
+		result.Should().Be("{\"a\":1}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand the predicate to the executor");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	#endregion
+
+	#region Tests: ExecutePostRequest
+
+	[Test]
+	[Description("ExecutePostRequest routes through IReauthExecutor with the HTML login-page predicate")]
+	public void ExecutePostRequest_ShouldRouteThroughReauthExecutorWithLoginPagePredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"ok\":true}");
+
+		// Act
+		string result = adapter.ExecutePostRequest("/x", "data");
+
+		// Assert
+		result.Should().Be("{\"ok\":true}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand the predicate to the executor");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	#endregion
+
+	#region Tests: ExecutePostRequest<T>
+
+	[Test]
+	[Description("Generic ExecutePostRequest deserializes the executor result and never feeds HTML into the JSON converter")]
+	public void ExecutePostRequestGeneric_ShouldDeserializeExecutorResult_WhenExecutorReturnsValidJson() {
+		// Arrange — simulate a successful retry: executor handled the reauth and returned JSON.
+		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+			.Returns("{\"success\":true}");
+		CreatioClientAdapter adapter = CreateAdapter(executor);
+
+		// Act
+		BaseResponse response = adapter.ExecutePostRequest<BaseResponse>("/x", "data");
+
+		// Assert
+		response.Should().NotBeNull(because: "the adapter must deserialize the executor's JSON payload");
+		response.Success.Should().BeTrue(
+			because: "the deserialized JSON had \"success\":true, so the parsed property must reflect it");
 	}
 
 	[Test]
-	[Description("On a login redirect, re-auth runs once and the call is retried exactly once, returning the recovered response.")]
-	public void ExecuteWithReauthRetry_ExpiredSession_RelogsInAndRetriesOnce() {
-		int calls = 0;
-		int reauths = 0;
+	[Description("Generic ExecutePostRequest throws a clear exception (not JsonException) when the retry response is still a session-expired HTML page")]
+	public void ExecutePostRequestGeneric_ShouldThrowInvalidOperation_WhenRetryStillReturnsSessionExpiredHtml() {
+		// Arrange — simulate the unrecoverable case: ReauthExecutor's retry also produced
+		// the login HTML page (e.g. the Login() call itself failed to refresh the session).
+		// Without the explicit check, JsonConverter.DeserializeObject<T> would throw the
+		// opaque JsonException ("Invalid response format") that triggered ENG-90393 in the
+		// first place.
+		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+			.Returns(LoginPageBody);
+		CreatioClientAdapter adapter = CreateAdapter(executor);
 
-		string result = CreatioClientAdapter.ExecuteWithReauthRetry(
-			() => { calls++; return calls == 1 ? "<!DOCTYPE html><html>NuiLogin</html>" : "{\"success\":true}"; },
-			() => reauths++);
+		// Act
+		Action act = () => adapter.ExecutePostRequest<BaseResponse>("/x", "data");
 
-		result.Should().Be("{\"success\":true}", "because the retry after re-login succeeds");
-		calls.Should().Be(2, "because the call runs once, hits the login page, then runs once more");
-		reauths.Should().Be(1, "because re-auth happens exactly once");
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the unrecoverable session-expired case must surface as a clear auth error, not as an opaque JSON parsing failure that hides the root cause from the operator")
+			.WithMessage("*session expired*and*re-authentication*");
 	}
 
 	[Test]
-	[Description("A persistent auth failure (re-auth did not restore the session) does not loop: the call runs exactly twice, then a typed auth error is thrown instead of returning the login/401 body to a deserializer.")]
-	public void ExecuteWithReauthRetry_PersistentAuthFailure_ThrowsTypedAuthError() {
-		int calls = 0;
-		int reauths = 0;
-		const string login = "<!DOCTYPE html><html>NuiLogin</html>";
+	[Description("Generic ExecutePostRequest hands the login-page predicate to the executor so HTML can be detected before JSON deserialization")]
+	public void ExecutePostRequestGeneric_ShouldPassLoginPagePredicateToExecutor_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"success\":false}");
 
-		Action act = () => CreatioClientAdapter.ExecuteWithReauthRetry(
-			() => { calls++; return login; },
-			() => reauths++);
+		// Act
+		adapter.ExecutePostRequest<BaseResponse>("/x", "data");
 
-		act.Should().Throw<UnauthorizedAccessException>("because re-auth did not restore the session");
-		calls.Should().Be(2, "because there is exactly one retry — no third attempt");
-		reauths.Should().Be(1, "because re-auth is attempted once");
+		// Assert
+		captured.Predicate.Should().NotBeNull(
+			because: "without a predicate the executor cannot detect an expired session before JSON parsing");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML so HTML never reaches the JSON converter");
+		captured.Predicate("{\"success\":true}").Should().BeFalse(
+			because: "the predicate must not flag valid JSON responses as expired sessions");
+	}
+
+	#endregion
+
+	#region Tests: ExecutePatchRequest
+
+	[Test]
+	[Description("ExecutePatchRequest routes through IReauthExecutor with the HTML login-page predicate")]
+	public void ExecutePatchRequest_ShouldRouteThroughReauthExecutorWithLoginPagePredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
+
+		// Act
+		string result = adapter.ExecutePatchRequest("/x", "data");
+
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand the predicate to the executor");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	#endregion
+
+	#region Tests: CallConfigurationService + Upload* routed through reauth
+
+	[Test]
+	[Description("CallConfigurationService routes through IReauthExecutor with the session-expired predicate — covers the long-running path most likely to hit session expiry")]
+	public void CallConfigurationService_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"ok\":true}");
+
+		// Act
+		string result = adapter.CallConfigurationService("Svc", "Method", "{}");
+
+		// Assert
+		result.Should().Be("{\"ok\":true}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "without a predicate the long-running CallConfigurationService cannot recover from a mid-call session expiry");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
 	}
 
 	[Test]
-	[Description("A wrong-credentials UnauthorizedAccessException from re-auth propagates and the call is not retried.")]
-	public void ExecuteWithReauthRetry_BadCredentials_PropagatesWithoutRetry() {
-		int calls = 0;
+	[Description("UploadFile routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadFile_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
 
-		Action act = () => CreatioClientAdapter.ExecuteWithReauthRetry(
-			() => { calls++; return "<!DOCTYPE html><html>NuiLogin</html>"; },
-			() => throw new UnauthorizedAccessException("bad creds"));
+		// Act
+		string result = adapter.UploadFile("/x", "/tmp/file");
 
-		act.Should().Throw<UnauthorizedAccessException>("because wrong credentials are not an expiry to retry");
-		calls.Should().Be(1, "because the retry must not run when re-auth itself fails");
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
 	}
 
 	[Test]
-	[Description("Version gate: an observed version that is already stale (renewed by another caller) skips the redundant login and leaves the version unchanged.")]
-	public void ReauthenticateOnce_StaleObservedVersion_SkipsLogin() {
-		CreatioClientAdapter adapter = NewAdapterWithoutClient();
-		int logins = 0;
-		int baseline = adapter.SessionVersion;
+	[Description("UploadAlmFile routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadAlmFile_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
 
-		adapter.ReauthenticateOnce(baseline, () => logins++);   // matches → renews, version = baseline + 1
-		adapter.ReauthenticateOnce(baseline, () => logins++);   // now stale → must skip
+		// Act
+		string result = adapter.UploadAlmFile("/x", "/tmp/file");
 
-		logins.Should().Be(1, "because the second caller observed a stale version and must skip the redundant login");
-		adapter.SessionVersion.Should().Be(baseline + 1, "because only the first re-login advanced the version");
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
 	}
 
 	[Test]
-	[Description("Version gate: a matching observed version triggers exactly one login and advances the version by one.")]
-	public void ReauthenticateOnce_MatchingObservedVersion_LogsInOnceAndBumps() {
-		CreatioClientAdapter adapter = NewAdapterWithoutClient();
-		int logins = 0;
-		int observed = adapter.SessionVersion;
+	[Description("UploadAlmFileByChunk routes through IReauthExecutor with the session-expired predicate")]
+	public void UploadAlmFileByChunk_ShouldRouteThroughReauthExecutorWithSessionExpiredPredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
 
-		adapter.ReauthenticateOnce(observed, () => logins++);
+		// Act
+		string result = adapter.UploadAlmFileByChunk("/x", "/tmp/file");
 
-		logins.Should().Be(1, "because the observed version matched the current generation");
-		adapter.SessionVersion.Should().Be(observed + 1, "because a successful re-login advances the generation");
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
 	}
+
+	#endregion
+
+	#region Tests: .NET Core shell detection via adapter
 
 	[Test]
-	[Description("Version gate ordering: a failing login must NOT advance the version (the bump happens only after login succeeds), so the next caller still re-authenticates. This guards against reordering the increment before the login.")]
-	public void ReauthenticateOnce_LoginThrows_DoesNotAdvanceVersionAndPropagates() {
-		CreatioClientAdapter adapter = NewAdapterWithoutClient();
-		int observed = adapter.SessionVersion;
+	[Description("Adapter routes .NET Core Login.html JS-bootstrap shell through reauth — that body has no /Login/ literal, only the bootstrap.login loader id, so this pins Gate 2's netcore arm independently of the netfw arm")]
+	public void ExecutePostRequest_ShouldClassifyNetCoreLoginShellAsSessionExpired_WhenExecutorReturnsBootstrapShell() {
+		// Arrange — same wiring as the other routing tests but the canned body is the
+		// netcore shell. The captured predicate must classify it as session-expired.
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{\"ok\":true}");
 
-		Action act = () => adapter.ReauthenticateOnce(observed, () => throw new UnauthorizedAccessException("bad creds"));
+		// Act
+		adapter.ExecutePostRequest("/x", "data");
 
-		act.Should().Throw<UnauthorizedAccessException>("because a failed re-login must surface");
-		adapter.SessionVersion.Should().Be(observed, "because the version must not advance when login fails");
+		// Assert
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand a predicate to the executor for unauthorized detection");
+		captured.Predicate(NetCoreLoginShellBody).Should().BeTrue(
+			because: ".NET Core kick-out renders a JS-bootstrap shell with no /Login/ literal; the predicate must catch it via the bootstrap.login loader id");
 	}
 
-	// The version gate never touches the live client (login is injected), so a never-resolved
-	// Lazy is enough to construct the adapter under test.
-	private static CreatioClientAdapter NewAdapterWithoutClient() =>
-		new(new Lazy<CreatioClient>(() => null));
+	#endregion
+
+	#region Tests: End-to-end reauth via real ReauthExecutor
+
+	[Test]
+	[Description("Adapter end-to-end: stale cookie returns login page, ReauthExecutor performs Login and retry; final JSON reaches the caller")]
+	public void Adapter_ShouldReauthenticateAndRetry_WhenFirstHttpResponseIsLoginPage() {
+		// Arrange — wire a real ReauthExecutor whose callback simulates Creatio:
+		// first call after expiry returns HTML, subsequent calls after Login return JSON.
+		int loginCalls = 0;
+		bool authenticated = false;
+		string ServerCall() => authenticated ? "{\"success\":true}" : LoginPageBody;
+		void Login() {
+			Interlocked.Increment(ref loginCalls);
+			authenticated = true;
+		}
+		ReauthExecutor real = new(Login);
+		// Build an adapter routed through a thin executor that defers to the real one and
+		// hard-codes the wrapped callback so we exercise the full Execute -> isUnauthorized
+		// -> Login -> retry path without touching the NuGet CreatioClient.
+		IReauthExecutor passthrough = Substitute.For<IReauthExecutor>();
+		passthrough.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+			.Returns(ci => real.Execute(ServerCall, ci.Arg<Func<string, bool>>()));
+		CreatioClientAdapter adapter = CreateAdapter(passthrough);
+
+		// Act
+		string result = adapter.ExecutePostRequest("/x", "data");
+
+		// Assert
+		result.Should().Be("{\"success\":true}",
+			because: "after a single reauth + retry the adapter must surface the final JSON payload");
+		loginCalls.Should().Be(1,
+			because: "ReauthExecutor must perform exactly one Login when the first response is the login page");
+	}
+
+	#endregion
+
 }
