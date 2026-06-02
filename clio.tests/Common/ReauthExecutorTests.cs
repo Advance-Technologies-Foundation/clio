@@ -17,9 +17,24 @@ internal class ReauthExecutorTests {
 
 	#region Methods: Private
 
-	private const string LoginPageBody =
+	// .NET Framework kick-out: rendered NuiLogin.aspx page; trips Gate 2 via the `/Login/`
+	// substring in the form action.
+	private const string NetFrameworkLoginPageBody =
 		"<!DOCTYPE html><html><head><title>Login</title></head><body>" +
-		"<form action=\"/Login/NuiLogin.aspx\"><input id=\"LoginEdit\" name=\"UserName\"/></form></body></html>";
+		"<form action=\"/0/Login/NuiLogin.aspx\"><input/></form></body></html>";
+
+	// .NET Core kick-out: auto-followed Login.html JS-bootstrap shell whose `<title>` is the
+	// generic "Creatio" and which carries no `/Login/` literal in its body. Trips Gate 2
+	// via the `"bootstrap.login"` loader-id substring.
+	private const string NetCoreLoginShellBody =
+		"<!DOCTYPE html><html lang=\"en\" culture=\"en-US\"><head><title>Creatio</title>" +
+		"<script src=\"/core/hash/Terrasoft/amd/bootstrap-loader.js\" data-loadbootstrap=\"bootstrap.login\"" +
+		" data-baseurl=\"http://host\"></script></head><body></body></html>";
+
+	// Default representative kick-out body for tests that just need *any* session-expired
+	// response — the .NET Framework shape is the original ENG-90393 trigger and the more
+	// readable of the two.
+	private const string LoginPageBody = NetFrameworkLoginPageBody;
 
 	private static ReauthExecutor CreateExecutor(Action login, ILogger logger = null) {
 		return new ReauthExecutor(login, logger);
