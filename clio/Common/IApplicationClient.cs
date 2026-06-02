@@ -50,6 +50,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	private readonly Lazy<CreatioClient> _lazyClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly JsonConverter _jsonConverter;
+	private readonly IReauthExecutor _reauthExecutor;
 
 	private CreatioClient Client => _lazyClient.Value;
 
@@ -57,10 +58,20 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	#region Constructors: Private
 
-	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder, JsonConverter jsonConverter) {
+	// The reauthExecutor parameter is null in production: the executor captures a closure
+	// over this adapter's own _lazyClient.Value.Login() and is therefore created here
+	// rather than resolved from DI. Tests pass a non-null executor through the internal
+	// constructor below to exercise the adapter in isolation from CreatioClient.
+	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
+		JsonConverter jsonConverter, ILogger logger, IReauthExecutor reauthExecutor) {
 		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
+		// Recover transparently from server-side session expiration: a singleton CreatioClient
+		// shared across a long-lived MCP process can otherwise keep sending a stale cookie
+		// after long-running operations and start receiving the HTML login page instead of
+		// JSON for every subsequent request.
+		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(() => _lazyClient.Value.Login(), logger);
 	}
 
 	#endregion
@@ -70,19 +81,34 @@ public class CreatioClientAdapter : IApplicationClient{
 	public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false,
 		IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword, true, isNetCore)),
-			serviceUrlBuilder, null) { }
+			serviceUrlBuilder, null, null, null) { }
 
 	public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
 		bool isNetCore = false, IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() =>
 			CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore)),
-			serviceUrlBuilder, null) { }
+			serviceUrlBuilder, null, null, null) { }
 
 	public CreatioClientAdapter(CreatioClient creatioClient)
-		: this(new Lazy<CreatioClient>(() => creatioClient), null, null) { }
+		: this(new Lazy<CreatioClient>(() => creatioClient), null, null, null, null) { }
 
 	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
-		: this(lazyClient, null, null) { }
+		: this(lazyClient, null, null, null, null) { }
+
+	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient, ILogger logger)
+		: this(lazyClient, null, null, logger, null) { }
+
+	#endregion
+
+	#region Constructors: Internal
+
+	// Test-only constructor. Allows substituting the reauth executor without instantiating
+	// a real CreatioClient (the NuGet type is not mockable). The lazyClient may resolve to
+	// null in tests because the substituted executor never invokes the wrapped callback.
+	// reauthExecutor is required so tests cannot silently fall back to the default executor.
+	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IReauthExecutor reauthExecutor)
+		: this(lazyClient, null, null, null,
+			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
 
 	#endregion
 
@@ -112,29 +138,41 @@ public class CreatioClientAdapter : IApplicationClient{
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return _reauthExecutor.Execute(
+			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			ReauthExecutor.IsHtmlLoginPage);
 	}
 
 	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1,
 		int delaySec = 1) {
-		return Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec);
+		return _reauthExecutor.Execute(
+			() => Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec),
+			ReauthExecutor.IsHtmlLoginPage);
 	}
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return _reauthExecutor.Execute(
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			ReauthExecutor.IsHtmlLoginPage);
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
-		string response = Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		// Re-auth detection runs against the raw body so an expired session cannot reach
+		// the JSON deserializer (which would throw on the HTML login page).
+		string response = _reauthExecutor.Execute(
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			ReauthExecutor.IsHtmlLoginPage);
 		return _jsonConverter.DeserializeObject<T>(response);
 	}
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int retryCount = 1, int delaySec = 1) {
-		return Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec);
+		return _reauthExecutor.Execute(
+			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			ReauthExecutor.IsHtmlLoginPage);
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
