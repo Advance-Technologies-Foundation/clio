@@ -104,6 +104,45 @@ internal class ReauthExecutorTests {
 	}
 
 	[Test]
+	[Description("A failed Login must NOT advance the version gate — otherwise a follow-up caller would see a bumped version and skip its own Login even though the session was never refreshed (guards against a future reorder of the bump-before-login)")]
+	public void TryReauthenticate_ShouldNotAdvanceVersionGate_WhenLoginThrows() {
+		// Arrange — Login deterministically throws on every invocation.
+		ReauthExecutor sut = CreateExecutor(() => throw new InvalidOperationException("login bad"));
+		int versionBefore = sut.LoginVersion;
+
+		// Act — Execute observes the HTML kick-out, enters the reauth path, and the
+		// throwing Login propagates out without the bump statement executing.
+		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a Login that fails must surface to the caller as the same exception the credentials path produced")
+			.WithMessage("login bad");
+		sut.LoginVersion.Should().Be(versionBefore,
+			because: "the version gate must NOT advance on a failed Login — any future refactor that reorders the bump above the _login() call would let a subsequent concurrent caller wrongly skip its own Login (the session is still stale) and surface raw HTML to the caller, defeating ENG-90393 in exactly the scenario the gate was added to cover");
+	}
+
+	[Test]
+	[Description("A successful Login advances the version gate by exactly one — pinning the contract that the parallel-dedupe path observes")]
+	public void TryReauthenticate_ShouldAdvanceVersionGateByOne_WhenLoginSucceeds() {
+		// Arrange
+		int loginCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCount++);
+		int versionBefore = sut.LoginVersion;
+		int callCount = 0;
+		string[] responses = { LoginPageBody, "{}" };
+
+		// Act
+		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
+
+		// Assert
+		sut.LoginVersion.Should().Be(versionBefore + 1,
+			because: "a single successful Login must bump the version by exactly one so concurrent stale-session callers observing the bumped value correctly skip their own Login — bumping by more or less would either let extra Logins through (login storm) or starve genuine retries");
+		loginCount.Should().Be(1,
+			because: "the executor must invoke the login callback exactly once for the observed expiry");
+	}
+
+	[Test]
 	[Description("Execute writes a single warning when a re-authentication is performed")]
 	public void Execute_ShouldLogSingleWarning_WhenReauthIsPerformed() {
 		// Arrange

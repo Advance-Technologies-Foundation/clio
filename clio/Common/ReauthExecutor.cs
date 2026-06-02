@@ -37,6 +37,20 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 
 	#endregion
 
+	#region Properties: Internal
+
+	/// <summary>
+	/// Current login-generation counter. Test seam used to pin the gate invariant that a
+	/// failed <c>_login()</c> must NOT advance the version — otherwise a follow-up caller
+	/// would observe a bumped version and skip its own Login even though the session was
+	/// never actually refreshed. Read with <see cref="Volatile.Read{T}(ref T)"/> so a
+	/// reader on a weak memory model (ARM/AArch64) sees the latest publish from
+	/// <see cref="TryReauthenticate"/>.
+	/// </summary>
+	internal int LoginVersion => Volatile.Read(ref _loginVersion);
+
+	#endregion
+
 	#region Constructors: Public
 
 	/// <summary>
