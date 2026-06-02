@@ -14,14 +14,15 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Constants: Private
 
 	/// <summary>
-	/// Upper bound (in characters) on how far into the response body the session-expiry
-	/// detector scans for HTML markers. Creatio's login-page markers always live in the
-	/// HTML head (<c>&lt;title&gt;</c>, login form inputs, bootstrap loader attribute), so
-	/// 4 KB is more than enough to catch every variant. Capping the scan also bounds the
-	/// per-call CPU and allocations if a caller ever receives a large legitimate HTML
-	/// payload — the predicate fails fast instead of walking megabytes of body.
+	/// Maximum number of characters from the start of the response body that
+	/// <see cref="IsSessionExpiredResponse"/> inspects when looking for session-expired
+	/// markers. Creatio's login-page markers always live in the HTML head
+	/// (<c>&lt;title&gt;</c>, login form inputs, bootstrap loader attribute), so 4096 is
+	/// more than enough to catch every variant. Capping the scan also bounds the per-call
+	/// CPU and allocations if a caller ever receives a large legitimate HTML payload —
+	/// the predicate fails fast instead of walking megabytes of body.
 	/// </summary>
-	private const int LoginPageScanWindow = 4096;
+	private const int MaxBodyScanCharacters = 4096;
 
 	#endregion
 
@@ -113,7 +114,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (first != '<') {
 			return false;
 		}
-		int scanLength = Math.Min(body.Length - start, LoginPageScanWindow);
+		int scanLength = Math.Min(body.Length - start, MaxBodyScanCharacters);
 		ReadOnlySpan<char> head = body.AsSpan(start, scanLength);
 		return ContainsOrdinalIgnoreCase(head, "id=\"LoginEdit\"")
 			|| ContainsOrdinalIgnoreCase(head, "name=\"UserName\"")
