@@ -284,38 +284,31 @@ internal class ReauthExecutorTests {
 			because: "HTML without Creatio login markers must not be misclassified as an expired session");
 	}
 
-	[TestCase("<html><body><form><input id=\"LoginEdit\"/></form></body></html>")]
-	[TestCase("<html><body><form><input name=\"UserName\"/></form></body></html>")]
-	[TestCase("<form action=\"/Login/NuiLogin.aspx\"></form>")]
-	// .NET Framework Creatio redirect target.
-	[TestCase("<form action=\"/Login/Login.aspx\"></form>")]
-	// .NET Core Creatio redirect target — the marker is intentionally extension-less so
-	// both `.aspx` and `.html` variants resolve via the same check.
-	[TestCase("<form action=\"/Login/Login.html\"></form>")]
-	[TestCase("<html><head><title>Login</title></head><body></body></html>")]
-	[TestCase("  \n\t<html><body><form><input id=\"LoginEdit\"/></form></body></html>")]
-	// ASP.NET 302 redirect body returned by the underlying HTTP client when redirects are
-	// not auto-followed and the server kicks the singleton client to the login URL.
-	[TestCase("<html><head><title>Object moved</title></head><body>  <h2>Object moved to <a href=\"/app/0/DataService/json/SyncReply/SelectQuery\">here</a>.</h2></body></html>")]
+	// Realistic .NET Framework login page — the form action lives under /Login/.
+	[TestCase("<html><body><form action=\"/0/Login/NuiLogin.aspx\" id=\"frmLogin\"><input/></form></body></html>")]
+	// .NET Framework "Object moved" 302 redirect body pointing to NuiLogin under /Login/.
 	[TestCase("<html><head><title>Object moved</title></head><body><h2>Object moved to <a href=\"/Login/NuiLogin.aspx?ReturnUrl=%2fapp%2f0%2fDataService%2f\">here</a>.</h2></body></html>")]
-	// .NET Core 302 redirect body pointing to /Login/Login.html.
+	// .NET Core "Object moved" 302 redirect body pointing to /Login/Login.html.
 	[TestCase("<html><head><title>Object moved</title></head><body><h2>Object moved to <a href=\"/Login/Login.html?ReturnUrl=%2fapp%2f\">here</a>.</h2></body></html>")]
-	// .NET Core rendered Login.html — a JS-bootstrap shell with the generic <title>Creatio</title>;
-	// no DOM markers for the login form (it's rendered client-side). The stable signature
-	// is the bootstrap loader attribute data-loadbootstrap="bootstrap.login".
+	// Resource links to /Login/ assets (favicon, CSS) embedded in a rendered login page.
+	[TestCase("<html><head><link rel=\"stylesheet\" href=\"/Login/css/site.css\"/></head><body/></html>")]
+	// Leading whitespace + BOM-free preamble must not bypass detection.
+	[TestCase("  \n\t<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>")]
+	// .NET Core auto-followed Login.html shell — the form is rendered client-side, so the
+	// body has no `/Login/` literal; the stable signature is the bootstrap loader id.
 	[TestCase("<!DOCTYPE html><html lang=\"en\" culture=\"en-US\"><head><title>Creatio</title><script src=\"/core/hash/Terrasoft/amd/bootstrap-loader.js\" data-loadbootstrap=\"bootstrap.login\" data-baseurl=\"http://host\"></script></head><body></body></html>")]
-	[Description("IsSessionExpiredResponse returns true for the rendered Creatio login page (.NET Framework + .NET Core) and the ASP.NET 302 'Object moved' redirect body")]
-	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenBodyContainsSessionExpiredMarker(string body) {
+	[Description("IsSessionExpiredResponse returns true for HTML bodies that reference Creatio's auth-routing namespace (Gate 2): /Login/ for the .NET FW rendered page and Object-moved redirects, and \"bootstrap.login\" for the .NET Core login shell")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenBodyContainsAuthRouteToken(string body) {
 		// Act / Assert
 		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeTrue(
-			because: "responses with Creatio session-expired markers must trigger re-authentication");
+			because: "responses that reference Creatio's auth-routing namespace (/Login/ or \"bootstrap.login\") must trigger re-authentication");
 	}
 
 	[Test]
-	[Description("IsSessionExpiredResponse matches login markers case-insensitively")]
+	[Description("IsSessionExpiredResponse matches the auth-route tokens case-insensitively")]
 	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenMarkerCasingDiffersFromCanonicalForm() {
-		// Arrange
-		string body = "<HTML><BODY><FORM><INPUT ID=\"LOGINEDIT\"/></FORM></BODY></HTML>";
+		// Arrange — uppercase /LOGIN/ must still classify as auth-route.
+		string body = "<HTML><BODY><FORM ACTION=\"/LOGIN/NUILOGIN.ASPX\"></FORM></BODY></HTML>";
 
 		// Act / Assert
 		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeTrue(
@@ -323,15 +316,25 @@ internal class ReauthExecutorTests {
 	}
 
 	[Test]
-	[Description("IsSessionExpiredResponse ignores markers that appear past the bounded scan window")]
+	[Description("IsSessionExpiredResponse ignores auth tokens that appear past the bounded scan window")]
 	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenMarkerLiesBeyondScanWindow() {
-		// Arrange — login marker is placed after 5 000 chars of filler, past the 4 KB head.
+		// Arrange — /Login/ marker is placed after 5 000 chars of filler, past the 4 KB head.
 		string filler = new('x', 5000);
-		string body = "<html><body>" + filler + "<input id=\"LoginEdit\"/></body></html>";
+		string body = "<html><body>" + filler + "<a href=\"/Login/NuiLogin.aspx\">here</a></body></html>";
 
 		// Act / Assert
 		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
 			because: "scanning is bounded to the head of the body to prevent unbounded work on large payloads");
+	}
+
+	[TestCase("<html><head><title>HTTP Error 500.0 - Internal Server Error</title></head><body><h1>HTTP Error 500.0 - Internal Server Error</h1><p>The page cannot be displayed because an internal server error has occurred.</p></body></html>")]
+	[TestCase("<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body></html>")]
+	[TestCase("<html><head><title>Web Application Firewall - Request Blocked</title></head><body><p>Your request was blocked by the WAF.</p></body></html>")]
+	[Description("IsSessionExpiredResponse returns false for generic 5xx / proxy / WAF HTML pages — those are NOT session-expired and re-authenticating would not fix them, so the original error must surface to the caller unchanged")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenBodyIsGenericServerErrorHtml(string body) {
+		// Act / Assert
+		ReauthExecutor.IsSessionExpiredResponse(body).Should().BeFalse(
+			because: "generic server-error HTML (500, 502, WAF) must not be misclassified as session-expired — re-auth cannot fix it and the caller must see the original error");
 	}
 
 	[Test]

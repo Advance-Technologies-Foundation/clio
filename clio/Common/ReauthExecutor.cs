@@ -59,22 +59,19 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (isUnauthorized is null) {
 			throw new ArgumentNullException(nameof(isUnauthorized));
 		}
-		// Capture the login version BEFORE the first call. If another concurrent caller
-		// performs Login while we are mid-flight, we observe the version change and skip
-		// our own Login (avoiding a redundant authentication round on a parallel burst).
-		//
-		// Narrow-window tradeoff: if a parallel reauth completes between this capture and
-		// our HTML response, we'll skip Login() and retry with what may still be a stale
-		// cookie — losing one re-auth attempt. The behavior stays bounded (≤1 retry, never
-		// loops, never amplifies traffic) and matches the original pre-fix fallback for
-		// this edge case, so this is an intentional choice to avoid login storms during
-		// concurrent expiry bursts, not an oversight to "optimize" away.
-		int versionAtStart = Volatile.Read(ref _loginVersion);
 		T result = call();
 		if (!isUnauthorized(result)) {
 			return result;
 		}
-		TryReauthenticate(versionAtStart);
+		// Capture the login version AT THE TIME we observed the failure, not at call-start.
+		// For the long-running operations this fix targets, the request itself can span
+		// minutes — capturing before the call would make us skip our own Login() on every
+		// parallel reauth that completed during that window, even when our own request is
+		// the one whose response now needs a fresh session. Reading after the failure
+		// narrows the "someone else logged in for me" window to the gap before we acquire
+		// the reauth lock — exactly the parallel-burst case the dedupe is designed for.
+		int observedVersion = Volatile.Read(ref _loginVersion);
+		TryReauthenticate(observedVersion);
 		// At most one retry, regardless of the retry's outcome. The caller observes the
 		// second response as-is; if it is still the login page (Login failed, or the
 		// session was invalidated again between Login and retry) the caller decides.
@@ -83,18 +80,25 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 
 	/// <summary>
 	/// Strict, allocation-light check that the body looks like a Creatio session-expired
-	/// response rather than JSON. Both .NET Framework and .NET Core Creatio surfaces return
-	/// two HTML shapes for an invalidated session, both of which mean the cookie is stale
-	/// and the request must be retried after Login:
+	/// response rather than JSON. Detection runs through two gates:
 	/// <list type="bullet">
-	/// <item>the rendered Creatio login page on .NET Framework (markers <c>id="LoginEdit"</c>, <c>name="UserName"</c>, link to <c>/Login/NuiLogin.aspx</c> or <c>/Login/Login.aspx</c>, <c>&lt;title&gt;Login&lt;/title&gt;</c>);</item>
-	/// <item>the rendered Creatio login page on .NET Core, which is a thin JS-bootstrap shell with the generic <c>&lt;title&gt;Creatio&lt;/title&gt;</c> — identified by the bootstrap loader attribute <c>data-loadbootstrap="bootstrap.login"</c> and by the redirect target <c>/Login/Login.html</c>;</item>
-	/// <item>the ASP.NET 302 redirect body (<c>&lt;title&gt;Object moved&lt;/title&gt;</c>) returned by the platform when the underlying HTTP client does not auto-follow the redirect to the login page.</item>
+	/// <item><b>Gate 1 (shape)</b> — the body is HTML rather than JSON. All wrapped endpoints
+	/// return JSON, so an HTML response from one of them already means "something redirected
+	/// us"; JSON payloads (first non-whitespace char <c>{</c>, <c>[</c>, <c>"</c>) exit
+	/// immediately and cannot be misclassified.</item>
+	/// <item><b>Gate 2 (auth route)</b> — the HTML body references Creatio's auth-routing
+	/// namespace. Either the literal <c>/Login/</c> appears (in the rendered .NET Framework
+	/// login page's form action AND in every "Object moved" 302 redirect target, FW
+	/// <c>…/Login/NuiLogin.aspx</c> + Core <c>…/Login/Login.html</c>), or the literal
+	/// <c>"bootstrap.login"</c> appears (the auto-followed .NET Core login shell, which has
+	/// no <c>/Login/</c> in its body because the form is rendered client-side).</item>
 	/// </list>
-	/// Intentionally uses only cheap string operations (no regex, no HTML parser) to avoid
-	/// ReDoS, XXE and large-input pitfalls. Returns false for null, empty, whitespace-only
-	/// payloads, and anything that does not begin with an HTML tag — so JSON responses can
-	/// never be misclassified regardless of their content.
+	/// Keying off the platform's auth-routing tokens rather than login-page DOM (form input
+	/// IDs, page titles, "Object moved" alone) keeps detection stable across login-page
+	/// redesigns and correctly ignores generic 5xx / IIS / WAF error HTML — those surface
+	/// to the caller unchanged because re-authentication could not fix them. Uses only
+	/// cheap span-based <see cref="ReadOnlySpan{T}.IndexOf{T}(ReadOnlySpan{T}, System.StringComparison)"/>
+	/// calls — no regex, no HTML parser — to avoid ReDoS, XXE and large-input pitfalls.
 	/// </summary>
 	/// <remarks>
 	/// Detection is body-based. The NuGet creatio.client auto-follows 302/307 redirects on
@@ -102,7 +106,9 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// shell rather than an empty 302/307 envelope. Truly empty redirect bodies (a
 	/// hypothetical client configured with <c>AllowAutoRedirect = false</c>) are out of
 	/// scope and would surface to the caller as-is, mirroring the original (pre-fix)
-	/// behavior.
+	/// behavior. Full markup-independence would require keying off the HTTP status / final
+	/// <c>ResponseUri</c>, which the NuGet client does not expose — worth a follow-up if
+	/// that surface is ever added.
 	/// </remarks>
 	public static bool IsSessionExpiredResponse(string body) {
 		if (string.IsNullOrEmpty(body)) {
@@ -115,29 +121,20 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (start >= body.Length) {
 			return false;
 		}
-		char first = body[start];
-		// Early-exit on anything that does not look like an HTML/XML payload.
-		// JSON (`{`, `[`, `"`) and plain text never qualify as a session-expired response.
-		if (first != '<') {
+		// Gate 1: anything that does not start with an HTML tag is not a kick-out.
+		// JSON (`{`, `[`, `"`) and plain text exit here so the predicate cannot
+		// misclassify legitimate service responses regardless of their content.
+		if (body[start] != '<') {
 			return false;
 		}
 		int scanLength = Math.Min(body.Length - start, MaxBodyScanCharacters);
 		ReadOnlySpan<char> head = body.AsSpan(start, scanLength);
-		return ContainsOrdinalIgnoreCase(head, "id=\"LoginEdit\"")
-			|| ContainsOrdinalIgnoreCase(head, "name=\"UserName\"")
-			|| ContainsOrdinalIgnoreCase(head, "/Login/NuiLogin.aspx")
-			// `/Login/Login` covers both the .NET Framework redirect target (`Login.aspx`)
-			// and the .NET Core redirect target (`Login.html`) without listing each
-			// extension separately.
-			|| ContainsOrdinalIgnoreCase(head, "/Login/Login")
-			|| ContainsOrdinalIgnoreCase(head, "<title>Login")
-			|| ContainsOrdinalIgnoreCase(head, "<title>Object moved")
-			// .NET Core Creatio renders Login.html as a thin JS-bootstrap shell whose
-			// `<title>` is the generic "Creatio". The only stable marker that uniquely
-			// identifies the page is the full bootstrap loader attribute — using the bare
-			// string "bootstrap.login" would risk false positives on admin pages that
-			// happen to mention the same identifier outside the loader attribute.
-			|| ContainsOrdinalIgnoreCase(head, "data-loadbootstrap=\"bootstrap.login\"");
+		// Gate 2: the HTML body must reference Creatio's auth-routing namespace.
+		// Both tokens survive a login-page DOM redesign; neither appears in a 500
+		// stack-trace page, a 502 proxy page, or a WAF block, so genuine server
+		// errors are correctly NOT flagged as an expired session.
+		return ContainsOrdinalIgnoreCase(head, "/Login/")
+			|| ContainsOrdinalIgnoreCase(head, "\"bootstrap.login\"");
 	}
 
 	#endregion
@@ -148,14 +145,17 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		return haystack.IndexOf(needle.AsSpan(), StringComparison.OrdinalIgnoreCase) >= 0;
 	}
 
-	private void TryReauthenticate(int versionAtStart) {
+	private void TryReauthenticate(int observedVersion) {
 		bool reauthPerformed = false;
 		lock (_reauthLock) {
 			// If the version has advanced while we waited on the lock, another caller has
 			// already re-authenticated for us; skip our own Login and proceed to retry.
-			if (_loginVersion == versionAtStart) {
+			if (_loginVersion == observedVersion) {
 				_login();
-				_loginVersion = unchecked(_loginVersion + 1);
+				// Volatile.Write pairs with the Volatile.Read in Execute so the bump is
+				// observable on weak memory models (ARM, AArch64) without depending on
+				// the lock's release fence to publish it to lock-free readers.
+				Volatile.Write(ref _loginVersion, unchecked(_loginVersion + 1));
 				reauthPerformed = true;
 			}
 		}
