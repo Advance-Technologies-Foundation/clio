@@ -13,8 +13,14 @@ namespace Clio.Common;
 internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Constants: Private
 
-	// Looking past the head of the body is unnecessary for login-page detection and
-	// keeps allocations bounded if a caller happens to receive a large legitimate payload.
+	/// <summary>
+	/// Upper bound (in characters) on how far into the response body the session-expiry
+	/// detector scans for HTML markers. Creatio's login-page markers always live in the
+	/// HTML head (<c>&lt;title&gt;</c>, login form inputs, bootstrap loader attribute), so
+	/// 4 KB is more than enough to catch every variant. Capping the scan also bounds the
+	/// per-call CPU and allocations if a caller ever receives a large legitimate HTML
+	/// payload — the predicate fails fast instead of walking megabytes of body.
+	/// </summary>
 	private const int LoginPageScanWindow = 4096;
 
 	#endregion
