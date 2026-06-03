@@ -32,6 +32,8 @@ public sealed class MeasurementService : IMeasurementService
 {
 	private const string ConsentGranted = "granted";
 	private const string ConsentDenied = "denied";
+	private const string Unknown = "unknown";
+	private const string SessionStartedEvent = "session_started";
 
 	/// <summary>
 	/// Version of the persisted event payload shape. Bump when attributes are added or renamed
@@ -50,10 +52,11 @@ public sealed class MeasurementService : IMeasurementService
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 	private readonly Ms.IFileSystem _fileSystem;
+	private readonly TimeProvider _timeProvider;
 	private readonly string _telemetryRoot;
 
 	private static readonly HashSet<string> AllowedEventNames = new(StringComparer.Ordinal) {
-		"session_started",
+		SessionStartedEvent,
 		"pre_plan_clarification_requested",
 		"pre_plan_user_input_received",
 		"business_plan_generated",
@@ -81,9 +84,14 @@ public sealed class MeasurementService : IMeasurementService
 	/// Optional local storage root. When omitted, the root is taken from the
 	/// <c>CLIO_TELEMETRY_HOME</c> environment variable or the default user-profile location.
 	/// </param>
-	public MeasurementService(Ms.IFileSystem fileSystem, string telemetryRoot = null)
+	/// <param name="timeProvider">
+	/// Optional time source for event timestamps and duration inference. Defaults to
+	/// <see cref="TimeProvider.System"/>; tests can supply a controllable provider.
+	/// </param>
+	public MeasurementService(Ms.IFileSystem fileSystem, string telemetryRoot = null, TimeProvider timeProvider = null)
 	{
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+		_timeProvider = timeProvider ?? TimeProvider.System;
 		_telemetryRoot = string.IsNullOrWhiteSpace(telemetryRoot)
 			? DefaultTelemetryRoot
 			: telemetryRoot;
@@ -96,7 +104,7 @@ public sealed class MeasurementService : IMeasurementService
 		return consentState.TelemetryConsent switch {
 			ConsentGranted => new MeasurementConsentResult(true, "known", ConsentGranted),
 			ConsentDenied => new MeasurementConsentResult(true, "known", ConsentDenied),
-			_ => new MeasurementConsentResult(true, "unknown", "unknown")
+			_ => new MeasurementConsentResult(true, Unknown, Unknown)
 		};
 	}
 
@@ -122,7 +130,7 @@ public sealed class MeasurementService : IMeasurementService
 			}
 
 			string eventId = Guid.NewGuid().ToString("N");
-			DateTimeOffset eventTimestamp = DateTimeOffset.UtcNow;
+			DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
 			MeasurementSessionState sessionState = ReadSessionState(request.SessionId);
 			long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
 			MeasurementRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
@@ -173,7 +181,7 @@ public sealed class MeasurementService : IMeasurementService
 			|| current.TelemetryConsent is ConsentGranted or ConsentDenied) {
 			return current;
 		}
-		ConsentState updated = new(explicitConsent, DateTimeOffset.UtcNow);
+		ConsentState updated = new(explicitConsent, _timeProvider.GetUtcNow());
 		WriteJson(ConsentPath, updated);
 		return updated;
 	}
@@ -181,13 +189,13 @@ public sealed class MeasurementService : IMeasurementService
 	private ConsentState ReadConsent()
 	{
 		if (!_fileSystem.File.Exists(ConsentPath)) {
-			return new ConsentState("unknown", DateTimeOffset.MinValue);
+			return new ConsentState(Unknown, DateTimeOffset.MinValue);
 		}
 		try {
 			return JsonSerializer.Deserialize<ConsentState>(_fileSystem.File.ReadAllText(ConsentPath, Encoding.UTF8), JsonOptions)
 				?? new ConsentState("unknown", DateTimeOffset.MinValue);
 		} catch {
-			return new ConsentState("unknown", DateTimeOffset.MinValue);
+			return new ConsentState(Unknown, DateTimeOffset.MinValue);
 		}
 	}
 
@@ -238,7 +246,7 @@ public sealed class MeasurementService : IMeasurementService
 	private static long? InferDurationMs(MeasurementSessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		string startEventName = eventName switch {
-			"business_plan_generated" => "session_started",
+			"business_plan_generated" => SessionStartedEvent,
 			"business_plan_approved" => FirstKnown(sessionState, "business_plan_generated"),
 			"implementation_completed" => "implementation_started",
 			"implementation_failed" => "implementation_started",
@@ -254,8 +262,8 @@ public sealed class MeasurementService : IMeasurementService
 
 	private static long? InferDurationSinceSessionStartMs(MeasurementSessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
-		if (eventName == "session_started"
-			|| !sessionState.Events.TryGetValue("session_started", out DateTimeOffset sessionStartedAt)) {
+		if (eventName == SessionStartedEvent
+			|| !sessionState.Events.TryGetValue(SessionStartedEvent, out DateTimeOffset sessionStartedAt)) {
 			return null;
 		}
 		return Math.Max(0, (long)(timestamp - sessionStartedAt).TotalMilliseconds);
@@ -278,14 +286,13 @@ public sealed class MeasurementService : IMeasurementService
 	private static OpenTelemetryAttribute StringAttribute(string key, string value) =>
 		new(key, new OpenTelemetryValue(StringValue: value));
 
-	private string WriteEvent(string eventId, OpenTelemetryLogEvent logEvent)
+	private void WriteEvent(string eventId, OpenTelemetryLogEvent logEvent)
 	{
-		string fileName = $"{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfffZ}_{eventId}.json";
+		string fileName = $"{_timeProvider.GetUtcNow():yyyyMMddTHHmmssfffZ}_{eventId}.json";
 		string tempPath = Path.Combine(EventsDirectory, fileName + ".tmp");
 		string finalPath = Path.Combine(EventsDirectory, fileName);
 		WriteJson(tempPath, logEvent);
 		_fileSystem.File.Move(tempPath, finalPath);
-		return finalPath;
 	}
 
 	private void EnsureDirectories()
@@ -318,7 +325,7 @@ public sealed class MeasurementService : IMeasurementService
 	private static string GetClioVersion() =>
 		Assembly.GetEntryAssembly()?.GetName().Version?.ToString()
 		?? typeof(MeasurementService).Assembly.GetName().Version?.ToString()
-		?? "unknown";
+		?? Unknown;
 
 	private static string GetPlatform()
 	{
@@ -331,7 +338,7 @@ public sealed class MeasurementService : IMeasurementService
 		if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
 			return "linux";
 		}
-		return "unknown";
+		return Unknown;
 	}
 
 	private static string DefaultTelemetryRoot

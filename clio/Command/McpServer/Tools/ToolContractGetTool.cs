@@ -260,6 +260,7 @@ internal static class ToolContractCatalog {
 	private const string EnvironmentNameCamelFieldName = "environmentName";
 	private const string PackageNameCamelFieldName = "packageName";
 	private const string EntitySchemaNameCamelFieldName = "entitySchemaName";
+	private const string EventNameFieldName = "event_name";
 	private const string PageSchemaNameCamelFieldName = "pageSchemaName";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
@@ -556,10 +557,10 @@ internal static class ToolContractCatalog {
 			toolName,
 			"Stores a product telemetry measurement as a local OpenTelemetry-shaped JSON file after user consent.",
 			new ToolInputSchemaContract(
-				["session_id", "event_name", "coding_agent", "skill_version", "plugin_version"],
+				["session_id", EventNameFieldName, "coding_agent", "skill_version", "plugin_version"],
 				[
 					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
-					Field("event_name", StringType, "Product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
+					Field(EventNameFieldName, StringType, "Product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
 					Field("coding_agent", StringType, "Agent or host name, for example Codex, Claude Code, Cursor, Copilot, or VS Code."),
 					Field("skill_version", StringType, "Product skill version."),
 					Field("plugin_version", StringType, "Product plugin version."),
@@ -567,7 +568,7 @@ internal static class ToolContractCatalog {
 					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")
 				],
 				Validators: [
-					new ToolContractValidator("enum", "unknown-event-name", "event_name",
+					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
 						Context: "event_name must be one of the documented product event names.")
 				]),
 			EnvelopeOutput(
@@ -588,7 +589,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
 					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
-					["event_name"] = "business_plan_generated",
+					[EventNameFieldName] = "business_plan_generated",
 					["coding_agent"] = "Codex",
 					["skill_version"] = "0.1.0",
 					["plugin_version"] = "0.1.0",

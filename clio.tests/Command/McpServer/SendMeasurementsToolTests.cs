@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common.Telemetry;
@@ -255,11 +254,12 @@ public sealed class SendMeasurementsToolTests
 	public void MeasurementService_Should_Infer_Duration_From_Local_Session_Timer()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
+		MeasurementService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest("implementation_started") with { TelemetryConsent = "granted" });
-		Thread.Sleep(20);
+		time.Advance(TimeSpan.FromMilliseconds(20));
 		service.Send(CreateRequest("implementation_completed"));
 
 		// Assert
@@ -275,11 +275,12 @@ public sealed class SendMeasurementsToolTests
 	public void MeasurementService_Should_Add_Overall_Duration_To_Post_Start_Events()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
+		MeasurementService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
-		Thread.Sleep(20);
+		time.Advance(TimeSpan.FromMilliseconds(20));
 		service.Send(CreateRequest("business_plan_feedback_received"));
 
 		// Assert
@@ -298,11 +299,12 @@ public sealed class SendMeasurementsToolTests
 	public void MeasurementService_Should_Not_Infer_Step_Duration_For_Implementation_Start()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
+		MeasurementService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
-		Thread.Sleep(20);
+		time.Advance(TimeSpan.FromMilliseconds(20));
 		service.Send(CreateRequest("implementation_started"));
 
 		// Assert
@@ -376,6 +378,20 @@ public sealed class SendMeasurementsToolTests
 		};
 
 	private MeasurementService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
+
+	private MeasurementService CreateService(TimeProvider timeProvider) =>
+		new(new System.IO.Abstractions.FileSystem(), _telemetryHome, timeProvider);
+
+	private sealed class MutableTimeProvider : TimeProvider
+	{
+		private DateTimeOffset _utcNow;
+
+		public MutableTimeProvider(DateTimeOffset start) => _utcNow = start;
+
+		public void Advance(TimeSpan delta) => _utcNow += delta;
+
+		public override DateTimeOffset GetUtcNow() => _utcNow;
+	}
 
 	private string[] EventFiles()
 	{
