@@ -553,25 +553,25 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-			// Use this instance (and its settings loaded from the configured filesystem) instead of
-			// constructing a new SettingsRepository, which re-reads the shared static FileSystem and
-			// makes the result depend on global state — a race that breaks parallel unit tests.
-			var settingsRepository = this;
+			// Resolve against this repository's own settings (loaded from the filesystem it was
+			// constructed with). Earlier this method built a new SettingsRepository(), which re-reads
+			// the shared static FileSystem and made the result depend on global state — a race that
+			// broke parallel unit tests.
 			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
 			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
 			EnvironmentSettings envSettings;
 			if (hasExplicitEnvironment) {
-				envSettings = settingsRepository.FindEnvironment(options.Environment);
+				envSettings = FindEnvironment(options.Environment);
 			} else if (hasDirectUri) {
 				envSettings = null;
 			} else {
-				envSettings = settingsRepository.FindEnvironment(null);
+				envSettings = FindEnvironment(null);
 			}
 			if (envSettings == null) {
-				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
+				var envName = options.Environment ?? GetDefaultEnvironmentName();
+				if (!IsEnvironmentExists(envName) && !hasDirectUri) {
 					if (string.IsNullOrWhiteSpace(envName)) {
-						var allEnvs = settingsRepository.GetAllEnvironments();
+						var allEnvs = GetAllEnvironments();
 						if (allEnvs.Count > 0) {
 							string envList = string.Join(", ", allEnvs.Keys);
 							throw new Exception(
