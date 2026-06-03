@@ -47,6 +47,7 @@ public sealed class ToolContractGetToolTests {
 			because: "the bootstrap response should include the canonical contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
 				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
@@ -99,6 +100,38 @@ public sealed class ToolContractGetToolTests {
 			because: "page-body edits applied through update-page must never be followed by compile-creatio");
 		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(ApplicationCreateTool.ApplicationCreateToolName, StringComparison.Ordinal),
 			because: "create-app never requires a follow-up compilation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical execute-esq contract with its required inputs, rows/count/success output, and the get-guidance preferred flow.")]
+	public void ToolContractGet_Should_Return_ExecuteEsq_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ExecuteEsqTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "execute-esq is part of the executable clio MCP contract surface and must be discoverable by contract lookup");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ExecuteEsqTool.ToolName,
+			because: "the contract name must stay stable for callers that bootstrap from the contract tool");
+		contract.InputSchema.Required.Should().Contain("query",
+			because: "execute-esq cannot run without a SelectQuery");
+		contract.InputSchema.Required.Should().Contain("environment-name",
+			because: "execute-esq must target a registered environment");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rows",
+			because: "a successful query returns the rows array");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "count",
+			because: "a successful query reports the number of returned rows");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
+			because: "the envelope must expose the success flag");
+		contract.Description.Should().Contain("get-guidance",
+			because: "the contract should steer callers to read the esq guidance before composing a query");
 	}
 
 	[Test]

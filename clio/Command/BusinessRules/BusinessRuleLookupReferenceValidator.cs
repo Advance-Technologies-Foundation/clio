@@ -154,7 +154,9 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 				"Id",
 				reference.RecordId.ToString("D"),
 				SelectQueryHelper.GuidDataValueType,
-				ComparisonType: 3)]);
+				ComparisonType: 3)],
+			// Existence probe: an Id-equality filter yields at most one row, so cap the fetch at 1.
+			rowCount: 1);
 
 		LookupExistsResponseDto response;
 		try {

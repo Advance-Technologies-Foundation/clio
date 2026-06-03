@@ -58,6 +58,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
 
 			return ParseSelectQueryResponse(responseJson);
+		} catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) {
+			// A timeout/cancellation is not a malformed-query problem, so it must not carry the
+			// "you probably guessed the ESQ format wrong" recovery hint.
+			return ExecuteEsqResponse.FailureWithoutGuidance(
+				$"SelectQuery request timed out or was canceled (timeout window {MinTimeoutMs}-{MaxTimeoutMs} ms). Increase 'timeout' or narrow the query, then retry.");
 		} catch (Exception ex) {
 			return ExecuteEsqResponse.Failure(ex.Message);
 		}
@@ -101,15 +106,24 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 
-			// Explicit DataService failure envelope.
-			if (root.TryGetProperty("success", out JsonElement successEl)
-				&& successEl.ValueKind == JsonValueKind.False) {
+			bool hasSuccess = root.TryGetProperty("success", out JsonElement successEl);
+			bool successIsTrue = hasSuccess && successEl.ValueKind == JsonValueKind.True;
+
+			// Explicit DataService failure envelope: 'success' is present but not true
+			// (false, or any non-true shape such as a string/number).
+			if (hasSuccess && !successIsTrue) {
 				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
 			}
 
-			// Error bodies that carry no rows: DataService responseStatus / errorInfo, or an ASP.NET error body.
-			bool hasRows = root.TryGetProperty("rows", out JsonElement rowsEl);
-			if (!hasRows
+			bool hasRowsArray = root.TryGetProperty("rows", out JsonElement rowsEl)
+				&& rowsEl.ValueKind == JsonValueKind.Array;
+
+			// Error bodies that were NOT explicitly marked successful and carry no rows array:
+			// DataService responseStatus / errorInfo, or an ASP.NET error body. A response that
+			// explicitly reported success:true is never reclassified as an error here, even if it
+			// also carries a top-level responseStatus/Message (e.g. a non-row projection envelope).
+			if (!successIsTrue
+				&& !hasRowsArray
 				&& (root.TryGetProperty("responseStatus", out _)
 					|| root.TryGetProperty("errorInfo", out _)
 					|| root.TryGetProperty("ExceptionMessage", out _)
@@ -117,7 +131,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 				return ExecuteEsqResponse.Failure(ExtractErrorMessage(root) ?? Truncate(json));
 			}
 
-			if (hasRows && rowsEl.ValueKind == JsonValueKind.Array) {
+			if (hasRowsArray) {
 				return new ExecuteEsqResponse(true, null, rowsEl.GetArrayLength(), rowsEl.Clone());
 			}
 
@@ -230,4 +244,11 @@ public sealed record ExecuteEsqResponse(
 	/// <summary>Creates a failure response carrying the ESQ guidance recovery hint.</summary>
 	public static ExecuteEsqResponse Failure(string message) =>
 		new(false, message, null, null, GuidanceHint);
+
+	/// <summary>
+	/// Creates a failure response without the ESQ-format guidance hint, for failures that are not
+	/// about a mis-composed query (for example a timeout or cancellation).
+	/// </summary>
+	public static ExecuteEsqResponse FailureWithoutGuidance(string message) =>
+		new(false, message, null, null, null);
 }

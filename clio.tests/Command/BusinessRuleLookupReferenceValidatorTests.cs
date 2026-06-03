@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.BusinessRules;
 using Clio.Common;
@@ -57,11 +58,26 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Account\"")
 				&& body.Contains("22222222-2222-2222-2222-222222222222")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		// The Id (Guid primary key) filter must use the Guid data value type (0), not Text (1)
-		_applicationClient.Received(2).ExecutePostRequest(
-			Arg.Any<string>(),
-			Arg.Is<string>(body => body.Contains("\"dataValueType\":0")),
-			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// The Id (Guid primary key) filter must use the Guid data value type (0), not Text (1).
+		// Parse the captured request bodies rather than substring-matching so the assertion is
+		// robust to JSON formatting (indentation, property order) changes.
+		List<string> postedBodies = _applicationClient.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Select(call => (string)call.GetArguments()[1]!)
+			.ToList();
+		postedBodies.Should().HaveCount(2,
+			because: "both lookup references are validated with a SelectQuery POST");
+		foreach (string body in postedBodies) {
+			using JsonDocument document = JsonDocument.Parse(body);
+			JsonElement idFilter = document.RootElement
+				.GetProperty("filters").GetProperty("items")
+				.EnumerateObject().First().Value;
+			int dataValueType = idFilter
+				.GetProperty("rightExpression").GetProperty("parameter")
+				.GetProperty("dataValueType").GetInt32();
+			dataValueType.Should().Be(0,
+				because: "the Id primary-key filter must use the Guid data value type (0), not Text (1)");
+		}
 	}
 
 	[Test]

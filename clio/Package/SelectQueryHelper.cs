@@ -47,7 +47,8 @@ internal static class SelectQueryHelper
 	internal static object BuildSelectQuery(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
-		IReadOnlyList<SelectQueryFilterDefinition> filters)
+		IReadOnlyList<SelectQueryFilterDefinition> filters,
+		int rowCount = 10000)
 	{
 		Dictionary<string, object> columnItems = columns
 			.ToDictionary(
@@ -99,7 +100,7 @@ internal static class SelectQueryHelper
 			allColumns = false,
 			isDistinct = false,
 			ignoreDisplayValues = false,
-			rowCount = 10000,
+			rowCount,
 			rowsOffset = -1,
 			isPageable = false,
 			columns = new
