@@ -21,6 +21,60 @@ public static class ComponentInfoGrouping {
 	}
 
 	/// <summary>
+	/// Returns a bounded "did you mean" shortlist for an unknown component type, ordered by
+	/// closeness to the requested type (case-insensitive Levenshtein distance, ties broken
+	/// alphabetically). When <paramref name="search"/> is supplied the candidate pool is first
+	/// narrowed by the same keyword filter as list mode; otherwise every known entry is a
+	/// candidate. Either way the result is capped at <paramref name="max"/> so a not-found
+	/// response never echoes the full catalog as "suggestions".
+	/// </summary>
+	public static IReadOnlyList<ComponentRegistryEntry> SuggestForUnknown(
+		IReadOnlyList<ComponentRegistryEntry> entries, string? componentType, string? search, int max) {
+		IReadOnlyList<ComponentRegistryEntry> pool = string.IsNullOrWhiteSpace(search)
+			? entries
+			: FilterEntries(entries, search);
+		string target = (componentType ?? string.Empty).Trim();
+		return pool
+			.OrderBy(entry => Distance(entry.ComponentType, target))
+			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.Take(Math.Max(0, max))
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Case-insensitive Levenshtein edit distance between two component type names. Drives the
+	/// not-found suggestion ranking so the closest spellings to a mistyped <c>component-type</c>
+	/// surface first. Mirrors the ranking <see cref="ToolContractCatalog"/> uses for unknown tool
+	/// names.
+	/// </summary>
+	private static int Distance(string? source, string? target) {
+		string left = (source ?? string.Empty).ToLowerInvariant();
+		string right = (target ?? string.Empty).ToLowerInvariant();
+		if (left.Length == 0) {
+			return right.Length;
+		}
+		if (right.Length == 0) {
+			return left.Length;
+		}
+		int[,] matrix = new int[left.Length + 1, right.Length + 1];
+		for (int i = 0; i <= left.Length; i++) {
+			matrix[i, 0] = i;
+		}
+		for (int j = 0; j <= right.Length; j++) {
+			matrix[0, j] = j;
+		}
+		for (int i = 1; i <= left.Length; i++) {
+			for (int j = 1; j <= right.Length; j++) {
+				int cost = left[i - 1] == right[j - 1] ? 0 : 1;
+				matrix[i, j] = Math.Min(
+					Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
+					matrix[i - 1, j - 1] + cost);
+			}
+		}
+		return matrix[left.Length, right.Length];
+	}
+
+	/// <summary>
 	/// Projects entries to compact list items ordered alphabetically by component type.
 	/// Description is null-coalesced so the response omits empty strings from the new
 	/// payload shape (which does not carry per-component descriptions).

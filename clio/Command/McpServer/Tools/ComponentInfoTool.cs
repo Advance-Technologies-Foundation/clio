@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -37,6 +38,13 @@ public sealed class ComponentInfoTool(
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
+	/// Upper bound on the "did you mean" entries returned when a requested <c>component-type</c>
+	/// is unknown. Keeps the not-found envelope a small, actionable shortlist instead of echoing
+	/// the full ~199-item catalog as "suggestions".
+	/// </summary>
+	private const int MaxNotFoundSuggestions = 8;
+
+	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
@@ -64,24 +72,21 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Freedom UI component type, for example 'crt.TabContainer'. Omit or use 'list' to return the catalog.")]
-		string? componentType = null,
-		[Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
-		string? search = null,
-		[Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
-		string? schemaType = null,
-		[Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
-		string? environmentName = null,
-		[Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
-		string? version = null,
-		[Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
-		string? uri = null,
-		[Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
-		string? login = null,
-		[Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
-		string? password = null,
+		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog), search (optional keyword filter). " +
+			"schema-type: 'web' (default) or 'mobile'. environment-name: PREFERRED — scopes the catalog to the target platform version (mutually exclusive with version). " +
+			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
+		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
-		ComponentInfoArgs args = new(componentType, search, schemaType, environmentName, version, uri, login, password);
+		string? legacyAliasError = GetLegacyAliasError(args);
+		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
+			return new ComponentInfoResponse {
+				Success = false,
+				Mode = "list",
+				Error = legacyAliasError,
+				Count = 0,
+				Items = []
+			};
+		}
 		try {
 			return await BuildResponseAsync(args, cancellationToken).ConfigureAwait(false);
 		}
@@ -94,6 +99,55 @@ public sealed class ComponentInfoTool(
 				Items = []
 			};
 		}
+	}
+
+	/// <summary>
+	/// Canonical kebab-case parameter names paired with the camelCase / snake_case spellings an
+	/// LLM is most likely to emit. Mirrors <see cref="PageListTool"/>'s alias handling so the
+	/// reality (the bound <see cref="ComponentInfoArgs"/> shape) and the advertised
+	/// <c>get-tool-contract</c> aliases stay in lockstep — the rejection here is exactly what the
+	/// contract's <c>componentType -&gt; component-type</c> alias promises, instead of silently
+	/// dropping an unbound camelCase value and degrading a detail request to a 199-item list.
+	/// </summary>
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["componentType"] = "component-type",
+		["component_type"] = "component-type",
+		["schemaType"] = "schema-type",
+		["schema_type"] = "schema-type",
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
+	/// <summary>
+	/// Rejects camelCase / snake_case parameter spellings and unknown fields captured by the
+	/// <see cref="ComponentInfoArgs.ExtensionData"/> overflow bag, returning a single actionable
+	/// rename hint. Because <c>component-type</c> is optional, a mis-spelled
+	/// <c>componentType</c> would otherwise bind to nothing and silently fall through to the full
+	/// catalog (the bug this tool is fixing), so the rejection has to happen before
+	/// <see cref="BuildResponseAsync"/> ever runs.
+	/// </summary>
+	private static string? GetLegacyAliasError(ComponentInfoArgs args) {
+		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
+			return null;
+		}
+		List<string> mapped = [];
+		List<string> unknown = [];
+		foreach (string key in args.ExtensionData.Keys) {
+			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
+				mapped.Add($"'{key}' -> '{canonical}'");
+			} else {
+				unknown.Add($"'{key}'");
+			}
+		}
+		List<string> parts = [];
+		if (mapped.Count > 0) {
+			parts.Add("Rename: " + string.Join(", ", mapped) + ".");
+		}
+		if (unknown.Count > 0) {
+			parts.Add("Unknown args: " + string.Join(", ", unknown)
+				+ ". Valid: component-type, search, schema-type, environment-name, version, uri, login, password.");
+		}
+		return parts.Count > 0 ? string.Join(" ", parts) : null;
 	}
 
 	/// <summary>
@@ -147,11 +201,15 @@ public sealed class ComponentInfoTool(
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
 		}
 
-		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
+		string requestedType = args.ComponentType.Trim();
+		IReadOnlyList<ComponentRegistryEntry> suggestions =
+			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
-			Error = $"Component type '{args.ComponentType}' was not found.",
+			Error = $"Component type '{requestedType}' was not found. "
+				+ $"Showing the {suggestions.Count} closest known type(s) — pass one of these as 'component-type', "
+				+ "or omit 'component-type' to list the full catalog.",
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
@@ -338,25 +396,35 @@ public sealed record ComponentInfoArgs(
 	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered environment name to scope the catalog to its real platform version. Mutually exclusive with 'version'.")]
+	[property: Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Explicit catalog version (3-part semver). Mutually exclusive with 'environment-name'.")]
+	[property: Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI. Prefer 'environment-name'.")]
+	[property: Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'.")]
+	[property: Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'.")]
+	[property: Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
 	string? Password = null
-);
+) {
+	/// <summary>
+	/// Overflow bag for any request field that does not bind to a declared kebab-case parameter —
+	/// most importantly the camelCase / snake_case spellings (<c>componentType</c>,
+	/// <c>schemaType</c>, <c>environmentName</c>) an LLM tends to emit. The tool inspects this in
+	/// <c>GetComponentInfo</c> and rejects mis-spelled fields with a rename hint instead of letting
+	/// an unbound <c>component-type</c> silently degrade a detail request into a full catalog dump.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Structured response from the <c>get-component-info</c> MCP tool.

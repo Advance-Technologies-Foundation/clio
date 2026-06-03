@@ -63,7 +63,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse detailResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.MenuItem" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.MenuItem" });
 
 		// Assert
 		tabListResponse.Success.Should().BeTrue(
@@ -135,7 +135,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["schemaType"] = "mobile" });
+			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
 
 		// Assert
 		mobileListResponse.Success.Should().BeTrue(
@@ -170,7 +170,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.DoesNotExist" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.DoesNotExist" });
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -179,6 +179,8 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the failure should identify the missing component type");
 		response.Items.Should().NotBeNullOrEmpty(
 			because: "the fallback response should still expose available types for discovery in the flat item list");
+		response.Items!.Count.Should().BeLessThan(20,
+			because: "an unknown type must return a bounded closest-match shortlist, not the full ~199-item catalog (acceptance #2)");
 	}
 
 	[Test]
@@ -196,11 +198,11 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse fieldResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.NumberInput" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.NumberInput" });
 		ComponentInfoResponse containerResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.TabContainer" });
 
 		// Assert
 		fieldResponse.Success.Should().BeTrue(
@@ -236,7 +238,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.TabContainer" });
 
 		// Assert
 		response.ResolvedFrom.Should().Be("latest-fallback",
@@ -261,9 +263,9 @@ public sealed class ComponentInfoToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["componentType"] = "crt.TabContainer",
+				["component-type"] ="crt.TabContainer",
 				["version"] = "8.3.3",
-				["environmentName"] = "any-env"
+				["environment-name"] = "any-env"
 			});
 
 		// Assert
@@ -283,9 +285,12 @@ public sealed class ComponentInfoToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		IReadOnlyDictionary<string, object?> arguments) {
+		// get-component-info binds a single `args` record (kebab-case fields), like every other
+		// clio MCP tool — wrap the per-call fields so the real binding engages instead of dropping
+		// them as unknown top-level keys.
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
-			new Dictionary<string, object?>(arguments),
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>(arguments) },
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-component-info should return structured responses instead of top-level MCP failures");

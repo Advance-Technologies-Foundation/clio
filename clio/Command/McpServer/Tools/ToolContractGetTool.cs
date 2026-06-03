@@ -3005,12 +3005,18 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildComponentInfo() {
 		return new ToolContractDefinition(
 			ComponentInfoTool.ToolName,
-			"Returns grouped Freedom UI component summaries or a full component contract for one component type.",
+			"Returns a flat list of Freedom UI component summaries or the full contract for one component type.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("component-type", StringType, "Optional component type. Omit or use list to return the grouped catalog."),
-					Field("search", StringType, "Optional keyword filter for list mode.")
+					Field("component-type", StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
+					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
+					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3020,18 +3026,27 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("mode", StringType, "detail or list."),
 				Field("count", NumberType, "Number of matching components."),
-				Field("groups", ArrayType, "Grouped list-mode results."),
-				Field("componentType", StringType, "Component type for detail mode."),
+				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
+				Field("componentType", StringType, "Component type echoed back in detail mode."),
+				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' or 'latest-fallback'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[
-				Alias(ParameterScope, "component-type", "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'.")
+				Alias(ParameterScope, "component-type", "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
 			[],
 			[
 				Example("Inspect one component contract", new Dictionary<string, object?> {
 					["component-type"] = "crt.TabContainer"
+				}),
+				Example("List the full component catalog", new Dictionary<string, object?>()),
+				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
+					["component-type"] = "crt.Toggle",
+					["schema-type"] = "mobile"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),

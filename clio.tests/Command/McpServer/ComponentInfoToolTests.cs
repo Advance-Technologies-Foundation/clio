@@ -217,13 +217,41 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Binds the get-component-info argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag. This is the exact JSON->record binding the MCP host performs (the layer the camelCase-vs-kebab bug lived in); direct method calls in the other tests bypass it.")]
+	public void ComponentInfoArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+		// Arrange — the very options the MCP host feeds WithToolsFromAssembly for argument binding.
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act — canonical kebab payload (what get-tool-contract advertises and the schema now emits)
+		// vs the camelCase payload an LLM trusting the old flat schema would send.
+		ComponentInfoArgs kebab = JsonSerializer.Deserialize<ComponentInfoArgs>(
+			"""{"component-type":"crt.NumberInput","schema-type":"mobile","environment-name":"local"}""", options)!;
+		ComponentInfoArgs camel = JsonSerializer.Deserialize<ComponentInfoArgs>(
+			"""{"componentType":"crt.NumberInput"}""", options)!;
+
+		// Assert — kebab binds to the typed parameters; nothing overflows.
+		kebab.ComponentType.Should().Be("crt.NumberInput",
+			because: "the kebab 'component-type' field must bind so detail mode engages — the bug was this never happening");
+		kebab.SchemaType.Should().Be("mobile");
+		kebab.EnvironmentName.Should().Be("local");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+
+		// camelCase does NOT bind to ComponentType; it lands in ExtensionData where GetLegacyAliasError rejects it.
+		camel.ComponentType.Should().BeNull(
+			because: "componentType is not a declared parameter name, so it must not bind — silently binding it is exactly what produced the 199-item list");
+		camel.ExtensionData.Should().ContainKey("componentType",
+			because: "the unbound camelCase spelling must surface in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
 	[Description("Returns grouped component summaries when component-type is omitted.")]
 	public async Task ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -249,7 +277,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -275,7 +303,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "tab");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -296,7 +324,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "bulkActions");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -317,7 +345,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.MenuItem");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -341,7 +369,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Unknown");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -349,11 +377,77 @@ public sealed class ComponentInfoToolTests {
 		response.Error.Should().Contain("crt.Unknown",
 			because: "the failure should identify the missing component type");
 		response.Items.Should().NotBeNull(
-			because: "the tool should still return available types for discovery");
-		response.Count.Should().Be(6,
-			because: "the fallback list should expose the full catalog when no search filter is applied");
+			because: "the tool should still return closest available types for discovery");
+		response.Count.Should().BeLessThanOrEqualTo(6,
+			because: "a not-found response returns a bounded closest-match shortlist, never more than the catalog holds");
 		response.ResolvedFrom.Should().Be("latest-fallback",
 			because: "the resolver tier marker should still ship with error responses to help diagnosis");
+	}
+
+	[Test]
+	[Description("An unknown component-type returns a bounded closest-match shortlist, never the full catalog — even against a registry much larger than the suggestion cap with no search filter applied.")]
+	public async Task ComponentInfoTool_Should_Return_Bounded_Suggestions_For_Unknown_Type() {
+		// Arrange — a registry far larger than MaxNotFoundSuggestions so the bound is observable
+		// (the shared TestRegistryJson has only 6 entries, fewer than the cap, so it cannot prove it).
+		const string largeRegistryJson = """
+		[
+		  {"componentType":"crt.Widget01","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget02","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget03","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget04","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget05","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget06","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget07","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget08","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget09","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget10","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget11","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget12","category":"c","description":"d","container":false,"properties":{}}
+		]
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(largeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.DoesNotExist"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown component type must not pretend a detail lookup succeeded");
+		response.Error.Should().Contain("crt.DoesNotExist",
+			because: "the failure should identify the missing component type");
+		response.Count.Should().BeGreaterThan(0,
+			because: "a not-found response should still offer the closest known types for discovery");
+		response.Count.Should().BeLessThan(12,
+			because: "suggestions must be a bounded shortlist, never the entire 12-entry catalog (acceptance #2)");
+		response.Items.Should().NotBeNull();
+		response.Items!.Count.Should().Be(response.Count,
+			because: "the item list and the reported count must agree");
+	}
+
+	[Test]
+	[Description("A camelCase parameter spelling captured by the args overflow bag is rejected with a rename hint, instead of silently dropping the value and degrading a detail request into the full catalog — this is the exact failure get-tool-contract advertises as a rejected alias.")]
+	public async Task ComponentInfoTool_Should_Reject_CamelCase_Parameter_Alias() {
+		// Arrange — simulate the deserializer routing a camelCase field into ExtensionData
+		// (the canonical bound parameter is the kebab-case 'component-type').
+		ComponentInfoTool tool = CreateTool();
+		ComponentInfoArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["componentType"] = JsonSerializer.SerializeToElement("crt.TabContainer")
+			}
+		};
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a mis-spelled componentType must not silently fall through to list mode");
+		response.Error.Should().Contain("componentType",
+			because: "the rename hint must name the offending field");
+		response.Error.Should().Contain("component-type",
+			because: "the rename hint must point at the canonical kebab-case parameter");
 	}
 
 	[Test]
@@ -365,7 +459,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act — passing environment-name routes resolution through the cliogate probe stub.
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -387,7 +481,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act — probe resolves 8.1.5 but the client only has "latest" published.
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -405,7 +499,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.ResolvedFrom.Should().Be("latest-fallback",
@@ -423,7 +517,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.ResolvedFrom.Should().Be("environment",
@@ -473,7 +567,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, settingsRepository);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "prod-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "prod-stand"));
 
 		// Assert
 		response.ResolvedTargetVersion.Should().Be("8.2.1",
@@ -491,7 +585,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(version: "not-a-version");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Version: "not-a-version"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -508,7 +602,7 @@ public sealed class ComponentInfoToolTests {
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(
-			environmentName: "test-stand", version: "8.3.3");
+			new ComponentInfoArgs(EnvironmentName: "test-stand", Version: "8.3.3"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -548,7 +642,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -596,7 +690,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(SchemaType: "mobile"));
 
 		response.Success.Should().BeTrue(
 			because: "listing mobile components should succeed when the mobile registry is available");
@@ -615,7 +709,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Toggle", schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Toggle", SchemaType: "mobile"));
 
 		response.Success.Should().BeTrue(
 			because: "crt.Toggle exists in the mobile registry");
@@ -630,7 +724,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Label", schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Label", SchemaType: "mobile"));
 
 		response.Success.Should().BeFalse(
 			because: "crt.Label is a web component and should not appear in the mobile catalog");
@@ -671,7 +765,7 @@ public sealed class ComponentInfoToolTests {
 			docs);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithDocs");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithDocs"));
 
 		// Assert
 		response.Success.Should().BeTrue();
@@ -689,7 +783,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.Documentation.Should().BeNull(
 			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
@@ -700,7 +794,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.Success.Should().BeTrue(
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
@@ -747,7 +841,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.SimpleButton");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.SimpleButton"));
 
 		// Assert
 		response.Success.Should().BeTrue();
@@ -788,7 +882,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Persistent");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Persistent"));
 		GC.Collect();
 		GC.WaitForPendingFinalizers();
 
@@ -834,7 +928,7 @@ public sealed class ComponentInfoToolTests {
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithTypes");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithTypes"));
 
 		response.Success.Should().BeTrue();
 		response.Mode.Should().Be("detail");
@@ -859,7 +953,7 @@ public sealed class ComponentInfoToolTests {
 		// crt.TabContainer in TestRegistryJson has no content block at all.
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.References.Should().BeNull(
 			because: "components without producer-side type definitions must not carry an empty content node");
@@ -894,7 +988,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "selection");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "selection"));
 
 		// Assert
 		response.Success.Should().BeTrue();
