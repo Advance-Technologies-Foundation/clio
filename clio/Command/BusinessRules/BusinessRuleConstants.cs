@@ -67,38 +67,6 @@ internal static class BusinessRuleConstants {
 		WriteIndented = true
 	};
 
-	internal static readonly IReadOnlyDictionary<int, string> DataValueTypeNames = new Dictionary<int, string> {
-		[0] = "Guid",
-		[1] = "Text",
-		[4] = "Integer",
-		[5] = "Float",
-		[6] = "Money",
-		[7] = "DateTime",
-		[8] = "Date",
-		[9] = "Time",
-		[10] = "Lookup",
-		[11] = "Enum",
-		[12] = "Boolean",
-		[13] = "Blob",
-		[14] = "Image",
-		[24] = "SecureText",
-		[25] = "File",
-		[27] = "ShortText",
-		[28] = "MediumText",
-		[29] = "MaxSizeText",
-		[30] = "LongText",
-		[31] = "Float1",
-		[32] = "Float2",
-		[33] = "Float3",
-		[34] = "Float4",
-		[40] = "Float8",
-		[42] = "PhoneText",
-		[43] = "RichText",
-		[44] = "WebText",
-		[45] = "EmailText",
-		[47] = "Float0"
-	};
-
 	internal static readonly IReadOnlyDictionary<string, string> SupportedActionTypeNames =
 		new Dictionary<string, string> {
 			["make-editable"] = BusinessRuleEditableElementTypeName,
@@ -149,46 +117,6 @@ internal static class BusinessRuleConstants {
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
 			"equal",
 			"not-equal"
-		};
-
-	internal static readonly IReadOnlySet<string> UnsupportedEqualityDataValueTypeNames =
-		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"RichText",
-			"Image"
-		};
-
-	internal static readonly IReadOnlySet<string> SupportedTextDataValueTypeNames =
-		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"Text",
-			"SecureText",
-			"ShortText",
-			"MediumText",
-			"MaxSizeText",
-			"LongText",
-			"PhoneText",
-			"RichText",
-			"WebText",
-			"EmailText"
-		};
-
-	internal static readonly IReadOnlySet<string> SupportedNumericDataValueTypeNames =
-		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"Integer",
-			"Float",
-			"Money",
-			"Float0",
-			"Float1",
-			"Float2",
-			"Float3",
-			"Float4",
-			"Float8"
-		};
-
-	internal static readonly IReadOnlySet<string> SupportedDateTimeDataValueTypeNames =
-		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"Date",
-			"DateTime",
-			"Time"
 		};
 
 }

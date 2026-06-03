@@ -18,6 +18,11 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
+// Asserts on messages read back from the shared ConsoleLogger.Instance singleton. Fixtures run in
+// parallel, so a concurrent fixture toggling PreserveMessages / ClearMessages would wipe these
+// messages mid-test. Run non-parallel to isolate the singleton (same approach as
+// LastCompilationLogCommandTestFixture / ConsoleLoggerTests).
+[NonParallelizable]
 public class Link4RepoCommandPreparationTests : BaseCommandTests<Link4RepoOptions> {
 
 	#region Fields: Private

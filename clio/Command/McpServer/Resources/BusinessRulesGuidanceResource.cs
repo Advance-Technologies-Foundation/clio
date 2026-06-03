@@ -27,7 +27,8 @@ public sealed class BusinessRulesGuidanceResource {
 		       clio MCP business rules guide
 
 		       Scope
-		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, auto-assignment based on another field's value, or lookup filtering.
+		       - Use this guide whenever the requirement involves conditional field/element visibility, editability, required state, auto-assignment of a field value, CLEARING a field value, or lookup filtering.
+		       - Writing into a column or clearing a column when another field changes IS a business rule. This is the most common case for two interdependent fields (changing field A auto-fills or wipes field B). Do NOT narrow business rules to only show/hide/enable/require — value population and clearing are first-class business-rule actions (`set-values`), no handler required.
 		       - Business rules are SEPARATE first-class artifacts in Creatio Freedom UI. They are NOT implemented as page JavaScript code, handlers, validators, or converters.
 		       - Do NOT write JavaScript handler or validator code to implement business-rule behavior. Use the dedicated MCP tools instead.
 
@@ -56,20 +57,9 @@ public sealed class BusinessRulesGuidanceResource {
 		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
 
 		       apply-static-filter friendly filter contract
-		       - action shape:
-		         { "type": "apply-static-filter", "targetAttribute": "<EntityLookupAttribute>", "filter": { ... } }
-		       - filter group fields:
-		         - `logicalOperation`: "AND" or "OR" (required).
-		         - `filters`: array of leaf conditions on the lookup's reference schema.
-		         - `groups`: nested filter groups for (A AND B) OR (A AND C) compositions.
-		         - `backwardReferenceFilters`: array of EXISTS/NOT_EXISTS clauses against child schemas pointing back at the lookup root via a lookup column.
-		       - leaf fields:
-		         - `columnPath`: column name on the current schema; forward-paths through Lookup chains supported (e.g. "Country.Name").
-		         - `comparisonType`: EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH.
-		         - `value`: omitted for IS_NULL/IS_NOT_NULL; scalar JSON for other tokens; JSON array of strings allowed only on Lookup columns with EQUAL/NOT_EQUAL (multi-value IN).
-		       - lookup values: GUID string is used directly; non-GUID strings are resolved against the lookup's primary display column (no-match and ambiguous matches are rejected).
-		       - backward reference shape: `"referenceColumnPath": "[ChildSchema:LinkColumn]"`, `"comparisonType": "EXISTS" | "NOT_EXISTS"`, optional nested `"filter": { ... }`.
-		       - discovery flow: use `find-entity-schema` and `get-entity-schema-properties` (or DataForge analogs when available) to confirm columnPath segments and reference schemas before submitting the action.
+		       - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
+		       - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
+		       - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -79,9 +69,13 @@ public sealed class BusinessRulesGuidanceResource {
 		          - Element names come from `get-page` bundle.viewConfig (recursive). Attribute names come from bundle.viewModelConfig.attributes.
 
 		       Decision tree — when to use business rules vs handlers/validators
-		       - If the requirement is "when field X equals Y, then hide/show/enable/disable/require/unrequire field Z" → use a BUSINESS RULE.
-		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action.
-		       - If the requirement is "filter lookup A by lookup B or by a path inside lookup B" → use an ENTITY BUSINESS RULE with apply-filter action.
+		       - If the requirement is "when field X equals Y, then hide/show/enable/disable/require/unrequire field Z" (the field itself appears/disappears or becomes editable/required) → use a BUSINESS RULE with hide-element/show-element/make-* actions.
+		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action. Do NOT write a handler for this.
+		       - If the requirement is "when field X equals Y, clear field Z" → use an ENTITY BUSINESS RULE with set-values action and an empty value for Z. Clearing a field is the same action as setting one — NO handler is needed.
+		       - If the requirement is "filter lookup A by the current value of another lookup B on the same record (dependent lookups)" → use an ENTITY BUSINESS RULE with apply-filter action.
+		       - If the requirement is "limit / restrict a lookup field to records matching a fixed condition" (e.g. "let users select only contacts that have a mobile phone", "show only accounts where Type = Customer", "only active users", "show only contacts in the Assignee field who ...", "show the <Field> field only for <records> where ...", "show only <records> that have at least one / more than N <children>") → use an ENTITY BUSINESS RULE with apply-static-filter action. The condition can be unconditional (always filter) or gated: "WHEN field X is Y, limit lookup Z to ..." → put X=Y in the rule's condition group and the apply-static-filter action on Z.
+		         - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rule` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
+		         - DISAMBIGUATION (restriction vs visibility): a phrase like "show the <LookupField> only for <records> where <condition>" / "show the Assignee field only for contacts where Age = 30" means RESTRICT which records the lookup OFFERS (apply-static-filter on that lookup, rooted on its reference schema), NOT toggle the field's visibility. Do NOT set the field `visible:false`, do NOT use hide-element/show-element, and do NOT add a page attribute for this. hide-element/show-element are only for requirements about the field itself appearing or disappearing (e.g. "hide the Discount field when Type = Internal"), never about which records a lookup lists. For "...Assignee only for contacts where Age = 30": targetAttribute = the Assignee lookup, filter = { logicalOperation: AND, filters: [ { columnPath: "Age", comparisonType: "EQUAL", value: 30 } ] } (root schema Contact, inferred).
 		       - If the requirement is field-value format validation (length, regex, range) → use a VALIDATOR, not a business rule.
 		       - If the requirement is cross-field orchestration with side effects (API calls, process launch, data loading) → use a HANDLER.
 		       - If the requirement is display-only value transformation → use a CONVERTER.
@@ -110,6 +104,9 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.
 		       - Do NOT use `targetFilterPath` or `sourceFilterPath` that resolve to scalar `Guid` columns such as `Lookup.Id`; those paths must resolve to Lookup attributes.
 		       - Do NOT set `populateValue=true` together with `sourceFilterPath`; current platform behavior does not support that combination cleanly.
+		       - Do NOT use kebab-case comparison tokens (`equal`, `is-filled-in`) inside an apply-static-filter leaf `comparisonType`; that field uses UPPER_SNAKE_CASE (`EQUAL`, `IS_NOT_NULL`).
+		       - Do NOT root apply-static-filter `columnPath` on the rule's entity; it is rooted on the target lookup's reference schema.
+		       - Do NOT use a backward EXISTS to express a simple "field is filled" check; use IS_NOT_NULL on the column.
 		       """
 	};
 }

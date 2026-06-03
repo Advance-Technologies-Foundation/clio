@@ -131,7 +131,6 @@ public sealed class ComponentRegistryRefreshCommand {
 	}
 
 	private static string GetCacheDirectory() {
-		string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-		return Path.Combine(profile, ".clio", "cache", ComponentRegistryCacheStore.CacheDirectoryName);
+		return Path.Combine(ClioRuntimePaths.CacheRoot, ComponentRegistryCacheStore.CacheDirectoryName);
 	}
 }

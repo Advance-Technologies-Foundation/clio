@@ -63,15 +63,35 @@ public class SolutionCreator : ISolutionCreator{
 			}
 		}
 		foreach (SolutionProject sp in solutionProjects) {
+			XmlElement projectNode;
 			if (!paths.Contains(sp.Path)) {
-				XmlElement projectNode = doc.CreateElement("Project");
+				projectNode = doc.CreateElement("Project");
 				projectNode.SetAttribute("Path", sp.Path);
 				solutionNode.AppendChild(projectNode);
 				paths.Add(sp.Path);
+			} else {
+				projectNode = FindProjectNode(solutionNode, sp.Path);
+			}
+			if (sp.ForceBuild && projectNode != null && projectNode.SelectSingleNode("Build") == null) {
+				projectNode.AppendChild(doc.CreateElement("Build"));
 			}
 		}
 
 		doc.Save(solutionPath);
+	}
+
+	private static XmlElement FindProjectNode(XmlNode solutionNode, string path) {
+		XmlNodeList existingProjects = solutionNode.SelectNodes("Project");
+		if (existingProjects == null) {
+			return null;
+		}
+		foreach (XmlNode existingProject in existingProjects) {
+			if (existingProject is XmlElement element
+				&& element.Attributes?["Path"]?.Value == path) {
+				return element;
+			}
+		}
+		return null;
 	}
 
 	private void CreateNewMainSolution(string solutionPath) {

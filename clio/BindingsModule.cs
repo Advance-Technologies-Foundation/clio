@@ -136,7 +136,8 @@ public class BindingsModule {
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
+			services.AddSingleton<IApplicationClient>(sp =>
+				new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<ILogger>()));
 			services.AddTransient<SysSettingsManager>();
 		}
 
@@ -330,6 +331,8 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
+		services.AddTransient<InstallGateTool>();
+		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
@@ -665,7 +668,10 @@ public class BindingsModule {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
 					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
-					|| implementedInterface == typeof(IDbOperationLogSession)) {
+					|| implementedInterface == typeof(IDbOperationLogSession)
+					// ReauthExecutor requires a per-adapter Login closure; it is created by
+					// CreatioClientAdapter rather than resolved from DI.
+					|| implementedInterface == typeof(IReauthExecutor)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

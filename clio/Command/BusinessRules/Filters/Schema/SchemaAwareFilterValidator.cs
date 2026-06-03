@@ -38,6 +38,11 @@ internal sealed class SchemaAwareFilterValidator {
 		FilterSchemaColumn column = ResolveColumnPath(leaf.ColumnPath, rootSchemaName, $"{path}.columnPath");
 		string comparison = leaf.ComparisonType.ToUpperInvariant();
 
+		if (!Clio.Common.CreatioDataValueType.IsFilterable(column.DataValueTypeName)) {
+			throw new ArgumentException(
+				$"{path}.columnPath: column '{leaf.ColumnPath}' is {column.DataValueTypeName}, which cannot be used as a filter value.");
+		}
+
 		if (StaticFilterConstants.UnaryComparisons.Contains(comparison)) {
 			return;
 		}
@@ -54,6 +59,11 @@ internal sealed class SchemaAwareFilterValidator {
 				$"{path}.comparisonType: '{comparison}' is supported only on text columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
 		}
 
+		if (!string.IsNullOrWhiteSpace(leaf.ValueMacros)) {
+			ValidateMacrosDatatype(leaf, column, path);
+			return;
+		}
+
 		JsonElement value = leaf.Value!.Value;
 		if (value.ValueKind == JsonValueKind.Array) {
 			if (!string.Equals(column.DataValueTypeName, LookupDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
@@ -65,6 +75,22 @@ internal sealed class SchemaAwareFilterValidator {
 		}
 
 		ValidateScalarValueDatatype(value, column, leaf.ColumnPath, path);
+	}
+
+	private static void ValidateMacrosDatatype(StaticFilterLeaf leaf, FilterSchemaColumn column, string path) {
+		MacrosCatalog.TryResolve(leaf.ValueMacros!, out _, out MacrosCatalog.MacrosColumnKind kind, out _);
+		bool isLookupColumn = column.DataValueTypeName is LookupDataValueTypeName or "Guid";
+		bool isDateTimeColumn = column.DataValueTypeName is "Date" or "DateTime" or "Time";
+
+		if (kind == MacrosCatalog.MacrosColumnKind.DateTime && !isDateTimeColumn) {
+			throw new ArgumentException(
+				$"{path}.valueMacros: '{leaf.ValueMacros}' applies only to Date/DateTime/Time columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
+		}
+
+		if (kind == MacrosCatalog.MacrosColumnKind.Lookup && !isLookupColumn) {
+			throw new ArgumentException(
+				$"{path}.valueMacros: '{leaf.ValueMacros}' applies only to Lookup columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
+		}
 	}
 
 	private static void ValidateScalarValueDatatype(JsonElement value, FilterSchemaColumn column, string columnPath, string path) {
@@ -114,8 +140,25 @@ internal sealed class SchemaAwareFilterValidator {
 				$"{path}.referenceColumnPath: column '{childColumn}' on '{childSchema}' must be a Lookup pointing back to root schema '{rootSchemaName}'.");
 		}
 
+		ValidateAggregationColumn(backward, childSchema, path);
+
 		if (backward.Filter is not null) {
 			Validate(backward.Filter, childSchema, $"{path}.filter");
+		}
+	}
+
+	private void ValidateAggregationColumn(StaticFilterBackwardReference backward, string childSchema, string path) {
+		if (string.IsNullOrWhiteSpace(backward.AggregationType)
+			|| !StaticFilterConstants.ScalarAggregationTypes.Contains(backward.AggregationType!.ToUpperInvariant())) {
+			return;
+		}
+
+		// SUM/AVG/MIN/MAX aggregate a numeric column resolved on the CHILD schema (not the rule entity).
+		FilterSchemaColumn column = ResolveColumnPath(backward.AggregationColumnPath!, childSchema,
+			$"{path}.aggregationColumnPath");
+		if (!Clio.Common.CreatioDataValueType.IsNumeric(column.DataValueTypeName)) {
+			throw new ArgumentException(
+				$"{path}.aggregationColumnPath: column '{backward.AggregationColumnPath}' on '{childSchema}' is {column.DataValueTypeName}; {backward.AggregationType!.ToUpperInvariant()} requires a numeric column.");
 		}
 	}
 
@@ -155,15 +198,13 @@ internal sealed class SchemaAwareFilterValidator {
 	}
 
 	private static bool IsTextDatatype(string dataValueTypeName) =>
-		dataValueTypeName is "Text" or "ShortText" or "MediumText" or "MaxSizeText" or "LongText"
-			or "PhoneText" or "WebText" or "EmailText" or "SecureText" or "RichText";
+		Clio.Common.CreatioDataValueType.IsText(dataValueTypeName);
 
 	private static bool IsNumericDatatype(string dataValueTypeName) =>
-		dataValueTypeName is "Integer" or "Float" or "Money"
-			or "Float0" or "Float1" or "Float2" or "Float3" or "Float4" or "Float8";
+		Clio.Common.CreatioDataValueType.IsNumeric(dataValueTypeName);
 
 	private static bool IsDateTimeDatatype(string dataValueTypeName) =>
-		dataValueTypeName is "Date" or "DateTime" or "Time";
+		Clio.Common.CreatioDataValueType.IsDateTime(dataValueTypeName);
 
 	private static bool IsRelationalDatatype(string dataValueTypeName) =>
 		IsNumericDatatype(dataValueTypeName) || IsDateTimeDatatype(dataValueTypeName);

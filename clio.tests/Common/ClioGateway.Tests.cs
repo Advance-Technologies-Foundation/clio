@@ -195,7 +195,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 		actualPackageInfo.Should().Be(expectedResult);
 	}
 	
-	[TestCase("1.0.0", "2.0.0", false, "To use this command, you need to install the cliogate package version 2.0.0 or higher.")]
+	[TestCase("1.0.0", "2.0.0", false, "To use this command, you need to install the cliogate package version 2.0.0 or higher. Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) and retry.")]
 	[TestCase("2.0.0", "1.0.0", true, null)]
 	[TestCase("2.0.0", "2.0.0", true, null)]
 	public void CheckCompatibleVersion_Should_BehaveAsExpected(string installedVersion, string requiredVersion, bool shouldNotThrow, string expectedMessage){

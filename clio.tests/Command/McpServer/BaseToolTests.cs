@@ -10,6 +10,11 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
+// Asserts on messages read back from the shared ConsoleLogger.Instance singleton. Fixtures run in
+// parallel, so a concurrent fixture toggling PreserveMessages / ClearMessages would wipe these
+// messages mid-test. Run non-parallel to isolate the singleton (same approach as
+// LastCompilationLogCommandTestFixture / ConsoleLoggerTests).
+[NonParallelizable]
 public sealed class BaseToolTests {
 
 	[Test]

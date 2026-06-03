@@ -14,7 +14,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// Stores fetched component-registry payloads on disk so that AI requests survive a
 /// transient CDN outage and so that warm starts do not always hit the network.
-/// Lives at <c>~/.clio/cache/component-registry/</c>; one <c>{version}.json</c> file per
+/// Lives at <c><clio-home>/cache/component-registry/</c>; one <c>{version}.json</c> file per
 /// resolved platform version plus a sidecar <c>{version}.meta.json</c>.
 /// </summary>
 public interface IComponentRegistryCacheStore {
@@ -61,7 +61,7 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 
 	/// <summary>
 	/// Flavor-aware factory. The <paramref name="subdirectory"/> isolates payloads
-	/// per flavor (e.g. <c>"mobile"</c> → <c>~/.clio/cache/component-registry/mobile/</c>)
+	/// per flavor (e.g. <c>"mobile"</c> → <c><clio-home>/cache/component-registry/mobile/</c>)
 	/// so web and mobile cannot collide on the same <c>latest.json</c> key. Pass an
 	/// empty string for the web flavor — keeps the cache layout that pre-mobile builds
 	/// already populated on user disks.
@@ -198,8 +198,7 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 	}
 
 	private static string DefaultRoot(IFileSystem fileSystem) {
-		string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-		return fileSystem.Path.Combine(profile, ".clio", "cache", CacheDirectoryName);
+		return fileSystem.Path.Combine(ClioRuntimePaths.CacheRoot, CacheDirectoryName);
 	}
 
 	private static string ComposeRoot(IFileSystem fileSystem, string subdirectory) {

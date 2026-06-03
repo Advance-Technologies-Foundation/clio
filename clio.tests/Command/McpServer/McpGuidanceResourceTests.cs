@@ -430,6 +430,40 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should carry over the built-in copy-input request entry");
 		article.Text.Should().Contain("crt.GetSidebarStateRequest",
 			because: "handler guidance should carry over the built-in sidebar entries");
+		article.Text.Should().Contain("crt.PrintablesRequest",
+			because: "handler guidance should include the built-in printables request in the catalog");
+		article.Text.Should().Contain("crt.GoToPrintablesRequest",
+			because: "handler guidance should include the go-to-printables navigation request in the catalog");
+		article.Text.Should().Contain("crt.ExportDataGridToExcelRequest",
+			because: "handler guidance should include the Excel export request in the catalog");
+		article.Text.Should().Contain("crt.ImportDataRequest",
+			because: "handler guidance should include the import data request in the catalog");
+		article.Text.Should().Contain("crt.DeleteRecordsRequest",
+			because: "handler guidance should include the bulk delete request in the catalog");
+		article.Text.Should().Contain("crt.CopyRecordRequest",
+			because: "handler guidance should include the copy/duplicate record request in the catalog");
+		article.Text.Should().Contain("crt.ShowDialogRequest",
+			because: "handler guidance should include the show-dialog request in the built-in catalog");
+		article.Text.Should().Contain("| print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep printables on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep Excel export on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep import on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should distinguish bulk list delete from single-record delete in the decision table");
+		article.Text.Should().Contain("| duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep record duplication on direct request wiring");
+		article.Text.Should().Contain("| `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |",
+			because: "handler guidance should expose the printables request contract with its required and optional fields");
+		article.Text.Should().Contain("| `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |",
+			because: "handler guidance should expose the Excel export request contract");
+		article.Text.Should().Contain("| `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |",
+			because: "handler guidance should expose the import data request contract");
+		article.Text.Should().Contain("| `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |",
+			because: "handler guidance should expose the bulk delete request contract and clarify when to prefer it over the single-record variant");
+		article.Text.Should().Contain("| `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |",
+			because: "handler guidance should expose the copy record request contract");
 		article.Text.Should().Contain("Standard handler parameter catalog",
 			because: "handler guidance should expose concrete payload contracts, not only the built-in request name list");
 		article.Text.Should().Contain("| Request | Kind | Params for AI authoring | Notes |",
@@ -1430,6 +1464,43 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article dedicated to the apply-static-filter friendly filter contract.")]
+	public void BusinessRuleFiltersGuidanceResource_Should_Return_Canonical_Filter_Contract_Guide() {
+		BusinessRuleFiltersGuidanceResource resource = new();
+
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the filter-contract guide should be returned as a plain-text MCP resource").Subject;
+
+		article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
+			because: "the resource should expose a stable MCP URI for the filter contract");
+		article.MimeType.Should().Be("text/plain");
+		article.Text.Should().Contain("apply-static-filter",
+			because: "the guide should identify itself as the apply-static-filter filter contract");
+		article.Text.Should().Contain("backwardReferenceFilters",
+			because: "the guide should document backward reference filters");
+		article.Text.Should().Contain("aggregationType",
+			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
+		article.Text.Should().Contain("discovery flow",
+			because: "the guide should keep the no-assumptions discovery flow");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rule-filters so AI callers can retrieve the filter contract by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rule_Filters_Entry() {
+		bool found = GuidanceCatalog.TryGet("business-rule-filters", out GuidanceCatalogEntry entry);
+
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rule-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rule-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
 			because: "the article URI in the catalog must match the resource URI");
 	}
 }
