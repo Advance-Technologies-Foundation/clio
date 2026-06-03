@@ -1488,6 +1488,83 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageUpdateTool merges the command's downgrade warning with body-only validation warnings instead of overwriting either (locks MergeWarnings).")]
+	public async System.Threading.Tasks.Task UpdatePage_WhenDowngradeAndAwaitWarningsBothApply_MergesBothIntoResponse() {
+		// Arrange — the stored schema inserts UsrName (so the incoming merge is a downgrade), and the
+		// incoming body also reads $context without await (a body-only validation warning).
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMerge_FormPage", "merge-schema-uid", "merge-package-uid", "UsrMergePackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]""",
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, "dev", null, null, null, SkipSampling: true);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "both findings are advisory, so the save must still succeed");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "the command-side insert->merge downgrade warning must be preserved");
+		response.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "the body-only un-awaited $context warning must coexist rather than being overwritten");
+	}
+
+	[Test]
+	[Description("validate-page surfaces the un-awaited $context warning at the tool level without marking the body invalid (locks PageValidateTool ContextAwait wiring).")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenUnAwaitedContextRead_ReturnsWarningAndStaysValid() {
+		// Arrange
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageValidateArgs args = new(body);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an un-awaited $context read is advisory and must not invalidate the body");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "validate-page must surface the ValidateContextAccessAwait warning through its tool-level wiring");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {

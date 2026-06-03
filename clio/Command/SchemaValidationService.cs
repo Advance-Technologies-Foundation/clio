@@ -624,23 +624,29 @@ public static class SchemaValidationService
 			return result;
 		}
 		var reported = new HashSet<string>(StringComparer.Ordinal);
-		foreach (Match match in ContextBracketReadPattern.Matches(jsBody)) {
-			if (match.Groups["await"].Success) {
-				continue;
+		try {
+			foreach (Match match in ContextBracketReadPattern.Matches(jsBody)) {
+				if (match.Groups["await"].Success) {
+					continue;
+				}
+				if (IsAssignmentTarget(jsBody, match.Index + match.Length)) {
+					continue;
+				}
+				string attributeName = match.Groups["name"].Value;
+				if (!reported.Add(attributeName)) {
+					continue;
+				}
+				result.Warnings.Add(
+					$"Page body reads '$context[\"{attributeName}\"]' without 'await'. Reactive context attribute reads " +
+					"are asynchronous and return a Promise; an un-awaited read yields a Promise object — always truthy and " +
+					"never nullish — which silently breaks '??' fallbacks, comparisons, and arguments built from it. " +
+					$"Change it to 'await $context[\"{attributeName}\"]' (e.g. 'const x = arg ?? (await $context[\"{attributeName}\"]) ?? fallback;'). " +
+					"Call get-guidance with name 'page-schema-handlers' for the read/write contract.");
 			}
-			if (IsAssignmentTarget(jsBody, match.Index + match.Length)) {
-				continue;
-			}
-			string attributeName = match.Groups["name"].Value;
-			if (!reported.Add(attributeName)) {
-				continue;
-			}
-			result.Warnings.Add(
-				$"Page body reads '$context[\"{attributeName}\"]' without 'await'. Reactive context attribute reads " +
-				"are asynchronous and return a Promise; an un-awaited read yields a Promise object — always truthy and " +
-				"never nullish — which silently breaks '??' fallbacks, comparisons, and arguments built from it. " +
-				$"Change it to 'await $context[\"{attributeName}\"]' (e.g. 'const x = arg ?? (await $context[\"{attributeName}\"]) ?? fallback;'). " +
-				"Call get-guidance with name 'page-schema-handlers' for the read/write contract.");
+		} catch (RegexMatchTimeoutException) {
+			// Advisory heuristic: a pathological body that trips the regex timeout must fail open, not
+			// surface as a hard error. update-page's ValidateWebPageBody calls this directly (RunContentValidation
+			// is only a short-circuit, not a timeout guard), so the fail-open guard belongs here.
 		}
 		return result;
 	}

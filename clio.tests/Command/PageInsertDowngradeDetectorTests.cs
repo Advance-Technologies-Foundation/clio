@@ -180,8 +180,9 @@ public class PageInsertDowngradeDetectorTests {
 		IReadOnlyList<string> warnings = PageInsertDowngradeDetector.Detect(prior, final);
 
 		// Assert
-		warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("remove"),
-			$"because a dangling remove for a self-inserted component is misleading and should be omitted instead ({kind})");
+		warnings.Should().ContainSingle(
+			w => w.Contains("UsrName") && w.Contains("remove") && w.Contains("dangling") && w.Contains("omit its insert"),
+			$"because the remove downgrade must produce the distinct dangling-remove guidance (not the orphan-merge wording) ({kind})");
 	}
 
 	[Test]

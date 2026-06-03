@@ -6097,6 +6097,40 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Still warns when an un-awaited read is followed by '=>', which is an arrow and not an assignment target.")]
+	public void ValidateContextAccessAwait_WhenReadFollowedByArrow_ReturnsWarning() {
+		// Arrange — '=>' must not be mistaken for an assignment '='; the read is still un-awaited.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const pick = $context["UsrMode"] => "x";
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "'=>' after a bracket read is an arrow, not an assignment, so the un-awaited read is still flagged");
+	}
+
+	[Test]
 	[Description("Does not warn for $context.set or $context.executeRequest method calls.")]
 	public void ValidateContextAccessAwait_WhenMethodCallsOnly_ReturnsClean() {
 		// Arrange — '.set(' / '.executeRequest(' are method calls, not bracket reads.

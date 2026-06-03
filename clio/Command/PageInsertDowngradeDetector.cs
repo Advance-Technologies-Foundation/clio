@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -103,6 +104,8 @@ internal static class PageInsertDowngradeDetector {
 		"remove. See docs://mcp/guides/page-modification.";
 
 	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
+		// Names use Ordinal to mirror PageBodyMerger.MergeArrayByName's real dedupe semantics; the
+		// operation sets use OrdinalIgnoreCase because the op vocabulary is a small case-insensitive set.
 		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {
 			JArray viewConfigDiff = ReadViewConfigDiff(body);
@@ -123,6 +126,11 @@ internal static class PageInsertDowngradeDetector {
 			}
 			return true;
 		} catch (JsonException) {
+			// Unparseable body — fail open (skip the heuristic, never block the save).
+			return false;
+		} catch (RegexMatchTimeoutException) {
+			// A pathological body tripped the section-reader regex timeout — fail open as well,
+			// otherwise this advisory check would block an otherwise-valid save.
 			return false;
 		}
 	}
