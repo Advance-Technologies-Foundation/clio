@@ -45,33 +45,32 @@ public sealed class IndicatorWidgetGuidanceResource {
 		       5. Write the widget into `viewConfigDiff` using `update-page` or `sync-pages`.
 		       6. Verify the saved page body or read it back with `verify: true`.
 
-		       Required runtime shape
-		       - `values.type` must be `crt.IndicatorWidget`.
-		       - `values.config.title` is the widget title and should use a resource binding when user-visible text is introduced.
-		       - `values.config.data.providing.schemaName` is the root entity being aggregated.
-		       - `values.config.data.providing.attribute` is the widget data attribute name already expected by the platform-generated widget config.
-		       - `values.config.data.providing.aggregation.column.expression` defines the aggregate function and target column.
-		       - `values.config.data.providing.filters.filter` is the root ESQ filter group used by the metric query.
+		       Runtime shape ownership
+		       - The exact runtime field contract for `crt.IndicatorWidget` — valid filter-leaf forms, the aggregation expression shape, and the aggregation enum values — is owned by the component, not by this guide. Read it with `get-component-info` for `crt.IndicatorWidget` (or the widget's component-level authoring contract) before writing the payload, and treat that as the source of truth for shape.
+		       - This guide's job is to map Copilot intent onto the correct fields and help you choose correct values. The fields you populate are:
+		         - `values.type` = `crt.IndicatorWidget`
+		         - `values.config.title` (use a resource binding for user-visible text)
+		         - `values.config.data.providing.schemaName` (root aggregated entity)
+		         - `values.config.data.providing.attribute` (platform-expected widget data attribute)
+		         - `values.config.data.providing.aggregation.column.expression` (aggregate function + target column)
+		         - `values.config.data.providing.filters.filter` (root ESQ filter group)
 
-		       Aggregation selection rules
-		       - `COUNT` usually means aggregate `Id`.
-		       - `SUM`, `AVG`, `MIN`, `MAX` should target the explicit business column from the requirement.
+		       Aggregation selection (value choice, not shape)
+		       - Decide which aggregation the requirement implies, then pick the target column: `COUNT` aggregates `Id`; `SUM`, `AVG`, `MIN`, `MAX` target the explicit business column from the requirement, never `Id`.
+		       - The expression JSON and aggregation enum values that encode this are part of the component contract; do not hand-build them from memory — confirm them via `get-component-info`.
 		       - Do not load records manually in handlers just to compute a metric. The widget queries and aggregates at runtime.
 		       - Do not replace a static aggregate/filter requirement with business rules or JavaScript handlers.
 
-		       Filter authoring rules
-		       - Root filter envelope must stay in runtime ESQ form: `{ "filter": { "items": { ... }, "logicalOperation": 0|1, "isEnabled": true, "filterType": 6, "rootSchemaName": "<Schema>" } }`.
-		       - Scalar and lookup comparisons are represented as leaf items under `filter.items`.
-		       - For simple equality on a schema column, use a compare filter leaf with:
-		         - `filterType: 1`
-		         - `comparisonType: 3` for equals
-		         - `leftExpression: { "expressionType": 0, "columnPath": "<ColumnPath>" }`
-		         - `rightExpression: { "expressionType": 2, "parameter": { "dataValueType": <type>, "value": <value> } }`
+		       Filter authoring (which filter, not its JSON)
+		       - The runtime filter-leaf shapes (scalar compare, lookup, range, backward-reference / EXISTS) are part of the component contract — get them from `get-component-info` rather than reconstructing the JSON here.
 		       - Before finalizing non-trivial filter paths, lookup constants, or relative-date wording, read `esq-filters`.
-		       - `BETWEEN` is not one leaf filter in practice. Convert it into two compare filters joined by `AND`: lower bound and upper bound.
-		       - When the requirement is expressed through child records rather than direct columns on the aggregated root schema, model it as a backward-reference / EXISTS-style filter instead of inventing unsupported flat column paths.
+		       - Decide the value family first: scalar literal, lookup value, date / relative-date, or a condition on related child records.
+		       - `BETWEEN` is modeled as two bounds joined by `AND`, not one leaf.
+		       - For conditions on child records rather than direct columns on the aggregated root schema, use a backward-reference / EXISTS-style filter instead of inventing unsupported flat column paths.
+		       - Resolve lookup GUIDs upstream; never fabricate lookup GUIDs or root schema names.
 
-		       Portable user filter example: count Todo records created by Supervisor
+		       Worked translation example: count Todo records created by Supervisor
+		       - This is an end-to-end translation example, not the shape contract; the leaf and aggregation shapes below are owned by the component contract (`get-component-info`). It is shown here only to illustrate how intent maps onto a finished payload.
 		       - Requirement intent:
 		         - source entity: `UsrTodo05211340`
 		         - metric: `COUNT(Id)`
@@ -186,10 +185,10 @@ public sealed class IndicatorWidgetGuidanceResource {
 		       - Do NOT manually query data in handlers to emulate a metric widget that the platform can express declaratively.
 
 		       Related guidance
+		       - Use `get-component-info` for `crt.IndicatorWidget` as the source of truth for the generation contract: runtime field shapes, filter-leaf forms, and aggregation enum values. This guide owns intent translation and value selection; the component owns shape.
 		       - Read `esq-filters` for normalized path, lookup-value, and relative-date filter guidance.
 		       - Read `page-modification` for replacing-schema and minimal-body write rules.
 		       - Read `page-schema-resources` before adding new user-visible titles, labels, or hints.
-		       - Use `get-component-info` for the current registry-backed insert example and property contract of `crt.IndicatorWidget`.
 		       """
 	};
 
