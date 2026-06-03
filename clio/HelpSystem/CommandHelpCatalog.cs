@@ -222,13 +222,13 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly HashSet<string> IntegrationCommands =
 		[
-			"delete-skill",
+			"delete-adac",
 			"env-ui",
 			"install-gate",
-			"install-skills",
+			"install-adac",
 			"link-package-store",
 			"mcp-server",
-			"update-skill"
+			"update-adac"
 		];
 
 	private static readonly HashSet<string> DevelopmentCommands =

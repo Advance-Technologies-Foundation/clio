@@ -522,8 +522,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
-<a id="delete-skill"></a>
-- [`delete-skill`](docs/commands/delete-skill.md) - Delete a managed skill
+<a id="delete-adac"></a>
+- [`delete-adac`](docs/commands/delete-adac.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
 <a id="far"></a>
 <a id="gui"></a>
@@ -533,16 +533,16 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
-<a id="install-skills"></a>
-- [`install-skills`](docs/commands/install-skills.md) - Install managed skills from a repository
+<a id="install-adac"></a>
+- [`install-adac`](docs/commands/install-adac.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
-<a id="update-skill"></a>
-- [`update-skill`](docs/commands/update-skill.md) - Update managed skills from a repository
+<a id="update-adac"></a>
+- [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
 
 ## General
 
