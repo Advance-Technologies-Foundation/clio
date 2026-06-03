@@ -353,7 +353,13 @@ internal static class ToolContractCatalog {
 			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
-			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
+			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
+			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
+			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
+			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
+			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
+			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -429,21 +435,31 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
-			if (!Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
-				return new ToolContractGetResponse(
-					false,
-					Error: new ToolContractError(
-						"tool-not-found",
-						$"Tool '{normalizedName}' is not registered by clio MCP.",
-						BuildSuggestions(normalizedName)));
+			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
+				results.Add(contract);
+				continue;
 			}
-			results.Add(contract);
+			// No curated contract: fall back to a contract synthesized from the tool's own input
+			// schema so that any registered-but-uncurated tool stays discoverable instead of
+			// returning tool-not-found.
+			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
+				results.Add(schemaContract);
+				continue;
+			}
+			return new ToolContractGetResponse(
+				false,
+				Error: new ToolContractError(
+					"tool-not-found",
+					$"Tool '{normalizedName}' is not registered by clio MCP.",
+					BuildSuggestions(normalizedName)));
 		}
 		return new ToolContractGetResponse(true, results);
 	}
 
 	private static IReadOnlyList<string> BuildSuggestions(string requestedName) {
 		return Contracts.Keys
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(name => ComputeDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
@@ -3637,6 +3653,215 @@ internal static class ToolContractCatalog {
 				$"`{ProjectNameFieldName}` is snake_case matching `^[0-9a-z_]+$`.",
 				"`packageName` is a simple identifier matching `^[A-Za-z0-9_]+$`.",
 				$"`{VendorPrefixFieldName}` is lowercase-only matching `^[a-z]{{1,50}}$`."
+			]);
+	}
+
+	private const string SiteNameFieldName = "site-name";
+	private const string ZipFileFieldName = "zip-file";
+	private const string SitePortFieldName = "site-port";
+	private const string DbServerNameFieldName = "db-server-name";
+	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SkipBackupFieldName = "skip-backup";
+	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
+
+	private static ToolContractDefinition BuildAssertInfrastructure() {
+		return new ToolContractDefinition(
+			AssertInfrastructureTool.AssertInfrastructureToolName,
+			"Runs the full infrastructure assertion sweep (Kubernetes, local infrastructure, and filesystem) in one call and returns a machine-readable aggregate result with per-section assertion results plus normalized database candidates. Call this first in the deploy lifecycle to inspect failing or degraded areas before selecting a deployment target.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field(StatusFieldName, StringType, "Overall infrastructure assertion status: pass, partial, or fail."),
+				Field("exit-code", NumberType, "Overall infrastructure assertion exit code."),
+				Field("summary", StringType, "Human-readable summary of the assertion sweep."),
+				Field("sections", ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
+				Field("database-candidates", ArrayType, "Normalized database candidates discovered across passing sections.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Run the full infrastructure assertion sweep", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, pick a safe local IIS port, then deploy. See the deploy-lifecycle guidance topic via get-guidance."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildShowPassingInfrastructure() {
+		return new ToolContractDefinition(
+			ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+			"Returns only the passing infrastructure choices that are safe to use for deployment selection, plus the recommended deploy-creatio argument bundle for the current infrastructure state. Run assert-infrastructure first to inspect failing or degraded areas.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field(StatusFieldName, StringType, "Passing-infrastructure availability status: available or unavailable."),
+				Field("summary", StringType, "Human-readable summary of the passing infrastructure discovery."),
+				Field("kubernetes", ObjectType, "Passing Kubernetes deployment choices."),
+				Field("local", ObjectType, "Passing local deployment choices."),
+				Field("filesystem", ObjectType, "Passing filesystem readiness relevant for deployment."),
+				Field("recommendedDeployment", ObjectType, "Recommended passing choice to merge into a deploy-creatio call."),
+				Field("recommendedByEngine", ObjectType, "Recommended passing choices grouped by database engine.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Show passing infrastructure and deployment recommendations", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Use the recommended bundle from this tool as the deploy-creatio argument source after assert-infrastructure confirms readiness."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildFindEmptyIisPort() {
+		return new ToolContractDefinition(
+			FindEmptyIisPortTool.FindEmptyIisPortToolName,
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field("status", StringType, "Availability status for the requested range."),
+				Field("summary", StringType, "Human-readable scan summary."),
+				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
+				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
+				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Find a safe local IIS port for deployment", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDeployCreatio() {
+		return new ToolContractDefinition(
+			InstallerCommandTool.DeployCreatioToolName,
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure.",
+			new ToolInputSchemaContract(
+				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
+				[
+					Field(SiteNameFieldName, StringType, "Creatio instance name."),
+					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
+					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
+					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
+					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Deploy a local IIS instance after the deploy preflight", new Dictionary<string, object?> {
+					[SiteNameFieldName] = "creatio-app",
+					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
+					[SitePortFieldName] = 40001,
+					[DbServerNameFieldName] = "postgres-local",
+					[RedisServerNameFieldName] = "redis-local"
+				})
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Always run the full deploy preflight before deploy-creatio. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
+			[],
+			[],
+			Preconditions: [
+				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
+				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
+				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildRestoreWorkspace() {
+		return new ToolContractDefinition(
+			RestoreWorkspaceTool.RestoreWorkspaceToolName,
+			"Restores the local workspace at workspace-path from the specified Creatio environment. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, WorkspacePathFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(WorkspacePathFieldName, StringType, WorkspacePathDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Restore a workspace from a registered environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[WorkspacePathFieldName] = ExampleWorkspaceAbsolutePath
+				})
+			],
+			Flow(
+				[
+					RestoreWorkspaceTool.RestoreWorkspaceToolName,
+					PushWorkspaceTool.PushWorkspaceToolName
+				],
+				"Restore packages from the environment into the local workspace, then push local changes back with push-workspace."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app).",
+				"cliogate is installed on the target environment; if restore fails with a missing-cliogate error, run install-gate and retry.",
+				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildPushWorkspace() {
+		return new ToolContractDefinition(
+			PushWorkspaceTool.PushWorkspaceToolName,
+			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, WorkspacePathFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+					Field(SkipBackupFieldName, BooleanType, "When true, skips package backup before workspace install.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Push a local workspace to a registered environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[WorkspacePathFieldName] = ExampleWorkspaceAbsolutePath
+				})
+			],
+			Flow(
+				[
+					PushWorkspaceTool.PushWorkspaceToolName,
+					CompileCreatioTool.CompileCreatioToolName
+				],
+				"Push the workspace, then run compile-creatio only when the pushed packages contain C# schema changes that require compilation."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app).",
+				"workspace-path is a local absolute path to an existing workspace directory (network-share paths are not supported)."
 			]);
 	}
 
