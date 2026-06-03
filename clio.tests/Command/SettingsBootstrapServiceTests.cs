@@ -172,4 +172,111 @@ public sealed class SettingsBootstrapServiceTests {
 		repairedResult.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
 			because: "the repaired bootstrap result should expose the newly valid active environment");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Clears a legacy Autoupdate=false artifact (serialized when the field was a non-nullable bool) and stamps the settings version, restoring the enabled opt-out default.")]
+	public void GetResult_Should_Reset_Legacy_Autoupdate_False_And_Stamp_Version() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "Autoupdate": false,
+			  "Environments": {}
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		result.Settings.Autoupdate.Should().BeNull(
+			because: "the legacy false must be cleared so GetAutoupdate() falls back to the enabled opt-out default");
+		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "autoupdate-legacy-default-reset",
+			because: "the migration must surface that auto-update was re-enabled so the user is informed");
+		persisted.Autoupdate.Should().BeNull(
+			because: "the cleared value must be persisted — NullValueHandling.Ignore drops the key entirely");
+		persisted.SettingsVersion.Should().Be(1,
+			because: "the settings version must be stamped so the one-time migration never runs again");
+		persistedContent.Should().NotContain("Autoupdate",
+			because: "a null Autoupdate is omitted from the file, restoring the pristine default state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A deliberate Autoupdate=false on a file already at the current settings version is preserved across bootstrap and never reverted — proving the opt-out is not broken.")]
+	public void GetResult_Should_Preserve_Deliberate_Autoupdate_False_After_Migration() {
+		// Arrange: file already migrated (SettingsVersion=1) with a deliberate opt-out
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "Autoupdate": false,
+			  "SettingsVersion": 1,
+			  "Environments": {}
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		result.Settings.Autoupdate.Should().BeFalse(
+			because: "once the file is at the current settings version the migration must not touch a deliberate opt-out");
+		persisted.Autoupdate.Should().BeFalse(
+			because: "the deliberate --disable must survive bootstrap so 'clio autoupdate --disable' is not silently broken");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no migration should run when the settings version is already current");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With applyRepairs:false the legacy Autoupdate migration is neither applied nor reported, and the file is left untouched.")]
+	public void GetResult_Should_Not_Migrate_Autoupdate_When_ApplyRepairs_False() {
+		// Arrange
+		const string originalContent = """
+			{
+			  "Autoupdate": false,
+			  "Environments": {}
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(originalContent));
+		SettingsBootstrapService service = new(fileSystem, applyRepairs: false);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "read-only bootstrap must not report a repair it did not persist");
+		persistedContent.Should().Be(originalContent,
+			because: "appsettings.json must not be modified when applyRepairs is false");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A freshly created appsettings.json is stamped with the current settings version so new installs are never treated as legacy.")]
+	public void GetResult_Should_Stamp_Version_On_Created_Empty_Settings_File() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		persisted.SettingsVersion.Should().Be(1,
+			because: "new installs must be born at the current settings version so the legacy migration never runs for them");
+		result.Settings.Autoupdate.Should().BeNull(
+			because: "a fresh file has no Autoupdate key, so auto-update stays at the enabled opt-out default");
+	}
 }

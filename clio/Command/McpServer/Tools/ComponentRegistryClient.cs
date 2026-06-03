@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -14,7 +16,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// Orchestrates the layered fallback chain that backs <c>get-component-info</c>:
-/// CDN → file cache (<c>~/.clio/cache/component-registry/</c>) → embedded snapshot
+/// CDN → file cache (<c><clio-home>/cache/component-registry/</c>) → embedded snapshot
 /// in <c>clio.dll</c>. AI requests never block on the network: stale cache is returned
 /// synchronously while a background refresh runs.
 /// </summary>
@@ -68,7 +70,7 @@ public enum ComponentRegistrySource {
 /// <param name="CdnRegistryFileName">Bare filename served by the academy CDN; e.g. <c>"ComponentRegistry.json"</c>.</param>
 /// <param name="LocalFileEnvironmentVariable">Name of the env var that forces a local override of the entire chain.</param>
 /// <param name="CacheSubdirectoryName">
-/// Optional sub-folder under <c>~/.clio/cache/component-registry/</c> isolating this
+/// Optional sub-folder under <c><clio-home>/cache/component-registry/</c> isolating this
 /// flavor's payloads. Empty for the web flavor (back-compat with cache files written
 /// before the mobile flavor existed).
 /// </param>
@@ -128,6 +130,14 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	// while still de-duplicating concurrent refreshes for the same flavor+version.
 	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>
 		BackgroundRefreshGates = new(StringComparer.Ordinal);
+
+	// Tracks in-flight fire-and-forget background refresh tasks so that
+	// DrainAsync() can await them before the process exits. Without this, the
+	// Task.Run task may be killed by the runtime before it can write the new
+	// cache file to disk (background threads are terminated when all foreground
+	// threads exit, and the MCP server main thread exits promptly on SIGTERM).
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task>
+		PendingRefreshTasks = new(StringComparer.Ordinal);
 
 	private SemaphoreSlim GetBackgroundRefreshGate(string version) {
 		string key = $"{_flavor.DisplayName}|{version}";
@@ -392,11 +402,18 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	}
 
 	private void ScheduleBackgroundRefresh(string version) {
-		// Fire-and-forget. The gate is keyed by (flavor, version) so a flurry of
-		// stale reads on `web:latest` is de-duplicated without blocking a parallel
-		// stale read on `mobile:latest` (or on a pinned GA version).
+		// Fire-and-forget, tracked in PendingRefreshTasks so DrainAsync() can
+		// await completion during process shutdown. The gate is keyed by
+		// (flavor, version) so a flurry of stale reads on `web:latest` is
+		// de-duplicated without blocking a parallel stale read on `mobile:latest`.
+		string key = $"{_flavor.DisplayName}|{version}";
 		SemaphoreSlim gate = GetBackgroundRefreshGate(version);
-		_ = Task.Run(async () => {
+		// Declare before Task.Run so the lambda can capture the variable and
+		// use value-matched removal in the finally block (avoids evicting a
+		// concurrent task's dict entry — the indexer assignment below may
+		// overwrite this task if two stale reads race for the same key).
+		Task task = null!;
+		task = Task.Run(async () => {
 			if (!await gate.WaitAsync(0).ConfigureAwait(false)) {
 				return;
 			}
@@ -404,13 +421,39 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
 				await TryFetchFromCdnAsync(version, cts.Token).ConfigureAwait(false);
 			} catch (Exception ex) {
-				_logger.LogInformation(ex,
+				_logger.LogWarning(ex,
 					"component-registry background-refresh-failed flavor={Flavor} version={Version}",
 					_flavor.DisplayName, version);
 			} finally {
 				gate.Release();
+				// Value-matched removal: only evict this task's own entry so a
+				// concurrent refresh that overwrote the slot is not accidentally
+				// removed from the drain set.
+				((ICollection<KeyValuePair<string, Task>>)PendingRefreshTasks)
+					.Remove(new KeyValuePair<string, Task>(key, task));
 			}
 		});
+		PendingRefreshTasks[key] = task;
+	}
+
+	/// <summary>
+	/// Waits for all in-flight background CDN refreshes to complete, up to
+	/// <paramref name="timeout"/>. Call during process shutdown so that a
+	/// fire-and-forget refresh started just before exit is not killed by the
+	/// runtime before it can write its cache file to disk.
+	/// </summary>
+	internal static async Task DrainAsync(TimeSpan timeout) {
+		Task[] tasks = PendingRefreshTasks.Values.ToArray();
+		if (tasks.Length == 0) {
+			return;
+		}
+		try {
+			await Task.WhenAll(tasks).WaitAsync(timeout).ConfigureAwait(false);
+		} catch (TimeoutException) {
+			// best-effort: individual task outcomes are already logged
+		} catch (Exception) {
+			// individual task failures are already logged via LogWarning above
+		}
 	}
 
 	private Stream? TryOpenLocalOverride(string requestedVersion) {

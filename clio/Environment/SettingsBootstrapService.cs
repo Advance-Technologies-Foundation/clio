@@ -42,6 +42,7 @@ public sealed record SettingsBootstrapResult(
 
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
+	private const int CurrentSettingsVersion = 1;
 	private readonly IFileSystem _fileSystem;
 	private readonly bool _applyRepairs;
 
@@ -61,7 +62,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private SettingsBootstrapResult Load() {
 		string settingsFilePath = SettingsRepository.AppSettingsFile;
 		if (!_fileSystem.File.Exists(settingsFilePath)) {
-			Settings emptySettings = new() { Environments = [] };
+			Settings emptySettings = new() { Environments = [], SettingsVersion = CurrentSettingsVersion };
 			if (_applyRepairs) {
 				SettingsRepository.SaveSettings(_fileSystem, emptySettings);
 			}
@@ -105,6 +106,9 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 				"Use 'clio set-active-environment <name>' to fix this."));
 		}
 		SettingsRepository.AttachDbServers(settingsModel);
+		if (_applyRepairs && ApplyMigrations(settingsModel, repairs)) {
+			SettingsRepository.SaveSettings(_fileSystem, settingsModel);
+		}
 		return BuildResult(
 			issues.Count > 0 ? "issues-detected" : "healthy",
 			settingsFilePath,
@@ -112,6 +116,29 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			settingsModel,
 			issues,
 			repairs);
+	}
+
+	/// <summary>
+	/// Applies one-time settings migrations and returns true when the model was changed.
+	/// </summary>
+	private static bool ApplyMigrations(Settings settings, List<SettingsRepair> repairs) {
+		if ((settings.SettingsVersion ?? 0) >= CurrentSettingsVersion) {
+			return false;
+		}
+		// Migration 1: before #576 Autoupdate was a non-nullable bool, so the C# default
+		// 'false' was serialized into appsettings.json for every user who never opted in,
+		// silently disabling auto-update. Clear that legacy artifact so the opt-out default
+		// (enabled) applies again. Guarded by SettingsVersion, this runs once — a deliberate
+		// 'clio autoupdate --disable' made afterwards is preserved.
+		if (settings.Autoupdate == false) {
+			settings.Autoupdate = null;
+			repairs.Add(new SettingsRepair(
+				"autoupdate-legacy-default-reset",
+				"auto-update was disabled by a legacy default and has been re-enabled "
+				+ "(run 'clio autoupdate --disable' to opt out)"));
+		}
+		settings.SettingsVersion = CurrentSettingsVersion;
+		return true;
 	}
 
 	private static SettingsBootstrapResult BuildBroken(string settingsFilePath, string code, string message) {

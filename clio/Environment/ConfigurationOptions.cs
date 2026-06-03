@@ -333,6 +333,14 @@ namespace Clio
 			get; set;
 		}
 
+		/// <summary>
+		/// Settings schema version used to apply one-time settings migrations.
+		/// A null value denotes a legacy file written before migrations were introduced.
+		/// </summary>
+		public int? SettingsVersion {
+			get; set;
+		}
+
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
@@ -352,6 +360,13 @@ namespace Clio
 		private Settings _settings = new ();
 		public static string AppSettingsFolderPath {
 			get {
+				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
+				// source of truth for clio's home directory; see ClioRuntimePaths and
+				// docs/architecture/clio-home-consolidation.md.
+				var clioHome = Environment.GetEnvironmentVariable("CLIO_HOME");
+				if (!string.IsNullOrWhiteSpace(clioHome)) {
+					return clioHome;
+				}
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "HOME");

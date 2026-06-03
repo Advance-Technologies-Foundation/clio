@@ -52,9 +52,9 @@ public sealed record ComponentRegistryDocsCacheReadResult(byte[] Content, bool I
 
 /// <summary>
 /// Disk-backed implementation of <see cref="IComponentRegistryDocsCacheStore"/>. Files
-/// live under <c>~/.clio/cache/component-registry/{version}/{docPath}</c> with a
+/// live under <c><clio-home>/cache/component-registry/{version}/{docPath}</c> with a
 /// <c>.meta.json</c> sidecar of the same name. The cache root and TTL are shared with
-/// the registry-payload store so a single <c>~/.clio/cache/component-registry/</c>
+/// the registry-payload store so a single <c><clio-home>/cache/component-registry/</c>
 /// delete resets every layer in one go.
 /// </summary>
 public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCacheStore {
@@ -246,8 +246,7 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 	}
 
 	private static string DefaultRoot(IFileSystem fileSystem) {
-		string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-		return fileSystem.Path.Combine(profile, ".clio", "cache", ComponentRegistryCacheStore.CacheDirectoryName);
+		return fileSystem.Path.Combine(ClioRuntimePaths.CacheRoot, ComponentRegistryCacheStore.CacheDirectoryName);
 	}
 
 	private static readonly JsonSerializerOptions MetadataSerializerOptions = new() {
