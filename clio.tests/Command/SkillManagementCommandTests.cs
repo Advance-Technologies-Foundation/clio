@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using System.Text.Json;
 using Clio.Command;
 using Clio.Common;
+using Clio.Common.Skills;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -29,382 +29,284 @@ public sealed class DeleteSkillCommandDocTests : BaseCommandTests<DeleteSkillOpt
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
-public sealed class SkillManagementServiceTests {
-	private MockFileSystem _mockFileSystem = null!;
-	private Clio.Common.IFileSystem _fileSystem = null!;
-	private ISkillRepositoryResolver _resolver = null!;
-	private IAgentHomePathProvider _agentHomePathProvider = null!;
-	private IWorkingDirectoriesProvider _workingDirectoriesProvider = null!;
-	private SkillManagementService _sut = null!;
+public sealed class SkillInstallServiceTests {
+	private IManagedSkillsManifestStore _manifestStore = null!;
+	private ManagedSkillsManifest _manifest = null!;
 
 	[SetUp]
 	public void SetUp() {
-		_mockFileSystem = new MockFileSystem(new Dictionary<string, MockFileData>(), GetCurrentDirectoryPath());
-		_fileSystem = new Clio.Common.FileSystem(_mockFileSystem);
-		_resolver = Substitute.For<ISkillRepositoryResolver>();
-		_agentHomePathProvider = Substitute.For<IAgentHomePathProvider>();
-		_agentHomePathProvider.GetAgentHomePath().Returns(GetUserScopeHomePath());
-		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		_sut = new SkillManagementService(_fileSystem, _resolver, _agentHomePathProvider);
+		_manifest = new ManagedSkillsManifest();
+		_manifestStore = Substitute.For<IManagedSkillsManifestStore>();
+		_manifestStore.Read().Returns(_ => _manifest);
 	}
 
 	[Test]
-	[Description("Install should copy all discovered skills into the workspace and record them in the managed manifest.")]
-	public void Install_ShouldInstallAllSkills_WhenSkillNameIsOmitted() {
+	[Description("Install dispatches to every detected agent and records succeeded agents in the manifest.")]
+	public void Install_ShouldDispatchToAllDetectedAgents_WhenNoTarget() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		CreateSkill(repoPath, "beta");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([claude, codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, null, "repo"));
+		SkillCommandResult result = sut.Install(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "install should succeed when the source repository contains valid skills and the workspace is valid");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills", "alpha")).Should().BeTrue(
-			because: "install should copy the alpha skill into the workspace-local skills folder");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills", "beta")).Should().BeTrue(
-			because: "install should copy the beta skill into the workspace-local skills folder");
-		_mockFileSystem.File.Exists(GetPath("workspace", ".agents", "skills", ".clio-managed.json")).Should().BeTrue(
-			because: "install should record managed skills in the manifest");
-		result.InfoMessages.Should().Contain(message => message.Contains("Installed skill 'alpha'"),
-			because: "install should report each installed skill");
-		result.InfoMessages.Should().Contain(message => message.Contains("Installed skill 'beta'"),
-			because: "install should report each installed skill");
+		result.ExitCode.Should().Be(0, because: "all detected agents installed successfully");
+		claude.Received(1).Install(Arg.Any<AgentOperationContext>());
+		codex.Received(1).Install(Arg.Any<AgentOperationContext>());
+		_manifestStore.Received(1).Save(Arg.Is<ManagedSkillsManifest>(m =>
+			m.Agents.ContainsKey("claude") && m.Agents.ContainsKey("codex")));
 	}
 
 	[Test]
-	[Description("Install should copy only the requested skill when --skill is provided.")]
-	public void Install_ShouldInstallSingleSkill_WhenSkillNameIsProvided() {
+	[Description("Install skips an undetected agent with exit 0 and does not dispatch to it.")]
+	public void Install_ShouldSkipUndetectedAgent_WhenHomeAbsent() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		CreateSkill(repoPath, "beta");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent codex = StubAgent("codex", detected: false, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, "beta", "repo"));
+		SkillCommandResult result = sut.Install(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "install should support selecting one source skill by name");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills", "beta")).Should().BeTrue(
-			because: "the requested skill should be copied into the workspace");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills", "alpha")).Should().BeFalse(
-			because: "install should not copy unselected skills when --skill is used");
+		result.ExitCode.Should().Be(0, because: "an undetected agent is a clean no-op, not a failure");
+		result.Outcomes.Should().ContainSingle(outcome => outcome.Status == AgentOutcomeStatus.Skipped,
+			because: "the undetected agent should be reported as skipped");
+		codex.DidNotReceive().Install(Arg.Any<AgentOperationContext>());
 	}
 
 	[Test]
-	[Description("Install should fail when the workspace path is not a clio workspace.")]
-	public void Install_ShouldFail_WhenWorkspaceIsMissing() {
+	[Description("Install returns a non-zero exit code when any selected agent fails.")]
+	public void Install_ShouldReturnNonZero_WhenAnyAgentFails() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
+		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Failed("codex", "boom"));
+		SkillInstallService sut = new([claude, codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, null, "repo"));
+		SkillCommandResult result = sut.Install(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "install should reject a path that is not a clio workspace");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("not a clio workspace"),
-			because: "the error should explain why the workspace path was rejected");
+		result.ExitCode.Should().Be(1, because: "a failed agent must fail the command");
 	}
 
 	[Test]
-	[Description("Install should create the workspace-local skills folder when it does not exist yet.")]
-	public void Install_ShouldCreateSkillsDirectory_WhenMissing() {
+	[Description("An invalid --target value is rejected before dispatch with a non-zero exit code.")]
+	public void Install_ShouldRejectUnknownTarget_BeforeDispatch() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, null, "repo"));
+		SkillCommandResult result = sut.Install(target: "foobar", repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "install should create the destination skill root automatically");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills")).Should().BeTrue(
-			because: "the workspace-local skills folder should be created when it is absent");
+		result.ExitCode.Should().Be(1, because: "an out-of-set target name is a validation error");
+		result.Summary.Should().Contain("Unknown target", because: "the error should name the invalid target");
+		codex.DidNotReceive().Install(Arg.Any<AgentOperationContext>());
 	}
 
 	[Test]
-	[Description("Install should create user-scope skills under the agent home when scope is user.")]
-	public void Install_ShouldCreateUserScopeSkills_WhenScopeIsUser() {
+	[Description("A --target value limits the operation to a single agent and leaves others untouched.")]
+	public void Install_ShouldTargetSingleAgent_WhenTargetProvided() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateSkill(repoPath, "alpha");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([claude, codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, null, "repo", SkillScope.User));
+		SkillCommandResult result = sut.Install(target: "codex", repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "user-scope install should not depend on being inside a clio workspace");
-		_mockFileSystem.Directory.Exists(GetPath("codex-home", "skills", "alpha")).Should().BeTrue(
-			because: "user-scope install should copy the skill into the user-level agent home");
-		_mockFileSystem.File.Exists(GetPath("codex-home", "skills", ".clio-managed.json")).Should().BeTrue(
-			because: "user-scope install should create a dedicated managed manifest under the agent home");
+		result.ExitCode.Should().Be(0, because: "the single targeted agent succeeded");
+		codex.Received(1).Install(Arg.Any<AgentOperationContext>());
+		claude.DidNotReceive().Install(Arg.Any<AgentOperationContext>());
 	}
 
 	[Test]
-	[Description("Install should fail when a requested skill is not present in the source repository.")]
-	public void Install_ShouldFail_WhenRequestedSkillIsMissing() {
+	[Description("Update dispatches the update operation to detected agents (Claude is not skipped).")]
+	public void Update_ShouldDispatchUpdate_ToDetectedAgents() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent claude = StubAgent("claude", detected: true, updateOutcome: AgentOutcome.Succeeded("claude", "ok"));
+		SkillInstallService sut = new([claude], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, "beta", "repo"));
+		SkillCommandResult result = sut.Update(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "install should fail when the requested skill name does not match a discovered source skill");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("Skill 'beta' was not found"),
-			because: "the error should explain that the named skill is missing from the source repository");
+		result.ExitCode.Should().Be(0, because: "the detected agent updated successfully");
+		claude.Received(1).Update(Arg.Any<AgentOperationContext>());
 	}
 
 	[Test]
-	[Description("Install should reject a managed skill that is already present in the workspace instead of treating install as update.")]
-	public void Install_ShouldFail_WhenManagedSkillAlreadyExists() {
+	[Description("Delete removes the agent's manifest entry on success.")]
+	public void Delete_ShouldRemoveManifestEntry_OnSuccess() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "oldhash");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "newhash", "repo"));
+		_manifest.Upsert("codex", "src", DateTimeOffset.UnixEpoch);
+		ICodingAgent codex = StubAgent("codex", detected: true, deleteOutcome: AgentOutcome.Succeeded("codex", "removed"));
+		SkillInstallService sut = new([codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, "alpha", "repo"));
+		SkillCommandResult result = sut.Delete(target: null);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "install should not replace an already managed skill");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("Use update-skill instead"),
-			because: "the failure should direct the caller to the explicit update flow");
+		result.ExitCode.Should().Be(0, because: "delete succeeded");
+		// A successful delete should drop the agent's manifest entry.
+		_manifestStore.Received(1).Save(Arg.Is<ManagedSkillsManifest>(m => !m.Agents.ContainsKey("codex")));
 	}
 
 	[Test]
-	[Description("Install should fail when the destination skill folder exists but is not managed by clio.")]
-	public void Install_ShouldFail_WhenUnmanagedSkillAlreadyExists() {
+	[Description("On a mixed run only succeeded agents are written to the manifest; failed agents are not recorded.")]
+	public void Install_ShouldWriteOnlySucceededAgents_WhenMixedOutcomes() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateSkill(repoPath, "alpha");
-		_mockFileSystem.AddFile(GetPath("workspace", ".agents", "skills", "alpha", "SKILL.md"), new MockFileData("manual"));
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "abc123", "repo"));
+		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Failed("codex", "boom"));
+		SkillInstallService sut = new([claude, codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Install(new InstallSkillsRequest(workspacePath, "alpha", "repo"));
+		sut.Install(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "install should protect unmanaged skill folders from overwrite");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("is not managed by clio"),
-			because: "the failure should explain that clio refuses to overwrite an unmanaged skill folder");
+		_manifestStore.Received(1).Save(Arg.Is<ManagedSkillsManifest>(m =>
+			m.Agents.ContainsKey("claude") && !m.Agents.ContainsKey("codex")));
 	}
 
 	[Test]
-	[Description("Update should refresh one managed skill when the source repository commit hash changes.")]
-	public void Update_ShouldRefreshManagedSkill_WhenCommitHashChanges() {
+	[Description("The manifest is not saved when no agent changed state (all skipped).")]
+	public void Install_ShouldNotSaveManifest_WhenAllAgentsSkipped() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "oldhash");
-		CreateSkill(repoPath, "alpha", "updated");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "newhash", "repo"));
+		ICodingAgent codex = StubAgent("codex", detected: false, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, "alpha", "repo"));
+		sut.Install(target: null, repo: null);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "update should succeed when the source commit hash changed and the skill still exists");
-		_mockFileSystem.File.ReadAllText(GetPath("workspace", ".agents", "skills", "alpha", "SKILL.md")).Should().Contain("updated",
-			because: "update should replace the installed skill files with the source repository content");
-		_mockFileSystem.File.ReadAllText(GetPath("workspace", ".agents", "skills", ".clio-managed.json")).Should().Contain("newhash",
-			because: "update should persist the refreshed source commit hash");
+		_manifestStore.DidNotReceive().Save(Arg.Any<ManagedSkillsManifest>());
 	}
 
 	[Test]
-	[Description("Update should refresh all managed skills for the selected repository when --skill is omitted.")]
-	public void Update_ShouldRefreshAllManagedSkills_WhenSkillNameIsOmitted() {
+	[Description("An invalid --repo value is rejected before dispatch with a non-zero exit code.")]
+	public void Install_ShouldRejectUnsafeRepo_BeforeDispatch() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "oldhash");
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "beta", "repo", "oldhash");
-		CreateSkill(repoPath, "alpha", "updated alpha");
-		CreateSkill(repoPath, "beta", "updated beta");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "newhash", "repo"));
+		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
+		SkillInstallService sut = new([codex], _manifestStore);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, null, "repo"));
+		SkillCommandResult result = sut.Install(target: null, repo: "ext::sh -c calc");
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "update should support refreshing every managed skill registered for the selected repository");
-		_mockFileSystem.File.ReadAllText(GetPath("workspace", ".agents", "skills", "alpha", "SKILL.md")).Should().Contain("updated alpha",
-			because: "update should refresh alpha when all managed skills are updated");
-		_mockFileSystem.File.ReadAllText(GetPath("workspace", ".agents", "skills", "beta", "SKILL.md")).Should().Contain("updated beta",
-			because: "update should refresh beta when all managed skills are updated");
+		result.ExitCode.Should().Be(1, because: "an ext:: transport in --repo must be rejected");
+		codex.DidNotReceive().Install(Arg.Any<AgentOperationContext>());
+	}
+
+	private static ICodingAgent StubAgent(
+		string id,
+		bool detected,
+		AgentOutcome installOutcome = null,
+		AgentOutcome updateOutcome = null,
+		AgentOutcome deleteOutcome = null) {
+		ICodingAgent agent = Substitute.For<ICodingAgent>();
+		agent.AgentId.Returns(id);
+		agent.DisplayName.Returns(id);
+		agent.Detect().Returns(detected);
+		agent.Install(Arg.Any<AgentOperationContext>()).Returns(installOutcome ?? AgentOutcome.Succeeded(id, "ok"));
+		agent.Update(Arg.Any<AgentOperationContext>()).Returns(updateOutcome ?? AgentOutcome.Succeeded(id, "ok"));
+		agent.Delete(Arg.Any<AgentOperationContext>()).Returns(deleteOutcome ?? AgentOutcome.Succeeded(id, "ok"));
+		return agent;
+	}
+}
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class SkillCommandDeprecationTests {
+	private ISkillInstallService _service = null!;
+	private ILogger _logger = null!;
+
+	[SetUp]
+	public void SetUp() {
+		_service = Substitute.For<ISkillInstallService>();
+		_logger = Substitute.For<ILogger>();
 	}
 
 	[Test]
-	[Description("Update should report that a managed skill is already up to date when the repository commit hash did not change.")]
-	public void Update_ShouldReportNoOp_WhenCommitHashMatches() {
+	[Description("install-skills rejects the removed --scope option with a non-zero exit and does not call the service.")]
+	public void Install_ShouldRejectScopeOption_WithError() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "samehash");
-		CreateSkill(repoPath, "alpha", "original");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "samehash", "repo"));
+		InstallSkillsCommand command = new(_service, _logger);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, "alpha", "repo"));
+		int exitCode = command.Execute(new InstallSkillsOptions { Scope = "user" });
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "update should treat a matching commit hash as an already-up-to-date no-op");
-		result.InfoMessages.Should().Contain(message => message.Contains("already up to date"),
-			because: "update should report the no-op state to the caller");
+		exitCode.Should().Be(1, because: "--scope has been removed and must hard-error");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("--scope")));
+		_service.DidNotReceiveWithAnyArgs().Install(default, default);
 	}
 
 	[Test]
-	[Description("Update should refresh a managed user-scope skill when the source repository commit hash changes.")]
-	public void Update_ShouldRefreshManagedUserScopeSkill_WhenCommitHashChanges() {
+	[Description("install-skills rejects the removed --skill option with a non-zero exit and does not call the service.")]
+	public void Install_ShouldRejectSkillOption_WithError() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateManagedSkill(GetUserScopeHomePath(), SkillScope.User, "alpha", "repo", "oldhash");
-		CreateSkill(repoPath, "alpha", "updated");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "newhash", "repo"));
+		InstallSkillsCommand command = new(_service, _logger);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, "alpha", "repo", SkillScope.User));
+		int exitCode = command.Execute(new InstallSkillsOptions { Skill = "alpha" });
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "user-scope update should refresh managed skills under the agent home");
-		_mockFileSystem.File.ReadAllText(GetPath("codex-home", "skills", "alpha", "SKILL.md")).Should().Contain("updated",
-			because: "user-scope update should replace the installed skill files with the source repository content");
+		exitCode.Should().Be(1, because: "--skill has been removed and must hard-error");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("--skill")));
+		_service.DidNotReceiveWithAnyArgs().Install(default, default);
 	}
 
 	[Test]
-	[Description("Update should fail when the requested skill is not managed by clio for the selected repository.")]
-	public void Update_ShouldFail_WhenSkillIsNotManaged() {
+	[Description("install-skills forwards target and repo to the service and returns its exit code.")]
+	public void Install_ShouldCallService_AndReturnExitCode() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		CreateWorkspace(workspacePath);
+		_service.Install("codex", "url").Returns(new SkillCommandResult(0, Array.Empty<AgentOutcome>(), "done"));
+		InstallSkillsCommand command = new(_service, _logger);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, "alpha", "repo"));
+		int exitCode = command.Execute(new InstallSkillsOptions { Target = "codex", Repo = "url" });
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "update should only operate on managed skills");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("There are no clio-managed skills"),
-			because: "the failure should explain that the workspace has no managed skills to update");
+		exitCode.Should().Be(0, because: "the command should return the service exit code");
+		_service.Received(1).Install("codex", "url");
 	}
 
 	[Test]
-	[Description("Update should fail when the managed skill no longer exists in the source repository.")]
-	public void Update_ShouldFail_WhenSourceSkillIsMissing() {
+	[Description("delete-skill rejects the removed --scope option with a non-zero exit.")]
+	public void Delete_ShouldRejectScopeOption_WithError() {
 		// Arrange
-		string workspacePath = GetWorkspacePath();
-		string repoPath = GetRepositoryPath();
-		CreateWorkspace(workspacePath);
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "oldhash");
-		CreateSkill(repoPath, "beta");
-		_resolver.Resolve("repo").Returns(CreateResolvedRepository(repoPath, "newhash", "repo"));
+		DeleteSkillCommand command = new(_service, _logger);
 
 		// Act
-		SkillOperationResult result = _sut.Update(new UpdateSkillsRequest(workspacePath, "alpha", "repo"));
+		int exitCode = command.Execute(new DeleteSkillOptions { Scope = "workspace" });
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "update should fail when the managed skill path no longer exists in the source repository");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("no longer available"),
-			because: "the failure should explain that the source repository no longer contains the managed skill");
+		exitCode.Should().Be(1, because: "delete-skill must also reject the removed --scope option");
+		_service.DidNotReceiveWithAnyArgs().Delete(default);
 	}
+}
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class SkillRepositoryResolverTests {
+	private const string CachedRepoName = "creatio-ai-app-development-toolkit";
 
 	[Test]
-	[Description("Delete should remove a managed skill directory and update the managed manifest.")]
-	public void Delete_ShouldRemoveManagedSkill() {
-		// Arrange
-		string workspacePath = GetWorkspacePath();
-		CreateWorkspace(workspacePath);
-		CreateManagedSkill(workspacePath, SkillScope.Workspace, "alpha", "repo", "hash");
-
-		// Act
-		SkillOperationResult result = _sut.Delete(new DeleteSkillRequest(workspacePath, "alpha"));
-
-		// Assert
-		result.ExitCode.Should().Be(0, because: "delete should succeed for a managed workspace-local skill");
-		_mockFileSystem.Directory.Exists(GetPath("workspace", ".agents", "skills", "alpha")).Should().BeFalse(
-			because: "delete should remove the managed skill folder");
-		_mockFileSystem.File.Exists(GetPath("workspace", ".agents", "skills", ".clio-managed.json")).Should().BeFalse(
-			because: "delete should remove the manifest file when the last managed skill entry is removed");
-	}
-
-	[Test]
-	[Description("Delete should fail when the workspace skill exists but is not managed by clio.")]
-	public void Delete_ShouldFail_WhenSkillIsUnmanaged() {
-		// Arrange
-		string workspacePath = GetWorkspacePath();
-		CreateWorkspace(workspacePath);
-		_mockFileSystem.AddFile(GetPath("workspace", ".agents", "skills", "alpha", "SKILL.md"), new MockFileData("manual"));
-
-		// Act
-		SkillOperationResult result = _sut.Delete(new DeleteSkillRequest(workspacePath, "alpha"));
-
-		// Assert
-		result.ExitCode.Should().Be(1, because: "delete should protect unmanaged skills from accidental removal");
-		result.ErrorMessages.Should().ContainSingle(
-			message => message.Contains("is not managed by clio"),
-			because: "the failure should explain that clio only deletes managed skills");
-	}
-
-	[Test]
-	[Description("Delete should remove a managed user-scope skill and clean up the user manifest.")]
-	public void Delete_ShouldRemoveManagedUserScopeSkill() {
-		// Arrange
-		string workspacePath = GetWorkspacePath();
-		CreateManagedSkill(GetUserScopeHomePath(), SkillScope.User, "alpha", "repo", "hash");
-
-		// Act
-		SkillOperationResult result = _sut.Delete(new DeleteSkillRequest(workspacePath, "alpha", SkillScope.User));
-
-		// Assert
-		result.ExitCode.Should().Be(0, because: "delete should support managed skills in user scope");
-		_mockFileSystem.Directory.Exists(GetPath("codex-home", "skills", "alpha")).Should().BeFalse(
-			because: "delete should remove the managed user-scope skill folder");
-		_mockFileSystem.File.Exists(GetPath("codex-home", "skills", ".clio-managed.json")).Should().BeFalse(
-			because: "delete should remove the user-scope manifest when the last entry is removed");
-	}
-
-	[Test]
-	[Description("Repository resolver should cache the default bootstrap repository under the clio app-settings folder when the caller omits --repo.")]
+	[Description("Repository resolver should clone the default toolkit marketplace under the clio app-settings folder when --repo is omitted.")]
 	public void SkillRepositoryResolver_ShouldUseDefaultRepository_WhenRepoIsOmitted() {
 		// Arrange
 		MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), GetCurrentDirectoryPath());
 		Clio.Common.IFileSystem fileSystem = new Clio.Common.FileSystem(mockFileSystem);
 		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		IGitCommandRunner gitCommandRunner = Substitute.For<IGitCommandRunner>();
-		string cachedRepositoryPath = System.IO.Path.Combine(
-			SettingsRepository.AppSettingsFolderPath,
-			"bootstrap-composable-app-starter-kit");
-		gitCommandRunner.Clone(WorkspaceSkillDefaults.DefaultRepository, cachedRepositoryPath)
+		string cachedRepositoryPath = Path.Combine(SettingsRepository.AppSettingsFolderPath, CachedRepoName);
+		gitCommandRunner.Clone(ToolkitDistribution.MarketplaceGitUrl, cachedRepositoryPath)
 			.Returns(new GitCommandResult(true, string.Empty, string.Empty));
 		gitCommandRunner.GetHeadCommitHash(cachedRepositoryPath)
 			.Returns(new GitCommandResult(true, "abc123", string.Empty));
@@ -414,20 +316,17 @@ public sealed class SkillManagementServiceTests {
 		using ResolvedSkillRepository repository = resolver.Resolve(null);
 
 		// Assert
-		gitCommandRunner.Received(1).Clone(WorkspaceSkillDefaults.DefaultRepository, cachedRepositoryPath);
+		gitCommandRunner.Received(1).Clone(ToolkitDistribution.MarketplaceGitUrl, cachedRepositoryPath);
 		gitCommandRunner.DidNotReceiveWithAnyArgs().Pull(default!);
-		gitCommandRunner.Received(1).GetHeadCommitHash(cachedRepositoryPath);
-		repository.SourceLocator.Should().Be(WorkspaceSkillDefaults.DefaultRepository,
-			because: "the resolver should normalize an omitted repository to the configured default URL");
+		repository.SourceLocator.Should().Be(ToolkitDistribution.MarketplaceGitUrl,
+			because: "the resolver should normalize an omitted repository to the default toolkit marketplace URL");
 	}
 
 	[Test]
-	[Description("Repository resolver should refresh an existing cached repository with git pull instead of cloning it again.")]
+	[Description("Repository resolver should refresh an existing cached repository with git pull instead of cloning again.")]
 	public void SkillRepositoryResolver_ShouldPullCachedRepository_WhenCacheExists() {
 		// Arrange
-		string cachedRepositoryPath = System.IO.Path.Combine(
-			SettingsRepository.AppSettingsFolderPath,
-			"bootstrap-composable-app-starter-kit");
+		string cachedRepositoryPath = Path.Combine(SettingsRepository.AppSettingsFolderPath, CachedRepoName);
 		MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData> {
 			[Path.Combine(cachedRepositoryPath, ".git", "HEAD")] = new("ref: refs/heads/main")
 		}, GetCurrentDirectoryPath());
@@ -441,70 +340,14 @@ public sealed class SkillManagementServiceTests {
 		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
 
 		// Act
-		using ResolvedSkillRepository repository = resolver.Resolve(WorkspaceSkillDefaults.DefaultRepository);
+		using ResolvedSkillRepository repository = resolver.Resolve(ToolkitDistribution.MarketplaceGitUrl);
 
 		// Assert
 		gitCommandRunner.DidNotReceiveWithAnyArgs().Clone(default!, default!);
 		gitCommandRunner.Received(1).Pull(cachedRepositoryPath);
-		gitCommandRunner.Received(1).GetHeadCommitHash(cachedRepositoryPath);
 		repository.RepositoryRootPath.Should().Be(cachedRepositoryPath,
 			because: "the resolver should reuse the persistent cached repository directory for repeated operations");
 	}
 
-	private void CreateWorkspace(string workspacePath) {
-		_mockFileSystem.AddFile(Path.Combine(workspacePath, ".clio", "workspaceSettings.json"), new MockFileData("{}"));
-	}
-
-	private void CreateSkill(string repoPath, string skillName, string skillContent = "content") {
-		string skillDirectory = Path.Combine(repoPath, ".agents", "skills", skillName);
-		_mockFileSystem.AddFile(Path.Combine(skillDirectory, "SKILL.md"), new MockFileData(skillContent));
-		_mockFileSystem.AddFile(Path.Combine(skillDirectory, "README.md"), new MockFileData("details"));
-	}
-
-	private void CreateManagedSkill(string rootPath, SkillScope scope, string skillName, string sourceRepo, string commitHash) {
-		string skillRoot = scope == SkillScope.User
-			? Path.Combine(rootPath, "skills")
-			: Path.Combine(rootPath, ".agents", "skills");
-		string relativeTargetPath = scope == SkillScope.User
-			? $"skills/{skillName}"
-			: $".agents/skills/{skillName}";
-		_mockFileSystem.AddFile(Path.Combine(skillRoot, skillName, "SKILL.md"), new MockFileData("installed"));
-		string manifestPath = Path.Combine(skillRoot, ".clio-managed.json");
-		ManagedSkillsManifest existingManifest = _mockFileSystem.File.Exists(manifestPath)
-			? JsonSerializer.Deserialize<ManagedSkillsManifest>(_mockFileSystem.File.ReadAllText(manifestPath)) ?? new ManagedSkillsManifest()
-			: new ManagedSkillsManifest();
-		existingManifest.Entries.RemoveAll(entry => entry.SkillName == skillName);
-		existingManifest.Entries.Add(new ManagedSkillEntry {
-			SkillName = skillName,
-			TargetPath = relativeTargetPath,
-			SourceRepo = sourceRepo,
-			SourceRelativePath = $".agents/skills/{skillName}",
-			CommitHash = commitHash,
-			InstalledAtUtc = DateTimeOffset.Parse("2026-03-27T10:00:00+00:00"),
-			UpdatedAtUtc = DateTimeOffset.Parse("2026-03-27T10:00:00+00:00")
-		});
-		string manifestJson = JsonSerializer.Serialize(existingManifest);
-		_mockFileSystem.AddFile(manifestPath, new MockFileData(manifestJson));
-	}
-
-	private ResolvedSkillRepository CreateResolvedRepository(string repositoryRootPath, string commitHash, string sourceLocator) {
-		return new ResolvedSkillRepository(sourceLocator, repositoryRootPath, commitHash, _workingDirectoriesProvider);
-	}
-
 	private static string GetCurrentDirectoryPath() => OperatingSystem.IsWindows() ? @"C:\workspace" : "/";
-
-	private static string GetWorkspacePath() => GetPath("workspace");
-
-	private static string GetRepositoryPath() => GetPath("repo");
-
-	private static string GetUserScopeHomePath() => GetPath("codex-home");
-
-	private static string GetPath(params string[] segments) {
-		string currentPath = OperatingSystem.IsWindows() ? @"C:\" : "/";
-		foreach (string segment in segments) {
-			currentPath = Path.Combine(currentPath, segment);
-		}
-
-		return currentPath;
-	}
 }
