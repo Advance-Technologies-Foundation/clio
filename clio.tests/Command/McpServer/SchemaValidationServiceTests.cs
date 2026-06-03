@@ -1548,7 +1548,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field control with a label resource matching the DS-bound binding attribute name is accepted — the platform auto-provides the caption from the entity column.")]
+	[Description("Insert of a new field using the Designer format (path:[], values.attributes nesting) with a label resource matching the column code is accepted — the platform auto-provides the caption from the entity column.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithAutoProvidedLabel_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1560,7 +1560,7 @@ public sealed class SchemaValidationServiceTests
 							{
 								"type":"crt.NumberInput",
 								"label":"$Resources.Strings.UsrEstimatedMinutes",
-								"control":"$UsrEstimatedMinutes"
+								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
 				]
@@ -1569,19 +1569,20 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}}
 					}
 				]
 			""");
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeTrue("because the binding attribute is declared with a DS-bound model path and the label key matches the attribute name, so the platform auto-provides the caption");
+		result.IsValid.Should().BeTrue("because the binding attribute is declared in Designer format (path:[], values.attributes nesting) and the label key 'UsrEstimatedMinutes' is the column code so the platform auto-provides the caption");
 		result.Errors.Should().BeEmpty();
 	}
 
 	[Test]
-	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when the label resource is not registered. The platform auto-provides captions only when the resource key matches the entity column code (last segment of the DS path), so the path-with-underscores form is NOT auto-provided even when declared as a DS-bound attribute.")]
+	[Description("Insert using Designer format (path:[], values.attributes) with a PDS_-prefixed label key and no explicit resource is rejected — PDS_X is not auto-provided, only the column code X is.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1602,7 +1603,8 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"PDS_UsrCompleted":{"modelConfig":{"path":"PDS.UsrCompleted"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrCompleted":{"modelConfig":{"path":"PDS.UsrCompleted"}}}}
 					}
 				]
 			""");
@@ -1618,7 +1620,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field control with the label resource passed in 'resources' is accepted.")]
+	[Description("Insert of a new field control using Designer format with the label resource passed in 'resources' is accepted.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithExplicitLabelResource_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1630,7 +1632,7 @@ public sealed class SchemaValidationServiceTests
 							{
 								"type":"crt.PhoneInput",
 								"label":"$Resources.Strings.PDS_UsrContactPhone",
-								"control":"$UsrContactPhone"
+								"control":"$PDS_UsrContactPhone"
 							}
 					}
 				]
@@ -1639,7 +1641,8 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}}
 					}
 				]
 			""");
@@ -1780,6 +1783,457 @@ public sealed class SchemaValidationServiceTests
 		emptyResult.Errors.Should().BeEmpty();
 		whitespaceResult.IsValid.Should().BeTrue("because a whitespace body has no inserts to validate");
 		whitespaceResult.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Flat viewModelConfigDiff (no path property, attribute directly in values) is rejected because the attribute lands at viewModelConfig root instead of viewModelConfig.attributes and the Freedom UI runtime ignores it — controls render but bind no data.")]
+	public void ValidateInsertedFieldSelfConsistency_FlatViewModelConfigDiff_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the flat form (no 'path':[], attribute directly in values) passes the platform save but fails at runtime — the attribute lands at viewModelConfig root instead of viewModelConfig.attributes");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("PDS_UsrEstimatedMinutes") &&
+			error.Contains("required nesting") &&
+			error.Contains("read and write no data"),
+			"because the diagnostic should explain that the flat declaration form will not bind data at runtime");
+	}
+
+	[Test]
+	[Description("Designer format: viewModelConfigDiff entry uses path:[] with values.attributes nesting. The attribute must be recognised so validation passes for a correctly-declared field with an auto-provided label.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PathEmptyAttributesNested_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the attribute is declared in the Designer format (path:[], values.attributes nesting) and the label key 'UsrEstimatedMinutes' matches the column code so the platform auto-provides the caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format with full attribute name as resource key — must pass when the explicit resources parameter covers the key.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_ExplicitResourceForFullAttributeName_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrEstimatedMinutes"] = "Estimated minutes" });
+
+		result.IsValid.Should().BeTrue("because 'PDS_UsrEstimatedMinutes' is explicitly registered in the resources parameter");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format with label using full PDS_-prefixed attribute name but no explicit resources must be rejected because PDS_X is not auto-provided — only the column code X is.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PdsUnderscoreLabelWithoutResources_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because 'PDS_UsrEstimatedMinutes' is not auto-provided — only the column code 'UsrEstimatedMinutes' is");
+		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrEstimatedMinutes") && e.Contains("render blank"));
+	}
+
+	[Test]
+	[Description("Static viewModelConfig form (FormPage created by create-app, SCHEMA_VIEW_MODEL_CONFIG marker): attribute declared under viewModelConfig.attributes is accepted — this is the replace-mode path for such pages.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeUnderAttributes_ReturnsValid() {
+		// Static form uses viewModelConfig (not viewModelConfigDiff). Attribute must be under .attributes.
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":
+						{
+							"type":"crt.NumberInput",
+							"label":"$Resources.Strings.UsrEstimatedMinutes",
+							"control":"$UsrEstimatedMinutes"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrEstimatedMinutes": {
+						"modelConfig": { "path": "PDS.UsrEstimatedMinutes" }
+					}
+				}
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the attribute is declared in static viewModelConfig.attributes with a valid modelConfig.path, and the label key 'UsrEstimatedMinutes' matches the column code for auto-provide");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Legacy diff format path:[\"attributes\"] (older platform form, values IS the attributes container) is recognised as properly-nested and accepted by ValidateInsertedFieldSelfConsistency.")]
+	public void ValidateInsertedFieldSelfConsistency_LegacyPathAttributesFormat_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes"],
+						"values":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because path:[\"attributes\"] is the older properly-nested form (attributes reach viewModelConfig.attributes) and must be accepted");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format (path:[], values.attributes) with multiple attributes in a single entry — both controls must be recognised and validation must pass.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_MultipleAttributesInOneEntry_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrA","control":"$PDS_UsrA"}
+					},
+					{
+						"operation":"insert",
+						"name":"UsrB",
+						"values":{"type":"crt.NumberInput","label":"$Resources.Strings.UsrB","control":"$PDS_UsrB"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrA":{"modelConfig":{"path":"PDS.UsrA"}},
+								"PDS_UsrB":{"modelConfig":{"path":"PDS.UsrB"}}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because both attributes are declared in a single Designer-format path:[] entry and labels use auto-provided column codes");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Case-collision regression guard: a properly-nested attribute and a flat attribute differing ONLY in case must NOT collapse. properlyNestedAttributes is Ordinal (runtime keys case-exact), so the flat-form 'pds_usrx' is still rejected even though a nested 'PDS_USRX' exists.")]
+	public void ValidateInsertedFieldSelfConsistency_CaseCollidingNestedAndFlat_RejectsFlat() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldLower",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$pds_usrx"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_USRX":{"modelConfig":{"path":"PDS.UsrX"}}}}
+					},
+					{
+						"operation":"merge",
+						"values":{"pds_usrx":{"modelConfig":{"path":"PDS.UsrX"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because the flat 'pds_usrx' lands at viewModelConfig root and must not be masked by the case-different nested 'PDS_USRX'");
+		result.Errors.Should().ContainSingle(e => e.Contains("pds_usrx") && e.Contains("without the required nesting"));
+	}
+
+	[Test]
+	[Description("Multi-segment path:[\"attributes\",\"X\"] must NOT be treated as an attributes container — for that path `values` is the attribute body, not an attribute map. The classifier rejects it, so a control binding the targeted attribute is reported as not declared rather than silently accepting body keys (e.g. 'modelConfig') as attribute names.")]
+	public void ValidateInsertedFieldSelfConsistency_MultiSegmentAttributesPath_NotTreatedAsContainer() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$PDS_UsrX"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes","PDS_UsrX"],
+						"values":{"modelConfig":{"path":"PDS.UsrX"}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because a multi-segment attributes path is not a valid attribute-map container");
+		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrX") && e.Contains("does not declare attribute"),
+			"because PDS_UsrX is not collected (the body keys under a 2-segment path are not attribute names) — and the spurious 'modelConfig' must not be accepted as an attribute either");
+	}
+
+	[Test]
+	[Description("A remove operation must not contribute declared attribute names. An insert binding an attribute that is only 'declared' by a remove entry is reported as not declared.")]
+	public void ValidateInsertedFieldSelfConsistency_RemoveOperationDoesNotDeclareAttribute_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldFoo",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrFoo","control":"$PDS_UsrFoo"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"remove",
+						"path":["attributes"],
+						"values":{"PDS_UsrFoo":{"modelConfig":{"path":"PDS.UsrFoo"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because a remove operation deletes the attribute and must not make a binding to it appear valid");
+		result.Errors.Should().Contain(e => e.Contains("PDS_UsrFoo") && e.Contains("does not declare attribute"));
+	}
+
+	[Test]
+	[Description("Crash guard: a SCHEMA_VIEW_MODEL_CONFIG block that parses as a non-object (e.g. an array) must not throw — System.Text.Json TryGetProperty throws on non-objects, so EnumerateAttributesContainers guards ValueKind first. Validation returns a result instead of crashing.")]
+	public void ValidateInsertedFieldSelfConsistency_NonObjectStaticViewModelConfig_DoesNotThrow() {
+		// Static viewModelConfig marker holds an array instead of an object — malformed but must not crash.
+		string body = BuildStaticViewModelConfigPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$UsrX"}
+					}
+				]
+			""",
+			"[]");
+
+		Action act = () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		act.Should().NotThrow("because EnumerateAttributesContainers guards ValueKind before TryGetProperty");
+	}
+
+	[Test]
+	[Description("Designer format (path:[], values.attributes) with a validator using reactive binding in a param — the param binding rule must apply regardless of the viewModelConfigDiff format.")]
+	public void ValidateValidatorParamResourceBindings_DesignerFormat_ReactiveBindingInValidatorParam_ReturnsInvalid() {
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":[],
+					"values":{
+						"attributes":{
+							"UsrName":{
+								"modelConfig":{"path":"PDS.UsrName"},
+								"validators":{
+									"Upper":{
+										"type":"usr.Upper",
+										"params":{"message":"$Resources.Strings.UsrMsg"}
+									}
+								}
+							}
+						}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		var result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		result.IsValid.Should().BeFalse("because the reactive binding $Resources.Strings.* is not valid in validator params — must use #ResourceString()# — and the path:[] Designer format does not exempt this rule");
+		result.Errors.Should().ContainSingle(e => e.Contains("#ResourceString(UsrMsg)#"));
+	}
+
+	[Test]
+	[Description("path:[] entry where attribute is directly in values (no 'attributes' sub-object) must produce an error — " +
+	             "the attribute falls through all collection passes and is reported as undeclared. " +
+	             "Known approximation: the message says 'not declared' rather than 'wrong nesting', but the save is correctly blocked.")]
+	public void ValidateInsertedFieldSelfConsistency_RootPathWithAttributeDirectlyInValues_IsRejected() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$PDS_UsrX"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"PDS_UsrX":{"modelConfig":{"path":"PDS.UsrX"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because path:[] with attribute directly in values (no 'attributes' sub-object) is not recognised " +
+			"by any collection path and the save is blocked — the diagnostic says 'not declared' rather than 'wrong nesting' " +
+			"(known approximation; the fix is correct nesting under values.attributes)");
+		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrX") && e.Contains("does not declare attribute"),
+			"because the undeclared-attribute message is produced since the attribute is not found in any valid collection pass");
 	}
 
 	[Test]

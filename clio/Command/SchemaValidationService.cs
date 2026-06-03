@@ -103,8 +103,11 @@ public static class SchemaValidationService
 		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
 		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
 		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
-		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
-		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
+		"with a modelConfig.path to the entity column — the attribute MUST reach viewModelConfig.attributes, " +
+		"via the preferred path:[] + values.attributes form (e.g. {\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"PDS_UsrX\":{\"modelConfig\":{\"path\":\"PDS.UsrX\"}}}}}) " +
+		"or the legacy path:[\"attributes\"] form (where values itself is the attribute map); " +
+		"putting the attribute directly in values with no path (the flat form) is silently accepted on save but fails at runtime — controls render with no data, and " +
+		"(b) the label resource — either passed in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
 		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
 		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
 		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
@@ -947,13 +950,14 @@ public static class SchemaValidationService
 			return result;
 		}
 		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		HashSet<string> properlyNestedAttributes = CollectProperlyNestedViewModelAttributes(jsBody);
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
 		using (vcdDoc) {
 			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
-				ValidateInsertedFieldEntry(entry, declaredAttributes, modelPaths, explicitResources, result);
+				ValidateInsertedFieldEntry(entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, result);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -965,13 +969,14 @@ public static class SchemaValidationService
 	private static void ValidateInsertedFieldEntry(
 		JsonElement entry,
 		IReadOnlySet<string> declaredAttributes,
+		IReadOnlySet<string> properlyNestedAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
-		AppendBindingDeclarationError(descriptor, declaredAttributes, result);
+		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, result);
 		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
 	}
 
@@ -1010,17 +1015,36 @@ public static class SchemaValidationService
 	private static void AppendBindingDeclarationError(
 		InsertedFieldDescriptor descriptor,
 		IReadOnlySet<string> declaredAttributes,
+		IReadOnlySet<string> properlyNestedAttributes,
 		SchemaValidationResult result) {
-		if (declaredAttributes.Contains(descriptor.BindingAttribute)) {
+		string attr = descriptor.BindingAttribute;
+		if (properlyNestedAttributes.Contains(attr)) {
+			return;
+		}
+		string canonicalEntry =
+			"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"" + attr + "\":{\"modelConfig\":{\"path\":\"<DataSource>.<Column>\"}}}}}";
+		if (declaredAttributes.Contains(attr)) {
+			// Attribute declared in flat form (no "path":[] + "attributes" nesting).
+			// The platform save accepts it, but at runtime the attribute ends up at
+			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
+			// Freedom UI runtime ignores — controls render but read and write no data.
+			result.Errors.Add(
+				"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
+				"which is declared in viewModelConfigDiff without the required nesting. " +
+				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
+				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
+				"The current flat form puts the attribute at viewModelConfig." + attr + " which the runtime ignores — " +
+				"the control will render but read and write no data. " +
+				"Use: " + canonicalEntry + ".");
 			return;
 		}
 		result.Errors.Add(
-			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
-			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
-			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
-			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
-			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
-			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+			"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
+			"but the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
+			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			canonicalEntry + " so the control binds to the entity column. " +
+			"If the attribute is already provided by the parent schema, " +
+			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
 	}
 
 	private static void AppendLabelResourceError(
@@ -1208,6 +1232,44 @@ public static class SchemaValidationService
 		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfig, false, attributeNames);
 		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfigDiff, true, attributeNames);
 		return attributeNames;
+	}
+
+	/// <summary>
+	/// Collects view-model attribute names that are declared in the properly-nested form:
+	/// either under <c>viewModelConfig.attributes</c> (static) or inside a
+	/// <c>viewModelConfigDiff</c> entry that uses <c>"path":[]</c> + <c>values.attributes</c>
+	/// nesting or the older <c>"path":["attributes"]</c> form. Attributes declared in the flat
+	/// form (no <c>path</c> property, attribute directly in <c>values</c>) are intentionally
+	/// excluded because they land at <c>viewModelConfig.&lt;name&gt;</c> (root level) instead of
+	/// <c>viewModelConfig.attributes.&lt;name&gt;</c>, which the Freedom UI runtime ignores.
+	/// </summary>
+	private static HashSet<string> CollectProperlyNestedViewModelAttributes(string jsBody) {
+		// Case-EXACT (Ordinal), unlike declaredAttributes (OrdinalIgnoreCase): the Freedom UI
+		// runtime keys attributes under their literal name, so a properly-nested 'PDS_UsrX' must
+		// NOT mask a flat-form 'pds_usrx'. With OrdinalIgnoreCase the two would collide and the
+		// flat-form rejection in AppendBindingDeclarationError would be wrongly suppressed.
+		var names = new HashSet<string>(StringComparer.Ordinal);
+		// Static viewModelConfig.attributes — always nested correctly.
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfig, false, names);
+		// Diff form: only path:[] + values.attributes AND path:["attributes"] forms.
+		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? doc)) {
+			return names;
+		}
+		using (doc) {
+			if (doc.RootElement.ValueKind != JsonValueKind.Array) {
+				return names;
+			}
+			foreach (JsonElement op in doc.RootElement.EnumerateArray()) {
+				if (TryGetDiffAttributesContainer(op, out JsonElement container, out bool isProperlyNested) &&
+				    isProperlyNested) {
+					foreach (JsonProperty attr in container.EnumerateObject()) {
+						names.Add(attr.Name);
+					}
+				}
+				// Flat / no-path entries are excluded intentionally (isProperlyNested = false).
+			}
+		}
+		return names;
 	}
 
 	private static void CollectDeclaredViewModelAttributesFromMarker(
@@ -1987,7 +2049,12 @@ public static class SchemaValidationService
 
 	private static IEnumerable<JsonElement> EnumerateAttributesContainers(JsonElement root, bool isArray) {
 		if (!isArray) {
-			if (root.TryGetProperty(AttributesPropertyName, out JsonElement attributes)) {
+			// Guard ValueKind before TryGetProperty: System.Text.Json THROWS
+			// InvalidOperationException (it does not return false) when the element is not an
+			// object. A SCHEMA_VIEW_MODEL_CONFIG block that parses as [] / null / a string / a
+			// number would otherwise crash validation instead of being skipped cleanly.
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(AttributesPropertyName, out JsonElement attributes)) {
 				yield return attributes;
 			}
 			yield break;
@@ -1998,12 +2065,8 @@ public static class SchemaValidationService
 		}
 
 		foreach (JsonElement op in root.EnumerateArray()) {
-			if (!ShouldScanAsAttributesContainer(op)) {
-				continue;
-			}
-
-			if (op.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
-				yield return values;
+			if (TryGetDiffAttributesContainer(op, out JsonElement container, out _)) {
+				yield return container;
 			}
 		}
 	}
@@ -2018,9 +2081,88 @@ public static class SchemaValidationService
 		}
 
 		using JsonElement.ArrayEnumerator segments = pathElement.EnumerateArray();
-		return segments.MoveNext() &&
-		       segments.Current.ValueKind == JsonValueKind.String &&
-		       string.Equals(segments.Current.GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
+		if (!segments.MoveNext() ||
+		    segments.Current.ValueKind != JsonValueKind.String ||
+		    !string.Equals(segments.Current.GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		// Require EXACTLY one segment. A multi-segment path like ["attributes","UsrX"] targets a
+		// sub-property of a specific attribute, so `values` is that attribute's BODY
+		// (modelConfig, validators, ...), NOT a map of attribute names. Treating it as an
+		// attributes container would collect body keys as attribute names and miss the real one.
+		return !segments.MoveNext();
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="operation"/> targets the root of the view-model
+	/// config — i.e. its <c>path</c> property is an empty JSON array. This is the form emitted
+	/// by the Freedom UI Designer for <c>viewModelConfigDiff</c> entries where attribute
+	/// declarations are nested under <c>values.attributes</c>.
+	/// </summary>
+	private static bool IsRootPathOperation(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
+		    pathElement.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		using JsonElement.ArrayEnumerator segments = pathElement.EnumerateArray();
+		return !segments.MoveNext();
+	}
+
+	/// <summary>
+	/// Single shared classifier for a <c>viewModelConfigDiff</c> array entry. Resolves the JSON
+	/// element that acts as the attributes container for the entry and indicates whether that
+	/// container is in a properly-nested form (attributes land at
+	/// <c>viewModelConfig.attributes.{name}</c> at runtime) or the flat / no-path form
+	/// (attributes land at <c>viewModelConfig.{name}</c>, silently accepted on save but ignored
+	/// at runtime).
+	/// </summary>
+	/// <param name="op">A single element from the <c>viewModelConfigDiff</c> array.</param>
+	/// <param name="container">Receives the resolved attributes container when the method returns <c>true</c>.</param>
+	/// <param name="isProperlyNested">
+	/// <c>true</c> for <c>path:["attributes"]</c> and <c>path:[]</c> + <c>values.attributes</c> entries
+	/// (attributes reach <c>viewModelConfig.attributes</c>).
+	/// <c>false</c> for no-path flat entries (attributes land at <c>viewModelConfig</c> root).
+	/// </param>
+	/// <returns><c>true</c> when <paramref name="container"/> was resolved; otherwise <c>false</c>.</returns>
+	private static bool TryGetDiffAttributesContainer(
+		JsonElement op,
+		out JsonElement container,
+		out bool isProperlyNested) {
+		container = default;
+		isProperlyNested = false;
+		if (op.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		// A remove operation deletes an attribute rather than declaring one — its values must
+		// not be collected as declared/properly-nested attribute names (that would make a binding
+		// to a just-removed attribute appear valid).
+		if (op.TryGetProperty("operation", out JsonElement opKind) &&
+		    opKind.ValueKind == JsonValueKind.String &&
+		    string.Equals(opKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		if (!op.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+		    values.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (IsRootPathOperation(op)) {
+			if (values.TryGetProperty(AttributesPropertyName, out JsonElement nestedAttrs) &&
+			    nestedAttrs.ValueKind == JsonValueKind.Object) {
+				container = nestedAttrs;
+				isProperlyNested = true;
+				return true;
+			}
+			// path:[] but no attributes key — not a valid attributes container.
+			return false;
+		}
+		if (ShouldScanAsAttributesContainer(op)) {
+			container = values;
+			// has path property = path:["attributes"] (properly nested);
+			// no path property = flat form (attributes land at viewModelConfig root, not .attributes).
+			isProperlyNested = op.TryGetProperty("path", out _);
+			return true;
+		}
+		return false;
 	}
 
 	private static void ValidateValidatorBindingContractsInMarker(

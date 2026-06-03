@@ -103,7 +103,7 @@ public sealed class PageModificationGuidanceResource {
 		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
-		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`.
+		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`. Static-form FormPage bodies (see "Static vs diff body forms" below) instead carry `SCHEMA_VIEW_MODEL_CONFIG` and `SCHEMA_MODEL_CONFIG` (no `_DIFF`) in place of the two `_DIFF` markers — those are equally valid; preserve whichever pair the body you read from `get-page` already uses, and do not convert one form to the other.
 
 		       CRITICAL — do NOT resend the full raw.body as the update-page body payload
 		       - `raw.body` contains the schema's own existing viewConfigDiff operations (existing merges/inserts). Re-sending it makes the backend re-apply those merges against the current parent hierarchy, and one of them typically fails with
@@ -154,10 +154,30 @@ public sealed class PageModificationGuidanceResource {
 		       Three required edits for a single new field:
 
 		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.
-		       2. `viewModelConfigDiff` — merge a matching attribute entry that declares `modelConfig.path` to the entity column the control reads/writes.
-		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<columnCode>` (the LAST segment of the binding attribute's `modelConfig.path`, e.g. `UsrCompleted` for `PDS.UsrCompleted`) so the platform auto-provides the caption from the entity column. The auto-provided form requires the binding attribute itself to have a `modelConfig.path` (step 2 above); auto-provide is keyed by column code, not by view-model attribute name.
+		       2. `viewModelConfigDiff` — a single merge entry with `"path": []` (root) and a `values.attributes` object declaring the attribute with its `modelConfig.path` to the entity column. The attribute name is conventionally `{DataSourceName}_{ColumnName}` (e.g. `PDS_UsrEstimatedMinutes` when the data source is `PDS`). Do NOT put the attribute directly in `values` — it must be nested under `values.attributes`.
+		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<columnCode>` (the LAST segment of the binding attribute's `modelConfig.path`, e.g. `UsrEstimatedMinutes` for `PDS.UsrEstimatedMinutes`) so the platform auto-provides the caption from the entity column. Auto-provide is keyed by column code, not by view-model attribute name — so `PDS_UsrEstimatedMinutes` as the resource key is NOT auto-provided, but `UsrEstimatedMinutes` IS.
 
-		       Canonical payload — adding a `crt.NumberInput` "Estimated minutes" field bound to `UsrEstimatedMinutes`:
+		       Static vs diff body forms — read `raw.body` before editing
+		       FormPages created by `create-app` or `create-app-section` use the STATIC form: `viewModelConfig` (not `viewModelConfigDiff`) and `modelConfig` (not `modelConfigDiff`). The editable body marker is `SCHEMA_VIEW_MODEL_CONFIG`, not `SCHEMA_VIEW_MODEL_CONFIG_DIFF`.
+		       - Static form (`SCHEMA_VIEW_MODEL_CONFIG`): `update-page append` is **blocked** — use `replace` mode only. Add the new attribute directly into `viewModelConfig.attributes.{attrName}`. The `modelConfig.dataSources.PDS` is already in the body — keep it as-is.
+		       - Diff form (`SCHEMA_VIEW_MODEL_CONFIG_DIFF`): use `append` mode. Add attribute via `viewModelConfigDiff` with `path:[]` + `values.attributes` nesting (see below). The `PDS` data source is inherited from the original schema in the hierarchy — leave `modelConfigDiff: []`.
+		       To determine which form is present: scan `raw.body` from `get-page` for the marker name. `SCHEMA_VIEW_MODEL_CONFIG` (no `_DIFF`) = static form. `SCHEMA_VIEW_MODEL_CONFIG_DIFF` = diff form. Also check `page.ownBodySummary.viewModelConfigDiffOperations > 0` as a quick signal that the diff form is already in use.
+
+		       viewModelConfigDiff structure — CRITICAL: the attribute must reach `viewModelConfig.attributes`
+		       Two equivalent properly-nested forms reach it: the preferred `"path": []` + `values.attributes` (what the Designer emits), or the older `"path": ["attributes"]` where `values` itself is the attribute map. Both are accepted.
+		       The WRONG flat form (no `path`, attribute directly in `values`) lands the attribute at the `viewModelConfig` root instead of under `.attributes`, where the Freedom UI runtime ignores it — the platform accepts the save but the control renders with no data. `update-page` (and `sync-pages`) now reject this form when an inserted field binds to it:
+		       ```
+		       // WRONG — flat form. Attribute lands at viewModelConfig root, not under .attributes — control binds no data:
+		       { "operation": "merge", "values": { "PDS_UsrEstimatedMinutes": { "modelConfig": { "path": "PDS.UsrEstimatedMinutes" } } } }
+
+		       // CORRECT (preferred) — attribute nested under values.attributes with path:[]:
+		       { "operation": "merge", "path": [], "values": { "attributes": { "PDS_UsrEstimatedMinutes": { "modelConfig": { "path": "PDS.UsrEstimatedMinutes" } } } } }
+
+		       // ALSO CORRECT (legacy) — path:["attributes"], values is the attribute map:
+		       { "operation": "merge", "path": ["attributes"], "values": { "PDS_UsrEstimatedMinutes": { "modelConfig": { "path": "PDS.UsrEstimatedMinutes" } } } }
+		       ```
+
+		       Canonical payload — adding a `crt.NumberInput` "Estimated minutes" field in DIFF form (`append` mode, for a page whose replacing schema uses viewModelConfigDiff):
 
 		       ```
 		       update-page schema-name="UsrTodo_FormPage" mode="append" body=`
@@ -169,7 +189,7 @@ public sealed class PageModificationGuidanceResource {
 		                           "name": "UsrEstimatedMinutes",
 		                           "values": {
 		                               "type": "crt.NumberInput",
-		                               "label": "$Resources.Strings.PDS_UsrEstimatedMinutes",
+		                               "label": "$Resources.Strings.UsrEstimatedMinutes",
 		                               "control": "$PDS_UsrEstimatedMinutes",
 		                               "labelPosition": "auto"
 		                           },
@@ -181,9 +201,12 @@ public sealed class PageModificationGuidanceResource {
 		                   viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[
 		                       {
 		                           "operation": "merge",
+		                           "path": [],
 		                           "values": {
-		                               "PDS_UsrEstimatedMinutes": {
-		                                   "modelConfig": { "path": "PDS.UsrEstimatedMinutes" }
+		                               "attributes": {
+		                                   "PDS_UsrEstimatedMinutes": {
+		                                       "modelConfig": { "path": "PDS.UsrEstimatedMinutes" }
+		                                   }
 		                               }
 		                           }
 		                       }
@@ -194,23 +217,47 @@ public sealed class PageModificationGuidanceResource {
 		                   validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
 		               };
 		           });
-		       ` resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'
+		       `
 		       ```
 
-		       Note: passing `resources` is one of two valid options. The shorter alternative is to rebind the label to the entity column code (the LAST segment of `modelConfig.path`), which the platform auto-provides from the column caption. Auto-provide is keyed by COLUMN CODE, not by view-model attribute name — so `PDS_UsrEstimatedMinutes` as the resource key is NOT auto-provided, but `UsrEstimatedMinutes` IS.
+		       The label `$Resources.Strings.UsrEstimatedMinutes` uses the column code (LAST segment of `modelConfig.path`). This is auto-provided from the entity column caption — no explicit `resources` parameter needed. If you prefer to use the full attribute name in the label (`$Resources.Strings.PDS_UsrEstimatedMinutes`), pass it explicitly in `resources`: `resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'`.
 
-		       Apply this single-line change to the canonical payload above (everything else stays the same — the attribute name `PDS_UsrEstimatedMinutes` keeps its `modelConfig.path: "PDS.UsrEstimatedMinutes"` declaration in viewModelConfigDiff):
-
+		       modelConfigDiff — declaring a data source for new pages
+		       For app FormPages created via `create-app-section`, the data source (PDS) is already declared in the parent schema — you only need `viewModelConfigDiff` entries (leave `modelConfigDiff: []`).
+		       For a standalone page with no inherited data source, declare it explicitly:
 		       ```
-		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // ← before: requires `resources` parameter
-		       "label": "$Resources.Strings.UsrEstimatedMinutes"      // ← after:  auto-provided, omit `resources`
+		       modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[
+		           {
+		               "operation": "merge",
+		               "path": [],
+		               "values": {
+		                   "dataSources": {
+		                       "PDS": {
+		                           "type": "crt.EntityDataSource",
+		                           "scope": "page",
+		                           "config": {
+		                               "entitySchemaName": "UsrMyEntity",
+		                               "loadParameters": {
+		                                   "options": {
+		                                       "pagingConfig": { "rowCount": 1, "rowsOffset": -1 },
+		                                       "sortingConfig": { "columns": [] }
+		                                   }
+		                               },
+		                               "allowCopyingRecords": false
+		                           }
+		                       }
+		                   },
+		                   "primaryDataSourceName": "PDS"
+		               }
+		           }
+		       ]/**SCHEMA_MODEL_CONFIG_DIFF*/
 		       ```
-
-		       The control binding (`$PDS_UsrEstimatedMinutes`) does NOT change — it still references the view-model attribute. Only the label resource key changes to the column code form so the platform can resolve it from the entity column caption automatically.
+		       Check `bundle.modelConfig` from `get-page` — if `dataSources` is already populated, the data source is inherited and you should leave `modelConfigDiff: []`.
 
 		       Common validation diagnostics
 
-		       - "Inserted field 'X' (type 'Y') binds to '$Z' but the body does not declare attribute 'Z' in viewModelConfigDiff." — Step 2 missing. Add the `viewModelConfigDiff` merge for attribute `Z` with the correct `modelConfig.path`. If `Z` is supposed to come from a parent schema, change `operation:"insert"` to `operation:"merge"` on the `viewConfigDiff` entry instead.
+		       - "Inserted field 'X' (type 'Y') binds to '$Z' but the body does not declare attribute 'Z' in viewModelConfigDiff." — Step 2 missing entirely. Add the `viewModelConfigDiff` entry: `{"operation":"merge","path":[],"values":{"attributes":{"Z":{"modelConfig":{"path":"<DS>.<Column>"}}}}}`. If `Z` is supposed to come from a parent schema, change `operation:"insert"` to `operation:"merge"` on the `viewConfigDiff` entry instead.
+		       - "Inserted field 'X' (type 'Y') binds to '$Z' which is declared in viewModelConfigDiff without the required nesting ... the control will render but read and write no data." — Step 2 present but FLAT. The attribute is declared directly under `values` (or under a `path:[]` entry with no `attributes` wrapper) instead of under `values.attributes`, so it lands at the `viewModelConfig` root and the runtime ignores it. Move it to the properly-nested form: `{"operation":"merge","path":[],"values":{"attributes":{"Z":{"modelConfig":{"path":"<DS>.<Column>"}}}}}` (or the legacy `path:["attributes"]` form).
 		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or rebind the label to `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (auto-provided from the entity column caption). The binding attribute name itself (e.g. `PDS_<columnCode>`) is NOT a valid auto-provide key — only the column code is.
 
 		       Adding a button with a click handler
