@@ -96,7 +96,7 @@ internal sealed class LookupValueResolver : ILookupValueResolver {
 			[new SelectQueryHelper.SelectQueryFilterDefinition(
 				"Id",
 				id.ToString("D"),
-				SelectQueryHelper.TextDataValueType,
+				SelectQueryHelper.GuidDataValueType,
 				ComparisonType: 3)]);
 
 		try {
