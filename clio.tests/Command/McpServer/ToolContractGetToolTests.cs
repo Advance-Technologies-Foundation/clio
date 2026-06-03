@@ -1378,6 +1378,36 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical install-gate contract so an MCP-only agent can discover the cliogate remediation tool.")]
+	public void ToolContractGet_Should_Return_InstallGate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallGateTool.InstallGateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "install-gate must be discoverable through get-tool-contract so gate-dependent flows are completable from MCP");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(InstallGateTool.InstallGateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "install-gate targets one registered environment");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "install-gate returns the standard command execution result payload");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				InstallGateTool.InstallGateToolName,
+				RestoreWorkspaceTool.RestoreWorkspaceToolName
+			},
+			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]
 	public void ToolContractGet_Should_Return_Curated_Lifecycle_Contracts() {
 		// Arrange
@@ -1422,8 +1452,8 @@ public sealed class ToolContractGetToolTests {
 		restore.InputSchema.Required.Should().Contain(["environment-name", "workspace-path"],
 			because: "restore-workspace needs the environment and the local workspace path");
 		restore.Preconditions.Should().Contain(precondition =>
-				precondition.Contains("cliogate", StringComparison.Ordinal) &&
-				precondition.Contains("install-gate", StringComparison.Ordinal),
+			precondition.Contains("cliogate", StringComparison.Ordinal) &&
+			precondition.Contains("install-gate", StringComparison.Ordinal),
 			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
 
 		ToolContractDefinition assert = result.Tools!.Single(contract =>

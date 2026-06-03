@@ -78,6 +78,10 @@ internal static class GuidanceCatalog {
 				"business-rules",
 				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
 				BusinessRulesGuidanceResource.Guide),
+			["business-rule-filters"] = Create(
+				"business-rule-filters",
+				"Canonical MCP guidance for the apply-static-filter friendly filter contract: leaf comparisons, lookup values, forward paths, nested groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the discovery flow.",
+				BusinessRuleFiltersGuidanceResource.Guide),
 			["mobile-page-modification"] = Create(
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",

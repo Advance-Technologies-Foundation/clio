@@ -77,19 +77,25 @@ public sealed class LocalEsqFilterBuilderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Emits an InFilter on Lookup with a GUID single value.")]
+	[Description("Emits an InFilter on Lookup with a GUID single value; the GUID is reverse-resolved to Name/displayValue.")]
 	public void Build_Should_Emit_InFilter_For_Lookup_Guid() {
-		string guid = Guid.NewGuid().ToString("D");
+		Guid id = Guid.NewGuid();
+		string guid = id.ToString("D");
+		ILookupValueResolver resolver = Substitute.For<ILookupValueResolver>();
+		resolver.TryResolveDisplayNameById("AccountType", id, out Arg.Any<string?>())
+			.Returns(call => { call[2] = "Customer"; return true; });
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{guid}}" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		LocalEsqFilterBuilder builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
 
 		filter0.GetProperty("filterType").GetInt32().Should().Be(4);
 		filter0.GetProperty("className").GetString().Should().Be("Terrasoft.InFilter");
+		filter0.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeFalse(
+			because: "the platform-canonical InFilter carries trimDateTimeParameterToDate=false");
 		JsonElement rightExpressions = filter0.GetProperty("rightExpressions");
 		rightExpressions.GetArrayLength().Should().Be(1);
 		rightExpressions[0].GetProperty("parameter").GetProperty("value").GetProperty("value").GetString().Should().Be(guid);
@@ -138,10 +144,13 @@ public sealed class LocalEsqFilterBuilderTests {
 	public void Build_Should_Emit_MultiValue_In() {
 		string g1 = Guid.NewGuid().ToString("D");
 		string g2 = Guid.NewGuid().ToString("D");
+		ILookupValueResolver resolver = Substitute.For<ILookupValueResolver>();
+		resolver.TryResolveDisplayNameById("Industry", Arg.Any<Guid>(), out Arg.Any<string?>())
+			.Returns(call => { call[2] = "X"; return true; });
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Industry", "comparisonType": "EQUAL", "value": ["{{g1}}", "{{g2}}"] } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Industry", "Lookup", "Industry")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		LocalEsqFilterBuilder builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -590,6 +599,7 @@ public sealed class LocalEsqFilterBuilderTests {
 
 		filter0.GetProperty("filterType").GetInt32().Should().Be(4);
 		filter0.GetProperty("isAggregative").GetBoolean().Should().BeFalse();
+		filter0.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeFalse();
 		filter0.GetProperty("dataValueType").GetInt32().Should().Be(10, because: "Lookup data value type is 10");
 		filter0.GetProperty("referenceSchemaName").GetString().Should().Be("AccountType");
 
@@ -625,6 +635,24 @@ public sealed class LocalEsqFilterBuilderTests {
 		lookupValue.GetProperty("Name").GetString().Should().Be("Customer");
 		lookupValue.GetProperty("displayValue").GetString().Should().Be("Customer");
 		lookupValue.GetProperty("Id").GetString().Should().Be(id.ToString("D"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a raw-GUID Lookup value when its display name cannot be reverse-resolved — an Id-only value breaks the Freedom UI lookup control (ENG-88588).")]
+	public void Build_Should_Reject_Lookup_Guid_When_DisplayName_Unresolved() {
+		Guid id = Guid.NewGuid();
+		ILookupValueResolver resolver = Substitute.For<ILookupValueResolver>();
+		resolver.TryResolveDisplayNameById("AccountType", id, out Arg.Any<string?>())
+			.Returns(call => { call[2] = null; return false; });
+		StaticFilterGroup group = Deserialize(
+			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{id:D}}" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
+		LocalEsqFilterBuilder builder = new(schema, resolver);
+
+		Action act = () => builder.Build(group, "Account");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*could not resolve the display name*");
 	}
 
 	[Test]
