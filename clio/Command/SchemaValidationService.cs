@@ -112,9 +112,9 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Canonical clause stating the label half of the inserted-field contract. Authored ONCE here
-	/// and reused by <see cref="InsertedFieldContractSummary"/> and the per-field diagnostic in
-	/// <c>AppendLabelResourceError</c>. The resource nuance (prefixes, why the bare column code is
-	/// not a key) lives in the <c>page-schema-resources</c> guide, not here.
+	/// and reused by <see cref="InsertedFieldContractSummary"/>. The resource nuance (prefixes, and
+	/// why the bare column code is not the key unless it equals the attribute name) lives in the
+	/// <c>page-schema-resources</c> guide, not here.
 	/// </summary>
 	internal const string InsertedFieldLabelClause =
 		"the label must resolve — prefer the auto-provided form: set it to " +
@@ -1143,8 +1143,7 @@ public static class SchemaValidationService
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
 			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
-			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'. " +
-			$"Rule: {InsertedFieldLabelClause}.");
+			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
 
 	/// <summary>
