@@ -222,6 +222,8 @@ public sealed class PageSyncTool(
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		SchemaValidationResult fieldResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
 		SchemaValidationResult handlerResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateHandlerStructure(body));
 		SchemaValidationResult validatorBindingResult = RunContentValidation(
@@ -251,6 +253,7 @@ public sealed class PageSyncTool(
 			syntaxResult,
 			contentResult,
 			fieldResult,
+			insertSelfConsistencyResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
@@ -265,6 +268,7 @@ public sealed class PageSyncTool(
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
+			insertSelfConsistencyResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
