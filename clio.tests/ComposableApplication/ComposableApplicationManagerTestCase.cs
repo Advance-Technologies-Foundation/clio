@@ -245,9 +245,17 @@ public class ComposableApplicationManagerTestCase : BaseClioModuleTests {
 		string[] lines = normalizedMessage
 							.Split(["\n"], StringSplitOptions.RemoveEmptyEntries);
 
+		// Compare case-insensitively: file-system paths are case-insensitive on Windows/macOS, and
+		// the mock can surface a differently-cased temp root (C:\windows vs C:\Windows) than the one
+		// the expected paths are built from on the CI service account.
 		lines.Skip(1)
 			.Should()
-			.BeEquivalentTo(pathV1, pathV2);
+			.BeEquivalentTo(new[] { pathV1, pathV2 },
+				options => options.Using<string>(ctx =>
+						ctx.Subject.Should().BeEquivalentTo(ctx.Expectation,
+							because: "listed app-descriptor paths must match regardless of OS path casing"))
+					.WhenTypeIs<string>(),
+				because: "the exception must list exactly the two duplicate app-descriptor paths");
 	}
 
 	private Func<string, string> NormalizeLineEndings = (text) =>
@@ -296,8 +304,12 @@ public class ZipFileMockWrapper : IZipFile {
 
 		_workingDirectoriesProvider.CreateTempDirectory(tempDir => {
 			foreach (string file in allFiles) {
-				string relativePathFileName = file.Replace(sourceDirectoryName, string.Empty);
-				string realFsFileName = Path.Join(tempDir, relativePathFileName.TrimStart('\\'));
+				// GetRelativePath is case-insensitive on Windows/macOS and uses platform separators,
+				// so it strips the source prefix even when the mock returns a differently-cased path
+				// (e.g. C:\windows vs C:\Windows on the CI service account). A case-sensitive
+				// string.Replace left the absolute path intact and produced an invalid nested path.
+				string relativePathFileName = _fileSystem.Path.GetRelativePath(sourceDirectoryName, file);
+				string realFsFileName = Path.Combine(tempDir, relativePathFileName);
 				DirectoryInfo newDir = Directory.CreateDirectory(Path.GetDirectoryName(realFsFileName));
 				byte[] fakeFsBytes = _fileSystem.File.ReadAllBytes(file);
 				File.WriteAllBytes(realFsFileName, fakeFsBytes); //write to real FS
