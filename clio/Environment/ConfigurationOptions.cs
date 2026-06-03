@@ -553,7 +553,10 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-			var settingsRepository = new SettingsRepository();
+			// Use this instance (and its settings loaded from the configured filesystem) instead of
+			// constructing a new SettingsRepository, which re-reads the shared static FileSystem and
+			// makes the result depend on global state — a race that breaks parallel unit tests.
+			var settingsRepository = this;
 			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
 			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
 			EnvironmentSettings envSettings;
