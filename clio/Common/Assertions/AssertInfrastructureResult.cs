@@ -26,7 +26,32 @@ public sealed record AssertInfrastructureResult(
 
 	[property: JsonPropertyName("database-candidates")]
 	[property: Description("Normalized database candidates discovered across successful K8 and local assertion sections")]
-	IReadOnlyList<AssertInfrastructureDatabaseCandidate> DatabaseCandidates
+	IReadOnlyList<AssertInfrastructureDatabaseCandidate> DatabaseCandidates,
+
+	[property: JsonPropertyName("creatio-products")]
+	[property: Description("Validation of the configured creatio-products build folder used as the source for deploy-creatio archives")]
+	AssertInfrastructureProductsPath CreatioProducts = null
+);
+
+/// <summary>
+/// Validation result for the configured creatio-products build folder.
+/// </summary>
+public sealed record AssertInfrastructureProductsPath(
+	[property: JsonPropertyName("status")]
+	[property: Description("Products-folder status: ok, missing, or not-configured")]
+	string Status,
+
+	[property: JsonPropertyName("path")]
+	[property: Description("Resolved creatio-products folder configured in clio appsettings.json")]
+	string Path,
+
+	[property: JsonPropertyName("exists")]
+	[property: Description("Whether the configured creatio-products folder exists on disk")]
+	bool Exists,
+
+	[property: JsonPropertyName("message")]
+	[property: Description("Human-readable summary or remediation hint for the products folder")]
+	string Message
 );
 
 /// <summary>

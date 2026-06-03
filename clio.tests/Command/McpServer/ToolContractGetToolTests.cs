@@ -1405,7 +1405,6 @@ public sealed class ToolContractGetToolTests {
 			},
 			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
 	}
-
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]
@@ -1463,7 +1462,6 @@ public sealed class ToolContractGetToolTests {
 		assert.OutputContract.Fields.Should().Contain(field => field.Name == "database-candidates",
 			because: "assert-infrastructure should advertise the normalized database candidates it returns");
 	}
-
 	[Test]
 	[Category("Unit")]
 	[Description("Falls back to a schema-derived contract for a registered tool that has no curated contract instead of returning tool-not-found.")]
@@ -1489,7 +1487,6 @@ public sealed class ToolContractGetToolTests {
 		contract.InputSchema.Required.Should().Contain(["environment-name", "workspace-path"],
 			because: "the fallback should detect [Required] declared on the args constructor parameters");
 	}
-
 	[Test]
 	[Category("Unit")]
 	[Description("Still returns tool-not-found with suggestions for a name that matches no registered tool.")]
@@ -1509,5 +1506,36 @@ public sealed class ToolContractGetToolTests {
 			because: "the fallback must not mask genuinely unknown tool names");
 		result.Error.Suggestions.Should().NotBeNullOrEmpty(
 			because: "the error should still offer nearest-name suggestions");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical list-creatio-builds contract so an agent can discover the build-discovery tool.")]
+	public void ToolContractGet_Should_Return_ListCreatioBuilds_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ListCreatioBuildsTool.ListCreatioBuildsToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "list-creatio-builds must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ListCreatioBuildsTool.ListCreatioBuildsToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Properties.Should().BeEmpty(
+			because: "list-creatio-builds takes no parameters and reads the configured products folder");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "builds",
+			because: "the contract should advertise the discovered build archives");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "products-folder",
+			because: "the contract should advertise the resolved products folder so a stale configuration is visible");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				ListCreatioBuildsTool.ListCreatioBuildsToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "build discovery should flow into deploy-creatio with the chosen archive");
 	}
 }

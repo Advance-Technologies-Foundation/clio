@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Clio.Common.Assertions;
 using Clio.Common.Kubernetes;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -21,6 +22,8 @@ public sealed class AssertInfrastructureAggregatorTests
 	private ILocalDatabaseAssertion _localDatabaseAssertion;
 	private ILocalRedisAssertion _localRedisAssertion;
 	private IKubernetesClient _kubernetesClient;
+	private ISettingsRepository _settingsRepository;
+	private System.IO.Abstractions.IFileSystem _fileSystem;
 
 	[SetUp]
 	public void Setup()
@@ -33,6 +36,8 @@ public sealed class AssertInfrastructureAggregatorTests
 		_localDatabaseAssertion = Substitute.For<ILocalDatabaseAssertion>();
 		_localRedisAssertion = Substitute.For<ILocalRedisAssertion>();
 		_kubernetesClient = Substitute.For<IKubernetesClient>();
+		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_fileSystem = Substitute.For<System.IO.Abstractions.IFileSystem>();
 	}
 
 	[Test]
@@ -229,6 +234,74 @@ public sealed class AssertInfrastructureAggregatorTests
 			_fsPermissionAssertion,
 			_localDatabaseAssertion,
 			_localRedisAssertion,
-			_kubernetesClient);
+			_kubernetesClient,
+			_settingsRepository,
+			_fileSystem);
+	}
+
+	[Test]
+	[Description("Reports the configured creatio-products folder as missing (with the resolved path) when it does not exist on disk.")]
+	[Category("Unit")]
+	public async Task ExecuteAsync_Should_Report_Missing_CreatioProducts_Folder()
+	{
+		// Arrange
+		ArrangePassingSections();
+		_settingsRepository.GetCreatioProductsFolder().Returns(@"F:\CreatioProductBuild");
+		_fileSystem.Directory.Exists(@"F:\CreatioProductBuild").Returns(false);
+		AssertInfrastructureAggregator sut = CreateSut();
+
+		// Act
+		AssertInfrastructureResult result = await sut.ExecuteAsync();
+
+		// Assert
+		result.CreatioProducts.Should().NotBeNull(
+			because: "the sweep should surface the configured creatio-products validation");
+		result.CreatioProducts!.Status.Should().Be("missing",
+			because: "a configured-but-absent products folder should be reported as missing");
+		result.CreatioProducts.Path.Should().Be(@"F:\CreatioProductBuild",
+			because: "the resolved products path should be surfaced so a stale configuration is visible");
+		result.CreatioProducts.Exists.Should().BeFalse(
+			because: "the products folder does not exist on disk");
+		result.Status.Should().Be("pass",
+			because: "products-folder validation is advisory and must not change the infrastructure sweep status");
+	}
+
+	[Test]
+	[Description("Reports the configured creatio-products folder as ok when it exists on disk.")]
+	[Category("Unit")]
+	public async Task ExecuteAsync_Should_Report_Present_CreatioProducts_Folder()
+	{
+		// Arrange
+		ArrangePassingSections();
+		_settingsRepository.GetCreatioProductsFolder().Returns(@"F:\CreatioBuilds");
+		_fileSystem.Directory.Exists(@"F:\CreatioBuilds").Returns(true);
+		AssertInfrastructureAggregator sut = CreateSut();
+
+		// Act
+		AssertInfrastructureResult result = await sut.ExecuteAsync();
+
+		// Assert
+		result.CreatioProducts!.Status.Should().Be("ok",
+			because: "an existing configured products folder should be reported as ok");
+		result.CreatioProducts.Exists.Should().BeTrue(
+			because: "the products folder exists on disk");
+	}
+
+	[Test]
+	[Description("Reports the creatio-products folder as not-configured when no products folder is set.")]
+	[Category("Unit")]
+	public async Task ExecuteAsync_Should_Report_NotConfigured_CreatioProducts_Folder()
+	{
+		// Arrange
+		ArrangePassingSections();
+		_settingsRepository.GetCreatioProductsFolder().Returns((string)null);
+		AssertInfrastructureAggregator sut = CreateSut();
+
+		// Act
+		AssertInfrastructureResult result = await sut.ExecuteAsync();
+
+		// Assert
+		result.CreatioProducts!.Status.Should().Be("not-configured",
+			because: "an unset products folder should be reported as not-configured rather than silently ignored");
 	}
 }
