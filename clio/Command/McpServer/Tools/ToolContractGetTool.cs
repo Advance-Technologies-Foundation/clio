@@ -355,7 +355,8 @@ internal static class ToolContractCatalog {
 			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
-			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
+			[InstallGateTool.InstallGateToolName] = BuildInstallGate()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -3532,6 +3533,38 @@ internal static class ToolContractCatalog {
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rule`, or `create-page-business-rule`."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallGate() {
+		return new ToolContractDefinition(
+			InstallGateTool.InstallGateToolName,
+			"Installs (or updates) the bundled cliogate package into a registered Creatio environment. cliogate exposes the server-side API that workspace and package tooling depends on. Run this once per freshly deployed instance, or whenever a gate-dependent tool fails with \"you need to install the cliogate package version ... or higher\".",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install cliogate into a freshly deployed environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					InstallGateTool.InstallGateToolName,
+					RestoreWorkspaceTool.RestoreWorkspaceToolName
+				],
+				"Install cliogate first, then retry the gate-dependent tool (for example restore-workspace) that reported the missing-cliogate error."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
 			]);
 	}
 

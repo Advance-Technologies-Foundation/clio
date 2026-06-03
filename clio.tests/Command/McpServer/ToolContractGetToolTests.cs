@@ -1375,4 +1375,34 @@ public sealed class ToolContractGetToolTests {
 		contract.Description.Should().Contain("excluded",
 			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-gate contract so an MCP-only agent can discover the cliogate remediation tool.")]
+	public void ToolContractGet_Should_Return_InstallGate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallGateTool.InstallGateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "install-gate must be discoverable through get-tool-contract so gate-dependent flows are completable from MCP");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(InstallGateTool.InstallGateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "install-gate targets one registered environment");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "install-gate returns the standard command execution result payload");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				InstallGateTool.InstallGateToolName,
+				RestoreWorkspaceTool.RestoreWorkspaceToolName
+			},
+			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
+	}
 }
