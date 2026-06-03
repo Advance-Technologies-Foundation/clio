@@ -17,6 +17,7 @@ public static class SchemaValidationService
 	private const string SchemaConvertersMarker = "SCHEMA_CONVERTERS";
 	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
+	private const string OperationPropertyName = "operation";
 	private const string AttributesPropertyName = "attributes";
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
@@ -412,14 +413,14 @@ public static class SchemaValidationService
 		if (entry.ValueKind != JsonValueKind.Object) {
 			return;
 		}
-		bool hasOperation = entry.TryGetProperty("operation", out _);
+		bool hasOperation = entry.TryGetProperty(OperationPropertyName, out _);
 		bool hasName = entry.TryGetProperty("name", out _);
 		if (hasOperation && hasName) {
 			return;
 		}
 		result.IsValid = false;
 		var missing = new List<string>(2);
-		if (!hasOperation) missing.Add("operation");
+		if (!hasOperation) missing.Add(OperationPropertyName);
 		if (!hasName) missing.Add("name");
 		result.Errors.Add(
 			$"viewConfigDiff entry at index {index} is missing required " +
@@ -1005,7 +1006,7 @@ public static class SchemaValidationService
 	}
 
 	private static bool IsInsertOperation(JsonElement entry) {
-		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
+		if (!entry.TryGetProperty(OperationPropertyName, out JsonElement operation) ||
 		    operation.ValueKind != JsonValueKind.String) {
 			return false;
 		}
@@ -2136,7 +2137,7 @@ public static class SchemaValidationService
 		// A remove operation deletes an attribute rather than declaring one — its values must
 		// not be collected as declared/properly-nested attribute names (that would make a binding
 		// to a just-removed attribute appear valid).
-		if (op.TryGetProperty("operation", out JsonElement opKind) &&
+		if (op.TryGetProperty(OperationPropertyName, out JsonElement opKind) &&
 		    opKind.ValueKind == JsonValueKind.String &&
 		    string.Equals(opKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
 			return false;
@@ -2157,8 +2158,9 @@ public static class SchemaValidationService
 		}
 		if (ShouldScanAsAttributesContainer(op)) {
 			container = values;
-			// has path property = path:["attributes"] (properly nested);
-			// no path property = flat form (attributes land at viewModelConfig root, not .attributes).
+			// A present path property means the legacy single-segment attributes form, which the
+			// runtime treats as properly nested. With no path property it is the flat form, whose
+			// attribute names land at the viewModelConfig root and are ignored by the runtime.
 			isProperlyNested = op.TryGetProperty("path", out _);
 			return true;
 		}
