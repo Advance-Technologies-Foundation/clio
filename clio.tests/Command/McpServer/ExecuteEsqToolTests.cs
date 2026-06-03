@@ -233,6 +233,26 @@ public sealed class ExecuteEsqToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Surfaces a truncated raw body when a failure envelope carries no extractable error field.")]
+	public void Execute_Should_Surface_Truncated_Body_When_No_Error_Field() {
+		// Arrange — a success:false envelope with no responseStatus/errorInfo/Message to extract
+		(ExecuteEsqTool tool, _, _) = BuildTool("{\"success\":false,\"rowsAffected\":-1}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\"}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a success:false envelope must not be reported as success");
+		response.Error.Should().Contain("rowsAffected",
+			because: "when no error field can be extracted, the raw response body should be surfaced to the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Surfaces a DataService responseStatus error (the SelectQuery failure shape) with a clean ErrorCode-prefixed message.")]
 	public void Execute_Should_Surface_ResponseStatus_Error() {
 		// Arrange
