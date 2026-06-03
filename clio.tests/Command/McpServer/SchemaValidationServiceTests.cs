@@ -1832,6 +1832,67 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Real Designer output for an unbound input: control is an empty string and the label is a #ResourceString macro with an explicitly registered resource. The empty control means there is no binding to cross-check, so the field must be skipped (no false-positive) — even with no viewModelConfigDiff entry.")]
+	public void ValidateInsertedFieldSelfConsistency_UnboundInputEmptyControl_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_y4u48sv",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"#ResourceString(Input_y4u48sv_label)#",
+								"control":"",
+								"multiline":false
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because an unbound input (empty control) has no data binding to validate and its macro label is not a reactive auto-provide candidate");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Legacy path:[\"attributes\"] DS-bound field with the attribute-name label form, mirroring real Designer output (Contact.Full name -> ContactDS_Name_xxx). Both the legacy nesting and the attribute-name auto-provide must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_LegacyPathAttributes_DsBoundInput_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_8zo0uzp",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.ContactDS_Name_dtjv2lx",
+								"control":"$ContactDS_Name_dtjv2lx"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes"],
+						"values":{"ContactDS_Name_dtjv2lx":{"modelConfig":{"path":"ContactDS.Name"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the legacy path:[\"attributes\"] form is properly nested and the label key equals the DS-bound binding attribute (auto-provided)");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
 	[Description("Empty body or whitespace-only body is tolerated — the validator returns valid without throwing so it can be chained behind earlier syntactic checks.")]
 	public void ValidateInsertedFieldSelfConsistency_EmptyBody_ReturnsValid() {
 		var emptyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(string.Empty);
