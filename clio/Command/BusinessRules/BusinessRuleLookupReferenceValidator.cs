@@ -153,11 +153,20 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 			[new SelectQueryHelper.SelectQueryFilterDefinition(
 				"Id",
 				reference.RecordId.ToString("D"),
-				SelectQueryHelper.TextDataValueType,
+				SelectQueryHelper.GuidDataValueType,
 				ComparisonType: 3)]);
 
-		LookupExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<LookupExistsResponseDto>(
-			applicationClient, serviceUrlBuilder, query);
+		LookupExistsResponseDto response;
+		try {
+			response = SelectQueryHelper.ExecuteSelectQuery<LookupExistsResponseDto>(
+				applicationClient, serviceUrlBuilder, query);
+		} catch (InvalidOperationException exception) {
+			// Preserve the validator's ArgumentException contract: consumers (e.g. PageBusinessRuleValidator)
+			// catch only ArgumentException, so a transport/server SelectQuery failure must surface as one.
+			throw new ArgumentException(
+				$"{reference.SourcePath} references lookup attribute '{reference.AttributePath}', but record existence in lookup schema '{reference.ReferenceSchemaName}' could not be verified: {exception.Message}",
+				exception);
+		}
 
 		if ((response.Rows?.Count ?? 0) == 0) {
 			throw new ArgumentException(

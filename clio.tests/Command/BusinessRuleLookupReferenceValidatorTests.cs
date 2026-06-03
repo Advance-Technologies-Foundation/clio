@@ -57,6 +57,32 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Account\"")
 				&& body.Contains("22222222-2222-2222-2222-222222222222")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// The Id (Guid primary key) filter must use the Guid data value type (0), not Text (1)
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"dataValueType\":0")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces a server-side SelectQuery failure as the module's ArgumentException contract, not a raw InvalidOperationException.")]
+	public void Validate_Should_Surface_Server_Failure_As_ArgumentException() {
+		// Arrange — SelectQuery returns a failure envelope (ExecuteSelectQuery throws InvalidOperationException)
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"server boom\"}}");
+		BusinessRule rule = CreateLookupRule(
+			conditionValue: "11111111-1111-1111-1111-111111111111",
+			setValue: "22222222-2222-2222-2222-222222222222");
+
+		// Act
+		Action act = () => _validator.Validate(rule, CreateAttributeMap());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*could not be verified*server boom*",
+				because: "PageBusinessRuleValidator only catches ArgumentException, so server failures must be translated");
 	}
 
 	[Test]

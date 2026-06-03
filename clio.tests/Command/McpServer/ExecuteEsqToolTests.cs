@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -265,5 +266,148 @@ public sealed class ExecuteEsqToolTests {
 			because: "an ASP.NET error body must not be reported as a successful query");
 		response.Error.Should().Contain("Object reference",
 			because: "the ExceptionMessage should be surfaced to the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails fast without a network call when environment-name is blank.")]
+	public void Execute_Should_Fail_When_Environment_Missing() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		ExecuteEsqTool tool = new(resolver);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = " ",
+			Query = Json("{\"rootSchemaName\":\"Contact\"}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("environment-name is required");
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a query that is not a JSON object.")]
+	public void Execute_Should_Fail_When_Query_Is_Not_Object() {
+		// Arrange
+		ExecuteEsqTool tool = new(Substitute.For<IToolCommandResolver>());
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("123")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("query must be a JSON SelectQuery object");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a query string that is not valid JSON.")]
+	public void Execute_Should_Fail_When_Query_String_Is_Invalid_Json() {
+		// Arrange
+		ExecuteEsqTool tool = new(Substitute.For<IToolCommandResolver>());
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("\"{ not json\"")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("query is not valid JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Clamps an out-of-range timeout into the supported window.")]
+	public void Execute_Should_Clamp_Timeout() {
+		// Arrange
+		(ExecuteEsqTool lowTool, IApplicationClient lowClient, _) = BuildTool("{\"rows\":[],\"success\":true}");
+		(ExecuteEsqTool highTool, IApplicationClient highClient, _) = BuildTool("{\"rows\":[],\"success\":true}");
+
+		// Act
+		lowTool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev", Query = Json("{\"rootSchemaName\":\"Contact\"}"), Timeout = 10
+		});
+		highTool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev", Query = Json("{\"rootSchemaName\":\"Contact\"}"), Timeout = 999_999
+		});
+
+		// Assert
+		lowClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), 1_000, Arg.Any<int>(), Arg.Any<int>());
+		highClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), 120_000, Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports an empty SelectQuery response as a failure.")]
+	public void Execute_Should_Fail_On_Empty_Response() {
+		// Arrange
+		(ExecuteEsqTool tool, _, _) = BuildTool("   ");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\"}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("empty response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the whole response body when a successful response has no rows array.")]
+	public void Execute_Should_Return_Whole_Body_When_No_Rows_Array() {
+		// Arrange
+		(ExecuteEsqTool tool, _, _) = BuildTool("{\"rowsAffected\":-1,\"success\":true}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\"}")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Count.Should().BeNull();
+		response.Rows.Should().NotBeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces a transport exception as a failure carrying the guidance hint.")]
+	public void Execute_Should_Return_Failure_When_Client_Throws() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://creatio/select");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new Exception("network down"));
+		ExecuteEsqTool tool = new(resolver);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\"}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("network down");
+		response.Hint.Should().Contain("get-guidance");
 	}
 }

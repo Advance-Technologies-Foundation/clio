@@ -352,6 +352,7 @@ internal static class ToolContractCatalog {
 
 	private static readonly string[] CanonicalToolNames = [
 		GuidanceGetTool.ToolName,
+		ExecuteEsqTool.ToolName,
 		SettingsHealthTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
