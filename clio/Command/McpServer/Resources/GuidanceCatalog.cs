@@ -16,7 +16,7 @@ internal static class GuidanceCatalog {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
 			["app-modeling"] = Create(
 				"app-modeling",
-				"Canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.",
+				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
 				AppModelingGuidanceResource.Guide),
 			["data-bindings"] = Create(
 				"data-bindings",
@@ -50,6 +50,10 @@ internal static class GuidanceCatalog {
 				"page-schema-creatio-devkit-common",
 				"Canonical MCP guidance for using @creatio-devkit/common in Freedom UI page handlers validators and related frontend-source patterns.",
 				PageSchemaCreatioDevkitCommonGuidanceResource.Guide),
+			["page-schema-resources"] = Create(
+				"page-schema-resources",
+				"Canonical MCP guidance for Freedom UI page localizable strings: $Resources.Strings.* as the recommended binding, #ResourceString()# required for validator params (and conventional for grid captions), resources parameter usage, and common mistakes.",
+				PageSchemaResourcesGuidanceResource.Guide),
 			["page-schema-validators"] = Create(
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
@@ -69,7 +73,19 @@ internal static class GuidanceCatalog {
 			["business-rules"] = Create(
 				"business-rules",
 				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
-				BusinessRulesGuidanceResource.Guide)
+				BusinessRulesGuidanceResource.Guide),
+			["mobile-page-modification"] = Create(
+				"mobile-page-modification",
+				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
+				MobilePageGuidanceResource.Guide),
+			["sys-settings"] = Create(
+				"sys-settings",
+				"Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.",
+				SysSettingsGuidanceResource.Guide),
+			["ui-project"] = Create(
+				"ui-project",
+				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
+				WorkspaceUiProjectGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

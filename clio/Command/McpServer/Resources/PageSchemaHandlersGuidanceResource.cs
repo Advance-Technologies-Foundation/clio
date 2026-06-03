@@ -32,8 +32,14 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
 		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
 
+		       BUSINESS RULES FIRST — mandatory triage before authoring any handler
+		       - Before writing a handler, check whether the task can be closed with a business rule. If it can, CLOSE IT WITH A BUSINESS RULE — do NOT write a handler. A handler is only justified when no business rule covers the requirement.
+		       - Business rules are not limited to show/hide/enable/require. They can also WRITE values into columns and CLEAR columns (the `set-values` action; an empty value clears the column). This is the most common case for two interdependent fields — when changing field A should auto-fill or wipe field B, that is a business rule, not an attribute-change handler.
+		       - Do NOT mentally narrow business rules to "visibility/editability/required" and fall back to a handler for value population/clearing. Resist reaching for `crt.HandleViewModelAttributeChangeRequest` + `$context.set(...)` when a `set-values` business rule does the same job declaratively.
+
 		       Decision tree
 		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
@@ -55,6 +61,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | compose an email from current context | `crt.CreateEmailRequest` | button/menu `clicked.request` | no |
 		         | copy a prepared literal value to clipboard | `crt.CopyClipboardRequest` | button/menu `clicked.request` | no |
 		         | copy a page attribute value to clipboard | `crt.CopyInputToClipboardRequest` | button/menu `clicked.request` | no |
+		         | print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |
+		         | open the printables management page | `crt.GoToPrintablesRequest` | button/menu `clicked.request` | no |
+		         | export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |
+		         | import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |
+		         | delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |
+		         | duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |
 		         | page init, destroy, attribute-change orchestration, editor interaction, or domain-specific workflow | handler in `SCHEMA_HANDLERS` | handlers runtime | yes |
 
 		       Request shape quick reference
@@ -68,6 +80,10 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | --- | --- | --- |
 		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` | page-body handlers already work through the live view-model context and this is the default authoring API for page edits |
 		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
+
+		       Server-side compilation
+		       - Handlers live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
+		       - Do NOT call `compile-creatio` — it is for C# schema changes, not page-body JavaScript. Compilation forces a runtime reload, breaks the active session, and is never required as a follow-up to a page-body edit.
 
 		       NON-NEGOTIABLES
 		       - Use handler signatures like `async (request, next) => { ... }` only inside `SCHEMA_HANDLERS`.
@@ -174,6 +190,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
+		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rule`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
 		       - Mirror one text field into another on attribute change:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {
@@ -339,6 +356,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use `crt.HandleViewModelAttributeChangeRequest` when one field should update dependent page state.
 		       - Use `crt.LoadDataRequest` when the handler must prepare or refresh backing collections/data.
 		       - Use `crt.CancelRecordChangesRequest` when the page must discard unsaved edits and return to the clean state.
+		       - Use `crt.PrintablesRequest` when a button should generate a printable document for the current record or selected records from a data source.
+		       - Use `crt.GoToPrintablesRequest` when a button should navigate to the printables management page.
+		       - Use `crt.ExportDataGridToExcelRequest` when a button should export list data to an Excel file.
+		       - Use `crt.ImportDataRequest` when a button should open the import wizard for a given entity.
+		       - Use `crt.DeleteRecordsRequest` for bulk deletion of multiple selected records from a list (with optional filter or recordIds).
+		       - Use `crt.CopyRecordRequest` to duplicate an existing record.
 		       - When dispatching another request imperatively from a handler, pass both `$context: request.$context` and `scopes: [...request.scopes]` unless the target request intentionally changes scope.
 		       - Use a custom `usr.*Request` only when no built-in request type matches the domain workflow.
 
@@ -369,6 +392,13 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         - `crt.OpenSidebarRequest`
 		         - `crt.CloseSidebarRequest`
 		         - `crt.GetSidebarStateRequest`
+		         - `crt.PrintablesRequest`
+		         - `crt.GoToPrintablesRequest`
+		         - `crt.ExportDataGridToExcelRequest`
+		         - `crt.ImportDataRequest`
+		         - `crt.DeleteRecordsRequest`
+		         - `crt.CopyRecordRequest`
+		         - `crt.ShowDialogRequest`
 		       - Treat this catalog as the first place to look before inventing custom `usr.*Request` names.
 		       - Prefer the exact built-in request name from this catalog when the requirement matches it directly.
 
@@ -392,6 +422,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |
 		         | `crt.CopyInputToClipboardRequest` | config | `attribute` required, `successMessageArea?` | copy the value of a page attribute |
 		         | `crt.ClosePageRequest` | config | `none` | close current page |
+		         | `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |
+		         | `crt.GoToPrintablesRequest` | config | `none` | open printables management page in a new tab |
+		         | `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |
+		         | `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |
+		         | `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |
+		         | `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |
 		       - Lifecycle and attribute-change requests:
 		         | Request | Kind | Params visible in handler | Notes |
 		         | --- | --- | --- | --- |

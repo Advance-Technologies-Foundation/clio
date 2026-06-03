@@ -34,17 +34,16 @@ public sealed class PageCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		PageCreateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			PageCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageCreateCommand>(options);
 			} catch (Exception ex) {
 				return new PageCreateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryCreatePage(options, out response);
-		}
-		return response;
+			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
+			return response;
+		});
 	}
 }
 

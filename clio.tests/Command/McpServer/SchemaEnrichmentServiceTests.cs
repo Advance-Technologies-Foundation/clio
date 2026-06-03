@@ -15,7 +15,7 @@ public sealed class SchemaEnrichmentServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Builds one normalized Data Forge enrichment request from the supplied schema candidate terms and forwards it to the shared builder.")]
-	public async Task EnrichAsync_Should_Build_Request_From_Schema_Candidate_Terms() {
+	public async Task Enrich_Should_Build_Request_From_Schema_Candidate_Terms() {
 		// Arrange
 		IDataForgeEnrichmentBuilder enrichmentBuilder = Substitute.For<IDataForgeEnrichmentBuilder>();
 		DataForgeEnrichmentRequest? capturedRequest = null;
@@ -26,7 +26,7 @@ public sealed class SchemaEnrichmentServiceTests {
 			Coverage: new DataForgeCoverage(true, true, true, true, true),
 			Warnings: [],
 			ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
-		enrichmentBuilder.BuildAsync(
+		enrichmentBuilder.Build(
 				Arg.Any<DataForgeEnrichmentRequest>(),
 				default)
 			.Returns(callInfo => {
@@ -38,7 +38,7 @@ public sealed class SchemaEnrichmentServiceTests {
 		IReadOnlyList<string> lookupHints = ["UsrVehicleType"];
 
 		// Act
-		ApplicationDataForgeResult result = await sut.EnrichAsync("sandbox", candidateTerms, lookupHints);
+		ApplicationDataForgeResult result = sut.Enrich("sandbox", candidateTerms, lookupHints);
 
 		// Assert
 		capturedRequest.Should().NotBeNull(
@@ -58,11 +58,11 @@ public sealed class SchemaEnrichmentServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("When no lookup hints are supplied, forwards an empty lookup-hint list to the shared builder.")]
-	public async Task EnrichAsync_Should_Forward_Empty_LookupHints_When_None_Provided() {
+	public async Task Enrich_Should_Forward_Empty_LookupHints_When_None_Provided() {
 		// Arrange
 		IDataForgeEnrichmentBuilder enrichmentBuilder = Substitute.For<IDataForgeEnrichmentBuilder>();
 		DataForgeEnrichmentRequest? capturedRequest = null;
-		enrichmentBuilder.BuildAsync(Arg.Any<DataForgeEnrichmentRequest>(), default)
+		enrichmentBuilder.Build(Arg.Any<DataForgeEnrichmentRequest>(), default)
 			.Returns(callInfo => {
 				capturedRequest = callInfo.Arg<DataForgeEnrichmentRequest>();
 				return new ApplicationDataForgeResult(
@@ -76,7 +76,7 @@ public sealed class SchemaEnrichmentServiceTests {
 		SchemaEnrichmentService sut = new(enrichmentBuilder);
 
 		// Act
-		_ = await sut.EnrichAsync(
+		_ = sut.Enrich(
 			"sandbox",
 			candidateTerms: ["UsrVehicle"],
 			lookupHints: null);
@@ -91,11 +91,11 @@ public sealed class SchemaEnrichmentServiceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Forwards the target environment name unchanged to the shared builder request.")]
-	public async Task EnrichAsync_Should_Forward_EnvironmentName_To_Shared_Builder() {
+	public async Task Enrich_Should_Forward_EnvironmentName_To_Shared_Builder() {
 		// Arrange
 		IDataForgeEnrichmentBuilder enrichmentBuilder = Substitute.For<IDataForgeEnrichmentBuilder>();
 		DataForgeEnrichmentRequest? capturedRequest = null;
-		enrichmentBuilder.BuildAsync(
+		enrichmentBuilder.Build(
 				Arg.Any<DataForgeEnrichmentRequest>(),
 				default)
 			.Returns(callInfo => {
@@ -111,7 +111,7 @@ public sealed class SchemaEnrichmentServiceTests {
 		SchemaEnrichmentService sut = new(enrichmentBuilder);
 
 		// Act
-		_ = await sut.EnrichAsync("sandbox", ["UsrFoo"], lookupHints: null);
+		_ = sut.Enrich("sandbox", ["UsrFoo"], lookupHints: null);
 
 		// Assert
 		capturedRequest.Should().NotBeNull(

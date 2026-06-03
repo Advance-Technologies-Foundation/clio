@@ -32,7 +32,7 @@ public sealed class SqlSchemaInstallTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			SqlSchemaInstallCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaInstallCommand>(options);
@@ -42,7 +42,7 @@ public sealed class SqlSchemaInstallTool(
 			}
 			resolvedCommand.TryInstall(options, out SqlSchemaInstallResponse response);
 			return response;
-		}
+		});
 	}
 }
 

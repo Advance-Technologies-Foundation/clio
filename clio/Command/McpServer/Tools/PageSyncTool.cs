@@ -20,7 +20,9 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class PageSyncTool(
 	IToolCommandResolver commandResolver,
-	IFileSystem fileSystem) {
+	IFileSystem fileSystem,
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -31,14 +33,15 @@ public sealed class PageSyncTool(
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
-	             "For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
+	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
+	             "For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or valur from other field (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 	             "Section authoring rules for the body payload: " +
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify, skip-sampling (optional)")]
+		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -46,7 +49,7 @@ public sealed class PageSyncTool(
 		if (args.SkipSampling != true) {
 			foreach (PageSyncPageInput page in args.Pages) {
 				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
-					server, page.SchemaName, page.Body, cancellationToken);
+					server, page.SchemaName, page.Body, page.Resources, cancellationToken);
 			}
 		}
 		var results = new List<PageSyncPageResult>();
@@ -85,6 +88,44 @@ public sealed class PageSyncTool(
 		};
 	}
 
+	private PageSyncPageResult TryValidatePage(
+		PageSyncPageInput page,
+		PageSamplingReview samplingReview,
+		out PageSyncValidationResult validationResult) {
+		validationResult = null;
+		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			// PageSyncTool runs synchronously inside a McpToolExecutionLock; the MCP
+			// server has no SynchronizationContext, so a sync-over-async wait on the
+			// async catalog API is deadlock-free. Master's ENG-89649 also added the
+			// `explicitResources` parameter for resource-binding validation, plumbed
+			// through here.
+			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
+			validationResult = MobilePageValidation
+				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.GetAwaiter().GetResult();
+			if (!validationResult.ContentOk)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Mobile page validation failed: " + string.Join("; ", validationResult.Errors ?? [])
+				};
+		} else {
+			validationResult = ValidateBody(page.Body, page.Resources);
+			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk)
+				return new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Validation = validationResult,
+					SamplingReview = samplingReview,
+					Error = "Client-side validation failed: " +
+						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
+				};
+		}
+		return null;
+	}
+
 	private PageSyncPageResult SyncSinglePage(
 		PageSyncPageInput page,
 		PageUpdateCommand updateCommand,
@@ -95,17 +136,9 @@ public sealed class PageSyncTool(
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
-				validationResult = ValidateBody(page.Body, page.Resources);
-				if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
-					return new PageSyncPageResult {
-						SchemaName = page.SchemaName,
-						Success = false,
-						Validation = validationResult,
-						SamplingReview = samplingReview,
-						Error = "Client-side validation failed: " +
-							string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
-					};
-				}
+				PageSyncPageResult validationFailure = TryValidatePage(page, samplingReview, out validationResult);
+				if (validationFailure != null)
+					return validationFailure;
 			}
 			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 				return new PageSyncPageResult {
@@ -114,6 +147,7 @@ public sealed class PageSyncTool(
 					Validation = validationResult,
 					SamplingReview = samplingReview,
 					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+						+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
 				};
 			}
 			PageUpdateOptions updateOptions = new() {
@@ -210,6 +244,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateValidatorDeclarations(body));
 		SchemaValidationResult bindingResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
+		SchemaValidationResult schemaDepsResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			syntaxResult,
@@ -225,7 +261,7 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
@@ -288,7 +324,8 @@ public sealed class PageSyncTool(
 
 	private static List<string> CollectWarnings(
 		SchemaValidationResult fieldResult,
-		SchemaValidationResult bindingResult) {
+		SchemaValidationResult bindingResult,
+		SchemaValidationResult schemaDepsResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -296,6 +333,10 @@ public sealed class PageSyncTool(
 
 		if (!bindingResult.IsValid) {
 			warnings.AddRange(bindingResult.Errors);
+		}
+
+		if (schemaDepsResult.Warnings.Count > 0) {
+			warnings.AddRange(schemaDepsResult.Warnings);
 		}
 
 		return warnings;
@@ -339,7 +380,7 @@ public sealed record PageSyncArgs(
 	bool? Verify = null,
 
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip AI semantic review before saving. Default: false")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null
 );
 
@@ -358,7 +399,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

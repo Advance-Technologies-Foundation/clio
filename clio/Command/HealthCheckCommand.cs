@@ -9,16 +9,28 @@ namespace Clio.Command
 	[Verb("healthcheck", Aliases = new [] { "hc" }, HelpText = "Healthcheck monitoring")]
 	public class HealthCheckOptions : RemoteCommandOptions
 	{
-		[Option('h', "WebHost", Required = false, HelpText = "Check web-host", Separator= ' ')]
+		[Option('h', "web-host", Required = false, HelpText = "Check web-host", Separator= ' ')]
 		public string WebHost { get; set; }
-		
-		[Option('a', "WebApp", Required = false, HelpText = "Check web-app")]
+
+		[Option("WebHost", Required = false, Hidden = true, HelpText = "Alias for --web-host")]
+		public string WebHostAlias {
+			get => WebHost;
+			set { if (!string.IsNullOrEmpty(value)) WebHost = value; }
+		}
+
+		[Option('a', "web-app", Required = false, HelpText = "Check web-app")]
 		public string WebApp { get; set; }
+
+		[Option("WebApp", Required = false, Hidden = true, HelpText = "Alias for --web-app")]
+		public string WebAppAlias {
+			get => WebApp;
+			set { if (!string.IsNullOrEmpty(value)) WebApp = value; }
+		}
 	}
 
 	public class HealthCheckCommand : RemoteCommand<HealthCheckOptions>
 	{
-	
+
 		public HealthCheckCommand(IApplicationClient applicationClient, EnvironmentSettings settings): base(applicationClient, settings)
 		{
 			EnvironmentSettings = settings;
@@ -85,6 +97,10 @@ namespace Clio.Command
 		}
 
 		public override int Execute(HealthCheckOptions options) {
+			if (!string.IsNullOrEmpty(options.Uri))
+				EnvironmentSettings.Uri = options.Uri;
+			if (options.IsNetCore.HasValue)
+				EnvironmentSettings.IsNetCore = options.IsNetCore.Value;
 			RequestTimeout = options.TimeOut;
 			RetryCount = options.RetryCount;
 			DelaySec = options.RetryDelay;

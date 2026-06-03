@@ -16,11 +16,23 @@ public class RegAppOptions : EnvironmentNameOptions {
 
 	#region Properties: Public
 
-	[Option('a', "ActiveEnvironment", Required = false, HelpText = "Set as default web application")]
+	[Option('a', "active-environment", Required = false, HelpText = "Set as default web application")]
 	public string ActiveEnvironment { get; set; }
 
-	[Option("checkLogin", Required = false, HelpText = "Try login after registration")]
+	[Option("ActiveEnvironment", Required = false, Hidden = true, HelpText = "Alias for --active-environment")]
+	public string ActiveEnvironmentAlias {
+		get => ActiveEnvironment;
+		set { if (!string.IsNullOrEmpty(value)) ActiveEnvironment = value; }
+	}
+
+	[Option("check-login", Required = false, HelpText = "Try login after registration")]
 	public bool CheckLogin { get; set; }
+
+	[Option("checkLogin", Required = false, Hidden = true, HelpText = "Alias for --check-login")]
+	public bool CheckLoginAlias {
+		get => CheckLogin;
+		set { if (value) CheckLogin = value; }
+	}
 
 	[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
 	public bool FromIis { get; set; }
@@ -98,22 +110,29 @@ public class RegAppCommand : Command<RegAppOptions> {
 			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
 				? null
 				: _settingsRepository.FindEnvironment(options.EnvironmentName);
-			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
+			
 			EnvironmentSettings environment = new() {
 				Login = options.Login,
 				Password = options.Password,
 				Uri = options.Uri?.TrimEnd('/'),
 				Maintainer = options.Maintainer,
 				Safe = options.SafeValue ?? false,
-				IsNetCore = resolvedIsNetCore,
+				IsNetCore = options.IsNetCore ?? existingEnvironment?.IsNetCore ?? false,
 				DeveloperModeEnabled = options.DeveloperModeEnabled,
 				ClientId = options.ClientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
-				WorkspacePathes = options.WorkspacePathes, 
+				WorkspacePathes = options.WorkspacePathes,
 				EnvironmentPath = options.EnvironmentPath
 			};
 			_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
+
+			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
+			if (resolvedIsNetCore != environment.IsNetCore) {
+				environment.IsNetCore = resolvedIsNetCore;
+				_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
+			}
+
 			_logger.WriteInfo($"Environment {options.EnvironmentName} was configured...");
 			environment = _settingsRepository.GetEnvironment(options);
 

@@ -50,7 +50,7 @@ public abstract record PageEditToolArgs {
 	public string? Password { get; init; }
 
 	[JsonPropertyName("resources")]
-	[Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the field labels")]
+	[Description("JSON object string of explicit localizable string key-value pairs for page labels, captions, titles, validator messages, and #ResourceString(key)# macros.")]
 	public string? Resources { get; init; }
 
 	[JsonPropertyName("skip-sampling")]

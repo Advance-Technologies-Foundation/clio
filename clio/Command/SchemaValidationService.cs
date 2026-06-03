@@ -21,6 +21,29 @@ public static class SchemaValidationService
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
+	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
+	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
+	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
+	private const string ViewModelConfigPropertyName = "viewModelConfig";
+	private const string ModelConfigPropertyName = "modelConfig";
+
+	private static readonly string[] DiffPropertyNames = {
+		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
+	};
+
+	private static readonly string[] ConfigPropertyNames = {
+		ViewModelConfigPropertyName, ModelConfigPropertyName
+	};
+
+	private static readonly HashSet<string> AllowedMobileRootProperties = new(StringComparer.Ordinal) {
+		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName,
+		ViewModelConfigPropertyName, ModelConfigPropertyName
+	};
+
+	private static readonly HashSet<string> DisallowedMobileRootProperties = new(StringComparer.Ordinal) {
+		"validators", "converters", "handlers"
+	};
+
 
 	public static readonly string[] RequiredMarkerNames = {
 		"SCHEMA_DEPS",
@@ -38,11 +61,13 @@ public static class SchemaValidationService
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
+	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
 		RegexTimeout);
-	private const string DatasourceCaptionPrefix = "$Resources.Strings.";
+	private const string ResourceBindingPrefix = "$Resources.Strings.";
 	private static readonly Regex CustomFieldResourcePattern = new(
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase,
@@ -63,6 +88,591 @@ public static class SchemaValidationService
 		"crt.EncryptedInput",
 		"crt.Slider"
 	};
+
+	/// <summary>
+	/// Canonical statement of the inserted-field contract enforced by
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
+	/// <c>page-modification</c> guidance resource so all three describe the same rule in
+	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
+	/// attributes (which only accept compile-time constant expressions).
+	/// </summary>
+	internal const string InsertedFieldContractSummary =
+		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
+		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
+		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
+		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
+		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
+		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
+		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
+		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
+		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
+		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
+		"violate this contract are rejected at update-page validation time; the diagnostic names " +
+		"the offending field, attribute, and section. The contract does NOT apply to " +
+		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+
+	/// <summary>
+	/// Runs all mobile page validators and returns errors and warnings as separate lists.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <param name="allowedMobileTypes">Component types supported by the mobile runtime.</param>
+	/// <param name="webOnlyTypes">Component types that exist in the web registry but not mobile.</param>
+	/// <returns>A tuple of blocking errors and non-blocking warnings.</returns>
+	public static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
+		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var errors = new List<string>();
+		var warnings = new List<string>();
+
+		SchemaValidationResult bodyResult = ValidateMobileBody(body);
+		if (!bodyResult.IsValid) errors.AddRange(bodyResult.Errors);
+
+		SchemaValidationResult validatorRefsResult = ValidateMobileNoValidatorReferences(body);
+		if (!validatorRefsResult.IsValid) errors.AddRange(validatorRefsResult.Errors);
+
+		SchemaValidationResult structureResult = ValidateMobileViewConfigDiffStructure(body);
+		if (!structureResult.IsValid) errors.AddRange(structureResult.Errors);
+
+		SchemaValidationResult componentResult = ValidateMobileComponentTypes(body, allowedMobileTypes, webOnlyTypes);
+		warnings.AddRange(componentResult.Warnings);
+
+		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
+		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
+
+		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
+		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
+		warnings.AddRange(labelBindingResult.Warnings);
+
+		return (errors, warnings);
+	}
+
+	/// <summary>
+	/// Validates a mobile page body and reports errors for any AMD-only constructs
+	/// (<c>validators</c>, <c>handlers</c>, custom <c>converters</c> sections) that are
+	/// not supported in mobile JSON bodies.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when disallowed top-level keys are found.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileBody(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			result.IsValid = false;
+			result.Errors.Add("Mobile page body is null or empty.");
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch (JsonException ex) {
+			result.IsValid = false;
+			result.Errors.Add($"Mobile page body is not valid JSON: {ex.Message}");
+			return result;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Object) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile page body must be a JSON object.");
+				return result;
+			}
+			if (document.RootElement.TryGetProperty("validators", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support validators. Remove the 'validators' section.");
+			}
+			if (document.RootElement.TryGetProperty("converters", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support custom converters. Use only OOTB converter references in binding expressions.");
+			}
+			if (document.RootElement.TryGetProperty("handlers", out _)) {
+				result.IsValid = false;
+				result.Errors.Add("Mobile pages do not support handlers. Remove the 'handlers' section.");
+			}
+			ValidateMobileDiffArrayProperties(document.RootElement, result);
+			ValidateMobileConfigObjectProperties(document.RootElement, result);
+			ValidateMobileNoUnknownRootProperties(document.RootElement, result);
+		}
+		return result;
+	}
+
+	private static void ValidateMobileDiffArrayProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (string name in DiffPropertyNames) {
+			if (root.TryGetProperty(name, out JsonElement value) && value.ValueKind != JsonValueKind.Array) {
+				result.IsValid = false;
+				result.Errors.Add($"'{name}' must be a JSON array, but got {value.ValueKind}.");
+			}
+		}
+	}
+
+	private static void ValidateMobileConfigObjectProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (string name in ConfigPropertyNames) {
+			if (root.TryGetProperty(name, out JsonElement value) && value.ValueKind != JsonValueKind.Object) {
+				result.IsValid = false;
+				result.Errors.Add($"'{name}' must be a JSON object, but got {value.ValueKind}.");
+			}
+		}
+	}
+
+	private static void ValidateMobileNoUnknownRootProperties(JsonElement root, SchemaValidationResult result) {
+		foreach (string propertyName in root.EnumerateObject().Select(property => property.Name)) {
+			if (AllowedMobileRootProperties.Contains(propertyName) ||
+				DisallowedMobileRootProperties.Contains(propertyName)) {
+				continue;
+			}
+			result.IsValid = false;
+			result.Errors.Add(
+				$"Unknown root property '{propertyName}'. " +
+				$"Mobile page bodies may only contain: {string.Join(", ", AllowedMobileRootProperties)}.");
+		}
+	}
+
+	/// <summary>
+	/// Validates that no attribute inside <c>viewModelConfigDiff</c> or <c>viewModelConfig</c>
+	/// binds a <c>validators</c> property. Mobile pages do not support validator usages —
+	/// neither custom nor OOTB — so any such reference must be reported as an error.
+	/// The actual validator definitions live in <c>SCHEMA_VALIDATORS</c> on web (forbidden at
+	/// the body level by <see cref="ValidateMobileBody"/>) or in a remote module. This check
+	/// covers the per-attribute binding form where a validator is applied to a specific attribute.
+	/// Field-level validation on mobile must be implemented via entity-level business rules.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body to validate.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when any attribute binds a <c>validators</c> property.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileNoValidatorReferences(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result; // JSON errors reported by ValidateMobileBody
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return result;
+			}
+			ScanMobileAttributeValidatorsFromDiff(root, result);
+			ScanMobileAttributeValidatorsFromConfig(root, result);
+			if (result.Errors.Count > 0) {
+				result.IsValid = false;
+			}
+		}
+		return result;
+	}
+
+	private static void ScanMobileAttributeValidatorsFromDiff(JsonElement root, SchemaValidationResult result) {
+		if (!root.TryGetProperty(ViewModelConfigDiffPropertyName, out JsonElement diff) ||
+			diff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in diff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!ShouldScanAsAttributesContainer(entry)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			foreach (JsonProperty attr in values.EnumerateObject()) {
+				ReportIfAttributeHasValidators(attr, result);
+			}
+		}
+	}
+
+	private static void ScanMobileAttributeValidatorsFromConfig(JsonElement root, SchemaValidationResult result) {
+		if (!root.TryGetProperty(ViewModelConfigPropertyName, out JsonElement config) ||
+			config.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (!config.TryGetProperty(AttributesPropertyName, out JsonElement attrs) ||
+			attrs.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attrs.EnumerateObject()) {
+			ReportIfAttributeHasValidators(attr, result);
+		}
+	}
+
+	private static void ReportIfAttributeHasValidators(JsonProperty attr, SchemaValidationResult result) {
+		if (attr.Value.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (attr.Value.TryGetProperty(ValidatorsPropertyName, out _)) {
+			result.Errors.Add(
+				$"Attribute '{attr.Name}' binds a 'validators' property. " +
+				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
+				"Remove the validators binding and implement field-level validation via " +
+				"entity-level business rules (create-entity-business-rule).");
+		}
+	}
+
+	/// <summary>
+	/// Validates component <c>type</c> references in a mobile page body's <c>viewConfigDiff</c>
+	/// against the mobile and web component registries.
+	/// <list type="bullet">
+	///   <item>Type in mobile registry → OK.</item>
+	///   <item>Type in web registry but not mobile → <b>warning</b> (web-only component;
+	///     may also be a custom mobile component with the same type string).</item>
+	///   <item>Type in neither registry → OK (assumed custom component).</item>
+	/// </list>
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <param name="allowedMobileTypes">
+	/// Set of component type strings that the mobile runtime supports (e.g. <c>crt.Input</c>).
+	/// </param>
+	/// <param name="webOnlyTypes">
+	/// Set of component type strings that exist in the web registry but not in the mobile registry.
+	/// </param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> whose warnings list components that are web-only.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileComponentTypes(
+		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body) || allowedMobileTypes.Count == 0) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result; // JSON errors reported by ValidateMobileBody
+		}
+		using (document) {
+			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
+				vcd.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcd.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string? type = GetMobileEntryType(entry);
+				if (type == null || allowedMobileTypes.Contains(type)) {
+					continue;
+				}
+				if (webOnlyTypes.Contains(type)) {
+					result.Warnings.Add(
+						$"Component type '{type}' exists in the web registry but not in the mobile registry. " +
+						"Do NOT use web-only or unknown components on a mobile page without explicit approval from the user. " +
+						"If this is a custom mobile component with the same type name, ignore this warning; " +
+						"otherwise use get-component-info to find a supported mobile alternative.");
+				}
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates that every entry in a mobile page body's <c>viewConfigDiff</c> array
+	/// has the required <c>operation</c> and <c>name</c> properties.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when entries are missing
+	/// required structural properties.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileViewConfigDiffStructure(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			if (!document.RootElement.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
+				vcd.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			int index = 0;
+			foreach (JsonElement entry in vcd.EnumerateArray()) {
+				ValidateViewConfigDiffEntry(entry, index, result);
+				index++;
+			}
+		}
+		return result;
+	}
+
+	private static void ValidateViewConfigDiffEntry(JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		bool hasOperation = entry.TryGetProperty("operation", out _);
+		bool hasName = entry.TryGetProperty("name", out _);
+		if (hasOperation && hasName) {
+			return;
+		}
+		result.IsValid = false;
+		var missing = new List<string>(2);
+		if (!hasOperation) missing.Add("operation");
+		if (!hasName) missing.Add("name");
+		result.Errors.Add(
+			$"viewConfigDiff entry at index {index} is missing required " +
+			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
+	}
+
+	/// <summary>
+	/// Validates that every <c>$AttributeName</c> binding in a mobile page body's
+	/// <c>viewConfigDiff</c> corresponds to a declared attribute in
+	/// <c>viewModelConfigDiff</c> or <c>viewModelConfig</c>.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when an undeclared attribute binding is found.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileFieldBindings(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return result;
+			}
+			HashSet<string> declaredAttributes = CollectMobileViewModelAttributes(root);
+			if (declaredAttributes.Count == 0) {
+				return result; // nothing to cross-check against
+			}
+			HashSet<string> referencedAttributes = CollectMobileViewBindings(root);
+			foreach (string attr in referencedAttributes.Where(a => !declaredAttributes.Contains(a))) {
+				result.Errors.Add(
+					$"viewConfigDiff binds to '${attr}' but no matching attribute is declared in viewModelConfigDiff/viewModelConfig.");
+			}
+			if (result.Errors.Count > 0) {
+				result.IsValid = false;
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates label/resource bindings on standard field components in a mobile page body.
+	/// Mirrors <see cref="ValidateStandardFieldBindings"/> for the web flow, but operates on
+	/// the plain-JSON mobile schema instead of marker-delimited JavaScript: it reads
+	/// <c>viewConfigDiff</c> / <c>viewModelConfigDiff</c> directly from the JSON root.
+	/// Mobile pages do not support handlers, so the control-vs-handler attribute cross-check
+	/// is skipped (the handler-writes set is empty).
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <param name="explicitResources">Optional explicit resources dictionary used to suppress
+	/// "label will render blank" warnings when a resource key is provided explicitly.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> with warnings for labels whose resource key is
+	/// neither explicitly provided nor auto-provided by the platform via a DS-bound attribute.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileStandardFieldBindings(
+		string body,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return result;
+			}
+			if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				return result;
+			}
+			Dictionary<string, string> modelPaths = CollectMobileViewModelPaths(body);
+			HashSet<string> declaredAttributes = CollectMobileViewModelAttributes(root);
+			var ctx = new FieldValidationContext(
+				declaredAttributes,
+				modelPaths,
+				explicitResources,
+				new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+				result);
+			ValidateFieldComponents(viewConfigDiff, in ctx);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+	/// the handler bodies reference the SDK argument injected through <c>SCHEMA_ARGS</c>.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> whose warnings list an entry when the SDK
+	/// dependency appears to be missing. Uses warnings (not errors) because the check is
+	/// heuristic — the handler may reference a local variable named <c>sdk</c> unrelated
+	/// to the Creatio SDK.
+	/// </returns>
+	public static SchemaValidationResult ValidateSchemaDepsCompleteness(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody) || !HandlersOrConvertersMentionSdk(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string depsContent, "SCHEMA_DEPS")) {
+			return result;
+		}
+		if (!depsContent.Contains("@creatio-devkit/common", StringComparison.Ordinal)) {
+			result.Warnings.Add(
+				"Handlers or converters reference 'sdk.' but SCHEMA_DEPS does not include '@creatio-devkit/common'. " +
+				"Add it to SCHEMA_DEPS and declare a matching parameter (e.g. 'sdk') in SCHEMA_ARGS. " +
+				"Call get-guidance with name 'page-schema-creatio-devkit-common' for the correct pattern.");
+		}
+		return result;
+	}
+
+	private static bool HandlersOrConvertersMentionSdk(string jsBody) {
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string handlersContent, SchemaHandlersMarker)) {
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(handlersContent) || handlersContent.Trim() == "[]") {
+			return false;
+		}
+		if (SdkUsagePattern.IsMatch(handlersContent)) {
+			return true;
+		}
+		// Also check converters — async converters can use SDK
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string convertersContent, SchemaConvertersMarker)) {
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(convertersContent) || convertersContent.Trim() == "{}") {
+			return false;
+		}
+		return SdkUsagePattern.IsMatch(convertersContent);
+	}
+
+	private static string? GetMobileEntryType(JsonElement entry) {
+		// Type can be in entry.values.type or entry.type
+		if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
+			values.ValueKind == JsonValueKind.Object &&
+			values.TryGetProperty(TypePropertyName, out JsonElement typeEl) &&
+			typeEl.ValueKind == JsonValueKind.String) {
+			return typeEl.GetString();
+		}
+		if (entry.TryGetProperty(TypePropertyName, out JsonElement directType) &&
+			directType.ValueKind == JsonValueKind.String) {
+			return directType.GetString();
+		}
+		return null;
+	}
+
+	private static HashSet<string> CollectMobileViewModelAttributes(JsonElement root) {
+		var attributes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectMobileAttributesFrom(root, ViewModelConfigDiffPropertyName, isArray: true, attributes);
+		CollectMobileAttributesFrom(root, ViewModelConfigPropertyName, isArray: false, attributes);
+		return attributes;
+	}
+
+	private static void CollectMobileAttributesFrom(
+		JsonElement root, string propertyName, bool isArray,
+		HashSet<string> attributes) {
+		if (!root.TryGetProperty(propertyName, out JsonElement section)) {
+			return;
+		}
+		if (isArray && section.ValueKind == JsonValueKind.Array) {
+			CollectAttributesFromArraySection(section, attributes);
+		} else if (!isArray && section.ValueKind == JsonValueKind.Object) {
+			CollectAttributesFromObjectSection(section, attributes);
+		}
+	}
+
+	private static void CollectAttributesFromArraySection(JsonElement section, HashSet<string> attributes) {
+		foreach (JsonElement entry in section.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object || !ShouldScanAsAttributesContainer(entry)) {
+				continue;
+			}
+			// Merge-into-attributes pattern: { "operation":"merge", "path":["attributes"], "values":{...} }
+			if (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) &&
+				values.ValueKind == JsonValueKind.Object) {
+				AddObjectPropertyNames(values, attributes);
+			}
+		}
+	}
+
+	private static void CollectAttributesFromObjectSection(JsonElement section, HashSet<string> attributes) {
+		if (section.TryGetProperty(AttributesPropertyName, out JsonElement attrs) &&
+			attrs.ValueKind == JsonValueKind.Object) {
+			AddObjectPropertyNames(attrs, attributes);
+		}
+	}
+
+	private static void AddObjectPropertyNames(JsonElement obj, HashSet<string> attributes) {
+		foreach (JsonProperty attr in obj.EnumerateObject()) {
+			attributes.Add(attr.Name);
+		}
+	}
+
+	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {
+		var bindings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
+			vcd.ValueKind != JsonValueKind.Array) {
+			return bindings;
+		}
+		foreach (JsonElement entry in vcd.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v)
+				? v
+				: entry;
+			if (values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			ExtractDollarBindings(values, bindings);
+		}
+		return bindings;
+	}
+
+	private static void ExtractDollarBindings(JsonElement obj, HashSet<string> bindings) {
+		foreach (JsonElement value in obj.EnumerateObject().Select(p => p.Value)) {
+			if (value.ValueKind == JsonValueKind.String) {
+				if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
+					bindings.Add(attrName);
+				}
+			} else if (value.ValueKind == JsonValueKind.Object) {
+				ExtractDollarBindings(value, bindings);
+			}
+		}
+	}
+
+	private static bool TryNormalizeDollarBinding(string? raw, out string? attrName) {
+		attrName = null;
+		if (raw == null || raw.Length <= 1 || !raw.StartsWith("$", StringComparison.Ordinal)) {
+			return false;
+		}
+		string candidate = raw[1..];
+		// Strip converter pipe: "$AttrName | crt.InvertBooleanValue" → "AttrName"
+		int pipeIndex = candidate.IndexOf('|', StringComparison.Ordinal);
+		if (pipeIndex > 0) {
+			candidate = candidate[..pipeIndex].TrimEnd();
+		}
+		// Skip resource bindings like $Resources.Strings.X
+		if (candidate.StartsWith("Resources.", StringComparison.Ordinal)) {
+			return false;
+		}
+		attrName = candidate;
+		return true;
+	}
 
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
@@ -306,6 +916,154 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	/// <summary>
+	/// Validates that every <c>operation: "insert"</c> entry in the page body's
+	/// <c>viewConfigDiff</c> that introduces a standard field component is self-consistent —
+	/// i.e. the same body either declares the control's binding attribute in
+	/// <c>viewModelConfigDiff</c> / <c>viewModelConfig</c>, and any label that uses
+	/// <c>$Resources.Strings.X</c> is either passed in <paramref name="explicitResources"/>
+	/// or is auto-provided by a DS-bound binding attribute.
+	/// </summary>
+	/// <remarks>
+	/// This guards the common bug where an AI agent adds a control insert for a freshly created
+	/// entity column without registering the matching view-model attribute and resource string.
+	/// The result is a control with no data source and a blank caption. Unlike
+	/// <see cref="ValidateStandardFieldBindings"/>, this validator does NOT tolerate
+	/// undeclared bindings or unregistered labels for <em>insert</em> operations, because a
+	/// newly-inserted control cannot legitimately inherit either piece from a parent schema —
+	/// if it did, the agent would use <c>merge</c>, not <c>insert</c>.
+	/// </remarks>
+	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				ValidateInsertedFieldEntry(entry, declaredAttributes, modelPaths, explicitResources, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ValidateInsertedFieldEntry(
+		JsonElement entry,
+		IReadOnlySet<string> declaredAttributes,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
+			return;
+		}
+		AppendBindingDeclarationError(descriptor, declaredAttributes, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+	}
+
+	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
+		descriptor = default;
+		if (entry.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (!IsInsertOperation(entry)) {
+			return false;
+		}
+		if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+		    values.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (!TryGetFieldType(values, out string componentType)) {
+			return false;
+		}
+		if (!TryGetBindingAttribute(values, out _, out _, out string bindingAttribute)) {
+			return false;
+		}
+		string fieldName = GetFieldName(entry, values);
+		string displayName = !string.IsNullOrWhiteSpace(fieldName) ? fieldName : componentType;
+		descriptor = new InsertedFieldDescriptor(values, displayName, componentType, bindingAttribute);
+		return true;
+	}
+
+	private static bool IsInsertOperation(JsonElement entry) {
+		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
+		    operation.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		return string.Equals(operation.GetString(), "insert", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static void AppendBindingDeclarationError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlySet<string> declaredAttributes,
+		SchemaValidationResult result) {
+		if (declaredAttributes.Contains(descriptor.BindingAttribute)) {
+			return;
+		}
+		result.Errors.Add(
+			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
+			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
+			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
+			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
+			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+	}
+
+	private static void AppendLabelResourceError(
+		InsertedFieldDescriptor descriptor,
+		IReadOnlyDictionary<string, string> modelPaths,
+		IReadOnlyDictionary<string, string>? explicitResources,
+		SchemaValidationResult result) {
+		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
+		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
+			return;
+		}
+		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
+		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
+		if (hasExplicit || isAutoProvided) {
+			return;
+		}
+		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
+		result.Errors.Add(
+			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
+			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
+			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
+	}
+
+	private static string BuildAutoProvideSuggestion(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
+		    !boundPath.Contains('.', StringComparison.Ordinal)) {
+			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		}
+		int lastDot = boundPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
+			? boundPath[(lastDot + 1)..]
+			: boundPath;
+		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+	}
+
+	private readonly record struct InsertedFieldDescriptor(
+		JsonElement Values,
+		string DisplayName,
+		string ComponentType,
+		string BindingAttribute);
+
 	private static List<string> ExtractDataTableColumnCodes(string vcdContent) {
 		if (!TryParseJsonDocument(vcdContent, out JsonDocument document, out _)) {
 			return [];
@@ -340,6 +1098,75 @@ public static class SchemaValidationService
 		return modelPaths;
 	}
 
+	/// <summary>
+	/// Collects view-model attribute names whose <c>modelConfig.path</c> binds them to a
+	/// data source column, scanning a mobile (plain JSON) page body. Used to suppress
+	/// auto-derivation of <c>$Resources.Strings.Usr*</c> captions for keys that the
+	/// platform already auto-provides from the entity column caption.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A dictionary of attribute name to <c>modelConfig.path</c> value. Empty when the
+	/// body is not valid JSON or contains no DS-bound attributes.
+	/// </returns>
+	internal static Dictionary<string, string> CollectMobileViewModelPaths(string body) {
+		var modelPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(body)) {
+			return modelPaths;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return modelPaths;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object) {
+				return modelPaths;
+			}
+			CollectMobileModelPathsFromDiff(root, ViewModelConfigDiffPropertyName, modelPaths);
+			CollectMobileModelPathsFromDiff(root, ModelConfigDiffPropertyName, modelPaths);
+			CollectMobileModelPathsFromConfig(root, ViewModelConfigPropertyName, modelPaths);
+			CollectMobileModelPathsFromConfig(root, ModelConfigPropertyName, modelPaths);
+		}
+		return modelPaths;
+	}
+
+	private static void CollectMobileModelPathsFromDiff(
+		JsonElement root, string propertyName, Dictionary<string, string> modelPaths) {
+		if (!root.TryGetProperty(propertyName, out JsonElement diff) ||
+			diff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in diff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!ShouldScanAsAttributesContainer(entry)) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			CollectNamedModelPaths(values, modelPaths);
+		}
+	}
+
+	private static void CollectMobileModelPathsFromConfig(
+		JsonElement root, string propertyName, Dictionary<string, string> modelPaths) {
+		if (!root.TryGetProperty(propertyName, out JsonElement config) ||
+			config.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		if (!config.TryGetProperty(AttributesPropertyName, out JsonElement attrs) ||
+			attrs.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		CollectNamedModelPaths(attrs, modelPaths);
+	}
+
 	private static void CollectViewModelPathsFromMarker(
 		string jsBody,
 		Dictionary<string, string> modelPaths,
@@ -359,7 +1186,7 @@ public static class SchemaValidationService
 		if (element.ValueKind == JsonValueKind.Object) {
 			foreach (JsonProperty property in element.EnumerateObject()) {
 				if (property.Value.ValueKind == JsonValueKind.Object &&
-					property.Value.TryGetProperty("modelConfig", out JsonElement modelConfig) &&
+					property.Value.TryGetProperty(ModelConfigPropertyName, out JsonElement modelConfig) &&
 					modelConfig.TryGetProperty("path", out JsonElement pathElement) &&
 					pathElement.ValueKind == JsonValueKind.String) {
 					string? path = pathElement.GetString();
@@ -495,49 +1322,84 @@ public static class SchemaValidationService
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
 		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
-		    TryGetDatasourceCaptionKey(labelExpression, out string datasourceKey) &&
+		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
-		    !ctx.ExplicitResources.ContainsKey(datasourceKey)) {
+		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
+		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
-				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{datasourceKey}' is not in the provided resources — the label will render blank in the designer.");
+				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is not in the provided resources — the label will render blank.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
-		    !TryGetResourceStringKey(captionExpression, out string resourceKey) ||
+		    !TryGetMacroResourceKey(captionExpression, out string resourceKey) ||
 		    !CustomFieldResourcePattern.IsMatch(resourceKey)) {
 			return;
 		}
-		string preferredCaption = TryResolvePreferredCaption(ctx.ModelPaths, bindingAttribute, out string preferredCaptionBinding)
-			? preferredCaptionBinding
-			: "$Resources.Strings.<datasource-caption>";
+		string preferredLabel = TryResolvePreferredLabelBinding(ctx.ModelPaths, bindingAttribute, out string preferredLabelBinding)
+			? preferredLabelBinding
+			: "$Resources.Strings.<DS_ColumnName>";
 		if (ctx.ExplicitResources == null || !ctx.ExplicitResources.TryGetValue(resourceKey, out string explicitValue) || string.IsNullOrWhiteSpace(explicitValue)) {
 			ctx.Result.Errors.Add(
-				$"Standard field '{fieldDisplayName}' uses '{captionExpression}' without an explicit resources entry. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
+				$"Standard field '{fieldDisplayName}' uses '{captionExpression}' without an explicit resources entry. Prefer auto-provided label '{preferredLabel}' for data-bound fields.");
 			return;
 		}
 		ctx.Result.Warnings.Add(
-			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer datasource caption '{preferredCaption}' for data-bound fields.");
+			$"Standard field '{fieldDisplayName}' uses custom resource key '{resourceKey}'. Prefer auto-provided label '{preferredLabel}' for data-bound fields.");
 	}
 
-	private static bool TryResolvePreferredCaption(
+	/// <summary>
+	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
+	/// the preferred label in validator error/warning messages. The platform auto-provides the
+	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
+	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
+	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
+	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
+	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
+	/// auto-provided.
+	/// </summary>
+	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
 		string bindingAttribute,
-		out string preferredCaptionBinding) {
-		preferredCaptionBinding = string.Empty;
-		if (!string.IsNullOrWhiteSpace(bindingAttribute) &&
-		    modelPaths.TryGetValue(bindingAttribute, out string modelPath) &&
-		    modelPath.Contains('.')) {
-			string expectedBinding = BuildExpectedBinding(modelPath);
-			preferredCaptionBinding = $"$Resources.Strings.{expectedBinding[1..]}";
-			return true;
+		out string preferredLabelBinding) {
+		preferredLabelBinding = string.Empty;
+		if (string.IsNullOrWhiteSpace(bindingAttribute)) {
+			return false;
 		}
-		foreach (var (_, path) in modelPaths) {
-			string expected = BuildExpectedBinding(path);
-			if (string.Equals("$" + bindingAttribute, expected, StringComparison.OrdinalIgnoreCase)) {
-				preferredCaptionBinding = $"$Resources.Strings.{bindingAttribute}";
-				return true;
-			}
+		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
+			return false;
 		}
-		return false;
+		int lastDot = modelPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
+			? modelPath[(lastDot + 1)..]
+			: modelPath;
+		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
+		return true;
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
+	/// caption resource for the control's binding attribute. The platform auto-provides
+	/// captions ONLY when the resource key equals the entity column code (the last segment
+	/// of the binding attribute's <c>modelConfig.path</c>) — e.g. <c>UsrCompleted</c> for
+	/// path <c>PDS.UsrCompleted</c>. Path-with-underscores forms like <c>PDS_UsrCompleted</c>
+	/// are NOT auto-provided even when declared as DS-bound view-model attributes, because
+	/// the platform resolves caption resources by entity-column code, not by arbitrary
+	/// view-model attribute name.
+	/// </summary>
+	private static bool IsAutoProvidedLabelResourceKey(
+		string resourceKey,
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) {
+		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
+			return false;
+		}
+		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
+			return false;
+		}
+		int lastDot = bindingPath.LastIndexOf('.');
+		string columnCode = lastDot >= 0 && lastDot < bindingPath.Length - 1
+			? bindingPath[(lastDot + 1)..]
+			: bindingPath;
+		return string.Equals(resourceKey, columnCode, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool TryGetBindingAttribute(
@@ -589,7 +1451,7 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static bool TryGetResourceStringKey(string expression, out string resourceKey) {
+	private static bool TryGetMacroResourceKey(string expression, out string resourceKey) {
 		resourceKey = string.Empty;
 		Match match = ResourceStringPattern.Match(expression);
 		if (!match.Success) {
@@ -599,13 +1461,13 @@ public static class SchemaValidationService
 		return true;
 	}
 
-	private static bool TryGetDatasourceCaptionKey(string expression, out string resourceKey) {
+	private static bool TryGetReactiveResourceKey(string expression, out string resourceKey) {
 		resourceKey = string.Empty;
-		if (!expression.StartsWith(DatasourceCaptionPrefix, StringComparison.Ordinal) ||
-		    expression.Length <= DatasourceCaptionPrefix.Length) {
+		if (!expression.StartsWith(ResourceBindingPrefix, StringComparison.Ordinal) ||
+		    expression.Length <= ResourceBindingPrefix.Length) {
 			return false;
 		}
-		resourceKey = expression[DatasourceCaptionPrefix.Length..];
+		resourceKey = expression[ResourceBindingPrefix.Length..];
 		return !string.IsNullOrWhiteSpace(resourceKey);
 	}
 
@@ -1765,7 +2627,7 @@ public static class SchemaValidationService
 
 	private static void CollectPathsFromElement(JsonElement element, HashSet<string> paths) {
 		if (element.ValueKind == JsonValueKind.Object) {
-			if (element.TryGetProperty("modelConfig", out var mc) &&
+			if (element.TryGetProperty(ModelConfigPropertyName, out var mc) &&
 			    mc.TryGetProperty("path", out var pathEl) &&
 			    pathEl.ValueKind == JsonValueKind.String) {
 				paths.Add(pathEl.GetString());

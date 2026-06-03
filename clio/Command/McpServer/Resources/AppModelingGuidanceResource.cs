@@ -17,7 +17,7 @@ public sealed class AppModelingGuidanceResource {
 	/// Returns the canonical guidance article for DB-first app creation, schema modeling, and page workflows.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "app-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page-editing workflows.")]
+	[Description("Returns canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -32,6 +32,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Newer design tools use kebab-case JSON argument names such as `environment-name`, `package-name`, and `schema-name`.
 			       - For existing-app minimal edits, call `get-guidance` with `name` set to `existing-app-maintenance`.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
+			       - For seeding or reading Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discovery before invocation
@@ -71,6 +72,7 @@ public sealed class AppModelingGuidanceResource {
 			       - `create-app-section` is scalar-only for section shell fields. Keep `caption`, `description`, and `entity-schema-name` as plain strings and pass `with-mobile-pages` as a top-level boolean.
 			       - `create-app-section` requires `application-code` as the target-app selector.
 			       - `create-app` automatically creates: (1) a **package** named after `code`; (2) the **app** record; (3) one default **section** record in `ApplicationSection` that wires the canonical main entity to Creatio's navigation bar; (4) the **canonical main entity** (schema code = `code`) with one default column named `{prefix}Name` (MediumText), where `{prefix}` is the active SchemaNamePrefix returned in the response field `schema-name-prefix` (when SchemaNamePrefix is empty the column is named `Name`); and (5) **five Freedom UI pages** — `{code}_FormPage`, `{code}_ListPage`, `{code}_Detail`, `{code}_MobileFormPage`, and `{code}_MobileListPage`. The response returns the entity manifest under `entities` and the page manifest under `pages`; the section record itself is not in the response (use `canonical-main-entity-name` to identify the main entity). Read that manifest instead of re-discovering artifacts via additional tool calls.
+			       - MOBILE PAGE EDITING — STOP. When `get-page` returns `schemaType: 10` (or `list-pages` shows `schema-type: "mobile"`), the page is a mobile page. Before editing its body, call `get-guidance` with name `mobile-page-modification`. Mobile pages use plain JSON (NOT AMD define(...)), have a different component registry, and must NOT contain handlers, validators, or converters sections. Applying web page patterns to mobile pages produces broken schemas.
 			       - The auto-generated `{code}_FormPage` starts with `{prefix}Name` pre-inserted in `SideAreaProfileContainer` and Feed + AttachmentList tabs (see `schema-name-prefix` in the response). The auto-generated `{code}_ListPage` starts with `{prefix}Name`, `CreatedOn`, `CreatedBy` as default DataTable columns. Replace or extend these defaults when configuring the section; always call `get-page` to read the current body before writing.
 			       - `create-app` already creates the default section for the canonical main entity — no separate `create-app-section` call is needed for it. Use `create-app-section` only when the app needs an additional section backed by a new, separately named entity; Creatio derives the new entity code from the `caption` you provide (e.g. caption `Customer Profile` → entity `{prefix}CustomerProfile`, for example `UsrCustomerProfile` when prefix is `Usr` or `AbcCustomerProfile` when prefix is `Abc`). For the primary record type, extend the canonical main entity returned by `create-app` — do not create a synonym section for it.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.

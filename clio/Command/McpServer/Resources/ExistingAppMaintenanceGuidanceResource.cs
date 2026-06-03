@@ -28,6 +28,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
+			       - For seeding, listing, or updating Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
@@ -49,15 +50,15 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `update-app-section`.
 			        - If the target package already contains a supporting or link schema that models the required relation pair, reuse that schema. Do not create a synonym schema just because the requirement uses a different business caption.
 			        - Treat requests like "add a tab/detail/grid that shows linked records" as page-only/object-model reuse tasks by default. Create a new schema only when the inspect phase fails to find a suitable existing backing schema.
-			       
+
 			       Inspect pages before editing
 			       - Use `list-pages` to discover candidate Freedom UI page schemas in the target package or by installed `code`.
 			       - `list-pages` page items identify each page with `schema-name`, together with `uId`, `packageName`, and `parentSchemaName`.
 			       - Use `get-page` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - For writes, send the full `raw.body` string back to `sync-pages` or `update-page`; do not send `bundle` or `bundle.viewConfig` as the body payload.
 			       - Use `get-component-info` when `get-page` shows unfamiliar `crt.*` component types before editing nested config or child collections.
-			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions such as `$Resources.Strings.PDS_UsrStatus`.
-			       - Do not route standard field bindings through proxy attributes like `$UsrStatus` when the view model path is `PDS.UsrStatus`.
+			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions keyed by the entity column code: `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (e.g. `$Resources.Strings.UsrStatus` for path `PDS.UsrStatus`). The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided; on `operation:"insert"` it is rejected unless registered explicitly via the `resources` parameter.
+			       - Do not route standard field bindings through proxy attributes (e.g. binding a control to `$UsrStatus` while declaring a separate proxy attribute whose underlying view model path is `PDS.UsrStatus`). A plain attribute name like `$UsrName` is itself valid when it is directly bound to a DS column; the anti-pattern is duplicating an already-DS-bound attribute under a different name.
 			       - Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI with explicit `resources`; do not use those shortcuts as datasource field captions.
 			       - When a page tool needs `resources`, pass a JSON object string rather than a nested object payload.
 			       - Absence of a tab, detail, or grid on the page does not prove the backing entity is missing. Resolve the backing schema from runtime app context before planning new schema work.

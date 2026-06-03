@@ -41,12 +41,14 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
 		JsonElement actionSchema = inputSchema
 			.GetProperty("properties")
+			.GetProperty("args")
+			.GetProperty("properties")
 			.GetProperty("rule")
 			.GetProperty("properties")
 			.GetProperty("actions")
 			.GetProperty("items");
 		JsonElement anyOf = actionSchema.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(5,
+		anyOf.GetArrayLength().Should().Be(6,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
 			because: "page-only actions should not appear in the entity business-rule runtime schema");
@@ -62,6 +64,31 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		setValuesItemsSchema.GetProperty("properties").EnumerateObject()
 			.Select(property => property.Name).Should().Contain(["expression", "value"],
 				because: "Set values action items should advertise target and value expression objects");
+		JsonElement applyFilterSchema = anyOf.EnumerateArray()
+			.Single(branch => branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "apply-filter");
+		applyFilterSchema.GetProperty("properties").EnumerateObject()
+			.Select(property => property.Name).Should().Contain([
+				"type",
+				"target",
+				"targetFilterPath",
+				"source",
+				"sourceFilterPath",
+				"clearValue",
+				"populateValue"
+			],
+			because: "apply-filter should advertise its dedicated lookup-filter payload fields through the runtime schema");
+		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
+			.Should().Contain("Lookup",
+				because: "runtime MCP schema should describe targetFilterPath as a lookup-valued path");
+		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
+			.Should().Contain("not Guid",
+				because: "runtime MCP schema should explicitly reject Guid-valued targetFilterPath paths");
+		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
+			.Should().Contain("Lookup",
+				because: "runtime MCP schema should describe sourceFilterPath as a lookup-valued path");
+		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
+			.Should().Contain("not Guid",
+				because: "runtime MCP schema should explicitly reject Guid-valued sourceFilterPath paths");
 	}
 
 	[Test]
@@ -78,10 +105,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["entitySchemaName"] = "UsrOrder",
-				["rule"] = CreateSetValuesRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateSetValuesRule()
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -94,6 +123,71 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
+	}
+
+	[Test]
+	[Description("Binds an apply-filter business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds apply-filter payloads")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an apply-filter payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_ApplyFilter_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-apply-filter-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["environmentName"] = invalidEnvironmentName,
+				["packageName"] = "UsrPkg",
+				["entitySchemaName"] = "UsrOrder",
+				["rule"] = CreateApplyFilterRule()
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid apply-filter payloads should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the apply-filter payload");
+	}
+
+	[Test]
+	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool surfaces action deserialization errors")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives a readable deserialization error instead of a generic invocation failure.")]
+	public async Task BusinessRuleCreate_Should_Surface_Action_Deserialization_Error() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "missing-business-rule-env",
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateInvalidActionRule()
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "argument binding failures occur before command execution and should be returned as MCP error results");
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "the MCP error result should include human-readable diagnostics");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				message.Contains($"Failed to deserialize argument 'args' for MCP tool '{ToolName}'", StringComparison.Ordinal)
+				&& message.Contains("unsupported-action", StringComparison.Ordinal),
+			because: "the caller should see the underlying System.Text.Json action binding error");
 	}
 
 	[Test]
@@ -119,10 +213,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName,
-				["packageName"] = packageName,
-				["entitySchemaName"] = "Contact",
-				["rule"] = CreateContactEntityRule(caption)
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = "Contact",
+					["rule"] = CreateContactEntityRule(caption)
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -145,6 +241,59 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
 			["Name"],
 			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	[Test]
+	[Description("Creates an apply-filter entity business-rule family for Contact in the target package through the real MCP server and verifies persisted parent and child metadata.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool creates an apply-filter rule family")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Calls create-entity-business-rule with an apply-filter payload for Contact and verifies the persisted parent filter-lookup rule plus autogenerated clear and populate child rules through add-on readback.")]
+	public async Task BusinessRuleCreate_Should_Create_ApplyFilter_Rule_Family_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive apply-filter create-entity-business-rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		string caption = $"MCP E2E Contact apply-filter {Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["environmentName"] = environmentName,
+				["packageName"] = packageName,
+				["entitySchemaName"] = "Contact",
+				["rule"] = CreateContactApplyFilterRule(caption)
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid Contact apply-filter rule should return the standard command execution envelope");
+		execution.ExitCode.Should().Be(0,
+			because: "the apply-filter rule family should be created in the configured Creatio sandbox");
+		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+			because: "successful command-path MCP calls should include at least one info log message");
+		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
+			because: "successful apply-filter creation should report the generated parent rule name");
+		await BusinessRuleAddonReadback.AssertEntityApplyFilterRuleFamilyExistsAsync(
+			settings,
+			environmentName,
+			packageName,
+			"Contact",
+			caption,
+			"City",
+			"Country",
+			"Country",
+			null,
+			expectClearChild: true,
+			expectPopulateChild: true,
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
@@ -231,6 +380,59 @@ public sealed class EntityBusinessRuleToolE2ETests {
 						CreateFormulaSetValuesItem("UsrTotalScore", "UsrScore + UsrBonusScore"),
 						CreateAttributeSetValuesItem("UsrCreatorAge", "CreatedBy.Age")
 					}
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateApplyFilterRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Filter city by country",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "apply-filter",
+					["target"] = "City",
+					["targetFilterPath"] = "Country",
+					["source"] = "Country",
+					["clearValue"] = true,
+					["populateValue"] = true
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateInvalidActionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Invalid action",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["items"] = new object[] { "Name" },
+					["type"] = "unsupported-action"
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateContactApplyFilterRule(string caption) =>
+		new Dictionary<string, object?> {
+			["caption"] = caption,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "apply-filter",
+					["target"] = "City",
+					["targetFilterPath"] = "Country",
+					["source"] = "Country",
+					["clearValue"] = true,
+					["populateValue"] = true
 				}
 			}
 		};

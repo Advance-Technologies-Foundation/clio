@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ATF.Repository;
@@ -52,6 +53,8 @@ using Creatio.Client;
 using FluentValidation;
 using k8s;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using YamlDotNet.Serialization;
@@ -104,6 +107,12 @@ public class BindingsModule {
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
+		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
+		// configured once here so callers never mutate HttpClient.Timeout after construction
+		// (avoids `InvalidOperationException` on reused instances and races on a shared
+		// mutable property — see code-review #1 on PR #599).
+		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -128,7 +137,8 @@ public class BindingsModule {
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
+			services.AddSingleton<IApplicationClient>(sp =>
+				new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<ILogger>()));
 			services.AddTransient<SysSettingsManager>();
 		}
 
@@ -208,6 +218,8 @@ public class BindingsModule {
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
+		services.AddTransient<IBusinessRuleLookupReferenceValidator, BusinessRuleLookupReferenceValidator>();
+		services.AddTransient<IBusinessRuleValidator, BusinessRuleValidator>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
@@ -215,6 +227,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
+		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
@@ -253,7 +266,33 @@ public class BindingsModule {
 		services.AddTransient<IPageJsonDiffApplier, PageJsonDiffApplier>();
 		services.AddTransient<IPageJsonPathDiffApplier, PageJsonPathDiffApplier>();
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddSingleton<TimeProvider>(TimeProvider.System);
+		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
+		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
+		services.AddSingleton<IComponentRegistryClient, ComponentRegistryClient>();
+		// Mobile shares the same client implementation but uses a separate cache
+		// subdirectory + a different CDN file + its own local-override env var. The
+		// cache store is registered as a flavor-specific factory to keep the disk
+		// layout web/mobile-isolated.
+		services.AddSingleton<IMobileComponentRegistryClient>(sp => new MobileComponentRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Mobile.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
+		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
+		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
+		// get-component-info MCP tool and the CLI verb resolve the platform version from
+		// per-call arguments (environment-name / uri / version), never from an ambient
+		// singleton bound to the server's startup environment. A singleton resolver would
+		// probe the wrong environment and report a falsely authoritative "environment" tier.
+		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
+		services.AddTransient<ComponentRegistryRefreshCommand>();
+		services.AddTransient<ComponentInfoCommand>();
 		
 		// MCP Tools
 		services.AddTransient<PageListTool>();
@@ -268,7 +307,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
-		services.AddTransient<IMeasurementService>(sp => new MeasurementService(sp.GetRequiredService<IFileSystem>()));
+		services.AddTransient<IMeasurementService>(sp => new MeasurementService(
+			sp.GetRequiredService<IFileSystem>(), timeProvider: sp.GetRequiredService<TimeProvider>()));
 		services.AddTransient<GetMeasurementsConsentTool>();
 		services.AddTransient<SendMeasurementsTool>();
 		services.AddTransient<PageGetTool>();
@@ -290,18 +330,25 @@ public class BindingsModule {
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
+		services.AddTransient<SysSettingGetTool>();
+		services.AddTransient<SysSettingsListTool>();
+		services.AddTransient<SysSettingCreateTool>();
+		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
-		services.AddHttpClient<IDataForgeClient, DataForgeClient>();
-		services.AddTransient<IDataForgeSysSettingDirectReader, DataForgeSysSettingDirectReader>();
-		services.AddSingleton<IDataForgeProxySafeExecutor, DataForgeProxySafeExecutor>();
-		services.AddTransient<IDataForgeConfigResolver, DataForgeConfigResolver>();
+		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
+		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
+		services.AddTransient<ODataReadTool>();
+		services.AddTransient<ODataCreateTool>();
+		services.AddTransient<ODataUpdateTool>();
+		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
@@ -517,15 +564,17 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
+		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
 		services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors))
 				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
-				.WithToolsFromAssembly(Assembly.GetExecutingAssembly())
-				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly());
+				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
+				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
@@ -556,6 +605,18 @@ public class BindingsModule {
 			return bootstrapResult.ResolvedEnvironment ?? CreateBootstrapPlaceholderEnvironment();
 		}
 		return CreateBootstrapPlaceholderEnvironment();
+	}
+
+	/// <summary>
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Enables out-of-order metadata properties so that the
+	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
+	/// LLMs do not guarantee JSON property ordering.
+	/// </summary>
+	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
+		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
+		options.AllowOutOfOrderMetadataProperties = true;
+		return options;
 	}
 
 	private static EnvironmentSettings CreateBootstrapPlaceholderEnvironment() {
@@ -610,7 +671,10 @@ public class BindingsModule {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
 					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
-					|| implementedInterface == typeof(IDbOperationLogSession)) {
+					|| implementedInterface == typeof(IDbOperationLogSession)
+					// ReauthExecutor requires a per-adapter Login closure; it is created by
+					// CreatioClientAdapter rather than resolved from DI.
+					|| implementedInterface == typeof(IReauthExecutor)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

@@ -1,4 +1,5 @@
 ﻿using System;
+using Clio;
 using Clio.Common;
 using CommandLine;
 
@@ -61,7 +62,7 @@ internal class UnregisterCommand(ILogger logger, IProcessExecutor processExecuto
 			return 0;
 		}
 		catch (Exception e) {
-			logger.WriteError(e.ToString());
+			logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 			return 1;
 		}
 	}

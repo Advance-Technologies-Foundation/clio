@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Clio.Common.EntitySchema;
 
 namespace Clio.Common.DataForge;
@@ -15,12 +14,10 @@ public interface IDataForgeContextService {
 	/// Builds an aggregated Data Forge context payload for the requested search terms and relation pairs.
 	/// </summary>
 	/// <param name="request">Context aggregation request.</param>
-	/// <param name="configRequest">Resolved Data Forge configuration request.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>An aggregated Data Forge context payload prior to MCP envelope mapping.</returns>
-	Task<DataForgeContextAggregationResult> GetContextAsync(
+	DataForgeContextAggregationResult GetContext(
 		DataForgeContextRequest request,
-		DataForgeConfigRequest configRequest,
 		CancellationToken cancellationToken = default);
 }
 
@@ -73,36 +70,37 @@ internal static class DataForgeRuntimeSchemaMapper {
 }
 
 internal sealed class DataForgeContextService(
-	IDataForgeClient dataForgeClient,
+	IDataForgeReadClient readClient,
 	IDataForgeMaintenanceClient maintenanceClient,
 	IRuntimeEntitySchemaReader runtimeEntitySchemaReader)
 	: IDataForgeContextService {
-	public async Task<DataForgeContextAggregationResult> GetContextAsync(
+	public DataForgeContextAggregationResult GetContext(
 		DataForgeContextRequest request,
-		DataForgeConfigRequest configRequest,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(request);
-		ArgumentNullException.ThrowIfNull(configRequest);
+		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> warnings = [];
-		DataForgeHealthResult health = await dataForgeClient.CheckHealthAsync(configRequest, cancellationToken);
-		DataForgeMaintenanceStatusResult status = maintenanceClient.GetStatus();
+		(DataForgeHealthResult health, DataForgeMaintenanceStatusResult status) = maintenanceClient.GetFullStatus();
+		cancellationToken.ThrowIfCancellationRequested();
 
 		List<string> tableTerms = NormalizeTerms(request.CandidateTerms, request.RequirementSummary);
-		List<SimilarTableResult> similarTables = await FindSimilarTablesAsync(tableTerms, configRequest, warnings, cancellationToken);
+		List<SimilarTableResult> similarTables = FindSimilarTables(tableTerms, warnings, cancellationToken);
 
 		List<string> lookupTerms = NormalizeTerms(request.LookupHints, null);
-		List<SimilarLookupResult> similarLookups = await FindSimilarLookupsAsync(lookupTerms, configRequest, warnings, cancellationToken);
+		List<SimilarLookupResult> similarLookups = FindSimilarLookups(lookupTerms, warnings, cancellationToken);
 
-		Dictionary<string, IReadOnlyList<string>> relations = await GetRelationsAsync(
+		Dictionary<string, IReadOnlyList<string>> relations = GetRelations(
 			request.RelationPairs,
-			configRequest,
 			warnings,
 			cancellationToken);
 
 		List<SimilarTableResult> distinctTables = GetDistinctTables(similarTables);
 
-		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(distinctTables, warnings);
+		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = GetColumns(
+			distinctTables,
+			warnings,
+			cancellationToken);
 
 		List<SimilarLookupResult> distinctLookups = GetDistinctLookups(similarLookups);
 
@@ -164,15 +162,15 @@ internal sealed class DataForgeContextService(
 		return values;
 	}
 
-	private async Task<List<SimilarTableResult>> FindSimilarTablesAsync(
+	private List<SimilarTableResult> FindSimilarTables(
 		IReadOnlyList<string> tableTerms,
-		DataForgeConfigRequest configRequest,
 		List<string> warnings,
 		CancellationToken cancellationToken) {
 		List<SimilarTableResult> similarTables = [];
 		foreach (string term in tableTerms) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
-				similarTables.AddRange(await dataForgeClient.FindSimilarTablesAsync(term, null, configRequest, cancellationToken));
+				similarTables.AddRange(readClient.FindSimilarTables(term));
 			}
 			catch (Exception ex) {
 				warnings.Add($"tables:{term}:{ex.Message}");
@@ -182,15 +180,15 @@ internal sealed class DataForgeContextService(
 		return similarTables;
 	}
 
-	private async Task<List<SimilarLookupResult>> FindSimilarLookupsAsync(
+	private List<SimilarLookupResult> FindSimilarLookups(
 		IReadOnlyList<string> lookupTerms,
-		DataForgeConfigRequest configRequest,
 		List<string> warnings,
 		CancellationToken cancellationToken) {
 		List<SimilarLookupResult> similarLookups = [];
 		foreach (string hint in lookupTerms) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
-				similarLookups.AddRange(await dataForgeClient.FindSimilarLookupsAsync(hint, null, null, configRequest, cancellationToken));
+				similarLookups.AddRange(readClient.FindSimilarLookups(hint));
 			}
 			catch (Exception ex) {
 				warnings.Add($"lookups:{hint}:{ex.Message}");
@@ -200,21 +198,16 @@ internal sealed class DataForgeContextService(
 		return similarLookups;
 	}
 
-	private async Task<Dictionary<string, IReadOnlyList<string>>> GetRelationsAsync(
+	private Dictionary<string, IReadOnlyList<string>> GetRelations(
 		IReadOnlyList<DataForgeRelationPair>? relationPairs,
-		DataForgeConfigRequest configRequest,
 		List<string> warnings,
 		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<string>> relations = new(StringComparer.OrdinalIgnoreCase);
 		foreach (DataForgeRelationPair pair in relationPairs?.Where(HasRelationTables) ?? []) {
+			cancellationToken.ThrowIfCancellationRequested();
 			string key = $"{pair.SourceTable}->{pair.TargetTable}";
 			try {
-				relations[key] = await dataForgeClient.GetTableRelationshipsAsync(
-					pair.SourceTable,
-					pair.TargetTable,
-					null,
-					configRequest,
-					cancellationToken);
+				relations[key] = readClient.GetTableRelationships(pair.SourceTable, pair.TargetTable);
 			}
 			catch (Exception ex) {
 				warnings.Add($"relations:{key}:{ex.Message}");
@@ -226,9 +219,11 @@ internal sealed class DataForgeContextService(
 
 	private Dictionary<string, IReadOnlyList<DataForgeColumnResult>> GetColumns(
 		IReadOnlyList<SimilarTableResult> distinctTables,
-		List<string> warnings) {
+		List<string> warnings,
+		CancellationToken cancellationToken) {
 		Dictionary<string, IReadOnlyList<DataForgeColumnResult>> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string tableName in distinctTables.Select(table => table.Name)) {
+			cancellationToken.ThrowIfCancellationRequested();
 			try {
 				RuntimeEntitySchemaResult runtimeSchema = runtimeEntitySchemaReader.GetByName(tableName);
 				columns[tableName] = DataForgeRuntimeSchemaMapper.MapColumns(runtimeSchema);

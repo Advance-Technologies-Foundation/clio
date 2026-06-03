@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -15,8 +18,6 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ComponentInfoToolTests {
-	private static readonly string RegistryRoot = GetRootedPath("clio");
-	private static readonly string RegistryPath = Path.Combine(RegistryRoot, "Command", "McpServer", "Data", "ComponentRegistry.json");
 	private const string TestRegistryJson = """
 	[
 	  {
@@ -141,10 +142,48 @@ public sealed class ComponentInfoToolTests {
 	]
 	""";
 
-	[TearDown]
-	public void TearDown() {
-		WorkingDirectoriesProvider._executingDirectory = null;
-	}
+	private const string TestMobileRegistryJson = """
+	[
+	  {
+	    "componentType": "crt.Toggle",
+	    "category": "fields",
+	    "description": "Boolean toggle switch. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound Boolean attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "ActiveToggle",
+	      "values": { "type": "crt.Toggle", "control": "$PDS_IsActive" },
+	      "parentName": "DetailsGrid",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  },
+	  {
+	    "componentType": "crt.BarcodeScanner",
+	    "category": "fields",
+	    "description": "Barcode scanner field. Mobile-only.",
+	    "container": false,
+	    "parentTypes": ["crt.GridContainer"],
+	    "properties": {
+	      "control": { "type": "string", "description": "Bound scanned value attribute." }
+	    },
+	    "typicalChildren": [],
+	    "example": {
+	      "operation": "insert",
+	      "name": "BarcodeField",
+	      "values": { "type": "crt.BarcodeScanner", "control": "$PDS_Barcode" },
+	      "parentName": "DetailsGrid",
+	      "propertyName": "items",
+	      "index": 0
+	    }
+	  }
+	]
+	""";
 
 	[Test]
 	[Description("Advertises the stable MCP tool name for get-component-info so callers and tests share the same production identifier.")]
@@ -179,12 +218,12 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Returns grouped component summaries when component-type is omitted.")]
-	public void ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
+	public async Task ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs());
+		ComponentInfoResponse response = await tool.GetComponentInfo();
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -192,23 +231,25 @@ public sealed class ComponentInfoToolTests {
 		response.Mode.Should().Be("list",
 			because: "omitting component-type should switch the tool into list mode");
 		response.Count.Should().Be(6,
-			because: "all registry entries should be returned in grouped list mode");
-		response.Groups.Should().NotBeNull(
-			because: "list mode should return grouped component summaries");
-		response.Groups![0].Category.Should().Be("containers",
-			because: "container entries should appear before other groups");
-		response.Groups[0].Items[0].ComponentType.Should().Be("crt.TabContainer",
-			because: "group items should preserve the component type");
+			because: "all registry entries should be returned in list mode");
+		response.Items.Should().NotBeNull(
+			because: "list mode should return the flat item list");
+		response.Items![0].ComponentType.Should().Be("crt.Button",
+			because: "items are sorted alphabetically by component type");
+		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
+			because: "the AI must know which catalog version produced the response");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "until the platform version resolver lands the tool always reports latest-fallback");
 	}
 
 	[Test]
 	[Description("Returns full component details when component-type matches a curated entry.")]
-	public void ComponentInfoTool_Should_Return_Detail_When_Component_Type_Matches() {
+	public async Task ComponentInfoTool_Should_Return_Detail_When_Component_Type_Matches() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -223,16 +264,18 @@ public sealed class ComponentInfoToolTests {
 			because: "detail mode should expose the curated property catalog");
 		response.TypicalChildren.Should().Contain("crt.GridContainer",
 			because: "detail mode should expose common child component hints");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "detail responses should also expose the resolver tier marker");
 	}
 
 	[Test]
 	[Description("Filters grouped list results by keyword search across the curated registry.")]
-	public void ComponentInfoTool_Should_Filter_List_By_Search() {
+	public async Task ComponentInfoTool_Should_Filter_List_By_Search() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "tab");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -241,20 +284,19 @@ public sealed class ComponentInfoToolTests {
 			because: "search without component-type should keep the tool in list mode");
 		response.Count.Should().Be(1,
 			because: "only matching entries should be returned");
-		response.Groups.Should().ContainSingle(
-			because: "only one category should remain after filtering");
-		response.Groups![0].Items.Should().ContainSingle(
-			because: "only crt.TabContainer matches the sample registry search");
+		response.Items.Should().ContainSingle(
+			because: "only crt.TabContainer matches the sample registry search")
+			.Which.ComponentType.Should().Be("crt.TabContainer");
 	}
 
 	[Test]
 	[Description("Finds components by frontend-derived property metadata such as bulkActions.")]
-	public void ComponentInfoTool_Should_Search_Across_Property_Metadata() {
+	public async Task ComponentInfoTool_Should_Search_Across_Property_Metadata() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "bulkActions");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -263,20 +305,19 @@ public sealed class ComponentInfoToolTests {
 			because: "search-only queries should stay in list mode");
 		response.Count.Should().Be(1,
 			because: "only crt.Gallery exposes bulkActions in the sample registry");
-		response.Groups.Should().ContainSingle(
-			because: "property metadata search should keep only matching categories");
-		response.Groups![0].Items[0].ComponentType.Should().Be("crt.Gallery",
-			because: "bulkActions should surface the gallery contract");
+		response.Items.Should().ContainSingle()
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "bulkActions should surface the gallery contract");
 	}
 
 	[Test]
 	[Description("Returns nested menu component details so action collections can be expanded safely.")]
-	public void ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
+	public async Task ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.MenuItem");
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -295,41 +336,701 @@ public sealed class ComponentInfoToolTests {
 
 	[Test]
 	[Description("Returns a readable error and available types when component-type does not exist.")]
-	public void ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
+	public async Task ComponentInfoTool_Should_Return_Readable_Error_When_Component_Type_Is_Unknown() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Unknown");
 
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "unknown component types should not pretend that a detail lookup succeeded");
 		response.Error.Should().Contain("crt.Unknown",
 			because: "the failure should identify the missing component type");
-		response.Groups.Should().NotBeNull(
+		response.Items.Should().NotBeNull(
 			because: "the tool should still return available types for discovery");
 		response.Count.Should().Be(6,
 			because: "the fallback list should expose the full catalog when no search filter is applied");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the resolver tier marker should still ship with error responses to help diagnosis");
 	}
 
-	private static ComponentInfoTool CreateTool() {
-		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[RegistryPath] = new(TestRegistryJson)
-		}, RegistryRoot);
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.ExecutingDirectory.Returns(RegistryRoot);
-		ComponentInfoCatalog catalog = new(fileSystem, workingDirectoriesProvider);
-		return new ComponentInfoTool(catalog);
+	[Test]
+	[Description("When the platform version resolver succeeds the response reports resolvedFrom=environment and the resolved version.")]
+	public async Task ComponentInfoTool_Should_Report_Environment_When_Resolver_Succeeds() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act — passing environment-name routes resolution through the cliogate probe stub.
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the catalog still loads successfully through the in-memory client stub");
+		response.ResolvedTargetVersion.Should().Be("8.1.5",
+			because: "the catalog state must echo the version selected by the resolver");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful cliogate probe must surface as the 'environment' tier on the response");
 	}
 
-	private static string GetRootedPath(params string[] segments) {
-		string path = OperatingSystem.IsWindows()
-			? @"C:\"
-			: Path.DirectorySeparatorChar.ToString();
-		foreach (string segment in segments) {
-			path = Path.Combine(path, segment);
+	[Test]
+	[Description("When the registry client falls back to a different version, the response reports latest-fallback even if the resolver succeeded.")]
+	public async Task ComponentInfoTool_Should_Report_Latest_Fallback_When_Catalog_Falls_Back() {
+		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
+		// back to "latest" because 8.1.5 is not yet published on the CDN.
+		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
+		ComponentInfoCatalog catalog = new(client);
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act — probe resolves 8.1.5 but the client only has "latest" published.
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the catalog still loads through the fallback chain");
+		response.ResolvedTargetVersion.Should().Be("latest",
+			because: "the response must echo the version actually loaded by the client, not the requested one");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+	}
+
+	[Test]
+	[Description("Latest-fallback responses carry the versionWarning so AI does not mistake the 'latest' superset for the target environment's real component set.")]
+	public async Task ComponentInfoTool_Should_Emit_Version_Warning_On_Latest_Fallback() {
+		// Arrange — resolver falls back to latest (no environment / probe failure).
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo();
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the fixture resolver reports latest-fallback");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
+			because: "every latest-fallback response must surface the superset caveat so AI verifies the component exists in the target version");
+	}
+
+	[Test]
+	[Description("When the catalog matches the resolved environment version the response omits versionWarning — there is no superset risk to flag.")]
+	public async Task ComponentInfoTool_Should_Not_Emit_Version_Warning_When_Environment_Matches() {
+		// Arrange — resolver says 8.1.5 and the catalog loads exactly that version.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful probe whose catalog matches must surface the 'environment' tier");
+		response.VersionWarning.Should().BeNull(
+			because: "an environment-matched catalog carries no superset risk, so the warning must be omitted");
+	}
+
+	[Test]
+	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses and omits it for environment-matched responses.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_Version_Warning_Only_On_Latest_Fallback() {
+		// Arrange
+		ComponentInfoResponse fallback = new() {
+			Success = true, Mode = "list", Count = 0, Items = [],
+			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback"
+		};
+		ComponentInfoResponse matched = new() {
+			Success = true, Mode = "list", Count = 0, Items = [],
+			ResolvedTargetVersion = "8.1.5", ResolvedFrom = "environment"
+		};
+
+		// Act
+		string fallbackText = ComponentInfoPrettyRenderer.Render(fallback);
+		string matchedText = ComponentInfoPrettyRenderer.Render(matched);
+
+		// Assert
+		fallbackText.Should().Contain("WARNING:",
+			because: "the pretty surface must flag the latest superset so a human operator sees the same caveat AI gets");
+		fallbackText.Should().Contain("superset",
+			because: "the rendered warning must carry the LatestFallbackWarning text");
+		matchedText.Should().NotContain("WARNING:",
+			because: "an environment-matched catalog has no superset risk to flag");
+	}
+
+	[Test]
+	[Description("Passing environment-name routes version resolution through the cliogate probe for that environment (factory + settings repository), mirroring the CLI verb, instead of an ambient server-bound resolver.")]
+	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>())
+			.Returns(StubPlatformVersionResolver.Environment("8.2.1"));
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, settingsRepository);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "prod-stand");
+
+		// Assert
+		response.ResolvedTargetVersion.Should().Be("8.2.1",
+			because: "the version must come from the probe of the environment passed in the call, not from ambient state");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "an environment-name-driven probe that matches the catalog is the 'environment' tier");
+		settingsRepository.Received(1).GetEnvironment(Arg.Is<EnvironmentOptions>(o => o.Environment == "prod-stand"));
+		factory.Received(1).Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("A malformed explicit version is rejected up front with a readable error instead of silently degrading to latest-fallback when the CDN load fails.")]
+	public async Task ComponentInfoTool_Should_Reject_Malformed_Explicit_Version() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(version: "not-a-version");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unparseable version must surface a clear error rather than a silent latest-fallback");
+		response.Error.Should().Contain("not a valid platform version",
+			because: "the caller must be told the version value is malformed");
+	}
+
+	[Test]
+	[Description("Passing both version and environment-name is rejected with a readable error — the two version sources are mutually exclusive, mirroring the CLI verb guard.")]
+	public async Task ComponentInfoTool_Should_Reject_Both_Version_And_Environment() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			environmentName: "test-stand", version: "8.3.3");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "version and environment-name select the target version two different ways and must not be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the caller must be told why the request was rejected");
+	}
+
+	[Test]
+	[Description("Successive LoadAsync calls re-parse the underlying bytes so refreshed CDN/cache writes are visible without a process restart.")]
+	public async Task ComponentInfoCatalog_Should_Not_Pin_Parsed_State_Across_Calls() {
+		// Arrange — two registries differing by a single componentType. Simulates the
+		// scenario where the background refresh writes newer bytes to disk between calls.
+		const string firstPayload = """[{"componentType":"crt.First","category":"interactive","description":"first","container":false,"properties":{}}]""";
+		const string secondPayload = """[{"componentType":"crt.Second","category":"interactive","description":"second","container":false,"properties":{}}]""";
+		SequenceRegistryClient client = new(firstPayload, secondPayload);
+		ComponentInfoCatalog catalog = new(client);
+
+		// Act
+		ComponentRegistryEntry? firstHit = await catalog.FindAsync("latest", "crt.First");
+		ComponentRegistryEntry? secondHit = await catalog.FindAsync("latest", "crt.Second");
+
+		// Assert
+		firstHit.Should().NotBeNull(
+			because: "the first LoadAsync observes the initial payload");
+		secondHit.Should().NotBeNull(
+			because: "the second LoadAsync must re-parse the newer payload, not return the cached first one");
+	}
+
+	[Test]
+	[Description("When the underlying client throws ComponentRegistryUnavailableException (cache + CDN both exhausted), the tool catch-all turns it into a graceful MCP error response that points operators at the local-override env var.")]
+	public async Task ComponentInfoTool_Should_Surface_Registry_Unavailable_As_Graceful_Error() {
+		// Arrange
+		ThrowingRegistryClient throwingClient = new(new ComponentRegistryUnavailableException("latest", "https://cdn.test/api/mcp/"));
+		ComponentInfoCatalog catalog = new(throwingClient);
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo();
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the registry chain was exhausted — the response must signal failure to AI");
+		response.Error.Should().NotBeNull();
+		response.Error.Should().Contain("CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
+			because: "the error must point operators at the documented offline override");
+	}
+
+	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		return BuildTool(catalog, mobileCatalog, docsClient);
+	}
+
+	/// <summary>
+	/// Builds a <see cref="ComponentInfoTool"/> for tests. Version resolution mirrors the CLI verb:
+	/// with <paramref name="environmentVersion"/> null the tool resolves nothing (the caller makes a
+	/// bare or version-less call → <c>latest-fallback</c>); pass a semver to wire the stub factory so a
+	/// call carrying <c>environment-name</c> resolves to that version (<c>environment</c> tier).
+	/// </summary>
+	private static ComponentInfoTool BuildTool(
+		IComponentInfoCatalog catalog,
+		IMobileComponentInfoCatalog mobileCatalog,
+		IComponentRegistryDocsClient? docsClient = null,
+		string? environmentVersion = null) {
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		if (environmentVersion is not null) {
+			factory.Create(Arg.Any<EnvironmentSettings>())
+				.Returns(StubPlatformVersionResolver.Environment(environmentVersion));
 		}
-		return path;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		return new ComponentInfoTool(
+			catalog,
+			mobileCatalog,
+			docsClient ?? new FakeDocsClient(),
+			factory,
+			settingsRepository);
+	}
+
+	[Test]
+	[Description("Returns grouped mobile component summaries when schema-type is 'mobile'. Mobile responses now carry the same resolvedTargetVersion + resolvedFrom markers as web — both flavors share the same async pipeline and the same wrapped envelope, so AI consumers no longer need to branch on schema-type to discover version metadata.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(schemaType: "mobile");
+
+		response.Success.Should().BeTrue(
+			because: "listing mobile components should succeed when the mobile registry is available");
+		response.Mode.Should().Be("list",
+			because: "omitting component-type should return list mode for the mobile catalog");
+		response.Count.Should().Be(2,
+			because: "the test mobile registry has exactly two entries");
+		response.ResolvedTargetVersion.Should().NotBeNullOrEmpty(
+			because: "mobile and web now share the same async pipeline and both carry the resolved catalog version");
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the stub resolver in the test fixture reports latest-fallback regardless of flavor");
+	}
+
+	[Test]
+	[Description("Returns mobile component detail when schema-type is 'mobile' and a known mobile type is requested.")]
+	public async Task ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Toggle", schemaType: "mobile");
+
+		response.Success.Should().BeTrue(
+			because: "crt.Toggle exists in the mobile registry");
+		response.Mode.Should().Be("detail",
+			because: "specifying a known mobile component type should return detail mode");
+		response.ComponentType.Should().Be("crt.Toggle",
+			because: "the detail response should echo the requested mobile component type");
+	}
+
+	[Test]
+	[Description("Returns not-found error when requesting a web-only component from the mobile catalog.")]
+	public async Task ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Label", schemaType: "mobile");
+
+		response.Success.Should().BeFalse(
+			because: "crt.Label is a web component and should not appear in the mobile catalog");
+		response.Error.Should().Contain("crt.Label",
+			because: "the failure should identify the missing component type");
+	}
+
+	[Test]
+	[Description("Detail responses concatenate every documentation file listed in references.docs[] into the documentation field with --- separators between them.")]
+	public async Task ComponentInfoTool_Should_Inline_Documentation_For_Components_With_Docs() {
+		// Arrange — minimal wrapped registry shape with a single component that lists two
+		// documentation files. The fake docs client returns one of them and reports the
+		// second as missing, exercising the partial-failure-skip path at the same time.
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithDocs",
+		      "category": "interactive",
+		      "description": "Sample with attached documentation.",
+		      "container": false,
+		      "properties": {},
+		      "references": {
+		        "docs": [
+		          "docs/with-docs.intro.md",
+		          "docs/with-docs.missing.md"
+		        ]
+		      }
+		    }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/with-docs.intro.md", "# Intro\n\nBody.");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithDocs");
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.Documentation.Should().Be("# Intro\n\nBody.",
+			because: "the present doc must be returned; the missing one must be silently skipped");
+		docs.Requests.Should().Equal(
+			("latest", "docs/with-docs.intro.md"),
+			("latest", "docs/with-docs.missing.md")
+		);
+	}
+
+	[Test]
+	[Description("Components without a references.docs[] block produce a detail response with documentation omitted entirely (null, JsonIgnore strips it from the wire).")]
+	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+
+		response.Documentation.Should().BeNull(
+			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
+	}
+
+	[Test]
+	[Description("Defaults to the web catalog when schema-type is omitted.")]
+	public async Task ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+
+		response.Success.Should().BeTrue(
+			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
+		response.ComponentType.Should().Be("crt.TabContainer",
+			because: "web catalog lookup should still work when schema-type is not specified");
+	}
+
+	[Test]
+	[Description("A wrapped-shape entry without references.docs[] still returns inputs/outputs in the detail response — these blocks are the regular per-component metadata for the new payload, not opt-in extras.")]
+	public async Task ComponentInfoTool_Should_Return_Inputs_And_Outputs_For_Wrapped_Registry_Entry() {
+		// Arrange — a "simple" wrapped-shape component: no references.docs[], no
+		// description, but with inputs and outputs (this is the shape that produced
+		// the empty crt.Button bug — inputs/outputs were silently dropped).
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.SimpleButton",
+		      "inputs": {
+		        "caption": {
+		          "type": "string",
+		          "default": "",
+		          "description": "Component title."
+		        },
+		        "disabled": {
+		          "type": "boolean",
+		          "default": false
+		        },
+		        "color": {
+		          "type": "string",
+		          "values": ["primary", "accent", "default"]
+		        }
+		      },
+		      "outputs": {
+		        "clicked": { "type": "RequestBindingConfig" },
+		        "blurred": { "type": "RequestBindingConfig" }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.SimpleButton");
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.Inputs.Should().NotBeNull(
+			because: "the wrapped registry inputs block is the regular per-component metadata in the new payload shape — it must round-trip through the response");
+		response.Inputs!.Should().ContainKeys("caption", "disabled", "color");
+		response.Outputs.Should().NotBeNull(
+			because: "outputs must also round-trip through the response for the new payload shape");
+		response.Outputs!.Should().ContainKeys("clicked", "blurred");
+		response.Documentation.Should().BeNull(
+			because: "references.docs[] is the opt-in extra for complex components — its absence must not suppress inputs/outputs");
+		response.Properties.Should().BeNull(
+			because: "the wrapped registry does not populate the legacy properties block — it must be omitted, not surfaced as an empty object");
+	}
+
+	[Test]
+	[Description("After the source JsonDocument used for catalog deserialisation is disposed, inputs/outputs JsonElement values remain accessible — System.Text.Json gives each JsonElement property its own root document.")]
+	public async Task ComponentInfoTool_Inputs_Should_Survive_Source_Document_Disposal() {
+		// Arrange — exercises the lifetime contract that makes JsonElement-typed POCO
+		// fields safe to retain past the deserialiser scope. The catalog implementation
+		// disposes its JsonDocument inside LoadCatalogStateAsync; without this contract
+		// every subsequent access here would throw ObjectDisposedException.
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Persistent",
+		      "inputs": {
+		        "caption": { "type": "string", "description": "Title." }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Persistent");
+		GC.Collect();
+		GC.WaitForPendingFinalizers();
+
+		// Assert
+		response.Inputs.Should().NotBeNull();
+		JsonElement caption = response.Inputs!["caption"];
+		caption.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the JsonElement must still point at a live backing document after the source JsonDocument is disposed and GC has run");
+		caption.GetProperty("type").GetString().Should().Be("string");
+		caption.GetProperty("description").GetString().Should().Be("Title.");
+	}
+
+	[Test]
+	[Description("A wrapped-shape entry's references.typeDefinitions block is surfaced verbatim under response.references.typeDefinitions — AI needs it to resolve the type names referenced in inputs/outputs `type` strings.")]
+	public async Task ComponentInfoTool_Should_Surface_TypeDefinitions_Under_Content() {
+		const string registryJson = """
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.WithTypes",
+		      "inputs": {
+		        "icon": { "type": "string | ButtonIcon | ButtonAnimatedIcon" }
+		      },
+		      "references": {
+		        "typeDefinitions": {
+		          "ButtonIcon": {
+		            "type": "string",
+		            "values": ["close-icon", "edit-icon"]
+		          },
+		          "ButtonAnimatedIcon": {
+		            "fields": {
+		              "animationData": { "type": "() => Promise<any>" },
+		              "loop":          { "type": "boolean | number" }
+		            }
+		          }
+		        }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithTypes");
+
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.References.Should().NotBeNull(
+			because: "the wrapped registry's content block must round-trip when typeDefinitions is present");
+		response.References!.TypeDefinitions.Should().NotBeNull();
+		response.References.TypeDefinitions!.Should().ContainKeys("ButtonIcon", "ButtonAnimatedIcon");
+
+		JsonElement buttonIcon = response.References.TypeDefinitions["ButtonIcon"];
+		buttonIcon.GetProperty("type").GetString().Should().Be("string");
+		buttonIcon.GetProperty("values").EnumerateArray().Select(e => e.GetString())
+			.Should().BeEquivalentTo(new[] { "close-icon", "edit-icon" });
+
+		JsonElement animatedIcon = response.References.TypeDefinitions["ButtonAnimatedIcon"];
+		animatedIcon.GetProperty("fields").GetProperty("loop").GetProperty("type").GetString()
+			.Should().Be("boolean | number");
+	}
+
+	[Test]
+	[Description("Entries without a references.typeDefinitions block omit response.references entirely (JsonIgnore strips it from the wire) — the response stays small for simple components.")]
+	public async Task ComponentInfoTool_Should_Omit_Content_When_No_TypeDefinitions() {
+		// crt.TabContainer in TestRegistryJson has no content block at all.
+		ComponentInfoTool tool = CreateTool();
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+
+		response.References.Should().BeNull(
+			because: "components without producer-side type definitions must not carry an empty content node");
+	}
+
+	[Test]
+	[Description("List-mode search matches wrapped-shape entries through inputs/outputs keys when the legacy descriptive fields are empty — without this the search filter would be useless on the new payload shape.")]
+	public async Task ComponentInfoTool_Should_Match_Search_Query_Against_Wrapped_Registry_Inputs() {
+		// Arrange — three components, two with inputs/outputs, one without. The search
+		// query "selection" matches a property *inside* one component's inputs block.
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.NoMatch" },
+		    {
+		      "componentType": "crt.HitOnInput",
+		      "inputs": {
+		        "selectionMode": { "type": "string", "values": ["single", "multiple"] }
+		      }
+		    },
+		    {
+		      "componentType": "crt.HitOnOutputDesc",
+		      "outputs": {
+		        "fired": { "type": "RequestBindingConfig", "description": "Triggered on selection change." }
+		      }
+		    }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(search: "selection");
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("list");
+		response.Items.Should().NotBeNull();
+		response.Items!.Select(item => item.ComponentType).Should().BeEquivalentTo(
+			new[] { "crt.HitOnInput", "crt.HitOnOutputDesc" },
+			because: "search must find matches inside the inputs key set AND inside output description fields");
+	}
+
+	/// <summary>Test double that serves the same in-memory JSON for every version request.</summary>
+	private sealed class InMemoryRegistryClient(string registryJson) : IComponentRegistryClient {
+		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(_payload, writable: false),
+				requestedVersion,
+				ComponentRegistrySource.Cdn));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>Test double for the mobile catalog: parses a JSON snippet in-memory, no filesystem.</summary>
+	private sealed class InMemoryMobileCatalog : IMobileComponentInfoCatalog {
+		private readonly ComponentCatalogState _state;
+
+		public InMemoryMobileCatalog(string registryJson) {
+			ComponentRegistryEntry[] entries = JsonSerializer.Deserialize<ComponentRegistryEntry[]>(
+				registryJson,
+				new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+			_state = ComponentInfoCatalog.BuildState(entries, "In-memory mobile test catalog", "mobile", ComponentRegistrySource.Local);
+		}
+
+		public Task<ComponentCatalogState> LoadAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state);
+
+		public Task<IReadOnlyList<ComponentRegistryEntry>> GetAllAsync(string requestedVersion, CancellationToken cancellationToken = default) =>
+			Task.FromResult(_state.Entries);
+
+		public Task<IReadOnlyList<ComponentRegistryEntry>> SearchAsync(string requestedVersion, string? search, CancellationToken cancellationToken = default) =>
+			Task.FromResult(ComponentInfoGrouping.FilterEntries(_state.Entries, search));
+
+		public Task<ComponentRegistryEntry?> FindAsync(string requestedVersion, string componentType, CancellationToken cancellationToken = default) =>
+			Task.FromResult(string.IsNullOrWhiteSpace(componentType)
+				? null
+				: _state.Lookup.TryGetValue(componentType.Trim(), out ComponentRegistryEntry? entry) ? entry : null);
+	}
+
+	/// <summary>Test double that returns a pre-configured platform version resolution.</summary>
+	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IPlatformVersionResolver {
+		public static StubPlatformVersionResolver LatestFallback() =>
+			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
+
+		public static StubPlatformVersionResolver Environment(string semver) =>
+			new(new PlatformVersionResolution(semver, VersionResolutionSource.Environment));
+
+		public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
+			Task.FromResult(resolution);
+	}
+
+	/// <summary>Test double that always reports a different resolved version than was requested.</summary>
+	private sealed class FallbackRegistryClient(string registryJson, string fallbackVersion) : IComponentRegistryClient {
+		private readonly byte[] _payload = Encoding.UTF8.GetBytes(registryJson);
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(_payload, writable: false),
+				fallbackVersion,
+				ComponentRegistrySource.Cdn));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>Test double that returns a different payload on each successive GetAsync call.</summary>
+	private sealed class SequenceRegistryClient : IComponentRegistryClient {
+		private readonly Queue<byte[]> _payloads;
+
+		public SequenceRegistryClient(params string[] payloads) {
+			_payloads = new Queue<byte[]>();
+			foreach (string payload in payloads) {
+				_payloads.Enqueue(Encoding.UTF8.GetBytes(payload));
+			}
+		}
+
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			byte[] payload = _payloads.Count > 0 ? _payloads.Dequeue() : throw new InvalidOperationException("No more payloads queued.");
+			return Task.FromResult(new ComponentRegistryFetchResult(
+				new MemoryStream(payload, writable: false),
+				requestedVersion,
+				ComponentRegistrySource.Cdn));
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>
+	/// Test double that always throws a pre-built <see cref="ComponentRegistryUnavailableException"/>.
+	/// Used to verify that <see cref="ComponentInfoTool"/>'s catch-all converts the exception
+	/// into a graceful MCP response.
+	/// </summary>
+	private sealed class ThrowingRegistryClient(ComponentRegistryUnavailableException exception) : IComponentRegistryClient {
+		public Task<ComponentRegistryFetchResult> GetAsync(string requestedVersion, CancellationToken cancellationToken = default) {
+			throw exception;
+		}
+
+		public Task<bool> RefreshAsync(string version, CancellationToken cancellationToken = default) {
+			return Task.FromResult(false);
+		}
+	}
+
+	/// <summary>
+	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
+	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// the contract that the real client uses to signal "skip this doc".
+	/// </summary>
+	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
+		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		public List<(string Version, string DocPath)> Requests { get; } = new();
+
+		public FakeDocsClient Seed(string version, string docPath, string content) {
+			_docs[(version, docPath)] = content;
+			return this;
+		}
+
+		public Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+			Requests.Add((version, docPath));
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out string? value) ? value : null);
+		}
 	}
 }

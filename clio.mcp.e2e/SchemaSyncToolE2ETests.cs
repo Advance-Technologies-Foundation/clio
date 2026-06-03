@@ -349,8 +349,8 @@ public sealed class SchemaSyncToolE2ETests {
 			}
 
 			packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			entitySchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
-			lookupSchemaName = $"Usr{Guid.NewGuid():N}".Substring(0, 22);
+			entitySchemaName = $"Usr{Guid.NewGuid():N}";
+			lookupSchemaName = $"Usr{Guid.NewGuid():N}";
 			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
 			await PushWorkspaceAsync(
 				settings,

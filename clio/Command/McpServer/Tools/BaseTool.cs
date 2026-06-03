@@ -16,6 +16,26 @@ public abstract class BaseTool<T>(
 
 	private protected static object CommandExecutionSyncRoot => CommandExecutionLock;
 
+	/// <summary>
+	/// Runs <paramref name="executor"/> under the shared MCP execution lock and drains the
+	/// process-wide <see cref="ConsoleLogger.LogMessages"/> buffer on exit. Use this from
+	/// tools that return a typed response (and therefore cannot go through
+	/// <see cref="InternalExecute(Clio.Common.Command{T}, T)"/>) so that log lines produced
+	/// inside <paramref name="executor"/> do not leak into the next tool invocation's
+	/// <c>execution-log-messages</c> — see DeleteSchemaTool integration trace where create-page
+	/// steps surfaced inside an unrelated delete-schema response.
+	/// </summary>
+	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) {
+		lock (CommandExecutionLock) {
+			try {
+				return executor();
+			}
+			finally {
+				logger.ClearMessages();
+			}
+		}
+	}
+
 	private protected CommandExecutionResult InternalExecute(T options) {
 		if (command is null) {
 			throw new InvalidOperationException(
@@ -55,6 +75,9 @@ public abstract class BaseTool<T>(
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 									   CreateWorkspaceCommandOptions envOptions when envOptions.Empty
 										   && string.IsNullOrWhiteSpace(envOptions.Environment)
+										   && string.IsNullOrWhiteSpace(envOptions.Uri)
+										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
+									   CreateUiProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
 										   && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 

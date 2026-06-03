@@ -10,6 +10,11 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
+// Asserts on messages read back from the shared ConsoleLogger.Instance singleton. Fixtures run in
+// parallel, so a concurrent fixture toggling PreserveMessages / ClearMessages would wipe these
+// messages mid-test. Run non-parallel to isolate the singleton (same approach as
+// LastCompilationLogCommandTestFixture / ConsoleLoggerTests).
+[NonParallelizable]
 public sealed class BaseToolTests {
 
 	[Test]
@@ -60,6 +65,41 @@ public sealed class BaseToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Regression: ExecuteWithCleanLog must drain the shared LogMessages buffer so that "
+		+ "leftovers from a previous bypass tool (e.g. PageCreateTool) cannot leak into the next tool's response.")]
+	public void ExecuteWithCleanLog_Drains_LogMessages_Buffer_After_Execution() {
+		// Arrange — pre-fill the singleton's LogMessages with stale entries, as a previous
+		// bypass tool would have left them when PreserveMessages was on.
+		ConsoleLogger.Instance.ClearMessages();
+		ConsoleLogger.Instance.PreserveMessages = true;
+		try {
+			ConsoleLogger.Instance.WriteInfo("[1/6] leftover from previous tool");
+			ConsoleLogger.Instance.WriteInfo("Page 'PriorPage' created successfully");
+			((ConsoleLogger)ConsoleLogger.Instance).FlushAndSnapshotMessages(clearMessages: false);
+			((ConsoleLogger)ConsoleLogger.Instance).LogMessages.Should().NotBeEmpty(
+				because: "the setup must reproduce the leak scenario before exercising the helper");
+
+			BaseToolHarness tool = new(null, ConsoleLogger.Instance);
+
+			// Act
+			string result = tool.ExecuteClean(() => {
+				ConsoleLogger.Instance.WriteInfo("inside cleaned executor");
+				return "ok";
+			});
+
+			// Assert
+			result.Should().Be("ok");
+			((ConsoleLogger)ConsoleLogger.Instance).LogMessages.Should().BeEmpty(
+				because: "ExecuteWithCleanLog must clear stale leftovers AND its own messages so the next tool starts with an empty buffer");
+		}
+		finally {
+			ConsoleLogger.Instance.PreserveMessages = false;
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
 	private sealed record BaseToolHarnessOptions(string Scenario);
 
 	private sealed class BaseToolHarness : BaseTool<BaseToolHarnessOptions> {
@@ -68,6 +108,8 @@ public sealed class BaseToolTests {
 		}
 
 		public CommandExecutionResult Execute(BaseToolHarnessOptions options) => InternalExecute(options);
+
+		public TResponse ExecuteClean<TResponse>(Func<TResponse> executor) => ExecuteWithCleanLog(executor);
 	}
 
 	private sealed class FakeBaseToolCommand : Command<BaseToolHarnessOptions> {

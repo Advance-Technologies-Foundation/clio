@@ -206,6 +206,53 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects an insert of a new field control whose binding attribute is not declared in viewModelConfigDiff and whose label resource is neither registered in 'resources' nor auto-provided.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects inserted field without matching binding or resource in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a viewConfigDiff insert that omits the matching viewModelConfigDiff attribute declaration and any resources payload, and verifies that the tool returns a structured validation error naming the field, the missing attribute, and the section that needs the edit.")]
+	public async Task PageUpdateTool_Should_Reject_Inserted_Field_Without_Binding_Or_Resource_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string bareInsertBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
+			"\"label\":\"$Resources.Strings.PDS_UsrCompleted\",\"control\":\"$PDS_UsrCompleted\"}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrInsertedField_FormPage",
+					["body"] = bareInsertBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the inserted-field self-consistency check should surface as a structured update-page response, not a protocol-level error");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject inserts that would render with no data source and a blank label");
+		response.Error.Should().Contain("inserted field controls")
+			.And.Contain("UsrCompleted")
+			.And.Contain("PDS_UsrCompleted")
+			.And.Contain("viewModelConfigDiff",
+				because: "the failure must name the offending field, the missing attribute, and the section that needs the edit so the agent can fix the payload in one pass");
+	}
+
+	[Test]
 	[Description("Rejects invalid handler section shape through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects non-array handlers in dry-run mode")]
@@ -599,6 +646,82 @@ public sealed class PageUpdateToolE2ETests {
 		return string.Empty;
 	}
 
+	[Test]
+	[Description("Rejects a mobile JSON body that contains a 'validators' section without making any remote call.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects mobile body with 'validators' key")]
+	[AllureDescription("Verifies that update-page returns a structured validation error for a mobile body containing the 'validators' key, without reaching Creatio.")]
+	public async Task PageUpdateTool_Should_Reject_Mobile_Body_With_Validators() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string mobileBodyWithValidators = """
+			{
+			  "viewConfigDiff": [],
+			  "validators": {}
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBodyWithValidators
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "mobile validation failures should be surfaced as structured tool results, not protocol errors");
+		response.Success.Should().BeFalse(
+			because: "mobile pages do not support the 'validators' key — update-page must reject the body");
+		response.Error.Should().Contain("validators",
+			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("Accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD marker validation.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts a valid mobile JSON body without AMD markers")]
+	[AllureDescription("Verifies that update-page passes a well-formed mobile body through mobile validation only (no AMD marker checks) before attempting the save.")]
+	public async Task PageUpdateTool_Should_Accept_Valid_Mobile_Body_Without_AMD_Markers() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrMobile_FormPage",
+					["body"] = mobileBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid mobile body should produce a structured result even when dry-run fails because the schema doesn't exist");
+		response.Error.Should().NotContain("SCHEMA_",
+			because: "AMD marker errors must not appear when the body is a mobile JSON object");
+	}
+
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
 		try {
@@ -611,7 +734,7 @@ public sealed class PageUpdateToolE2ETests {
 			return false;
 		}
 	}
-	
+
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {

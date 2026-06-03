@@ -11,7 +11,8 @@ namespace Clio.Command {
 	/// Options for the <c>create-page</c> command.
 	/// </summary>
 	[Verb("create-page", Aliases = ["page-create"], HelpText = "Create a new Freedom UI page from a supported template")]
-	public class PageCreateOptions : EnvironmentOptions {
+	public class PageCreateOptions : EnvironmentOptions
+	{
 		[Option("schema-name", Required = true, HelpText = "New page schema name, e.g. 'UsrMyApp_BlankPage'")]
 		public string SchemaName { get; set; }
 
@@ -34,8 +35,10 @@ namespace Clio.Command {
 	/// <summary>
 	/// Creates a new Freedom UI page schema from a supported template.
 	/// </summary>
-	public class PageCreateCommand : Command<PageCreateOptions> {
+	public class PageCreateCommand : Command<PageCreateOptions>
+	{
 		private const string SchemaSaveRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
+		private const string SchemaGetRoute = "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
 		private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 		private const string ClientUnitManagerName = "ClientUnitSchemaManager";
 
@@ -117,10 +120,15 @@ namespace Clio.Command {
 					_logger.WriteInfo($"         entity  : {options.EntitySchemaName} (uId={entitySchemaUId})");
 				}
 				string newSchemaUId = Guid.NewGuid().ToString("D");
+				if (!TryLoadTemplateLocalizableStrings(template.UId, out JArray templateLocalizableStrings, out string templateResourcesError)) {
+					response = new PageCreateResponse { Success = false, Error = templateResourcesError };
+					LogFailure(response.Error);
+					return false;
+				}
 				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
-					template, packageUId, options.PackageName, entitySchemaUId);
+					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new PageCreateResponse { Success = false, Error = saveError };
 					LogFailure(response.Error);
@@ -157,11 +165,8 @@ namespace Clio.Command {
 			_logger.WriteInfo($"  failed: {error}");
 		}
 
-		private static string DescribeSchemaType(int schemaType) => schemaType switch {
-			9 => "web",
-			10 => "mobile",
-			_ => schemaType.ToString()
-		};
+		private static string DescribeSchemaType(int schemaType) =>
+			PageSchemaTypeExtensions.FromNumericValue(schemaType).ToLabel();
 
 		public override int Execute(PageCreateOptions options) {
 			bool success = TryCreatePage(options, out PageCreateResponse response);
@@ -203,7 +208,8 @@ namespace Clio.Command {
 
 		private static JObject BuildSaveSchemaPayload(
 			string newSchemaUId, string schemaName, string caption, string description,
-			PageTemplateInfo template, string packageUId, string packageName, string entitySchemaUId) {
+			PageTemplateInfo template, string packageUId, string packageName, string entitySchemaUId,
+			JArray templateLocalizableStrings) {
 			var localizableCaption = new JObject { ["cultureName"] = "en-US", ["value"] = caption };
 			var schema = new JObject {
 				["uId"] = newSchemaUId,
@@ -223,7 +229,7 @@ namespace Clio.Command {
 					["cultureName"] = "en-US",
 					["value"] = description
 				}),
-				["localizableStrings"] = new JArray(),
+				["localizableStrings"] = templateLocalizableStrings?.DeepClone() ?? new JArray(),
 				["parameters"] = new JArray(),
 				["messages"] = new JArray(),
 				["images"] = new JArray(),
@@ -243,6 +249,25 @@ namespace Clio.Command {
 				});
 			}
 			return schema;
+		}
+
+		private bool TryLoadTemplateLocalizableStrings(string templateUId, out JArray localizableStrings, out string error) {
+			localizableStrings = null;
+			error = null;
+			var request = new JObject {
+				["schemaUId"] = templateUId,
+				["useFullHierarchy"] = false
+			};
+			string url = _serviceUrlBuilder.Build(SchemaGetRoute);
+			string responseJson = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
+			var response = JObject.Parse(responseJson);
+			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
+				error = response["errorInfo"]?["message"]?.ToString()
+					?? $"Failed to load template schema '{templateUId}' resources";
+				return false;
+			}
+			localizableStrings = schema["localizableStrings"] as JArray ?? new JArray();
+			return true;
 		}
 
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {

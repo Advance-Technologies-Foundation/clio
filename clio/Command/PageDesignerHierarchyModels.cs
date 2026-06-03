@@ -60,6 +60,11 @@ public sealed class PageDesignerHierarchySchema {
 	public string Body { get; init; }
 
 	/// <summary>
+	/// Gets or sets the client unit schema type (9 = web, 10 = mobile).
+	/// </summary>
+	public int? SchemaType { get; init; }
+
+	/// <summary>
 	/// Gets or sets the page parameters.
 	/// </summary>
 	public JArray Parameters { get; init; } = new();

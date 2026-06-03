@@ -41,7 +41,7 @@ public sealed class CreateEntitySchemaTool(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
-			? await enrichmentService.EnrichAsync(
+			? enrichmentService.Enrich(
 				args.EnvironmentName,
 				BuildCandidateTerms(args.SchemaName, args.TitleLocalizations))
 			: null;
@@ -166,7 +166,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
 		ApplicationDataForgeResult? dataForge = _enrichmentService is not null
-			? await _enrichmentService.EnrichAsync(args.EnvironmentName, lookupHints, lookupHints)
+			? _enrichmentService.Enrich(args.EnvironmentName, lookupHints, lookupHints)
 			: null;
 		try {
 			ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(args.Columns);
@@ -240,7 +240,7 @@ public sealed class UpdateEntitySchemaTool(
 		ApplicationDataForgeResult? dataForge = null;
 		try {
 			if (enrichmentService is not null) {
-				dataForge = await enrichmentService.EnrichAsync(
+				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
 					BuildCandidateTerms(args),
 					BuildLookupHints(args));
@@ -513,7 +513,7 @@ public abstract record EntitySchemaCreateArgsBase(
 	string PackageName,
 
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name. Maximum length is 22 characters. " +
+	[property: Description("Entity schema name. " +
 		"Must use the active SchemaNamePrefix as prefix (e.g. 'UsrAlpha' when prefix is 'Usr', 'MyPrefixAlpha' when prefix is 'MyPrefix'). " +
 		"When `schema-name-prefix` is empty, use no prefix (plain PascalCase, e.g. 'Alpha'). " +
 		"Read the prefix from the `schema-name-prefix` field returned by `get-app-info`, " +

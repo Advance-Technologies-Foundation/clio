@@ -333,6 +333,14 @@ namespace Clio
 			get; set;
 		}
 
+		/// <summary>
+		/// Settings schema version used to apply one-time settings migrations.
+		/// A null value denotes a legacy file written before migrations were introduced.
+		/// </summary>
+		public int? SettingsVersion {
+			get; set;
+		}
+
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
@@ -352,6 +360,13 @@ namespace Clio
 		private Settings _settings = new ();
 		public static string AppSettingsFolderPath {
 			get {
+				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
+				// source of truth for clio's home directory; see ClioRuntimePaths and
+				// docs/architecture/clio-home-consolidation.md.
+				var clioHome = Environment.GetEnvironmentVariable("CLIO_HOME");
+				if (!string.IsNullOrWhiteSpace(clioHome)) {
+					return clioHome;
+				}
 				var userPath = Environment.GetEnvironmentVariable(
 					RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
 						"LOCALAPPDATA" : "HOME");
@@ -552,7 +567,19 @@ namespace Clio
 			if (envSettings == null) {
 				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
 				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
-					throw new Exception($"Environment with key '{envName}' not found. Check youre config file or command arguments.");
+					if (string.IsNullOrWhiteSpace(envName)) {
+						var allEnvs = settingsRepository.GetAllEnvironments();
+						if (allEnvs.Count > 0) {
+							string envList = string.Join(", ", allEnvs.Keys);
+							throw new Exception(
+								$"No active environment configured. Run 'clio set-active-environment <name>' to activate one of the registered environments ({envList}), or pass --environment <name>.");
+						}
+						throw new Exception(
+							$"No environments are registered. Run 'clio reg-web-app --name <name> --url <url>' to register an environment first.");
+					}
+					throw new Exception(
+						$"Active environment '{envName}' is not found in the registered environments. " +
+						$"Run 'clio set-active-environment <name>' to fix this, or pass --environment <name>.");
 				} else {
 					envSettings = new EnvironmentSettings();
 				}

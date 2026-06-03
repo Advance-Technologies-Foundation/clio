@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
+using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
@@ -19,6 +22,7 @@ public sealed class EntityBusinessRuleServiceTests {
 	private IApplicationPackageListProvider _applicationPackageListProvider = null!;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient = null!;
 	private IBusinessRuleFormulaValidationService _formulaValidationService = null!;
+	private IBusinessRuleLookupReferenceValidator _lookupReferenceValidator = null!;
 	private EntityBusinessRuleService _service = null!;
 	private AddonSchemaDto? _savedAddonSchema;
 
@@ -29,6 +33,7 @@ public sealed class EntityBusinessRuleServiceTests {
 		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_formulaValidationService = Substitute.For<IBusinessRuleFormulaValidationService>();
+		_lookupReferenceValidator = Substitute.For<IBusinessRuleLookupReferenceValidator>();
 		_applicationPackageListProvider.GetPackages().Returns(new[] {
 			new PackageInfo(new PackageDescriptor {
 				Name = "UsrPkg",
@@ -45,11 +50,17 @@ public sealed class EntityBusinessRuleServiceTests {
 		_addonSchemaDesignerClient
 			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => _savedAddonSchema = callInfo.Arg<AddonSchemaDto>());
+		EntityBusinessRuleSchemaProvider schemaProvider = new(_entitySchemaDesignerClient);
 		_service = new EntityBusinessRuleService(
 			new BusinessRulePackageResolver(_applicationPackageListProvider),
-			new EntityBusinessRuleAttributeProvider(new EntityBusinessRuleSchemaProvider(_entitySchemaDesignerClient)),
+			new EntityBusinessRuleAttributeProvider(schemaProvider),
 			new BusinessRuleAddonService(_addonSchemaDesignerClient),
-			_formulaValidationService);
+			_formulaValidationService,
+			new BusinessRuleValidator(_lookupReferenceValidator),
+			new StaticFilterContextFactory(
+				schemaProvider,
+				Substitute.For<IApplicationClient>(),
+				Substitute.For<IServiceUrlBuilder>()));
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
@@ -165,6 +176,300 @@ public sealed class EntityBusinessRuleServiceTests {
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Validates lookup constants before formula validation and add-on metadata mutation.")]
+	public void Create_Should_Validate_Lookup_Constants_Before_Saving_Addon_Metadata() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule(actions: [
+				new SetValuesBusinessRuleAction(
+					new List<BusinessRuleSetValueItem> {
+						new(
+							new BusinessRuleExpression("AttributeValue", "Owner", null),
+							new BusinessRuleExpression("Const", null,
+								JsonSerializer.Deserialize<JsonElement>("\"11111111-1111-1111-1111-111111111111\"")))
+					})
+			]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "successful lookup validation should allow rule creation to continue");
+		_lookupReferenceValidator.Received(1).Validate(
+			request.Rule,
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops before formula validation or add-on metadata mutation when a lookup constant points to a missing record.")]
+	public void Create_Should_Not_Save_Addon_Metadata_When_Lookup_Validation_Fails() {
+		// Arrange
+		_lookupReferenceValidator
+			.When(validator => validator.Validate(
+				Arg.Any<BusinessRule>(),
+				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>()))
+			.Do(_ => throw new ArgumentException("Lookup record was not found."));
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			CreateRule());
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Lookup record was not found.",
+				because: "invalid lookup references must stop before destructive add-on writes");
+		_formulaValidationService.DidNotReceiveWithAnyArgs().Validate(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Creates apply-filter business rules as a parent lookup filter plus autogenerated child clear and populate rules.")]
+	public void Create_Should_Persist_ApplyFilter_As_Parent_And_Autogenerated_Child_Rules() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Filter city by country",
+				new BusinessRuleConditionGroup("AND", []),
+				[
+					new ApplyFilterBusinessRuleAction(
+						"City",
+						"Country",
+						"Country",
+						null,
+						clearValue: true,
+						populateValue: true)
+				]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "the service should still return the generated parent rule name for apply-filter creation");
+		_savedAddonSchema.Should().NotBeNull(
+			because: "apply-filter creation should persist updated add-on metadata");
+
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
+
+		rules.Should().HaveCount(4,
+			because: "the add-on should keep the existing rule and append the parent plus clear and populate apply-filter rules");
+		JsonElement parentRule = rules[1];
+		JsonElement clearRule = rules[2];
+		JsonElement populateRule = rules[3];
+
+		parentRule.GetProperty("caption").GetString().Should().Be("Filter city by country",
+			because: "the parent apply-filter rule should preserve the requested caption");
+		JsonElement parentAction = parentRule.GetProperty("cases")[0].GetProperty("actions")[0];
+		parentAction.GetProperty("typeName").GetString().Should().Be(BusinessRuleConstants.BusinessRuleFilterLookupElementTypeName,
+			because: "the parent rule should persist the filter lookup action type");
+		JsonElement parentLeftExpression = parentAction.GetProperty("leftExpression");
+		parentLeftExpression.GetProperty("path").GetString().Should().Be("City",
+			because: "the saved parent left filter expression should keep the target lookup root path");
+		parentLeftExpression.GetProperty("filterExpression").GetString().Should().Be("Country",
+			because: "the saved parent left filter expression should keep the target-side filter path");
+		parentLeftExpression.GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved parent left filter expression should preserve the lookup data value type");
+		parentLeftExpression.GetProperty("referenceSchemaName").GetString().Should().Be("City",
+			because: "the saved parent left filter expression should preserve the target lookup schema");
+		JsonElement parentRightExpression = parentAction.GetProperty("rightExpression");
+		parentRightExpression.GetProperty("path").GetString().Should().Be("Country",
+			because: "the saved parent right filter expression should keep the source lookup root path");
+		parentRightExpression.GetProperty("filterExpression").GetString().Should().Be("null",
+			because: "the saved parent right filter expression should keep the null sentinel when no source filter path is provided");
+		parentRightExpression.GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved parent right filter expression should preserve the lookup data value type");
+		parentRightExpression.GetProperty("referenceSchemaName").GetString().Should().Be("Country",
+			because: "the saved parent right filter expression should preserve the source lookup schema");
+		parentRule.GetProperty("triggers").EnumerateArray()
+			.Select(trigger => trigger.GetProperty("name").GetString())
+			.Should().Contain(["", "Country"],
+				because: "the parent apply-filter rule should run on DataLoaded and source lookup changes");
+
+		clearRule.GetProperty("parentUId").GetString().Should().Be(parentRule.GetProperty("uId").GetString(),
+			because: "clear child rules should point back to the parent apply-filter rule");
+		clearRule.GetProperty("name").GetString().Should().StartWith("Autogenerated_",
+			because: "clear child rules should use autogenerated internal names");
+		clearRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("comparisonType").GetInt32()
+			.Should().Be(BusinessRuleConstants.ComparisonNotEqual,
+				because: "clear child rules should compare source and target filter values for mismatch");
+		clearRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("leftExpression")
+			.EnumerateObject().Select(property => property.Name)
+			.Should().BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated clear child conditions omit lookup descriptor metadata on attribute expressions");
+		clearRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("rightExpression")
+			.EnumerateObject().Select(property => property.Name)
+			.Should().BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated clear child conditions keep only the minimal attribute expression payload");
+		JsonElement clearSetValuesItems = clearRule.GetProperty("cases")[0].GetProperty("actions")[0].GetProperty("items");
+		clearSetValuesItems.GetArrayLength().Should().Be(1,
+			because: "the saved clear child rule should persist one set-values item");
+		JsonElement clearSetValueItem = clearSetValuesItems[0];
+		clearSetValueItem.GetProperty("expression").GetProperty("path").GetString().Should().Be("City",
+			because: "the saved clear child rule should reset the target lookup root");
+		clearSetValueItem.GetProperty("expression").GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved clear child target expression should preserve the lookup data value type");
+		clearSetValueItem.GetProperty("expression").GetProperty("referenceSchemaName").GetString().Should().Be("City",
+			because: "the saved clear child target expression should preserve the target lookup schema");
+		clearSetValueItem.GetProperty("value").GetProperty("typeName").GetString()
+			.Should().Be(BusinessRuleConstants.BusinessRuleEmptyValueExpressionTypeName,
+				because: "the saved clear child rule should assign the empty lookup expression");
+		clearSetValueItem.GetProperty("value").GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved clear child empty expression should preserve the lookup data value type");
+		clearSetValueItem.GetProperty("value").GetProperty("value").GetString().Should().Be(Guid.Empty.ToString(),
+			because: "the saved clear child rule should assign the zero GUID empty lookup value");
+
+		populateRule.GetProperty("parentUId").GetString().Should().Be(parentRule.GetProperty("uId").GetString(),
+			because: "populate child rules should point back to the parent apply-filter rule");
+		populateRule.GetProperty("name").GetString().Should().Contain("PopulateValue",
+			because: "populate child rules should keep deterministic autogenerated suffixes");
+		populateRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("comparisonType").GetInt32()
+			.Should().Be(BusinessRuleConstants.ComparisonIsFilledIn,
+				because: "populate child rules should run only when the target lookup is selected");
+		populateRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("leftExpression")
+			.EnumerateObject().Select(property => property.Name)
+			.Should().BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "UI-generated populate child conditions also omit lookup descriptor metadata");
+		JsonElement populateSetValuesItems = populateRule.GetProperty("cases")[0].GetProperty("actions")[0].GetProperty("items");
+		populateSetValuesItems.GetArrayLength().Should().Be(1,
+			because: "the saved populate child rule should persist one set-values item");
+		JsonElement populateSetValueItem = populateSetValuesItems[0];
+		populateSetValueItem.GetProperty("expression").GetProperty("path").GetString().Should().Be("Country",
+			because: "the saved populate child rule should assign the source lookup root");
+		populateSetValueItem.GetProperty("expression").GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved populate child target expression should preserve the lookup data value type");
+		populateSetValueItem.GetProperty("expression").GetProperty("referenceSchemaName").GetString().Should().Be("Country",
+			because: "the saved populate child target expression should preserve the source lookup schema");
+		populateSetValueItem.GetProperty("value").GetProperty("path").GetString().Should().Be("City.Country",
+			because: "the saved populate child rule should copy the target-related lookup path");
+		populateSetValueItem.GetProperty("value").GetProperty("dataValueTypeName").GetString().Should().Be("Lookup",
+			because: "the saved populate child copied value should preserve the lookup data value type");
+		populateSetValueItem.GetProperty("value").GetProperty("referenceSchemaName").GetString().Should().Be("Country",
+			because: "the saved populate child copied value should preserve the final lookup schema");
+
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == $"{parentRule.GetProperty("uId").GetString()}.Caption"
+				&& resource.Value[0].Value == "Filter city by country",
+			because: "only the parent apply-filter rule should receive a caption resource");
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == $"{clearRule.GetProperty("uId").GetString()}.Caption"
+				&& resource.Value[0].Value == $"ChildRule-{parentRule.GetProperty("uId").GetString()}-ClearValue",
+			because: "autogenerated clear child rules need a non-empty caption resource to satisfy platform validation");
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == $"{populateRule.GetProperty("uId").GetString()}.Caption"
+				&& resource.Value[0].Value == $"ChildRule-{parentRule.GetProperty("uId").GetString()}-PopulateValue",
+			because: "autogenerated populate child rules need a non-empty caption resource to satisfy platform validation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects apply-filter requests that omit the condition list before any remote schema or add-on calls run.")]
+	public void Create_Should_Reject_ApplyFilter_With_Null_Condition_List() {
+		// Arrange
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Filter city by country",
+				new BusinessRuleConditionGroup("AND", null!),
+				[
+					new ApplyFilterBusinessRuleAction(
+						"City",
+						"Country",
+						"Country",
+						null,
+						clearValue: true,
+						populateValue: false)
+				]));
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule.condition.conditions is required.",
+				because: "apply-filter may omit condition items, but the service should still reject payloads that omit the conditions collection itself");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves the user-authored parent condition when saving the Supervisor-created ninja apply-filter regression scenario.")]
+	public void Create_Should_Persist_ApplyFilter_Parent_Condition_For_Supervisor_Created_Ninja() {
+		// Arrange
+		string supervisorId = "4055a3b6-867e-3756-311a-576cbaba3230";
+		EntityBusinessRuleCreateRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			new BusinessRule(
+				"Filter clan by Supervisor-created ninja",
+				new BusinessRuleConditionGroup(
+					"AND",
+					[
+						new BusinessRuleCondition(
+							new BusinessRuleExpression("AttributeValue", "CreatedBy"),
+							"equal",
+							new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(supervisorId)))
+					]),
+				[
+					new ApplyFilterBusinessRuleAction(
+						"Clan",
+						"CreatedBy",
+						"CreatedBy",
+						null,
+						clearValue: true,
+						populateValue: false)
+				]));
+
+		// Act
+		BusinessRuleCreateResult result = _service.Create(request);
+
+		// Assert
+		result.RuleName.Should().StartWith("BusinessRule_",
+			because: "the service should still create a parent apply-filter rule for the reported regression scenario");
+		_savedAddonSchema.Should().NotBeNull(
+			because: "the service should persist add-on metadata for the regression scenario");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
+		rules.Should().HaveCount(3,
+			because: "clear-only apply-filter should append the parent and one autogenerated clear child rule");
+		JsonElement parentRule = rules[1];
+		JsonElement parentCondition = parentRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("conditions")[0];
+		parentCondition.GetProperty("leftExpression").GetProperty("path").GetString().Should().Be("CreatedBy",
+			because: "the saved parent apply-filter rule should preserve the original CreatedBy condition");
+		parentCondition.GetProperty("rightExpression").GetProperty("value").GetString().Should().Be(supervisorId,
+			because: "the saved parent apply-filter rule should preserve the Supervisor GUID constant");
+		parentRule.GetProperty("triggers").EnumerateArray()
+			.Select(trigger => trigger.GetProperty("name").GetString())
+			.Should().Contain("CreatedBy",
+				because: "the saved parent rule should stay reactive to the condition attribute as well as the apply-filter source");
+		JsonElement parentAction = parentRule.GetProperty("cases")[0].GetProperty("actions")[0];
+		parentAction.GetProperty("leftExpression").GetProperty("path").GetString().Should().Be("Clan",
+			because: "the parent filter-lookup target should remain unchanged while preserving the parent condition");
+		parentAction.GetProperty("rightExpression").GetProperty("path").GetString().Should().Be("CreatedBy",
+			because: "the parent filter-lookup source should remain unchanged while preserving the parent condition");
+		JsonElement clearRule = rules[2];
+		clearRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("leftExpression")
+			.EnumerateObject().Select(property => property.Name)
+			.Should().BeEquivalentTo(["typeName", "uId", "type", "path"],
+				because: "the autogenerated clear child rule should still keep its UI-shaped minimal condition payload");
 	}
 
 	[Test]
@@ -331,6 +636,54 @@ public sealed class EntityBusinessRuleServiceTests {
 					UId = Guid.Parse("10000000-0000-0000-0000-000000000007"),
 					Name = "TotalScore",
 					DataValueType = 4
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000008"),
+					Name = "Country",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "Country"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000009"),
+					Name = "City",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "City"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000010"),
+					Name = "City.Country",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "Country"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000011"),
+					Name = "CreatedBy",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "Contact"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000012"),
+					Name = "Clan",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "NinjaClan"
+					}
+				},
+				new EntitySchemaColumnDto {
+					UId = Guid.Parse("10000000-0000-0000-0000-000000000013"),
+					Name = "Clan.CreatedBy",
+					DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto {
+						Name = "Contact"
+					}
 				}
 			],
 			InheritedColumns = [],

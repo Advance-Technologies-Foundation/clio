@@ -59,6 +59,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
+		parameterDescription.Description.Should().Contain("page-modification",
+			because: "the top-level argument hint should mention the general page modification guidance name");
 		propertyDescription.Description.Should().Contain("configuration-webservice",
 			because: "the serialized name field hint should mention the configuration web-service implementation guidance name");
 		propertyDescription.Description.Should().Contain("atf-repository-dev",
@@ -67,6 +69,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
+		propertyDescription.Description.Should().Contain("page-modification",
+			because: "the serialized name field hint should stay aligned with the known page modification guidance name");
 	}
 
 	[Test]
@@ -111,6 +115,50 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical SDK common article text");
 		result.Article.Text.Should().Contain("Pattern selection order for handler-side data/service work is mandatory",
 			because: "the guidance tool should return the updated SDK common routing rules for request sdk and fetch selection");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical page modification guidance article when the caller requests page-modification.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the guidance tool should preserve the canonical page modification guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page modification guide",
+			because: "the guidance tool should return the canonical page modification article text");
+		result.Article.Text.Should().Contain("page-schema-resources",
+			because: "the page modification guide should route localizable string edits to the resources guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
+	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-resources"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-schema-resources is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-schema-resources",
+			because: "the guidance tool should preserve the canonical resources guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-schema resources guide",
+			because: "the guidance tool should return the canonical resources article text");
 	}
 
 	[Test]
@@ -228,6 +276,7 @@ public sealed class GuidanceGetToolTests {
 				"page-schema-validators",
 				"sys-setting",
 				"sys-setting-tests",
+				"sys-settings",
 				"support-mode"
 			],
 			because: "the failure response should help the caller recover with one of the registered guidance names");
@@ -367,5 +416,40 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should preserve the canonical support-mode guide URI in the response");
 		result.Article.Text.Should().Contain("clio MCP support-mode guide",
 			because: "the guidance tool should return the canonical support-mode article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical sys-settings guidance article when the caller requests sys-settings, with the documented core contract, value-type rules, SecureText masking, and Lookup resolution sections.")]
+	public async Task GuidanceGet_Should_Return_SysSettings_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("sys-settings"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "sys-settings is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/sys-settings",
+			because: "the guidance tool should preserve the canonical sys-settings guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP sys-settings guide",
+			because: "the guidance tool should return the canonical sys-settings article header");
+		result.Article.Text.Should().Contain("SecureText masking semantics",
+			because: "the guide must spell out that read-back values are masked so callers don't misdiagnose 'did my write succeed'");
+		result.Article.Text.Should().Contain("Lookup resolution rules",
+			because: "the guide must explain how Lookup display names resolve to GUIDs server-side");
+		result.Article.Text.Should().Contain("Binary",
+			because: "the guide must explain Binary's exclusion from the advertised surface");
+		result.Article.Text.Should().Contain("named JSON arguments",
+			because: "the guide must explicitly tell agents that the MCP tools take named JSON args, not positional CLI args, so copy/paste of placeholder syntax does not break the call");
+		result.Article.Text.Should().Contain("ambiguous matches",
+			because: "the guide must document that multi-row display-name resolution is rejected and recommend GUID disambiguation");
+		result.Article.Text.Should().Contain("escapes the value safely",
+			because: "the guide must promise a behavioral escape guarantee instead of leaking the System.Text.Json implementation detail to agents");
+		result.Article.Text.Should().Contain("shell-execution tool",
+			because: "the CLI anti-pattern must be tool-agnostic (Bash/run_in_terminal/execution_subagent) rather than naming one specific shell tool");
 	}
 }

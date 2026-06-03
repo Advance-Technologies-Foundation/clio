@@ -24,6 +24,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
 	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
+	private static readonly string PageSchemaResourcesUri = BuildGuideUri("page-schema-resources");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
@@ -65,6 +66,7 @@ public sealed class McpGuidanceResourceE2ETests {
 				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
 				PageSchemaCreatioDevkitCommonUri,
+				PageSchemaResourcesUri,
 				PageSchemaValidatorsUri,
 				AgentExecutionUri,
 				SupportModeUri,
@@ -728,6 +730,31 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the checklist should force an explicit routing decision for data and service scenarios");
 		article.Text.Should().Contain("Are all shown snippets still valid inside deployed schema body code, not standalone TypeScript/module code?",
 			because: "the checklist should guard against copying inner snippets as standalone modules");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the page-schema resources guidance article")]
+	public async Task McpServer_Should_Return_Page_Schema_Resources_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaResourcesUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the resources guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(PageSchemaResourcesUri,
+			because: "the returned article should preserve the stable resources guidance URI");
+		article.Text.Should().Contain("clio MCP page-schema resources guide",
+			because: "the resources guide should return the canonical page localizable string guidance");
+		article.Text.Should().Contain("$Resources.Strings.<ResourceKey>",
+			because: "the resources guide should document the recommended binding syntax");
+		article.Text.Should().Contain("#ResourceString(KeyName)#",
+			because: "the resources guide should document macro syntax for validator params and other macro contexts");
 	}
 
 	[Test]

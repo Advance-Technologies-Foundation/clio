@@ -31,7 +31,8 @@ internal sealed class PageBusinessRuleService(
 	IPageBusinessRuleSchemaProvider schemaProvider,
 	IPageBusinessRuleAttributeProvider attributeProvider,
 	IPageBusinessRuleElementProvider elementProvider,
-	IBusinessRuleAddonService businessRuleAddonService)
+	IBusinessRuleAddonService businessRuleAddonService,
+	IPageBusinessRuleValidator pageBusinessRuleValidator)
 	: IPageBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(PageBusinessRuleCreateRequest request) {
@@ -44,13 +45,13 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
-		PageBusinessRuleValidator.Validate(request.Rule, attributeMap, elementNames);
+		pageBusinessRuleValidator.Validate(request.Rule, attributeMap, elementNames);
 
 		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, request.Rule);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			request.Rule,
-			createdRule);
+			[createdRule]);
 	}
 
 	private static void ValidateCreateRequest(PageBusinessRuleCreateRequest request) {

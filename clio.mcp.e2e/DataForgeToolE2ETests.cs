@@ -18,7 +18,6 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("dataforge")]
 [NonParallelizable]
 public sealed class DataForgeToolE2ETests {
-	private const string HealthToolName = DataForgeTool.DataForgeHealthToolName;
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
 	private const string FindLookupsToolName = DataForgeTool.DataForgeFindLookupsToolName;
@@ -27,39 +26,6 @@ public sealed class DataForgeToolE2ETests {
 	private const string ContextToolName = DataForgeTool.DataForgeContextToolName;
 	private const string InitializeToolName = DataForgeTool.DataForgeInitializeToolName;
 	private const string UpdateToolName = DataForgeTool.DataForgeUpdateToolName;
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes dataforge-health against the configured sandbox environment, and verifies the structured health response succeeds.")]
-	[AllureTag(HealthToolName)]
-	[AllureName("DataForge health returns a structured successful health payload")]
-	[AllureDescription("Uses the real clio MCP server to call dataforge-health against the configured reachable sandbox environment and verifies that the structured response reports successful liveness and readiness probes.")]
-	public async Task DataForgeHealth_Should_Return_Structured_Health_Response() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
-
-		// Act
-		CallToolResult callResult = await CallToolAsync(
-			arrangeContext,
-			HealthToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = arrangeContext.EnvironmentName
-			});
-		DataForgeHealthResponse response = DeserializeStructuredContent<DataForgeHealthResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-health should return a structured success payload for a reachable configured environment");
-		response.Success.Should().BeTrue(
-			because: "the structured Data Forge health response should report success when the service probes are healthy");
-		response.Health.Should().NotBeNull(
-			because: "the health tool should return the detailed liveness/readiness payload");
-		response.Health!.Liveness.Should().BeTrue(
-			because: "the Data Forge liveness probe should succeed for the configured test environment");
-		response.Health.Readiness.Should().BeTrue(
-			because: "the Data Forge readiness probe should succeed for the configured test environment");
-	}
 
 	[Test]
 	[Description("Starts the real clio MCP server, invokes dataforge-status against the configured sandbox environment, and verifies the structured status response succeeds.")]

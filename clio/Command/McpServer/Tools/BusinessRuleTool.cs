@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
 using Clio.Common;
@@ -19,28 +20,57 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates an entity-level Freedom UI business rule.")]
+	[Description("Creates an entity-level Freedom UI business rule. Use for: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter — limit/restrict a lookup field to records matching a fixed condition (e.g. 'show only accounts that have at least one contact', 'limit owner to contacts with mobile phone', 'only active users'). PREFER this tool over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where ...' request on a Freedom UI section/page — entity business rules apply everywhere the lookup is used and are the documented Creatio no-code surface. Phrases like 'business entity rule', 'apply static filter', 'apply-static-filter', 'limit lookup to', 'restrict lookup', 'show only ... that have ...' route here. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
-		[Description("Creatio environment name.")]
+		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
-		string environmentName,
-		[Description("Target package name on the Creatio environment.")]
-		[Required]
-		string packageName,
-		[Description("Target entity schema name.")]
-		[Required]
-		string entitySchemaName,
-		[Description("Structured entity business-rule definition.")]
-		[Required]
-		EntityBusinessRuleMcpContract rule) {
+		CreateEntityBusinessRuleArgs args) {
 		CreateEntityBusinessRuleOptions options = new () {
-			EnvironmentName = environmentName,
-			PackageName = packageName,
-			EntitySchemaName = entitySchemaName,
-			Rule = rule?.ToBusinessRule()!
+			EnvironmentName = args.EnvironmentName,
+			PackageName = args.PackageName,
+			EntitySchemaName = args.EntitySchemaName,
+			Rule = args.Rule?.ToBusinessRule()!
 		};
 		return InternalExecute<CreateEntityBusinessRuleCommand>(options);
 	}
+}
+
+/// <summary>
+/// MCP argument wrapper for entity-level business-rule creation.
+/// </summary>
+public sealed record CreateEntityBusinessRuleArgs
+{
+	/// <summary>
+	/// Gets the registered Creatio environment name.
+	/// </summary>
+	[JsonPropertyName("environment-name")]
+	[Description("Creatio environment name.")]
+	[Required]
+	public string EnvironmentName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target package name on the Creatio environment.
+	/// </summary>
+	[JsonPropertyName("package-name")]
+	[Description("Target package name on the Creatio environment.")]
+	[Required]
+	public string PackageName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target entity schema name.
+	/// </summary>
+	[JsonPropertyName("entity-schema-name")]
+	[Description("Target entity schema name.")]
+	[Required]
+	public string EntitySchemaName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the structured entity business-rule definition.
+	/// </summary>
+	[JsonPropertyName("rule")]
+	[Description("Structured entity business-rule definition.")]
+	[Required]
+	public EntityBusinessRuleMcpContract Rule { get; init; } = null!;
 }
 
 /// <summary>
@@ -109,6 +139,8 @@ public sealed record EntityBusinessRuleMcpContract
 [JsonDerivedType(typeof(EntityMakeRequiredBusinessRuleActionMcpContract), "make-required")]
 [JsonDerivedType(typeof(EntityMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
 [JsonDerivedType(typeof(EntitySetValuesBusinessRuleActionMcpContract), "set-values")]
+[JsonDerivedType(typeof(EntityApplyFilterBusinessRuleActionMcpContract), "apply-filter")]
+[JsonDerivedType(typeof(EntityApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record EntityBusinessRuleActionMcpContract
 {
 	protected EntityBusinessRuleActionMcpContract()
@@ -231,6 +263,105 @@ public sealed record EntitySetValuesBusinessRuleActionMcpContract : EntityBusine
 }
 
 /// <summary>
+/// MCP action contract that applies dynamic filtering to a lookup field.
+/// </summary>
+public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
+{
+	/// <summary>
+	/// Gets the target lookup attribute on the root entity.
+	/// </summary>
+	[JsonPropertyName("target")]
+	[Description("Target lookup attribute on the root entity.")]
+	[Required]
+	public string Target { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the path inside the target lookup schema used for filtering.
+	/// </summary>
+	[JsonPropertyName("targetFilterPath")]
+	[Description("Lookup-valued path inside the target lookup schema used for filtering. Must resolve to a Lookup attribute, not Guid, for example Country or Country.TimeZone")]
+	[Required]
+	public string TargetFilterPath { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the source lookup attribute on the root entity.
+	/// </summary>
+	[JsonPropertyName("source")]
+	[Description("Source lookup attribute on the root entity.")]
+	[Required]
+	public string Source { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the optional path inside the source lookup schema used on the right side of the filter comparison.
+	/// </summary>
+	[JsonPropertyName("sourceFilterPath")]
+	[Description("Optional lookup-valued path inside the source lookup schema used on the right side of the filter comparison. Must resolve to a Lookup attribute, not Guid.")]
+	public string? SourceFilterPath { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the target lookup should be cleared when the source changes.
+	/// </summary>
+	[JsonPropertyName("clearValue")]
+	[Description("When true, clears the target lookup when the source lookup value changes.")]
+	public bool ClearValue { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the source lookup should be populated from the chosen target value.
+	/// </summary>
+	[JsonPropertyName("populateValue")]
+	[Description("When true, populates the source lookup from the chosen target lookup value. Prefer true by default for standard dependent-lookup scenarios unless the user explicitly wants one-way filtering only.")]
+	public bool PopulateValue { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() => new ApplyFilterBusinessRuleAction(
+		Target,
+		TargetFilterPath,
+		Source,
+		SourceFilterPath,
+		ClearValue,
+		PopulateValue);
+}
+
+/// <summary>
+/// MCP action contract that applies a static ESQ filter to a lookup attribute on the entity.
+/// </summary>
+public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : EntityBusinessRuleActionMcpContract
+{
+	/// <summary>
+	/// Gets the target lookup attribute on the root entity whose dropdown is filtered.
+	/// </summary>
+	[JsonPropertyName("targetAttribute")]
+	[Description("Target lookup attribute on the root entity. The lookup's reference schema is used as the filter root; rootSchemaName is never accepted from the caller.")]
+	[Required]
+	public string TargetAttribute { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the friendly filter definition.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	[Description("Friendly filter definition for apply-static-filter. Use get-guidance name=business-rules for the full contract.")]
+	[Required]
+	public JsonElement Filter { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() =>
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+}
+
+/// <summary>
+/// Page-variant of apply-static-filter exists only so payloads deserialize cleanly; page validator rejects it.
+/// </summary>
+public sealed record PageApplyStaticFilterBusinessRuleActionMcpContract : PageBusinessRuleActionMcpContract
+{
+	[JsonPropertyName("targetAttribute")]
+	public string TargetAttribute { get; init; } = string.Empty;
+
+	[JsonPropertyName("filter")]
+	public JsonElement Filter { get; init; }
+
+	internal override BusinessRuleAction ToBusinessRuleAction() =>
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+}
+
+/// <summary>
 /// MCP contract for a page-level Freedom UI business rule.
 /// </summary>
 public sealed record PageBusinessRuleMcpContract
@@ -297,6 +428,7 @@ public sealed record PageBusinessRuleMcpContract
 [JsonDerivedType(typeof(PageMakeReadOnlyBusinessRuleActionMcpContract), "make-read-only")]
 [JsonDerivedType(typeof(PageMakeRequiredBusinessRuleActionMcpContract), "make-required")]
 [JsonDerivedType(typeof(PageMakeOptionalBusinessRuleActionMcpContract), "make-optional")]
+[JsonDerivedType(typeof(PageApplyStaticFilterBusinessRuleActionMcpContract), "apply-static-filter")]
 public abstract record PageBusinessRuleActionMcpContract
 {
 	protected PageBusinessRuleActionMcpContract()
@@ -436,26 +568,55 @@ public sealed class CreatePageBusinessRuleTool(
 
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state.")]
+	[Description("Creates a page-level Freedom UI business rule that changes page element visibility, editability, or required state. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rule.")]
 	public CommandExecutionResult BusinessRuleCreate(
-		[Description("Creatio environment name.")]
+		[Description("Parameters: environment-name, package-name, page-schema-name, rule (all required).")]
 		[Required]
-		string environmentName,
-		[Description("Target package name on the Creatio environment.")]
-		[Required]
-		string packageName,
-		[Description("Target Freedom UI page schema name.")]
-		[Required]
-		string pageSchemaName,
-		[Description("Structured page business-rule definition. Use declared page attribute names from get-page bundle.viewModelConfig.attributes and page element names from bundle.viewConfig.")]
-		[Required]
-		PageBusinessRuleMcpContract rule) {
+		CreatePageBusinessRuleArgs args) {
 		CreatePageBusinessRuleOptions options = new () {
-			EnvironmentName = environmentName,
-			PackageName = packageName,
-			PageSchemaName = pageSchemaName,
-			Rule = rule?.ToBusinessRule()!
+			EnvironmentName = args.EnvironmentName,
+			PackageName = args.PackageName,
+			PageSchemaName = args.PageSchemaName,
+			Rule = args.Rule?.ToBusinessRule()!
 		};
 		return InternalExecute<CreatePageBusinessRuleCommand>(options);
 	}
+}
+
+/// <summary>
+/// MCP argument wrapper for page-level business-rule creation.
+/// </summary>
+public sealed record CreatePageBusinessRuleArgs
+{
+	/// <summary>
+	/// Gets the registered Creatio environment name.
+	/// </summary>
+	[JsonPropertyName("environment-name")]
+	[Description("Creatio environment name.")]
+	[Required]
+	public string EnvironmentName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target package name on the Creatio environment.
+	/// </summary>
+	[JsonPropertyName("package-name")]
+	[Description("Target package name on the Creatio environment.")]
+	[Required]
+	public string PackageName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the target Freedom UI page schema name.
+	/// </summary>
+	[JsonPropertyName("page-schema-name")]
+	[Description("Target Freedom UI page schema name.")]
+	[Required]
+	public string PageSchemaName { get; init; } = null!;
+
+	/// <summary>
+	/// Gets the structured page business-rule definition.
+	/// </summary>
+	[JsonPropertyName("rule")]
+	[Description("Structured page business-rule definition. Use declared page attribute names from get-page bundle.viewModelConfig.attributes and page element names from bundle.viewConfig.")]
+	[Required]
+	public PageBusinessRuleMcpContract Rule { get; init; } = null!;
 }

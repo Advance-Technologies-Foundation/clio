@@ -548,6 +548,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 <a id="assert"></a>
 - [`assert`](docs/commands/assert.md) - Validates infrastructure and filesystem resources
+<a id="component-registry-refresh"></a>
+<a id="component-registry"></a>
+- [`component-registry-refresh`](docs/commands/component-registry-refresh.md) - Refresh the local Freedom UI component registry cache from the academy.creatio.com CDN, `component-registry`
+<a id="get-component-info"></a>
+<a id="component-info"></a>
+- [`get-component-info`](docs/commands/get-component-info.md) - Get curated Freedom UI component metadata by component type or list the catalog, `component-info`
 <a id="healthcheck"></a>
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`

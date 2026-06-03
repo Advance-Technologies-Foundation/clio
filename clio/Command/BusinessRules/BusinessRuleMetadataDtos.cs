@@ -26,6 +26,12 @@ internal sealed class BusinessRuleMetadataDto {
 
 	[JsonPropertyName("caption")]
 	public string? Caption { get; set; }
+
+	[JsonPropertyName("parentUId")]
+	public string? ParentUId { get; set; }
+
+	[JsonPropertyName("parentActionUId")]
+	public string? ParentActionUId { get; set; }
 }
 
 internal sealed class BusinessRuleCaseMetadataDto {
@@ -36,12 +42,15 @@ internal sealed class BusinessRuleCaseMetadataDto {
 	public string UId { get; set; } = string.Empty;
 
 	[JsonPropertyName("condition")]
-	public BusinessRuleGroupConditionMetadataDto? Condition { get; set; }
+	public BaseBusinessRuleConditionMetadataDto? Condition { get; set; }
 
 	[JsonPropertyName("actions")]
-	public List<FieldSelectionBusinessRuleActionMetadataDto> Actions { get; set; } = [];
+	public List<BaseBusinessRuleActionMetadataDto> Actions { get; set; } = [];
 }
 
+[JsonPolymorphic]
+[JsonDerivedType(typeof(BusinessRuleGroupConditionMetadataDto))]
+[JsonDerivedType(typeof(BusinessRuleConditionMetadataDto))]
 internal abstract class BaseBusinessRuleConditionMetadataDto {
 	[JsonPropertyName("typeName")]
 	public string TypeName { get; set; } = string.Empty;
@@ -69,6 +78,10 @@ internal sealed class BusinessRuleConditionMetadataDto : BaseBusinessRuleConditi
 	public int ComparisonType { get; set; }
 }
 
+[JsonPolymorphic]
+[JsonDerivedType(typeof(FieldSelectionBusinessRuleActionMetadataDto))]
+[JsonDerivedType(typeof(BusinessRuleFilterLookupActionMetadataDto))]
+[JsonDerivedType(typeof(BusinessRuleSetFilterActionMetadataDto))]
 internal abstract class BaseBusinessRuleActionMetadataDto {
 	[JsonPropertyName("typeName")]
 	public string TypeName { get; set; } = string.Empty;
@@ -83,6 +96,28 @@ internal abstract class BaseBusinessRuleActionMetadataDto {
 internal sealed class FieldSelectionBusinessRuleActionMetadataDto : BaseBusinessRuleActionMetadataDto {
 	[JsonPropertyName("items")]
 	public object? Items { get; set; }
+}
+
+internal sealed class BusinessRuleFilterLookupActionMetadataDto : BaseBusinessRuleActionMetadataDto {
+	[JsonPropertyName("leftExpression")]
+	public BusinessRuleFilterLookupExpressionMetadataDto LeftExpression { get; set; } = default!;
+
+	[JsonPropertyName("rightExpression")]
+	public BusinessRuleFilterLookupExpressionMetadataDto RightExpression { get; set; } = default!;
+
+	[JsonPropertyName("clearValue")]
+	public bool ClearValue { get; set; }
+
+	[JsonPropertyName("populateValue")]
+	public bool PopulateValue { get; set; }
+}
+
+internal sealed class BusinessRuleSetFilterActionMetadataDto : BaseBusinessRuleActionMetadataDto {
+	[JsonPropertyName("expression")]
+	public BusinessRuleExpressionMetadataDto Expression { get; set; } = default!;
+
+	[JsonPropertyName("value")]
+	public BusinessRuleExpressionMetadataDto Value { get; set; } = default!;
 }
 
 internal sealed class BusinessRuleSetValueItemMetadataDto : BaseBusinessRuleActionMetadataDto {
@@ -107,7 +142,7 @@ internal sealed class BusinessRuleTriggerMetadataDto {
 	public int Type { get; set; }
 }
 
-internal sealed class BusinessRuleExpressionMetadataDto {
+internal class BusinessRuleExpressionMetadataDto {
 	// AddonSchemaDesignerService reads business-rule metadata sequentially and parses `value`
 	// according to the already-read `dataValueTypeName`. Keep base expression fields ordered
 	// ahead of derived payload fields to avoid numeric constants being treated as default Text.
@@ -146,6 +181,12 @@ internal sealed class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyOrder(8)]
 	[JsonPropertyName("expressionSchema")]
 	public BusinessRuleExpressionSchemaDto? ExpressionSchema { get; set; }
+}
+
+internal sealed class BusinessRuleFilterLookupExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
+	[JsonPropertyOrder(9)]
+	[JsonPropertyName("filterExpression")]
+	public string? FilterExpression { get; set; }
 }
 
 internal sealed class BusinessRuleFormulaParameterMappingDto {

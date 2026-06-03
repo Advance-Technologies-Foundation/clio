@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -43,33 +44,37 @@ public sealed class CompileCreatioToolE2ETests
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	[AllureStep("Arrange compile-creatio MCP session")]
 	private static async Task<CompileCreatioArrangeContext> ArrangeAsync(McpE2ESettings settings)
 	{
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new CompileCreatioArrangeContext(session, cancellationTokenSource);
+		return await AllureApi.Step("Arrange compile-creatio MCP session", async () =>
+		{
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new CompileCreatioArrangeContext(session, cancellationTokenSource);
+		});
 	}
 
-	[AllureStep("Act by invoking compile-creatio through MCP")]
 	private static async Task<CompileCreatioActResult> ActAsync(
 		CompileCreatioArrangeContext arrangeContext,
 		string environmentName)
 	{
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the compile-creatio MCP tool must be advertised before the end-to-end call can be executed");
+		return await AllureApi.Step("Act by invoking compile-creatio through MCP", async () =>
+		{
+			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+			tools.Select(tool => tool.Name).Should().Contain(ToolName,
+				because: "the compile-creatio MCP tool must be advertised before the end-to-end call can be executed");
 
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
-		return new CompileCreatioActResult(callResult, execution);
+			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+			return new CompileCreatioActResult(callResult, execution);
+		});
 	}
 
 	[AllureStep("Assert compile-creatio tool call failed")]

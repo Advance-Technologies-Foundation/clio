@@ -430,6 +430,40 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should carry over the built-in copy-input request entry");
 		article.Text.Should().Contain("crt.GetSidebarStateRequest",
 			because: "handler guidance should carry over the built-in sidebar entries");
+		article.Text.Should().Contain("crt.PrintablesRequest",
+			because: "handler guidance should include the built-in printables request in the catalog");
+		article.Text.Should().Contain("crt.GoToPrintablesRequest",
+			because: "handler guidance should include the go-to-printables navigation request in the catalog");
+		article.Text.Should().Contain("crt.ExportDataGridToExcelRequest",
+			because: "handler guidance should include the Excel export request in the catalog");
+		article.Text.Should().Contain("crt.ImportDataRequest",
+			because: "handler guidance should include the import data request in the catalog");
+		article.Text.Should().Contain("crt.DeleteRecordsRequest",
+			because: "handler guidance should include the bulk delete request in the catalog");
+		article.Text.Should().Contain("crt.CopyRecordRequest",
+			because: "handler guidance should include the copy/duplicate record request in the catalog");
+		article.Text.Should().Contain("crt.ShowDialogRequest",
+			because: "handler guidance should include the show-dialog request in the built-in catalog");
+		article.Text.Should().Contain("| print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep printables on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep Excel export on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep import on direct request wiring instead of a custom handler");
+		article.Text.Should().Contain("| delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should distinguish bulk list delete from single-record delete in the decision table");
+		article.Text.Should().Contain("| duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |",
+			because: "handler guidance should keep record duplication on direct request wiring");
+		article.Text.Should().Contain("| `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |",
+			because: "handler guidance should expose the printables request contract with its required and optional fields");
+		article.Text.Should().Contain("| `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |",
+			because: "handler guidance should expose the Excel export request contract");
+		article.Text.Should().Contain("| `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |",
+			because: "handler guidance should expose the import data request contract");
+		article.Text.Should().Contain("| `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |",
+			because: "handler guidance should expose the bulk delete request contract and clarify when to prefer it over the single-record variant");
+		article.Text.Should().Contain("| `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |",
+			because: "handler guidance should expose the copy record request contract");
 		article.Text.Should().Contain("Standard handler parameter catalog",
 			because: "handler guidance should expose concrete payload contracts, not only the built-in request name list");
 		article.Text.Should().Contain("| Request | Kind | Params for AI authoring | Notes |",
@@ -707,6 +741,31 @@ public sealed class McpGuidanceResourceTests {
 			because: "the checklist should require explicit fetch justification");
 		article.Text.Should().Contain("Are all shown snippets still valid inside deployed schema body code, not standalone TypeScript/module code?",
 			because: "the checklist should guard against copying inner snippets as standalone modules");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI page localizable strings.")]
+	public void PageSchemaResourcesGuidanceResource_Should_Return_Canonical_Resources_Guide() {
+		// Arrange
+		PageSchemaResourcesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the resources guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-schema-resources",
+			because: "the resource should expose a stable MCP URI for page localizable string guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the resources guide should be discoverable as plain text");
+		article.Text.Should().Contain("$Resources.Strings.<ResourceKey>",
+			because: "the guide should document the preferred reactive binding syntax");
+		article.Text.Should().Contain("#ResourceString(KeyName)#",
+			because: "the guide should document the macro syntax");
+		article.Text.Should().Contain("`resources` parameter",
+			because: "the guide should document how explicit resource entries are passed to page tools");
 	}
 
 	[Test]
@@ -1345,6 +1404,47 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should distinguish entity-level from page-level rules");
 		article.Text.Should().Contain("Page-level business rules",
 			because: "the guide should distinguish page-level from entity-level rules");
+		article.Text.Should().Contain("State-changing actions are one-way",
+			because: "the guide should warn that state-changing business-rule actions are directional");
+		article.Text.Should().Contain("explicit inverse business rule",
+			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
+		article.Text.Should().Contain("prefer `populateValue=true` by default",
+			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents business-rule support and offline limitations.")]
+	public void MobilePageGuidanceResource_Should_Return_Canonical_Mobile_Page_Guide() {
+		// Arrange
+		MobilePageGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the mobile page guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/mobile-page-modification",
+			because: "the resource should expose a stable MCP URI for mobile page guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the mobile page guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP mobile page modification guide",
+			because: "the article should identify itself as the dedicated mobile page guide");
+		article.Text.Should().Contain("create-page-business-rule",
+			because: "the mobile guide should explicitly document that mobile pages support page-level business rules");
+		article.Text.Should().Contain("create-entity-business-rule",
+			because: "the mobile guide should explicitly document that mobile guidance covers entity-level business rules too");
+		article.Text.Should().Contain("identically to web",
+			because: "the mobile guide should clarify that business rule generation works the same as web");
+		article.Text.Should().Contain("OFFLINE LIMITATION",
+			because: "the mobile guide should warn callers that not all rules are guaranteed to work offline");
+		article.Text.Should().Contain("separate artifacts",
+			because: "the guide should keep page-level business rules separate from mobile page body editing");
+		article.Text.Should().Contain("Read `business-rules` for rule semantics",
+			because: "the guide should keep detailed business-rule semantics in the dedicated shared guidance instead of duplicating them here");
+		article.Text.Should().Contain("Mobile pages do not support validators at all",
+			because: "the guide should preserve the validator limitation while clarifying business-rule support");
 	}
 
 	[Test]

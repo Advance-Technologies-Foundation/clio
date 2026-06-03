@@ -23,14 +23,32 @@ namespace Clio.Command
 		public string PackagePath { get; set; }
 
 
-		[Option('s', "SkipPdb", Required = false, HelpText = "Exclude pdb files from nuget package", Default = false)]
+		[Option('s', "skip-pdb", Required = false, HelpText = "Exclude pdb files from nuget package", Default = false)]
 		public bool SkipPdb { get; set; }
 
-		[Option('d', "Dependencies", Required = false, HelpText = "Package dependencies", Default = null)]
+		[Option("SkipPdb", Required = false, Hidden = true, HelpText = "Alias for --skip-pdb")]
+		public bool SkipPdbAlias {
+			get => SkipPdb;
+			set { if (value) SkipPdb = value; }
+		}
+
+		[Option('d', "dependencies", Required = false, HelpText = "Package dependencies", Default = null)]
 		public string Dependencies { get; set; }
 
-		[Option('n', "NupkgDirectory", Required = false, HelpText = "Nupkg package directory", Default = null)]
+		[Option("Dependencies", Required = false, Hidden = true, HelpText = "Alias for --dependencies")]
+		public string DependenciesAlias {
+			get => Dependencies;
+			set { if (!string.IsNullOrEmpty(value)) Dependencies = value; }
+		}
+
+		[Option('n', "nupkg-directory", Required = false, HelpText = "Nupkg package directory", Default = null)]
 		public string NupkgDirectory { get; set; }
+
+		[Option("NupkgDirectory", Required = false, Hidden = true, HelpText = "Alias for --nupkg-directory")]
+		public string NupkgDirectoryAlias {
+			get => NupkgDirectory;
+			set { if (!string.IsNullOrEmpty(value)) NupkgDirectory = value; }
+		}
 
 		#endregion
 

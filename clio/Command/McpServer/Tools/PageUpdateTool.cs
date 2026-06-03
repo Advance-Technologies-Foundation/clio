@@ -5,7 +5,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Command;
 using Clio.Common;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
@@ -16,7 +15,9 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class PageUpdateTool(
 	PageUpdateCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver)
+	IToolCommandResolver commandResolver,
+	IMobileComponentInfoCatalog mobileComponentCatalog,
+	IComponentInfoCatalog webComponentCatalog)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -25,48 +26,97 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"For conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
+		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
+			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
+			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
 		"Section authoring rules for the body payload: " +
 		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
 		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
+		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so. " +
+		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
-		[Description("Parameters: schema-name, body (required); resources, dry-run, skip-sampling (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
-		if (!string.IsNullOrWhiteSpace(options.Body)) {
-			string validationError = CollectValidatorErrors(options.Body);
-			if (validationError != null)
-				return new PageUpdateResponse { Success = false, Error = validationError };
-		}
-		PageSamplingReview samplingReview = null;
-		if (!options.DryRun && args.SkipSampling != true) {
-			samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(server, args.SchemaName, args.Body, cancellationToken);
-			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0)
-				return new PageUpdateResponse {
-					Success = false,
-					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues),
-					SamplingReview = samplingReview
-				};
-		}
-		PageUpdateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+		if (!bodyLoaded)
+			return new PageUpdateResponse { Success = false, Error = bodyLoadError };
+		if (string.IsNullOrWhiteSpace(options.Body))
+			return new PageUpdateResponse {
+				Success = false,
+				Error = "Either 'body' or 'body-file' must provide page body content."
+			};
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (validationFailure != null)
+			return validationFailure;
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		if (samplingFailure != null)
+			return samplingFailure;
+		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
 			} catch (Exception ex) {
 				return new PageUpdateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryUpdatePage(options, out response);
-			if (response.Success && args.Verify == true)
-				TryVerifyPage(args, response);
-		}
+			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse inner);
+			if (inner.Success && args.Verify == true)
+				TryVerifyPage(args, inner);
+			return inner;
+		});
 		response.SamplingReview = samplingReview;
+		response.Warnings = validationWarnings;
 		return response;
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
+			// Mobile body validation requires async catalogs (CDN+cache) AND the
+			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
+			// under the McpToolExecutionLock; the MCP server has no SynchronizationContext,
+			// so a sync-over-async wait is deadlock-free here. Refactoring the full
+			// PageUpdate → ValidateBody chain to async is out of scope for this PR.
+			SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? mobileResources, out _);
+			PageSyncValidationResult mobileResult = MobilePageValidation
+				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources)
+				.GetAwaiter().GetResult();
+			if (!mobileResult.ContentOk) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+				}, null);
+			}
+			return (null, mobileResult.Warnings);
+		}
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
+		if (bodyError != null) {
+			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
+		}
+		return (null, webWarnings);
+	}
+
+	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
+		if (options.DryRun || args.SkipSampling == true) {
+			return (null, null);
+		}
+		PageSamplingReview samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(
+			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
+		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+					+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check.",
+				SamplingReview = samplingReview
+			}, samplingReview);
+		}
+		return (null, samplingReview);
 	}
 
 	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
@@ -86,7 +136,7 @@ public sealed class PageUpdateTool(
 			Password = args.Password
 		};
 
-	private static string CollectValidatorErrors(string body) {
+	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
@@ -99,7 +149,10 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
-		return errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		SchemaValidationResult depsResult = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
+		List<string> warnings = depsResult.Warnings.Count > 0 ? depsResult.Warnings : null;
+		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		return (error, warnings);
 	}
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {
@@ -136,7 +189,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of resource key-value pairs for #ResourceString(key)# macros in the body, e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. Unresolved macros are auto-registered with captions derived from key names.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
@@ -157,7 +210,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
 	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("If true, skip the AI semantic review before saving. Default: false")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]

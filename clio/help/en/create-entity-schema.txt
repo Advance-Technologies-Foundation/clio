@@ -33,7 +33,7 @@ DESCRIPTION
 
 OPTIONS
     --package              Target package name
-    --name                 Entity schema name. Maximum length is 22 characters
+    --name                 Entity schema name
     --title                Entity schema title/caption
     --parent               Parent schema name
     --extend-parent        Create a replacement schema. Requires --parent
@@ -93,7 +93,6 @@ NOTES
       validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
-    - Schema names longer than 22 characters are rejected before the server call
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

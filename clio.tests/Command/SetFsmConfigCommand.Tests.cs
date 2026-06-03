@@ -35,7 +35,18 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 		_fileSystem = new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem());
 		_logger = Substitute.For<ILogger>();
 		_iisScanner = Substitute.For<IIisScanner>();
-		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger, _iisScanner);
+		_fsmModeStatusService = Substitute.For<IFsmModeStatusService>();
+		_fileDesignModePackages = Substitute.For<Clio.Package.IFileDesignModePackages>();
+		_fileDesignModePackages.SetFileDesignMode(Arg.Any<bool>()).Returns(
+			new Clio.Package.SetFileDesignModeResult(
+				EndpointAvailable: false,
+				Success: false,
+				PreviousFileDesignMode: null,
+				NewFileDesignMode: null,
+				WebConfigPath: null,
+				ErrorMessage: "endpoint not available in tests"));
+		_command = new SetFsmConfigCommand(_validator, _settingsRepository, _fileSystem, _logger, _iisScanner,
+			_fsmModeStatusService, _fileDesignModePackages);
 	}
 
 	#endregion
@@ -47,6 +58,8 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	private Clio.Common.IFileSystem _fileSystem;
 	private ILogger _logger;
 	private IIisScanner _iisScanner;
+	private IFsmModeStatusService _fsmModeStatusService;
+	private Clio.Package.IFileDesignModePackages _fileDesignModePackages;
 	private SetFsmConfigCommand _command;
 
 	#endregion
@@ -472,23 +485,249 @@ public class SetFsmConfigCommandTests : BaseCommandTests<SetFsmConfigOptions> {
 	
 	[Test]
 	[Category("Unit")]
-	[Description("Verifies that non-Windows platforms reject registered non-NET8 environments.")]
-	public void Execute_Should_Throw_OnNonWindows_WhenEnvironmentIsNotNetCore() {
-		if(OperatingSystem.IsWindows()) {
+	[Description("Verifies that on macOS/Linux + .NET Framework the command treats already-on FSM as a no-op and exits 0.")]
+	public void Execute_OnNonWindowsNetFx_ReturnsZeroAndSkipsConfigEdit_WhenServerFsmAlreadyOn() {
+		if (OperatingSystem.IsWindows()) {
 			return;
 		}
-		
+
 		// Arrange
 		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env" };
 		_validator.Validate(options).Returns(new ValidationResult());
 		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("test-env").Returns(
+			new FsmModeStatusResult("test-env", "on", false, null));
 
 		// Act
-		Action act = () => _command.Execute(options);
+		int result = _command.Execute(options);
 
 		// Assert
-		act.Should().Throw<Exception>()
-			.WithMessage("On macOS and Linux this command is supported only for NET8 (IsNetCore=true) environments.");
+		result.Should().Be(0, "because server FSM already matches requested 'on' state");
+		_fsmModeStatusService.Received(1).GetStatus("test-env");
+		_logger.Received().WriteLine(Arg.Is<string>(s => s.Contains("FSM already on") && s.Contains("test-env")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS/Linux + .NET Framework the command treats already-off FSM as a no-op and exits 0.")]
+	public void Execute_OnNonWindowsNetFx_ReturnsZeroAndSkipsConfigEdit_WhenServerFsmAlreadyOff() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "off", Environment = "test-env" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("test-env").Returns(
+			new FsmModeStatusResult("test-env", "off", true, null));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because server FSM already matches requested 'off' state");
+		_logger.Received().WriteLine(Arg.Is<string>(s => s.Contains("FSM already off") && s.Contains("test-env")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS/Linux + .NET Framework an 'on' request with server FSM off produces an actionable error.")]
+	public void Execute_OnNonWindowsNetFx_ReturnsErrorWithActionableMessage_WhenServerFsmDiffers_OnRequest() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "ts1-dev04" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("ts1-dev04").Returns(
+			new FsmModeStatusResult("ts1-dev04", "off", true, null));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because server FSM is off but request is on and no remote toggle is supported");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("(a)") && s.Contains("(b)") && s.Contains("(c)")
+			&& s.Contains("ts1-dev04") && s.Contains("get-fsm-mode")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS/Linux + .NET Framework an 'off' request with server FSM on produces an actionable error.")]
+	public void Execute_OnNonWindowsNetFx_ReturnsErrorWithActionableMessage_WhenServerFsmDiffers_OffRequest() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "off", Environment = "ts1-dev04" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("ts1-dev04").Returns(
+			new FsmModeStatusResult("ts1-dev04", "on", false, null));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because server FSM is on but request is off and no remote toggle is supported");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("(a)") && s.Contains("(b)") && s.Contains("(c)") && s.Contains("ts1-dev04")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS/Linux + .NET Framework an 'on' request with mismatched server FSM toggles via cliogate when endpoint is available.")]
+	public void Execute_OnNonWindowsNetFx_TogglesViaCliogate_WhenEndpointAvailable_OnRequest() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "ts1-dev04" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("ts1-dev04").Returns(
+			new FsmModeStatusResult("ts1-dev04", "off", true, null));
+		_fileDesignModePackages.SetFileDesignMode(true).Returns(
+			new Clio.Package.SetFileDesignModeResult(
+				EndpointAvailable: true,
+				Success: true,
+				PreviousFileDesignMode: "false",
+				NewFileDesignMode: "true",
+				WebConfigPath: @"C:\WebAppRoot\studioenu\Web.config",
+				ErrorMessage: null));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because cliogate successfully toggled the flag remotely");
+		_fileDesignModePackages.Received(1).SetFileDesignMode(true);
+		_logger.Received().WriteLine(Arg.Is<string>(s =>
+			s.Contains("toggled remotely") && s.Contains("ts1-dev04") && s.Contains("false") && s.Contains("true")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that on macOS/Linux + .NET Framework an 'off' request with mismatched server FSM toggles via cliogate when endpoint is available.")]
+	public void Execute_OnNonWindowsNetFx_TogglesViaCliogate_WhenEndpointAvailable_OffRequest() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "off", Environment = "ts1-dev04" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("ts1-dev04").Returns(
+			new FsmModeStatusResult("ts1-dev04", "on", false, null));
+		_fileDesignModePackages.SetFileDesignMode(false).Returns(
+			new Clio.Package.SetFileDesignModeResult(
+				EndpointAvailable: true,
+				Success: true,
+				PreviousFileDesignMode: "true",
+				NewFileDesignMode: "false",
+				WebConfigPath: @"C:\WebAppRoot\studioenu\Web.config",
+				ErrorMessage: null));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because cliogate successfully toggled the flag remotely");
+		_fileDesignModePackages.Received(1).SetFileDesignMode(false);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies fallback to actionable error when cliogate endpoint is available but reports failure.")]
+	public void Execute_OnNonWindowsNetFx_FallsBackToActionableError_WhenCliogateEndpointFails() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "ts1-dev04" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("ts1-dev04").Returns(
+			new FsmModeStatusResult("ts1-dev04", "off", true, null));
+		_fileDesignModePackages.SetFileDesignMode(true).Returns(
+			new Clio.Package.SetFileDesignModeResult(
+				EndpointAvailable: true,
+				Success: false,
+				PreviousFileDesignMode: null,
+				NewFileDesignMode: null,
+				WebConfigPath: null,
+				ErrorMessage: "Permission denied writing to Web.config"));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1);
+		_logger.Received().WriteError(Arg.Is<string>(s => s.Contains("Permission denied")));
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("(a)") && s.Contains("(b)") && s.Contains("(c)")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that probe failures on macOS/Linux + .NET Framework are wrapped with context and produce exit 1.")]
+	public void Execute_OnNonWindowsNetFx_PropagatesProbeFailure() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env" };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+		_fsmModeStatusService.GetStatus("test-env")
+			.Returns(_ => throw new InvalidOperationException("Connection refused"));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because the probe could not determine server FSM state");
+		_logger.Received().WriteError(Arg.Is<string>(s =>
+			s.Contains("Could not determine current FSM state")
+			&& s.Contains("test-env")
+			&& s.Contains("Connection refused")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verifies that --physical-path bypasses the probe on macOS/Linux + .NET Framework even when env is registered.")]
+	public void Execute_OnNonWindowsNetFx_BypassesProbe_WhenPhysicalPathProvided() {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		// Arrange
+		string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(tempDir);
+		string configPath = Path.Combine(tempDir, "Web.config");
+		File.WriteAllText(configPath, GetSampleWebConfig("false", "true"));
+
+		SetFsmConfigOptions options = new() { IsFsm = "on", Environment = "test-env", PhysicalPath = tempDir };
+		_validator.Validate(options).Returns(new ValidationResult());
+		_settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { IsNetCore = false });
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because --physical-path bypasses the probe and edits the file directly");
+		_fsmModeStatusService.DidNotReceiveWithAnyArgs().GetStatus(default!);
+
+		Directory.Delete(tempDir, true);
 	}
 
 	[Test]

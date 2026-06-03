@@ -25,8 +25,11 @@ public sealed class PageGetTool(
 		"bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. " +
 		"IMPORTANT: bundle.json is a JSON document. Use a JSON parsing tool (jq, PowerShell ConvertFrom-Json, Python json.load) to navigate it; do NOT rely on grep or line-oriented text search — it is typically minified to a single line. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"MOBILE PAGES: If the returned meta.json shows schema-type == \"mobile\", this is a mobile page. " +
+		"Call get-guidance with name `mobile-page-modification` BEFORE editing the body — mobile pages use plain JSON bodies (not AMD), require different components, and disallow handlers, validators, and custom converters. " +
+		"Call get-guidance with name `page-modification` BEFORE editing the returned raw.body; use its pre-edit checklist to select any specialized page-authoring guides. " +
 		"Before editing the returned raw.body: " +
-		"if the task involves conditional visibility, editability, or required state based on field values (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more; " +
+		"if the task involves conditional visibility, editability, required state based on field values or conditional set and clear value. If task contains setting a lookup, based on condition or based on value in other lookup field, use business rules. (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more; " +
 		"if the task involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before touching any component type; " +
 		"if the task targets SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 		"if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
@@ -41,7 +44,7 @@ public sealed class PageGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			PageGetCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageGetCommand>(options);
@@ -53,7 +56,7 @@ public sealed class PageGetTool(
 				return WriteFilesAndCompact(response, args.SchemaName);
 			}
 			return response;
-		}
+		});
 	}
 
 	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {

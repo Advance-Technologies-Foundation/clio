@@ -96,6 +96,27 @@ The install command is `push-pkg`, **not** `push-package` (that verb does not ex
 | Lock a package | `lock-package` |
 | Unlock a package | `unlock-package` |
 
+# CLI parameter naming convention
+
+All CLI option long names defined with `[Option("...", ...)]` **must use kebab-case** (e.g. `--restart-environment`, `--db-server-uri`).
+
+**Never use camelCase or PascalCase** (e.g. `--restartEnvironment`, `--SysAdminUnitName`) for new or modified option names.
+
+When renaming an existing camelCase option to kebab-case:
+1. Change the main `[Option]` string to kebab-case.
+2. Add a **hidden** alias property that delegates to the main property (for backward compatibility):
+```csharp
+[Option("restart-environment", Required = false, HelpText = "...")]
+public bool RestartEnvironment { get; set; }
+
+[Option("restartEnvironment", Required = false, Hidden = true, HelpText = "Alias for --restart-environment")]
+public bool RestartEnvironmentAlias {
+    get => RestartEnvironment;
+    set { if (value) RestartEnvironment = value; }
+}
+```
+3. Update all docs (`clio/docs/commands/*.md`, `clio/help/en/*.txt`) to use the new kebab-case form.
+
 # Documentation structure for commands
 
 - `clio\Commands.md` - Overview of all commands (displayed when user types `clio help`)
@@ -329,3 +350,101 @@ Use multiple agents in parallel to review code for
 ## Nuget Management
 This projects uses Centrally managed nuget packages versions, see
 [Directory.Packages.props](./Directory.Packages.props) for details.
+
+# BMAD development pipeline
+
+Clio uses the BMAD method (Break it down, Model, Act, Debug) for feature planning.
+AI agents operating on this repo must understand and respect the pipeline.
+
+## What is BMAD
+
+BMAD is a structured pipeline where each phase produces an artifact that feeds the next.
+No code is written until the ADR exists. No PR is opened until a story file exists.
+
+```
+Feature request
+      │
+      ▼
+[pm-agent]         → spec/prd/prd-{name}.md       Phase 1 – requirements
+      │
+      ▼
+[architect-agent]  → spec/adr/adr-{name}.md       Phase 2 – design
+      │
+      ▼
+[story-writer]     → spec/stories/story-{name}-N.md   Phase 3 – stories
+                     spec/sprint-status.yaml
+      │
+      ▼
+[qa-planner]       → spec/test-plans/tp-{name}.md  Phase 4 – test plan
+```
+
+Optional at any phase: `bmad-reviewer` agent (3-lens adversarial critique).
+
+## project-context.md
+
+Every BMAD agent loads `project-context.md` (repo root) as its first action.
+This file is the single source of truth for Clio-specific constraints that cannot
+be derived from reading the code alone:
+
+- CLI flag kebab-case rule (CLIO001)
+- MediatR handler pattern
+- Test categories (`Unit` / `Integration` / `E2E`)
+- IApplicationClient usage policy
+- Test naming convention
+
+**If you are an AI agent**: read `project-context.md` before making any implementation
+decision. If you discover a rule that is not there, add it.
+
+## When to use each command
+
+| Situation | Command |
+|-----------|---------|
+| New CLI command or significant feature | `/bmad <description>` |
+| Small fix / enhancement (< 5 stories) | `/bmad-spec <description>` |
+| Check pipeline state before picking work | `/bmad-status` |
+| Review an artifact before proceeding | use `bmad-reviewer` agent |
+
+## Facilitator vs autonomous mode
+
+Default (facilitator): the pipeline pauses at checkpoint gates between phases.
+The AI presents its analysis and waits for `[C] Continue` before proceeding.
+
+Autonomous (`--auto`): all phases run without pauses. Use for CI-like automation
+or when you have already reviewed the feature thoroughly.
+
+```
+/bmad "feature description"          # pauses for approval at each phase boundary
+/bmad --auto "feature description"   # runs all phases, prints summary at end
+```
+
+## Artifact conventions
+
+| Artifact | Location | Naming |
+|----------|----------|--------|
+| PRD | `spec/prd/` | `prd-{kebab-feature-name}.md` |
+| SPEC (small feature) | `spec/prd/` | `spec-{kebab-feature-name}.md` |
+| ADR | `spec/adr/` | `adr-{kebab-feature-name}.md` |
+| Story | `spec/stories/` | `story-{feature-name}-{N}.md` |
+| Sprint tracker | `spec/` | `sprint-status.yaml` |
+| Test plan | `spec/test-plans/` | `tp-{kebab-feature-name}.md` |
+| Review | `spec/reviews/` | `review-{artifact-slug}-{date}.md` |
+
+## Sprint tracker
+
+`spec/sprint-status.yaml` is the authoritative list of all stories and their status.
+
+Valid statuses: `ready-for-dev` → `in-progress` → `review` → `done`
+
+AI agents implementing a story must:
+1. Update the story's `status` to `in-progress` when starting
+2. Update to `review` when opening a PR
+3. Update to `done` when the PR merges
+
+## Mandatory agent behavior for new features
+
+1. Before writing any code for a non-trivial feature, check whether a PRD and ADR exist
+   in `spec/prd/` and `spec/adr/`. If not, run the pipeline first.
+2. Pick stories from `spec/sprint-status.yaml` with status `ready-for-dev`.
+3. After implementation, ensure the test plan in `spec/test-plans/` is satisfied —
+   all TC-U-* and TC-I-* test cases must be implemented.
+4. Never close a story as `done` if its Definition of Done checklist has unchecked items.

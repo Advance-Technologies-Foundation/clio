@@ -61,7 +61,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -91,7 +93,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[
@@ -124,7 +128,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[
@@ -154,7 +160,9 @@ public sealed class PageSyncToolTests {
 	public async Task SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
@@ -186,7 +194,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
@@ -211,7 +221,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithHandler = ValidPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
@@ -241,7 +253,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithConverterAndValidator = ValidPageBody
 			.Replace(
 				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
@@ -268,14 +282,16 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation passes when field binds to an attribute not in current schema — it may be declared in a parent schema")]
-	public async Task SyncPages_Should_Allow_Field_Bindings_To_Parent_Schema_Attributes() {
+	[Description("Client-side validation rejects a field insert whose binding attribute is not declared in viewModelConfigDiff and whose label resource is neither registered in 'resources' nor auto-provided by a DS-bound attribute. Without rejection, the saved control would have no data source and a blank caption.")]
+	public async Task SyncPages_Should_Reject_InsertedFields_Without_Matching_ViewModelOrResource() {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
-		string bodyWithParentAttributeBinding = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		string bodyWithUndeclaredBindings = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -285,14 +301,45 @@ public sealed class PageSyncToolTests {
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentAttributeBinding)],
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithUndeclaredBindings)],
+			Validate: true,
+			SkipSampling: true);
+
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		response.Success.Should().BeFalse(
+			because: "sync-pages must surface insert operations that would render fields with no data source and a blank caption");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Client-side validation accepts a merge operation that targets a parent-provided field control without local viewModelConfigDiff declarations — the inserted-field contract applies only to operation:\"insert\", not to operation:\"merge\".")]
+	public async Task SyncPages_Should_Accept_MergeAgainstParentProvidedControl() {
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		string bodyWithParentMerge = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentMerge)],
 			Validate: true,
 			SkipSampling: true);
 
 		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
-			because: "sync-pages should allow bindings to attributes that may be declared in a parent schema");
+			because: "merge operations target existing parent-provided controls whose binding attribute and resource may legitimately live in the parent schema, so the inserted-field contract does NOT apply");
 	}
 
 	[Test]
@@ -303,7 +350,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -362,7 +411,9 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -444,7 +495,9 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(getCommand);
 		MockFileSystem mockFs = new();
-		PageSyncTool tool = new(commandResolver, mockFs);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -490,7 +543,9 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(getCommand);
-		PageSyncTool tool = new(commandResolver, new MockFileSystem());
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -526,7 +581,7 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
-	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand() {
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
@@ -536,7 +591,12 @@ public sealed class PageSyncToolTests {
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject {
 				["success"] = true,
-				["rows"] = new JArray { new JObject { ["UId"] = "test-uid" } }
+				["rows"] = new JArray {
+					new JObject {
+						["UId"] = "test-uid",
+						["SchemaType"] = schemaType
+					}
+				}
 			}.ToString());
 		applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("GetSchema")),
@@ -600,7 +660,8 @@ public sealed class PageSyncToolTests {
 						["UId"] = "test-uid",
 						["PackageUId"] = "test-package-uid",
 						["PackageName"] = "UsrPkg",
-						["ParentSchemaName"] = "BaseModulePage"
+						["ParentSchemaName"] = "BaseModulePage",
+						["SchemaType"] = 9
 					}
 				}
 			}.ToString());
@@ -642,5 +703,74 @@ public sealed class PageSyncToolTests {
 			Substitute.For<IPageDesignerHierarchyClient>(),
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SyncPages succeeds for a mobile page body (plain JSON) and skips AMD marker validation.")]
+	public async Task SyncPages_Should_Succeed_For_Valid_Mobile_Json_Body() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", mobileBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "AMD marker validation errors must not appear for mobile JSON bodies");
+		response.Pages[0].Error.Should().NotContain("Mobile page validation failed",
+			because: "a valid mobile body should not produce mobile validation errors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("SyncPages with validate:true rejects a mobile body that contains 'converters' section.")]
+	public async Task SyncPages_Should_Reject_Mobile_Body_With_Converters_When_Validate_Is_True() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		string mobileBodyWithConverters = """
+			{
+			  "viewConfigDiff": [],
+			  "converters": {}
+			}
+			""";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", mobileBodyWithConverters)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "a mobile body containing 'converters' must be rejected during validation");
+		response.Pages[0].Error.Should().Contain("converters",
+			because: "the error should describe the disallowed key that caused validation to fail");
 	}
 }

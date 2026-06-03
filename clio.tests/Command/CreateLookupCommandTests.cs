@@ -94,27 +94,6 @@ public sealed class CreateLookupCommandTests : BaseCommandTests<CreateLookupOpti
 	}
 
 	[Test]
-	[Description("Returns failure when schema name exceeds 22 characters.")]
-	public void Execute_Should_Return_Failure_When_SchemaName_Is_Too_Long()
-	{
-		// Arrange
-		CreateLookupOptions options = new() {
-			Environment = "dev",
-			Package = "UsrPkg",
-			SchemaName = "UsrVeryLongSchemaNameThatExceeds22",
-			Title = "Title"
-		};
-
-		// Act
-		int exitCode = _command.Execute(options);
-
-		// Assert
-		exitCode.Should().Be(1, because: "a schema name longer than 22 characters must be rejected");
-		_createEntitySchemaCommand.DidNotReceiveWithAnyArgs().Execute(default!);
-		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("22")));
-	}
-
-	[Test]
 	[Description("Returns failure exit code and logs an error when the environment is missing.")]
 	public void Execute_Should_Return_Failure_When_Environment_Is_Missing()
 	{

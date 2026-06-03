@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -60,5 +61,49 @@ public class ExceptionReadableMessageExtensionTestCase
 		var exception = new InvalidOperationException("Message", innerException);
 		var messageResult = exception.GetReadableMessageException(true);
 		messageResult.Should().Be(exception.ToString());
+	}
+
+	[Test]
+	public void GetReadableMessageException_UnwrapsInnerException_WhenAggregateException() {
+		var inner = new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure);
+		var exception = new AggregateException(inner);
+		var result = exception.GetReadableMessageException();
+		result.Should().StartWith("Cannot connect to the application:");
+		result.Should().Contain("Make sure the site is running and accessible");
+	}
+
+	[Test]
+	public void GetReadableMessageException_PrintsFullStackTrace_WhenAggregateExceptionAndDebugMode() {
+		AggregateException exception;
+		try { throw new AggregateException(new WebException("Connection refused", WebExceptionStatus.ConnectFailure)); }
+		catch (AggregateException e) { exception = e; }
+		var result = exception.GetReadableMessageException(debug: true);
+		result.Should().Be(exception.ToString());
+	}
+
+	[Test]
+	public void GetReadableMessageException_PrintsFriendlyMessage_WhenWebExceptionConnectFailure() {
+		var exception = new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure);
+		var result = exception.GetReadableMessageException();
+		result.Should().StartWith("Cannot connect to the application:");
+		result.Should().Contain("Make sure the site is running and accessible");
+		result.Should().NotContain("   at ");
+	}
+
+	[Test]
+	public void GetReadableMessageException_PrintsFullStackTrace_WhenWebExceptionConnectFailureAndDebugMode() {
+		WebException exception;
+		try { throw new WebException("Connection refused (localhost:1616)", WebExceptionStatus.ConnectFailure); }
+		catch (WebException e) { exception = e; }
+		var result = exception.GetReadableMessageException(debug: true);
+		result.Should().Be(exception.ToString());
+	}
+
+	[Test]
+	public void GetReadableMessageException_PrintsMessage_WhenWebExceptionOtherStatus() {
+		var exception = new WebException("Not Found", WebExceptionStatus.ProtocolError);
+		var result = exception.GetReadableMessageException();
+		result.Should().Be(exception.Message);
+		result.Should().NotContain("Cannot connect to the application");
 	}
 }

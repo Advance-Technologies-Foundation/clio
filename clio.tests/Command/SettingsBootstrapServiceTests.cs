@@ -13,34 +13,37 @@ namespace Clio.Tests.Command;
 public sealed class SettingsBootstrapServiceTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Repairs an invalid ActiveEnvironmentKey by selecting the first configured environment and persisting the repaired settings file.")]
-	public void GetResult_Should_Repair_Invalid_Active_Environment_Key() {
+	[Description("Detects an invalid ActiveEnvironmentKey as a configuration issue without auto-repairing it. Only the user may set the active environment.")]
+	public void GetResult_Should_Detect_Invalid_Active_Environment_Key_Without_Repairing() {
 		// Arrange
+		string originalContent = File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"));
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
-		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
-			File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"))));
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(originalContent));
 		SettingsBootstrapService service = new(fileSystem);
 
 		// Act
 		SettingsBootstrapResult result = service.GetResult();
-		Settings persistedSettings = JsonConvert.DeserializeObject<Settings>(
-			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 
 		// Assert
-		result.Report.Status.Should().Be("repaired",
-			because: "an invalid ActiveEnvironmentKey is a parseable structural problem that should be repaired automatically");
-		result.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "the first configured environment should become the deterministic bootstrap fallback");
-		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "set-active-environment",
-			because: "the repair report should explain how bootstrap recovered the active environment");
-		persistedSettings.ActiveEnvironmentKey.Should().Be("dev",
-			because: "the repaired ActiveEnvironmentKey should be persisted back to appsettings.json");
+		result.Report.Status.Should().Be("issues-detected",
+			because: "an invalid ActiveEnvironmentKey is a user configuration problem that must be reported, not silently fixed by clio");
+		result.Report.ActiveEnvironmentKey.Should().Be("wrong-dev",
+			because: "the original configured key must be preserved so the user sees which key is wrong");
+		result.Report.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "bootstrap must not auto-select a fallback environment — only the user may set the active environment");
+		result.Report.Issues.Should().ContainSingle(issue => issue.Code == "invalid-active-environment",
+			because: "the issue must be reported so diagnostics tools and error messages can surface it");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no automatic repair should be applied — the user must explicitly call set-active-environment");
+		persistedContent.Should().Be(originalContent,
+			because: "appsettings.json must not be modified when bootstrap only detects issues without applying repairs");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a stale ActiveEnvironmentKey without overwriting appsettings.json when repairs are disabled for pre-parse bootstrap flows.")]
-	public void GetResult_Should_Not_Persist_Repairs_When_Auto_Repair_Is_Disabled() {
+	[Description("applyRepairs:false has no effect on ActiveEnvironmentKey detection — bootstrap never auto-repairs this regardless of the flag.")]
+	public void GetResult_Should_Detect_Invalid_Active_Environment_Key_Regardless_Of_ApplyRepairs_Flag() {
 		// Arrange
 		string originalContent = File.ReadAllText(Path.Combine("Examples", "AppConfigs", "appsettings-with-wrong-active-key.json"));
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
@@ -52,14 +55,14 @@ public sealed class SettingsBootstrapServiceTests {
 		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 
 		// Assert
-		result.Report.Status.Should().Be("repaired",
-			because: "bootstrap should still resolve a deterministic active environment even when persistence is deferred");
-		result.Report.ActiveEnvironmentKey.Should().Be("wrong-dev",
-			because: "the report should preserve the original stale active environment key before repair");
-		result.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "the in-memory bootstrap result should still expose the deterministic repaired environment");
+		result.Report.Status.Should().Be("issues-detected",
+			because: "the applyRepairs flag must not change how an invalid ActiveEnvironmentKey is reported");
+		result.Report.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "bootstrap must not resolve a fallback environment in memory either, regardless of the applyRepairs flag");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no repair was applied so the list must be empty");
 		persistedContent.Should().Be(originalContent,
-			because: "pre-parse bootstrap should not mutate appsettings.json before the real command startup runs");
+			because: "appsettings.json must remain unchanged when applyRepairs is false");
 	}
 
 	[Test]
@@ -168,5 +171,112 @@ public sealed class SettingsBootstrapServiceTests {
 			because: "named-environment MCP tools should start working again after the file becomes valid");
 		repairedResult.Report.ResolvedActiveEnvironmentKey.Should().Be("dev",
 			because: "the repaired bootstrap result should expose the newly valid active environment");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Clears a legacy Autoupdate=false artifact (serialized when the field was a non-nullable bool) and stamps the settings version, restoring the enabled opt-out default.")]
+	public void GetResult_Should_Reset_Legacy_Autoupdate_False_And_Stamp_Version() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "Autoupdate": false,
+			  "Environments": {}
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		result.Settings.Autoupdate.Should().BeNull(
+			because: "the legacy false must be cleared so GetAutoupdate() falls back to the enabled opt-out default");
+		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "autoupdate-legacy-default-reset",
+			because: "the migration must surface that auto-update was re-enabled so the user is informed");
+		persisted.Autoupdate.Should().BeNull(
+			because: "the cleared value must be persisted — NullValueHandling.Ignore drops the key entirely");
+		persisted.SettingsVersion.Should().Be(1,
+			because: "the settings version must be stamped so the one-time migration never runs again");
+		persistedContent.Should().NotContain("Autoupdate",
+			because: "a null Autoupdate is omitted from the file, restoring the pristine default state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A deliberate Autoupdate=false on a file already at the current settings version is preserved across bootstrap and never reverted — proving the opt-out is not broken.")]
+	public void GetResult_Should_Preserve_Deliberate_Autoupdate_False_After_Migration() {
+		// Arrange: file already migrated (SettingsVersion=1) with a deliberate opt-out
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "Autoupdate": false,
+			  "SettingsVersion": 1,
+			  "Environments": {}
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		result.Settings.Autoupdate.Should().BeFalse(
+			because: "once the file is at the current settings version the migration must not touch a deliberate opt-out");
+		persisted.Autoupdate.Should().BeFalse(
+			because: "the deliberate --disable must survive bootstrap so 'clio autoupdate --disable' is not silently broken");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no migration should run when the settings version is already current");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With applyRepairs:false the legacy Autoupdate migration is neither applied nor reported, and the file is left untouched.")]
+	public void GetResult_Should_Not_Migrate_Autoupdate_When_ApplyRepairs_False() {
+		// Arrange
+		const string originalContent = """
+			{
+			  "Autoupdate": false,
+			  "Environments": {}
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(originalContent));
+		SettingsBootstrapService service = new(fileSystem, applyRepairs: false);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "read-only bootstrap must not report a repair it did not persist");
+		persistedContent.Should().Be(originalContent,
+			because: "appsettings.json must not be modified when applyRepairs is false");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A freshly created appsettings.json is stamped with the current settings version so new installs are never treated as legacy.")]
+	public void GetResult_Should_Stamp_Version_On_Created_Empty_Settings_File() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
+
+		// Assert
+		persisted.SettingsVersion.Should().Be(1,
+			because: "new installs must be born at the current settings version so the legacy migration never runs for them");
+		result.Settings.Autoupdate.Should().BeNull(
+			because: "a fresh file has no Autoupdate key, so auto-update stays at the enabled opt-out default");
 	}
 }

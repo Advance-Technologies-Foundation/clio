@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command;
@@ -7,7 +8,6 @@ using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
@@ -17,7 +17,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public class PageToolsTests {
+public class PageToolsTests
+{
 
 	[Test]
 	[Description("Verifies that PageListTool has the correct MCP tool name")]
@@ -179,6 +180,10 @@ public class PageToolsTests {
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
 			because: "get-page prompt guidance should point callers to the MCP-owned existing-app maintenance guide name");
+		prompt.Should().Contain("`page-modification`",
+			because: "get-page prompt guidance should route page-body edits through the general page modification guide first");
+		prompt.Should().Contain("pre-edit checklist",
+			because: "get-page prompt guidance should use page-modification as the router for specialized page-authoring guides");
 		prompt.Should().Contain("`page-schema-handlers`",
 			because: "get-page prompt guidance should point handler edits to the dedicated clio-owned handler guide name");
 		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-handlers` before proposing or applying changes",
@@ -204,9 +209,11 @@ public class PageToolsTests {
 		prompt.Should().Contain("`verify`",
 			because: "page guidance should surface the optional read-back semantics for sync-pages");
 		prompt.Should().Contain("`resources`",
-			because: "page guidance should tell callers how to preserve ResourceString macros during sync-pages");
-		prompt.Should().Contain("valid JSON object string",
-			because: "get-page prompt guidance should clarify that malformed resource payloads are rejected");
+			because: "page guidance should surface the resources parameter so callers know it exists before authoring localizable strings");
+		prompt.Should().Contain($"you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-resources`",
+			because: "resources guidance should be mandatory before authorship so callers cannot register DS-bound caption keys that the platform already auto-provides");
+		prompt.Should().Contain("NOT sufficient justification",
+			because: "page guidance should block the common shortcut of passing resources just because the body contains a localizable-string reference");
 		prompt.Should().Contain("declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff`",
 			because: "page guidance should steer standard fields toward declared view-model attributes instead of naming conventions");
 		prompt.Should().Contain("If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute.",
@@ -223,8 +230,6 @@ public class PageToolsTests {
 			because: "page guidance should explicitly call out body.js as the editable JavaScript source");
 		prompt.Should().Contain("Do not send bundle data back to page tools",
 			because: "page guidance should explicitly reject submitting bundle content to write tools");
-		prompt.Should().Contain("do not send a nested object payload",
-			because: "page guidance should explicitly reject non-string resources payloads");
 		prompt.Should().NotContain("Use `sync-pages` only when you need to save multiple pages in one workflow.",
 			because: "sync-pages should no longer be presented as a multi-page-only path");
 		prompt.Should().NotContain("`schemaName`",
@@ -254,6 +259,12 @@ public class PageToolsTests {
 			because: "get-page description should surface the section name so callers know which guide to read before editing");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
 			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
+		description.Should().Contain("get-guidance with name `page-modification`",
+			because: "get-page description should route callers to the general page modification guide before body edits");
+		description.Should().Contain("pre-edit checklist",
+			because: "get-page description should leave specialized guide selection to the general page modification guide");
+		description.Should().NotContain("page-schema-resources",
+			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
 	}
 
 	[Test]
@@ -277,6 +288,10 @@ public class PageToolsTests {
 			because: "sync-pages description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators`",
 			because: "sync-pages description should route callers to the dedicated validator guide through get-guidance");
+		description.Should().Contain("call get-guidance with name `page-modification`",
+			because: "sync-pages description should route broad page edits through the general page modification guide");
+		description.Should().NotContain("page-schema-resources",
+			because: "sync-pages should avoid surfacing localizable-string leaf guidance directly in the broad tool description");
 	}
 
 	[Test]
@@ -300,6 +315,16 @@ public class PageToolsTests {
 			because: "update-page description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
 			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
+		description.Should().Contain("call get-guidance with name `page-modification`",
+			because: "update-page description should route broad page edits through the general page modification guide");
+		description.Should().Contain("page-schema-resources",
+			because: "update-page must surface the resources guidance trigger inline because routing through page-modification alone was empirically insufficient \u2014 agents skipped the leaf guide when adding localizable strings");
+		description.Should().Contain("$Resources.Strings.*",
+			because: "update-page description should expose the syntactic trigger ($Resources.Strings.*) so agents can detect resource-related edits without semantic classification");
+		description.Should().Contain("`#ResourceString(",
+			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
+		description.Should().Contain("do NOT register localizable strings",
+			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
 	}
 
 	[Test]
@@ -1277,6 +1302,199 @@ public class PageToolsTests {
 	}
 
 	[Test]
+	[Description("TryUpdatePage rejects a plain JSON body for a web schema even though the body shape looks like a mobile body.")]
+	public void TryUpdatePage_WhenWebSchemaReceivesPlainJsonBody_ReturnsMarkerValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray {
+					new JObject { ["UId"] = "web-schema-uid" }
+				}
+			}.ToString());
+		hierarchyClient.GetDesignPackageUId("web-schema-uid").Returns("web-pkg-uid");
+		hierarchyClient.GetParentSchemas("web-schema-uid", "web-pkg-uid").Returns([
+			new PageDesignerHierarchySchema {
+				UId = "web-schema-uid",
+				Name = "UsrWeb_FormPage",
+				PackageUId = "web-pkg-uid",
+				PackageName = "UsrWebPkg",
+				SchemaVersion = 1,
+				SchemaType = 9
+			}
+		]);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrWeb_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "viewModelConfigDiff": [],
+				  "modelConfigDiff": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "hierarchy schema type, not body shape, must select the web validation path");
+		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "a web schema still requires AMD marker pairs even if the body starts with a JSON object");
+	}
+
+	[Test]
+	[Description("TryUpdatePage registers explicit resources for a mobile JSON body before saving the schema.")]
+	public void TryUpdatePage_WhenMobileBodyHasExplicitResources_RegistersResourcesOnSave() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				"mobile-schema-uid",
+				"mobile-package-uid",
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = "{}",
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "insert",
+			      "name": "UsrMobileTitle",
+			      "values": {
+			        "type": "crt.Label",
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = mobileBody,
+			Resources = "{\"UsrMobileTitle\":\"Mobile title\"}",
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "mobile JSON bodies with explicit resources should save successfully");
+		response.ResourcesRegistered.Should().Be(1,
+			because: "the explicit resource referenced by the mobile body should be registered");
+		response.RegisteredResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response should report the resource key registered during save");
+		savedPayload.Should().Contain("\"name\":\"UsrMobileTitle\"",
+			because: "the saved schema payload should include the new localizable string");
+		savedPayload.Should().Contain("\"value\":\"Mobile title\"",
+			because: "the explicit resource value should be preserved in localizableStrings");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "validators": {}
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "mobile pages do not support validators \u2014 the command must reject the body");
+		response.Error.Should().Contain("validators",
+			because: "the error should identify the disallowed 'validators' key");
+	}
+
+	[Test]
+	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'handlers' section.")]
+	[Category("Unit")]
+	public void TryUpdatePage_WhenMobileBodyHasHandlers_ReturnsValidationError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = """
+				{
+				  "viewConfigDiff": [],
+				  "handlers": []
+				}
+				""",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "mobile pages do not support handlers \u2014 the command must reject the body");
+		response.Error.Should().Contain("handlers",
+			because: "the error should identify the disallowed 'handlers' key");
+	}
+
+	[Test]
 	[Description("TryUpdatePage returns error when schema not found")]
 	public void TryUpdatePage_WhenSchemaNotFound_ReturnsError() {
 		var applicationClient = Substitute.For<IApplicationClient>();
@@ -1358,12 +1576,13 @@ public class PageToolsTests {
 	}
 
 	[Test]
-	[Description("TryUpdatePage dry-run passes when field binding targets an attribute not declared in the current schema — it may be in a parent schema.")]
-	public void TryUpdatePage_WhenFieldBindingTargetsAttributeNotInCurrentSchema_Succeeds() {
+	[Description("TryUpdatePage dry-run rejects field inserts whose binding attribute is not declared in the body — even when other unrelated attributes are declared. An inserted control with an undeclared binding attribute has no data source after save, so update-page must reject the payload at validation time.")]
+	public void TryUpdatePage_WhenInsertedFieldBindingHasNoMatchingViewModelDeclaration_ReturnsValidationError() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrProxyBinding_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1372,10 +1591,36 @@ public class PageToolsTests {
 
 		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
 
+		result.Should().BeFalse(
+			because: "update-page must require the body to declare any attribute referenced by an inserted control");
+		response.Success.Should().BeFalse(
+			because: "the validation failure must be surfaced in the response");
+		response.Error.Should().Contain("UsrStatusField",
+			because: "the diagnostic should name the undeclared binding attribute the agent must add");
+		response.Error.Should().Contain("viewModelConfigDiff",
+			because: "the diagnostic should point at the section that needs the missing declaration");
+	}
+
+	[Test]
+	[Description("TryUpdatePage dry-run accepts merge operations against parent-provided controls — only insert operations are required to declare their binding attributes locally.")]
+	public void TryUpdatePage_WhenMergeOperationTargetsParentProvidedAttribute_Succeeds() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMergeBinding_FormPage");
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMergeBinding_FormPage",
+			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
+			DryRun = true
+		};
+
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
 		result.Should().BeTrue(
-			because: "update-page should allow bindings to attributes not in the current schema, as they may be inherited from a parent schema");
+			because: "merge operations target existing controls whose attribute and resource may legitimately come from a parent schema");
 		response.Success.Should().BeTrue(
-			because: "binding to a parent-schema attribute is not a validation failure");
+			because: "the new strict check applies only to insert operations");
 	}
 
 	[Test]
@@ -1384,6 +1629,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrHandlerDrivenBinding_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrHandlerDrivenBinding_FormPage",
@@ -1405,10 +1651,8 @@ public class PageToolsTests {
 			.And.Contain("$UsrName")
 			.And.Contain("$context.set",
 				because: "the response should guide toward the correct declared attribute written by the handler");
-		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command builds any service URLs");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command sends any remote requests");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 
 	[Test]
@@ -1417,6 +1661,7 @@ public class PageToolsTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
+		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrValidatorPlacement_FormPage");
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrValidatorPlacement_FormPage",
@@ -1437,10 +1682,8 @@ public class PageToolsTests {
 			.And.Contain("viewConfigDiff")
 			.And.Contain("viewModelConfig/viewModelConfigDiff",
 				because: "the response should explain the correct validator binding location");
-		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command builds any service URLs");
-		applicationClient.ReceivedCalls().Should().BeEmpty(
-			because: "validation should fail before the command sends any remote requests");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema");
+		serviceUrlBuilder.DidNotReceive().Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema");
 	}
 
 	[Test]
@@ -1454,7 +1697,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
@@ -1480,7 +1725,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1513,7 +1760,9 @@ public class PageToolsTests {
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1537,7 +1786,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1566,7 +1817,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1594,7 +1847,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
@@ -1624,7 +1879,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
-		PageUpdateTool tool = new(command, logger, commandResolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
@@ -1692,7 +1949,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1736,7 +1995,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1779,7 +2040,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1826,7 +2089,9 @@ public class PageToolsTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
-		PageSyncTool tool = new(commandResolver, fileSystem);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1909,6 +2174,23 @@ public class PageToolsTests {
 				}
 			}
 		};
+	}
+
+	private static void SetupSchemaMetadata(
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		string schemaName) {
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				schemaName,
+				"test-schema-uid",
+				"test-package-uid",
+				"UsrTestPackage",
+				"BasePage").ToString());
 	}
 
 	private static JObject CreateHierarchyResponse(params JObject[] values) {
@@ -2023,6 +2305,84 @@ public class PageToolsTests {
 			because: "files must be written under .clio-pages directory");
 		response.Files.BodyFile.Should().Contain("UsrMcp_FormPage",
 			because: "files must be grouped under the schema name subdirectory");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-page returns a plain JSON editable fallback body for a mobile page when no replacing schema exists in the design package.")]
+	public void TryGetPage_WhenMobilePageHasNoEditableSchema_ReturnsPlainJsonFallbackBody() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		int selectCallIndex = 0;
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				selectCallIndex++;
+				return selectCallIndex switch {
+					1 => CreateMetadataResponse(
+						"UsrMobile_FormPage",
+						"mobile-schema-uid",
+						"runtime-package-uid",
+						"RuntimePkg",
+						"BaseMobilePageTemplate").ToString(),
+					2 => new JObject {
+						["success"] = true,
+						["rows"] = new JArray {
+							new JObject { ["Name"] = "DesignPkg" }
+						}
+					}.ToString(),
+					_ => new JObject {
+						["success"] = true,
+						["rows"] = new JArray()
+					}.ToString()
+				};
+			});
+		const string runtimeHierarchyBody = """
+			{
+			  "viewConfigDiff": [{"operation":"insert","name":"Marker","values":{"type":"crt.Label"}}],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("mobile-schema-uid").Returns("design-package-uid");
+		hierarchyClient.GetParentSchemas("mobile-schema-uid", "design-package-uid")
+			.Returns([
+				new PageDesignerHierarchySchema {
+					UId = "mobile-schema-uid",
+					Name = "UsrMobile_FormPage",
+					PackageUId = "runtime-package-uid",
+					PackageName = "RuntimePkg",
+					SchemaVersion = 1,
+					SchemaType = 10,
+					Body = runtimeHierarchyBody
+				}
+			]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+
+		// Act
+		bool result = command.TryGetPage(
+			new PageGetOptions { SchemaName = "UsrMobile_FormPage" },
+			out PageGetResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "mobile page metadata and hierarchy are valid");
+		response.Page.SchemaType.Should().Be("mobile",
+			because: "the schema type from the designer hierarchy should be surfaced to callers");
+		response.Raw.Body.TrimStart().Should().StartWith("{",
+			because: "mobile fallback editable bodies must be plain JSON, not AMD define modules");
+		response.Raw.Body.Should().NotContain("define(",
+			because: "AMD wrappers are invalid for mobile page bodies");
+		response.Raw.Body.Should().NotContain("\"Marker\"",
+			because: "when no replacing schema exists in the design package, get-page must return the empty mobile fallback, not the runtime-package hierarchy body");
+		response.Raw.Body.Should().Be(
+			"{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}",
+			because: "BuildEmptyBody must return the canonical empty mobile JSON skeleton with the three required top-level arrays and no AMD/handlers/validators/converters sections");
 	}
 
 	[Test]
@@ -2259,6 +2619,16 @@ public class PageToolsTests {
 				["schemaType"] = 9,
 				["schemaVersion"] = 1,
 				["body"] = "original body",
+				["localizableStrings"] = new JArray {
+					new JObject {
+						["name"] = "DefaultPageTitle",
+						["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = "Page title" } }
+					},
+					new JObject {
+						["name"] = "SaveButton",
+						["values"] = new JArray { new JObject { ["cultureName"] = "en-US", ["value"] = "Save" } }
+					}
+				},
 				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
 				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
 				["isReadOnly"] = true,
@@ -2298,6 +2668,11 @@ public class PageToolsTests {
 			because: "parent must reference the original schema so replacing inherits from it");
 		savedDto["extendParent"].Value<bool>().Should().BeTrue(
 			because: "replacing schemas must extend their parent for diff-based body merge");
+		savedDto["localizableStrings"].Should().NotBeNull(
+			because: "SaveSchema deletes schema-level strings omitted from the DTO, so new replacing schemas must carry template resources");
+		savedDto["localizableStrings"].Children<JObject>().Select(item => item["name"].ToString())
+			.Should().BeEquivalentTo(["DefaultPageTitle", "SaveButton"],
+				because: "the designer sends inherited template localizable strings on first save");
 		savedDto["body"].ToString().Should().Be(validBody,
 			because: "the body passed to update-page must be written into the new replacing schema DTO");
 	}
@@ -2532,10 +2907,10 @@ public class PageToolsTests {
 
 		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
 
-		merged.Should().Contain("\"name\":\"Existing\"", because: "existing entries without collisions are preserved");
-		merged.Should().Contain("\"name\":\"TestButton\"", because: "new entries are appended");
-		merged.Should().Contain("\"size\":\"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
-		merged.Should().NotContain("\"size\":\"large\"", because: "the colliding entry is superseded");
+		merged.Should().Contain("\"name\": \"Existing\"", because: "existing entries without collisions are preserved");
+		merged.Should().Contain("\"name\": \"TestButton\"", because: "new entries are appended");
+		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().NotContain("\"size\": \"large\"", because: "the colliding entry is superseded");
 		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
 		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
 	}
@@ -2977,6 +3352,292 @@ public class PageToolsTests {
 			because: "merging two empty converter sections must produce an empty converter section");
 	}
 
+	[Test]
+	[Description("ParseSamplingResponse parses a valid JSON response with ok=true")]
+	public void ParseSamplingResponse_Should_Parse_Ok_Response() {
+		string text = "{\"ok\":true,\"issues\":[],\"warnings\":[]}";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeTrue(because: "ok=true in the response");
+		result.Skipped.Should().BeFalse(because: "valid response was parsed successfully");
+		result.Issues.Should().BeNull(because: "empty issues array becomes null");
+		result.Warnings.Should().BeNull(because: "empty warnings array becomes null");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse parses a response with ok=false and issues")]
+	public void ParseSamplingResponse_Should_Parse_Issues() {
+		string text = "{\"ok\":false,\"issues\":[\"handler 'usr.Missing' not found\"],\"warnings\":[\"minor concern\"]}";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeFalse(because: "ok=false in the response");
+		result.Issues.Should().ContainSingle(because: "one issue was reported")
+			.Which.Should().Contain("usr.Missing");
+		result.Warnings.Should().ContainSingle(because: "one warning was reported");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse strips markdown code fences from the response")]
+	public void ParseSamplingResponse_Should_Strip_Markdown_Fences() {
+		string text = "```json\n{\"ok\":true,\"issues\":[],\"warnings\":[]}\n```";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Ok.Should().BeTrue(because: "markdown fences should be stripped before parsing");
+		result.Skipped.Should().BeFalse(because: "valid response was parsed after stripping fences");
+	}
+
+	[Test]
+	[Description("ParseSamplingResponse returns Skipped=true for unparseable text")]
+	public void ParseSamplingResponse_Should_Skip_On_Invalid_Text() {
+		string text = "I cannot review this page.";
+
+		PageSamplingReview result = PageBodySamplingService.ParseSamplingResponse(text);
+
+		result.Skipped.Should().BeTrue(because: "non-JSON text should result in a skipped review");
+	}
+
+	[Test]
+	[Description("MobileSystemPrompt is distinct from SystemPrompt and validates mobile-specific type-mismatch heuristic")]
+	public void MobileSystemPrompt_Should_Be_Mobile_Specific() {
+		PageBodySamplingService.MobileSystemPrompt.Should().NotBe(PageBodySamplingService.SystemPrompt,
+			because: "mobile and web prompts must be different");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("mobile",
+			because: "the mobile prompt should mention mobile pages");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("SCHEMA_HANDLERS",
+			because: "mobile pages do not have SCHEMA_HANDLERS markers");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("SCHEMA_CONVERTERS",
+			because: "mobile pages do not have SCHEMA_CONVERTERS markers");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("viewModelConfig",
+			because: "the prompt must mention both viewModelConfigDiff and viewModelConfig variants");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("modelConfig",
+			because: "the prompt must mention both modelConfigDiff and modelConfig variants");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("Type mismatch",
+			because: "the prompt must include the type-mismatch heuristic");
+		PageBodySamplingService.MobileSystemPrompt.Should().Contain("crt.DateTimePicker",
+			because: "the prompt must give a concrete example of type-mismatch");
+		PageBodySamplingService.MobileSystemPrompt.Should().NotContain("operation",
+			because: "viewConfigDiff structure is checked deterministically, not by sampling");
+	}
+
+	[Test]
+	[Description("Web SystemPrompt validates handler request references, non-crt converter declarations, and type-mismatch heuristic")]
+	public void SystemPrompt_Should_Validate_Handler_And_Converter_References() {
+		PageBodySamplingService.SystemPrompt.Should().Contain("request",
+			because: "web prompt must mention that handlers are matched by their request field");
+		PageBodySamplingService.SystemPrompt.Should().Contain("SCHEMA_HANDLERS",
+			because: "web prompt must reference SCHEMA_HANDLERS for handler cross-reference");
+		PageBodySamplingService.SystemPrompt.Should().Contain("crt.",
+			because: "web prompt must explain that crt.* converters are built-in and must not be declared");
+		PageBodySamplingService.SystemPrompt.Should().Contain("SCHEMA_VALIDATORS",
+			because: "web prompt must reference SCHEMA_VALIDATORS for validator type resolution — " +
+				"structural validator checks (params, resource format) are deterministic, but type resolution " +
+				"is ambiguous (page-local vs remote module) and belongs in sampling");
+		PageBodySamplingService.SystemPrompt.Should().NotContain("view binds to viewModel only",
+			because: "MVVM binding is handled deterministically, not by sampling");
+		PageBodySamplingService.SystemPrompt.Should().Contain("Type mismatch",
+			because: "web prompt must include the type-mismatch heuristic for control-to-attribute checks");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: merges viewConfigDiff by name, viewModelConfigDiff and modelConfigDiff by append")]
+	public void PageBodyMerger_Should_Merge_Mobile_Bodies() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M1\"}]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}},{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"small\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM2\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M2\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		JArray viewConfigDiff = (JArray)result["viewConfigDiff"];
+		viewConfigDiff.Count.Should().Be(2, because: "existing + new entry, collision replaced");
+		viewConfigDiff.Any(t => t["name"]?.ToString() == "NewButton").Should().BeTrue(because: "new entry is appended");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on name collision");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "old entry with same name is replaced");
+
+		JArray viewModelConfigDiff = (JArray)result["viewModelConfigDiff"];
+		viewModelConfigDiff.Count.Should().Be(2, because: "viewModelConfigDiff uses append, both items kept");
+
+		JArray modelConfigDiff = (JArray)result["modelConfigDiff"];
+		modelConfigDiff.Count.Should().Be(2, because: "modelConfigDiff uses append, both items kept");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: incoming body with empty arrays leaves current arrays unchanged")]
+	public void PageBodyMerger_Mobile_Should_Preserve_Current_When_Incoming_Is_Empty() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewConfigDiff is empty");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewModelConfigDiff is empty");
+		((JArray)result["modelConfigDiff"]).Count.Should().Be(0, because: "both sides are empty so result is empty");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: incoming body missing array keys still produces a valid result")]
+	public void PageBodyMerger_Mobile_Should_Handle_Missing_Keys_In_Incoming() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"B\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(2, because: "A (existing) and B (incoming) should both be present");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(0, because: "incoming has no viewModelConfigDiff, current is empty");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: current body missing array keys gets them from incoming")]
+	public void PageBodyMerger_Mobile_Should_Handle_Missing_Keys_In_Current() {
+		string currentBody = "{}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		((JArray)result["viewConfigDiff"]).Count.Should().Be(1, because: "incoming entry should appear when current has no viewConfigDiff key");
+		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(1, because: "incoming entry should appear when current has no viewModelConfigDiff key");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: invalid incoming JSON throws InvalidOperationException")]
+	public void PageBodyMerger_Mobile_Should_Throw_On_Invalid_Incoming_Json() {
+		string currentBody = "{\"viewConfigDiff\":[]}";
+		string incomingBody = "{not valid json";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(because: "invalid incoming JSON must be rejected with a descriptive error");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: preserves extra top-level properties that are not merge targets")]
+	public void PageBodyMerger_Mobile_Should_Preserve_Extra_Properties() {
+		string currentBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[],\"customProp\":\"keep\"}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		JObject result = JObject.Parse(merged);
+		result["customProp"]?.ToString().Should().Be("keep", because: "extra properties in the current body must not be discarded");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: full-config 'viewModelConfig' form on the current body is rejected by append merge")]
+	public void PageBodyMerger_Mobile_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Form() {
+		string currentBody = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge does not support the full 'viewModelConfig' form and must fail loudly instead of silently producing a mixed body")
+			.WithMessage("*viewModelConfig*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: full-config 'modelConfig' form on the current body is rejected by append merge")]
+	public void PageBodyMerger_Mobile_Should_Throw_When_Current_Uses_Full_ModelConfig_Form() {
+		string currentBody = "{\"modelConfig\":{\"path\":\"x\"},\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge does not support the full 'modelConfig' form and must fail loudly instead of silently producing a mixed body")
+			.WithMessage("*modelConfig*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: merged body is indented JSON, not a single minified line")]
+	public void PageBodyMerger_Mobile_Should_Return_Indented_Json() {
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("\n",
+			because: "the merged mobile body must be indented JSON so that subsequent get-page writes produce a readable body.js");
+		merged.Should().NotBe(merged.ReplaceLineEndings("").Replace(" ", ""),
+			because: "a minified single-line output would make the saved body.js unreadable in source control");
+		JObject.Parse(merged)["viewConfigDiff"].Should().NotBeNull(
+			because: "the output must still be valid JSON regardless of formatting");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: JSON sections inside marker pairs are written as indented JSON, not minified single lines")]
+	public void PageBodyMerger_Web_Should_Write_Indented_Json_Inside_Marker_Sections() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"VM1\"}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"M1\"}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		merged.Should().Contain("/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			because: "the marker envelope must be preserved verbatim");
+		merged.Should().NotContain("[{\"operation\":\"insert\",\"name\":\"NewButton\"",
+			because: "the merged JSON section must be indented, not written as a single minified line");
+		merged.Should().Contain("\"name\": \"NewButton\"",
+			because: "Newtonsoft's Indented formatting inserts a space after the colon — its presence proves the section was not serialized with Formatting.None");
+		merged.Should().Contain("\"name\": \"VM1\"",
+			because: "viewModelConfigDiff content inside its marker pair must also be indented");
+		merged.Should().Contain("\"name\": \"M1\"",
+			because: "modelConfigDiff content inside its marker pair must also be indented");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: full-form 'SCHEMA_VIEW_MODEL_CONFIG' marker on the current body is rejected by append merge")]
+	public void PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Marker() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"A\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge against a form-page body (full SCHEMA_VIEW_MODEL_CONFIG marker) would silently drop the incoming diff and must fail loudly instead")
+			.WithMessage("*SCHEMA_VIEW_MODEL_CONFIG*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger web: full-form 'SCHEMA_MODEL_CONFIG' marker on the current body is rejected by append merge")]
+	public void PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ModelConfig_Marker() {
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"A\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
+
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		act.Should().Throw<InvalidOperationException>(
+				because: "append merge against a body with the full SCHEMA_MODEL_CONFIG marker would silently drop the incoming SCHEMA_MODEL_CONFIG_DIFF and must fail loudly instead")
+			.WithMessage("*SCHEMA_MODEL_CONFIG*");
+	}
+
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
@@ -2985,4 +3646,132 @@ public class PageToolsTests {
 		]);
 		return hierarchyClient;
 	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD validation.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Accepts_Valid_Mobile_Json_Body() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBody, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Error.Should().NotContain("AMD",
+			because: "mobile JSON bodies should not trigger AMD marker validation");
+		response.Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "AMD marker validation errors must not appear for mobile bodies");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage rejects the call when neither 'body' nor 'body-file' is provided.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_When_Body_And_BodyFile_Both_Missing() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the tool must fail fast when no body content is supplied");
+		response.Error.Should().Contain("body-file",
+			because: "the error must explicitly mention both 'body' and 'body-file' so the caller can pick either input");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "no save attempt may be made when there is no body to send");
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage loads body from BodyFile and runs validation against the resolved content (catches malformed JSON markers loaded from disk).")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_BodyFile_Triggers_Validation_On_Resolved_Content() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
+		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
+		File.WriteAllText(tempFile, bodyWithBadJson);
+		try {
+			PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: tempFile);
+
+			// Act
+			PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "validation must run against the body loaded from BodyFile, not be skipped because inline body is empty");
+			response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+				because: "the marker that contains malformed JSON in the file must be reported");
+			applicationClient.ReceivedCalls().Should().BeEmpty(
+				because: "no save attempt may be made when validation fails");
+		}
+		finally {
+			if (File.Exists(tempFile)) {
+				File.Delete(tempFile);
+			}
+		}
+	}
+
+	[Test]
+	[Description("PageUpdateTool.UpdatePage returns a descriptive error when BodyFile points to a missing file.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Rejects_When_BodyFile_Missing() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
+		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a missing BodyFile must produce a load failure before any save attempt");
+		response.Error.Should().Contain(missingPath, because: "the error must identify the missing file path so the caller can fix the input");
+		applicationClient.ReceivedCalls().Should().BeEmpty(because: "no save attempt may be made when the body cannot be loaded");
+	}
+
 }

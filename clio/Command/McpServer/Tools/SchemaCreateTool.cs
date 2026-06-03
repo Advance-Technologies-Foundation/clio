@@ -31,17 +31,16 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		SourceCodeSchemaCreateResponse response;
-		lock (CommandExecutionSyncRoot) {
+		return ExecuteWithCleanLog(() => {
 			SourceCodeSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SourceCodeSchemaCreateCommand>(options);
 			} catch (Exception ex) {
 				return new SourceCodeSchemaCreateResponse { Success = false, Error = ex.Message };
 			}
-			resolvedCommand.TryCreate(options, out response);
-		}
-		return response;
+			resolvedCommand.TryCreate(options, out SourceCodeSchemaCreateResponse response);
+			return response;
+		});
 	}
 }
 

@@ -11,12 +11,24 @@ namespace Clio.Command
 		[Value(0, MetaName = "Name", Required = true, HelpText = "Package name")]
 		public string Name { get; set; }
 
-		[Option('d', "DestinationDirectory", Required = false, HelpText = "Destination restoring package directory")]
+		[Option('d', "destination-directory", Required = false, HelpText = "Destination restoring package directory")]
 		public string DestinationDirectory { get; set; }
 
-		[Option('s', "Source", Required = false, HelpText = "Specifies the server URL", 
+		[Option("DestinationDirectory", Required = false, Hidden = true, HelpText = "Alias for --destination-directory")]
+		public string DestinationDirectoryAlias {
+			get => DestinationDirectory;
+			set { if (!string.IsNullOrEmpty(value)) DestinationDirectory = value; }
+		}
+
+		[Option('s', "source", Required = false, HelpText = "Specifies the server URL",
 			Default = "")]
 		public string SourceUrl { get; set; }
+
+		[Option("Source", Required = false, Hidden = true, HelpText = "Alias for --source")]
+		public string SourceUrlAlias {
+			get => SourceUrl;
+			set { if (!string.IsNullOrEmpty(value)) SourceUrl = value; }
+		}
 
 	}
 

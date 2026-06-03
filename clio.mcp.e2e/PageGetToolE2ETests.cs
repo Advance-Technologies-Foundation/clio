@@ -22,6 +22,8 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class PageGetToolE2ETests {
 	private const string ToolName = PageGetTool.ToolName;
+	private const string ApplicationCode = "AutoTestClioMcp";
+	private const string SavePage = "ClioMcp_BlankPageToSave";
 
 	[Test]
 	[Description("Advertises get-page MCP tool in the server tool list so callers can discover it.")]
@@ -44,28 +46,81 @@ public sealed class PageGetToolE2ETests {
 	}
 
 	[Test]
-	[Description("Deferred positive coverage for get-page and update-page round-trip when the E2E environment has a known editable page.")]
+	[Description("Reads the seeded Freedom UI page ClioMcp_BlankPageToSave via get-page and verifies update-page dry-run accepts the same body unchanged.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-page returns bundle and raw body for a sandbox form page")]
-	[AllureDescription("Placeholder for a future seeded-data E2E that reads a known editable page with get-page and reuses raw.body in update-page dry-run.")]
-	public void PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
-		Assert.Ignore("TODO: add predefined editable page data to the E2E environment, then restore this get-page to update-page dry-run round-trip scenario.");
+	[AllureName("get-page raw body round-trips through update-page dry-run")]
+	[AllureDescription("Uses the real clio MCP server to call get-page for the seeded page ClioMcp_BlankPageToSave in AutoTestClioMcp, reads the materialized body from disk, sends it back through update-page in dry-run mode, and verifies that the dry-run accepts the unchanged body so the read and write formats stay in sync.")]
+	public async Task PageGetTool_Should_Return_Bundle_And_Support_DryRun_RoundTrip() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act 1: get-page reads the seeded page's body to disk
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+
+		// Assert get-page succeeded and materialized a non-empty body
+		getResult.IsError.Should().NotBeTrue(
+			because: $"get-page should return a structured payload for the seeded page '{SavePage}' before the round-trip can run");
+		getResponse.Success.Should().BeTrue(
+			because: $"get-page must succeed for the seeded page '{SavePage}' in '{ApplicationCode}'. Error: {getResponse.Error}");
+		getResponse.Files.Should().NotBeNull(
+			because: "successful get-page calls must return the materialized file paths");
+		getResponse.Files.BodyFile.Should().NotBeNullOrWhiteSpace(
+			because: "the round-trip needs a body-file path to read the raw body from disk");
+		File.Exists(getResponse.Files.BodyFile).Should().BeTrue(
+			because: "get-page must materialize body.js on disk for update-page reuse");
+		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+		body.Should().NotBeNullOrWhiteSpace(
+			because: "the round-trip is only meaningful if get-page returns a non-empty body");
+
+		// Act 2: update-page dry-run consumes the same body unchanged
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			PageUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["body"] = body,
+					["dry-run"] = true,
+					["environment-name"] = arrangeContext.EnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse updateResponse = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert update-page dry-run accepted the unchanged body
+		updateResult.IsError.Should().NotBeTrue(
+			because: "the round-trip body should produce a structured update-page response instead of a transport-level error");
+		updateResponse.Success.Should().BeTrue(
+			because: $"update-page dry-run must accept the body get-page produced for '{SavePage}', confirming get-page output is valid update-page input. Error: {updateResponse.Error}");
+		updateResponse.Error.Should().BeNullOrWhiteSpace(
+			because: "a successful dry-run should not include an error payload");
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers an installed application page when available, and verifies the structured get-page metadata contract for that page.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp and one of its pages, and verifies the structured get-page metadata contract for that page.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-page returns stable metadata contract for a real page")]
-	[AllureDescription("Uses the real clio MCP server to discover an installed application and one of its pages, ignores when no such data exists, and otherwise verifies the stable get-page metadata and raw-body contract for the discovered page.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application AutoTestClioMcp and the first page in that application, and verifies the stable get-page metadata and raw-body contract for the seeded page.")]
 	public async Task PageGetTool_Should_Return_Stable_Metadata_Contract_For_Real_Page() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		PageDiscoveryCandidate candidate = await ResolvePageCandidateOrIgnoreAsync(
+		PageDiscoveryCandidate candidate = await ResolveSeededPageCandidateOrIgnoreAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName);
+			arrangeContext.EnvironmentName,
+			ApplicationCode);
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -81,9 +136,9 @@ public sealed class PageGetToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a discovered page should return a structured get-page payload instead of a transport-level error");
+			because: "the seeded page should return a structured get-page payload instead of a transport-level error");
 		response.Success.Should().BeTrue(
-			because: "get-page should succeed for a discovered page in a discovered installed application");
+			because: "get-page should succeed for a seeded page in the seeded installed application");
 		response.Page.Should().NotBeNull(
 			because: "successful get-page calls should include page metadata");
 		response.Page.SchemaName.Should().Be(candidate.Page.SchemaName,
@@ -180,20 +235,21 @@ public sealed class PageGetToolE2ETests {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers an installed application when available, and verifies that list-pages returns structured page summaries for that application.")]
+	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, and verifies that list-pages returns structured page summaries for that application.")]
 	[AllureFeature(PageListTool.ToolName)]
 	[AllureTag(PageListTool.ToolName)]
 	[AllureName("list-pages returns structured page summaries")]
-	[AllureDescription("Uses the real clio MCP server to discover an installed application, ignores when no applications or pages exist, and otherwise verifies the structured list-pages summary envelope for the discovered application.")]
+	[AllureDescription("Uses the real clio MCP server to look up the seeded installed application AutoTestClioMcp and verifies the structured list-pages summary envelope for that application.")]
 	public async Task PageListTool_Should_Return_Structured_PageSummaries() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		ApplicationListItemEnvelope installedApplication = await ResolveInstalledApplicationOrIgnoreAsync(
+		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName);
+			arrangeContext.EnvironmentName,
+			ApplicationCode);
 
 		// Act
 		PageListResponse response = await CallPageListAsync(
@@ -201,15 +257,12 @@ public sealed class PageGetToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
 			installedApplication.Code);
-		if (response.Pages is null || response.Pages.Count == 0) {
-			Assert.Ignore("TODO: ENG-88547 add predefined installed application/page data to the E2E environment.");
-		}
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "list-pages should succeed for a discovered installed application");
+			because: $"list-pages should succeed for the seeded installed application. Error: {response.Error}");
 		response.Pages.Should().NotBeNullOrEmpty(
-			because: "this discovery-backed test should only continue when the discovered application exposes at least one page");
+			because: "the seeded application must expose at least one Freedom UI page so list-pages has something meaningful to verify");
 		response.Count.Should().Be(response.Pages.Count,
 			because: "list-pages should keep the explicit count aligned with the returned page collection");
 		response.Pages.Should().OnlyContain(page =>
@@ -236,47 +289,30 @@ public sealed class PageGetToolE2ETests {
 		}
 	}
 
-	private static async Task<ApplicationListItemEnvelope> ResolveInstalledApplicationOrIgnoreAsync(
+	private static async Task<PageDiscoveryCandidate> ResolveSeededPageCandidateOrIgnoreAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
-		string environmentName) {
-		CallToolResult callResult = await session.CallToolAsync(
-			ApplicationGetListTool.ApplicationGetListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
-			cancellationToken);
-		ApplicationListResponseEnvelope response = ApplicationResultParser.ExtractList(callResult);
-		ApplicationListItemEnvelope? installedApplication = response.Applications?.FirstOrDefault();
-		if (installedApplication is not null) {
-			return installedApplication;
-		}
-
-		Assert.Ignore("TODO: ENG-88547 add predefined installed application data to the E2E environment.");
-		return null!;
-	}
-
-	private static async Task<PageDiscoveryCandidate> ResolvePageCandidateOrIgnoreAsync(
-		McpServerSession session,
-		CancellationToken cancellationToken,
-		string environmentName) {
-		ApplicationListItemEnvelope installedApplication = await ResolveInstalledApplicationOrIgnoreAsync(
+		string environmentName,
+		string applicationCode) {
+		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session,
 			cancellationToken,
-			environmentName);
+			environmentName,
+			applicationCode);
 		PageListResponse pageList = await CallPageListAsync(
 			session,
 			cancellationToken,
 			environmentName,
 			installedApplication.Code);
-		PageListItem? discoveredPage = pageList.Pages.FirstOrDefault();
-		if (discoveredPage is not null) {
-			return new PageDiscoveryCandidate(installedApplication, discoveredPage);
+		pageList.Success.Should().BeTrue(
+			because: $"list-pages must succeed before a seeded page can be resolved; treating an MCP-level failure as 'no pages' would hide real runtime regressions. Error: {pageList.Error}");
+		PageListItem? seededPage = pageList.Pages?.FirstOrDefault();
+		if (seededPage is not null) {
+			return new PageDiscoveryCandidate(installedApplication, seededPage);
 		}
 
-		Assert.Ignore("TODO: ENG-88547 add predefined installed application/page data to the E2E environment.");
+		Assert.Ignore(
+			$"Seeded application '{installedApplication.Code}' has no Freedom UI pages on environment '{environmentName}'. Add at least one page to the seed application.");
 		return null!;
 	}
 
