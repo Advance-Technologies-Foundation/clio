@@ -1375,4 +1375,36 @@ public sealed class ToolContractGetToolTests {
 		contract.Description.Should().Contain("excluded",
 			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical list-creatio-builds contract so an agent can discover the build-discovery tool.")]
+	public void ToolContractGet_Should_Return_ListCreatioBuilds_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ListCreatioBuildsTool.ListCreatioBuildsToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "list-creatio-builds must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ListCreatioBuildsTool.ListCreatioBuildsToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Properties.Should().BeEmpty(
+			because: "list-creatio-builds takes no parameters and reads the configured products folder");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "builds",
+			because: "the contract should advertise the discovered build archives");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "products-folder",
+			because: "the contract should advertise the resolved products folder so a stale configuration is visible");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				ListCreatioBuildsTool.ListCreatioBuildsToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "build discovery should flow into deploy-creatio with the chosen archive");
+	}
 }

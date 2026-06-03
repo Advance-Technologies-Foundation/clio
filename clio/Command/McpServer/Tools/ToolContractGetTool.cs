@@ -353,7 +353,8 @@ internal static class ToolContractCatalog {
 			[SysSettingGetTool.GetSysSettingToolName] = BuildGetSysSetting(),
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
-			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting()
+			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
+			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
@@ -3638,6 +3639,34 @@ internal static class ToolContractCatalog {
 				"`packageName` is a simple identifier matching `^[A-Za-z0-9_]+$`.",
 				$"`{VendorPrefixFieldName}` is lowercase-only matching `^[a-z]{{1,50}}$`."
 			]);
+	}
+
+	private static ToolContractDefinition BuildListCreatioBuilds() {
+		return new ToolContractDefinition(
+			ListCreatioBuildsTool.ListCreatioBuildsToolName,
+			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zip-file can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field(StatusFieldName, StringType, "Discovery status: ok, no-builds-found, products-folder-missing, products-folder-not-configured, or products-folder-unreadable."),
+				Field("products-folder", StringType, "Resolved creatio-products folder configured in clio appsettings.json."),
+				Field("products-folder-exists", BooleanType, "Whether the configured creatio-products folder exists on disk."),
+				Field("message", StringType, "Human-readable summary or remediation hint."),
+				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zip-file."),
+				Field("truncated", BooleanType, "True when more builds exist than were returned.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("List available Creatio builds before deploying", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					ListCreatioBuildsTool.ListCreatioBuildsToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Discover a build, then pass its full-path as the deploy-creatio zip-file. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
+			[],
+			[]);
 	}
 
 	private static ToolOutputContract CommandExecutionOutput() {
