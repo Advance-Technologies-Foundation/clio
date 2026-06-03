@@ -54,9 +54,8 @@ internal static class PageInsertDowngradeDetector {
 		if (string.IsNullOrWhiteSpace(priorBody) || string.IsNullOrWhiteSpace(finalBody)) {
 			return warnings;
 		}
-		Dictionary<string, HashSet<string>> priorOps = TryExtractOperationsByName(priorBody);
-		Dictionary<string, HashSet<string>> finalOps = TryExtractOperationsByName(finalBody);
-		if (priorOps == null || finalOps == null) {
+		if (!TryExtractOperationsByName(priorBody, out Dictionary<string, HashSet<string>> priorOps) ||
+			!TryExtractOperationsByName(finalBody, out Dictionary<string, HashSet<string>> finalOps)) {
 			// One of the bodies is not parseable as a known page body. Skip the heuristic rather than
 			// guess — the save must not be affected by a parse hiccup (fail open).
 			return warnings;
@@ -103,10 +102,10 @@ internal static class PageInsertDowngradeDetector {
 		"from a parent schema. To drop a self-inserted component, omit its insert instead of adding a " +
 		"remove. See docs://mcp/guides/page-modification.";
 
-	private static Dictionary<string, HashSet<string>> TryExtractOperationsByName(string body) {
+	private static bool TryExtractOperationsByName(string body, out Dictionary<string, HashSet<string>> operationsByName) {
+		operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 		try {
 			JArray viewConfigDiff = ReadViewConfigDiff(body);
-			var operationsByName = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 			foreach (JToken item in viewConfigDiff) {
 				if (item is not JObject obj) {
 					continue;
@@ -122,9 +121,9 @@ internal static class PageInsertDowngradeDetector {
 				}
 				operations.Add(operation);
 			}
-			return operationsByName;
+			return true;
 		} catch (JsonException) {
-			return null;
+			return false;
 		}
 	}
 

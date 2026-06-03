@@ -71,21 +71,17 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		response.SamplingReview = samplingReview;
-		response.Warnings = MergeWarnings(validationWarnings, response.Warnings);
+		IReadOnlyList<string> mergedWarnings = MergeWarnings(validationWarnings, response.Warnings);
+		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
 	}
 
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {
-		bool firstEmpty = first == null || first.Count == 0;
-		bool secondEmpty = second == null || second.Count == 0;
-		if (firstEmpty && secondEmpty) {
-			return null;
-		}
 		var combined = new List<string>();
-		if (!firstEmpty) {
+		if (first != null) {
 			combined.AddRange(first);
 		}
-		if (!secondEmpty) {
+		if (second != null) {
 			combined.AddRange(second);
 		}
 		return combined;
