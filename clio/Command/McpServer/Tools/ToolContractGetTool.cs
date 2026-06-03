@@ -50,27 +50,9 @@ public sealed class ToolContractGetTool {
 	private const string ToolNamesParam = "tool-names";
 
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
-		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
-			return null;
-		}
-		List<string> mapped = [];
-		List<string> unknown = [];
-		foreach (string key in args.ExtensionData.Keys) {
-			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
-			} else {
-				unknown.Add($"'{key}'");
-			}
-		}
-		List<string> parts = [];
-		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped) + ". tool-names must be an array of strings.");
-		}
-		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown)
-				+ ". Valid: tool-names (array of strings). Omit args to list all tools.");
-		}
-		return parts.Count > 0 ? string.Join(" ", parts) : null;
+		return McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ". tool-names must be an array of strings.",
+			"Valid: tool-names (array of strings). Omit args to list all tools.");
 	}
 }
 
@@ -464,34 +446,10 @@ internal static class ToolContractCatalog {
 		return Contracts.Keys
 			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => ComputeDistance(requestedName, name))
+			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
 			.ToArray();
-	}
-
-	private static int ComputeDistance(string source, string target) {
-		if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase)) {
-			return 0;
-		}
-		string left = source.ToLowerInvariant();
-		string right = target.ToLowerInvariant();
-		int[,] matrix = new int[left.Length + 1, right.Length + 1];
-		for (int i = 0; i <= left.Length; i++) {
-			matrix[i, 0] = i;
-		}
-		for (int j = 0; j <= right.Length; j++) {
-			matrix[0, j] = j;
-		}
-		for (int i = 1; i <= left.Length; i++) {
-			for (int j = 1; j <= right.Length; j++) {
-				int cost = left[i - 1] == right[j - 1] ? 0 : 1;
-				matrix[i, j] = Math.Min(
-					Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-					matrix[i - 1, j - 1] + cost);
-			}
-		}
-		return matrix[left.Length, right.Length];
 	}
 
 	private static ToolContractDefinition BuildToolContractGet() {

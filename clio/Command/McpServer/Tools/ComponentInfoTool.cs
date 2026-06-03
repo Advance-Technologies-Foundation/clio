@@ -77,7 +77,9 @@ public sealed class ComponentInfoTool(
 			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
-		string? legacyAliasError = GetLegacyAliasError(args);
+		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: component-type, search, schema-type, environment-name, version, uri, login, password.");
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return new ComponentInfoResponse {
 				Success = false,
@@ -117,38 +119,6 @@ public sealed class ComponentInfoTool(
 		["environmentName"] = "environment-name",
 		["environment_name"] = "environment-name"
 	};
-
-	/// <summary>
-	/// Rejects camelCase / snake_case parameter spellings and unknown fields captured by the
-	/// <see cref="ComponentInfoArgs.ExtensionData"/> overflow bag, returning a single actionable
-	/// rename hint. Because <c>component-type</c> is optional, a mis-spelled
-	/// <c>componentType</c> would otherwise bind to nothing and silently fall through to the full
-	/// catalog (the bug this tool is fixing), so the rejection has to happen before
-	/// <see cref="BuildResponseAsync"/> ever runs.
-	/// </summary>
-	private static string? GetLegacyAliasError(ComponentInfoArgs args) {
-		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
-			return null;
-		}
-		List<string> mapped = [];
-		List<string> unknown = [];
-		foreach (string key in args.ExtensionData.Keys) {
-			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
-			} else {
-				unknown.Add($"'{key}'");
-			}
-		}
-		List<string> parts = [];
-		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped) + ".");
-		}
-		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown)
-				+ ". Valid: component-type, search, schema-type, environment-name, version, uri, login, password.");
-		}
-		return parts.Count > 0 ? string.Join(" ", parts) : null;
-	}
 
 	/// <summary>
 	/// Single async pipeline that backs both the web and mobile flavors. The branch
