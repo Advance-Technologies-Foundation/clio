@@ -40,7 +40,7 @@ public sealed class ComponentInfoTool(
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
-	/// three-part payload requirement next to the component's <c>example</c>. The wording
+	/// inserted-field contract next to the component's <c>example</c>. The wording
 	/// is intentionally identical to the <c>update-page</c> tool [Description] and the
 	/// <c>page-modification</c> guidance — all three reuse
 	/// <see cref="SchemaValidationService.InsertedFieldContractSummary"/>.
@@ -462,9 +462,10 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets or sets the data-source binding contract that surfaces only for standard field components
-	/// (text/number/checkbox/lookup/etc. inputs). Tells the agent the three-part payload required for
-	/// any <c>operation:"insert"</c> of this component type: viewConfigDiff entry, matching
-	/// viewModelConfigDiff attribute declaration, and a registered or auto-provided label resource.
+	/// (text/number/checkbox/lookup/etc. inputs). Tells the agent what any <c>operation:"insert"</c> of
+	/// this component type requires: a viewConfigDiff entry (carrying the label), a matching
+	/// viewModelConfigDiff attribute declaration, and a label that is auto-provided (its key equals the
+	/// DS-bound binding attribute) or registered.
 	/// </summary>
 	[JsonPropertyName("dataSourceBindingContract")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

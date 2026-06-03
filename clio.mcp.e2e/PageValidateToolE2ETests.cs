@@ -284,10 +284,10 @@ public sealed class PageValidateToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns valid: true when viewConfigDiff inserts a standard field whose binding attribute is declared in viewModelConfigDiff with a DS-bound modelConfig.path and whose label uses the column-code form auto-provided by the platform.")]
+	[Description("Returns valid: true when viewConfigDiff inserts a standard field whose binding attribute is declared in viewModelConfigDiff with a DS-bound modelConfig.path and whose label key equals that binding attribute — auto-provided by the platform under the attribute name, even when it differs from the entity column code.")]
 	[AllureTag(ToolName)]
-	[AllureName("validate-page accepts inserted field with declared binding and column-code label")]
-	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to a declared DS attribute whose name matches the entity column code, with the label rebound to $Resources.Strings.<columnCode>, and verifies that validate-page accepts the payload without resources.")]
+	[AllureName("validate-page accepts inserted field with declared binding and attribute-name label")]
+	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to a declared DS attribute (PDS_UsrCompleted, whose name differs from the entity column code UsrCompleted) with the label set to $Resources.Strings.PDS_UsrCompleted, and verifies that validate-page accepts the payload without resources because the platform auto-provides the caption under the attribute name.")]
 	public async Task PageValidateTool_Should_Accept_Inserted_Field_With_AutoProvided_Label() {
 		// Arrange
 		string bodyWithFullPayload = ValidPageBody
@@ -295,12 +295,12 @@ public sealed class PageValidateToolE2ETests {
 				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
 					"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
-					"\"label\":\"$Resources.Strings.UsrCompleted\",\"control\":\"$UsrCompleted\"}}" +
+					"\"label\":\"$Resources.Strings.PDS_UsrCompleted\",\"control\":\"$PDS_UsrCompleted\"}}" +
 					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
 			.Replace(
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
-					"{\"operation\":\"merge\",\"values\":{\"UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
+					"{\"operation\":\"merge\",\"values\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
 					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
 		await using ArrangeContext context = await ArrangeAsync();
 
@@ -312,7 +312,7 @@ public sealed class PageValidateToolE2ETests {
 
 		// Assert
 		response.Valid.Should().BeTrue(
-			because: "a self-consistent insert with the matching viewModelConfigDiff entry and an auto-provided column-code label is the canonical happy path");
+			because: "a self-consistent insert with the matching viewModelConfigDiff entry and a label keyed by the DS-bound binding attribute (auto-provided) is the canonical happy path");
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		response.Validation!.ContentOk.Should().BeTrue(

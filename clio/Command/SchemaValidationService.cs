@@ -101,27 +101,46 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Canonical clause stating the binding half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/> and the per-field diagnostic in
+	/// <c>AppendBindingDeclarationError</c>, so the rule an agent is told is identical to the rule
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> rejects on.
+	/// </summary>
+	internal const string InsertedFieldBindingClause =
+		"the body must declare the control's binding attribute in viewModelConfigDiff with a " +
+		"DS-bound modelConfig.path, or the control has no data source";
+
+	/// <summary>
+	/// Canonical clause stating the label half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/> and the per-field diagnostic in
+	/// <c>AppendLabelResourceError</c>. The resource nuance (prefixes, why the bare column code is
+	/// not a key) lives in the <c>page-schema-resources</c> guide, not here.
+	/// </summary>
+	internal const string InsertedFieldLabelClause =
+		"the label must resolve — prefer the auto-provided form: set it to " +
+		"$Resources.Strings.<bindingAttribute> (the control's own DS-bound attribute) and the platform " +
+		"supplies the caption with no registration; pass the key via the 'resources' parameter only to " +
+		"override the caption or for a non-DS-bound key. See the page-schema-resources guide for the full rule";
+
+	/// <summary>
 	/// Canonical statement of the inserted-field contract enforced by
-	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>, composed from the shared
+	/// <see cref="InsertedFieldBindingClause"/> and <see cref="InsertedFieldLabelClause"/> so it
+	/// cannot drift from the diagnostics that reuse the same clauses. Surfaced to MCP agents from
 	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
-	/// <c>page-modification</c> guidance resource so all three describe the same rule in
-	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
-	/// attributes (which only accept compile-time constant expressions).
+	/// <c>page-modification</c> guidance resource so all describe the same rule in identical words.
+	/// Keep this <c>const</c> so it stays usable inside <c>[Description]</c> attributes (which only
+	/// accept compile-time constant expressions).
 	/// </summary>
 	internal const string InsertedFieldContractSummary =
 		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
 		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
 		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
-		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
-		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
-		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
-		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
-		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
-		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
-		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
-		"violate this contract are rejected at update-page validation time; the diagnostic names " +
-		"the offending field, attribute, and section. The contract does NOT apply to " +
-		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+		"via operation:\"insert\" in viewConfigDiff are validated for self-consistency in the SAME " +
+		"update-page call: (a) " + InsertedFieldBindingClause + "; and (b) " + InsertedFieldLabelClause +
+		". Violations are rejected at update-page validation time; the diagnostic names the offending " +
+		"field, attribute, and section. This contract does NOT apply to operation:\"merge\" — a parent " +
+		"schema or the current body may legitimately provide the attribute and resource.";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -1099,10 +1118,11 @@ public static class SchemaValidationService
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
 			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
-			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			$"Add a viewModelConfigDiff entry such as " +
 			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
-			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
-			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+			$"so the control binds to the entity column. If the attribute is already provided by a parent schema or the current body, " +
+			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'. " +
+			$"Rule: {InsertedFieldBindingClause}.");
 	}
 
 	private static void AppendLabelResourceError(
@@ -1122,22 +1142,34 @@ public static class SchemaValidationService
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
-			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
+			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'. " +
+			$"Rule: {InsertedFieldLabelClause}.");
 	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="bindingAttribute"/> is a non-empty view-model
+	/// attribute whose <c>modelConfig.path</c> is DS-bound (resolves to <c>DataSource.Column</c>).
+	/// Single definition of "DS-bound" shared by the auto-provide gate
+	/// (<see cref="IsAutoProvidedLabelResourceKey"/>), the suggestion text
+	/// (<see cref="BuildAutoProvideSuggestion"/>), and the preferred-label resolver
+	/// (<see cref="TryResolvePreferredLabelBinding"/>) so the rule the validator enforces and the
+	/// remedy it suggests cannot disagree.
+	/// </summary>
+	private static bool IsDsBoundAttribute(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) =>
+		!string.IsNullOrWhiteSpace(bindingAttribute)
+		&& modelPaths.TryGetValue(bindingAttribute, out string boundPath)
+		&& boundPath.Contains('.', StringComparison.Ordinal);
 
 	private static string BuildAutoProvideSuggestion(
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
-		    !boundPath.Contains('.', StringComparison.Ordinal)) {
-			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
+			return "Give the control's binding attribute a DS-bound modelConfig.path and point the label at it via '$Resources.Strings.<bindingAttribute>' so the platform auto-provides the caption";
 		}
-		int lastDot = boundPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
-			? boundPath[(lastDot + 1)..]
-			: boundPath;
-		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+		return $"Set the label to '$Resources.Strings.{bindingAttribute}' (the control's DS-bound binding attribute) so the platform auto-provides the caption from the entity column it points to";
 	}
 
 	private readonly record struct InsertedFieldDescriptor(
@@ -1409,7 +1441,8 @@ public static class SchemaValidationService
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
-				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is not in the provided resources — the label will render blank.");
+				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +
+				$"Rule: {InsertedFieldLabelClause}.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
 		    !TryGetMacroResourceKey(captionExpression, out string resourceKey) ||
@@ -1431,57 +1464,47 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
 	/// the preferred label in validator error/warning messages. The platform auto-provides the
-	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
-	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
-	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
-	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
-	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
-	/// auto-provided.
+	/// caption keyed by the VIEW-MODEL ATTRIBUTE NAME — the control's binding attribute — and
+	/// resolves the caption from the column that attribute's <c>modelConfig.path</c> points to. So
+	/// the suggestion is <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> (for example,
+	/// <c>$Resources.Strings.PDS_UsrStatus</c> for a <c>PDS_UsrStatus</c> attribute bound to
+	/// <c>PDS.UsrStatus</c>). The entity column code is NOT auto-provided unless it equals the
+	/// attribute name.
 	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
 		string bindingAttribute,
 		out string preferredLabelBinding) {
 		preferredLabelBinding = string.Empty;
-		if (string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
-			return false;
-		}
-		int lastDot = modelPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
-			? modelPath[(lastDot + 1)..]
-			: modelPath;
-		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
+		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
 		return true;
 	}
 
 	/// <summary>
-	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
-	/// caption resource for the control's binding attribute. The platform auto-provides
-	/// captions ONLY when the resource key equals the entity column code (the last segment
-	/// of the binding attribute's <c>modelConfig.path</c>) — e.g. <c>UsrCompleted</c> for
-	/// path <c>PDS.UsrCompleted</c>. Path-with-underscores forms like <c>PDS_UsrCompleted</c>
-	/// are NOT auto-provided even when declared as DS-bound view-model attributes, because
-	/// the platform resolves caption resources by entity-column code, not by arbitrary
-	/// view-model attribute name.
+	/// Returns <c>true</c> when <paramref name="resourceKey"/> is the auto-provided DS caption
+	/// resource for the control's binding attribute. The platform auto-provides captions keyed by
+	/// the VIEW-MODEL ATTRIBUTE NAME: the label key must equal the control's binding attribute
+	/// (<paramref name="bindingAttribute"/>), and that attribute must be DS-bound (its
+	/// <c>modelConfig.path</c> resolves to <c>DataSource.Column</c>). The caption is then resolved
+	/// from the bound column. The attribute name is arbitrary — <c>UsrStatus</c>,
+	/// <c>PDS_UsrStatus</c>, <c>Name123</c> all auto-provide when the label key equals them. The
+	/// entity column code (the last segment of the path) is NOT a valid key unless it happens to
+	/// equal the attribute name.
 	/// </summary>
 	private static bool IsAutoProvidedLabelResourceKey(
 		string resourceKey,
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (string.IsNullOrWhiteSpace(resourceKey)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
+		if (!string.Equals(resourceKey, bindingAttribute, StringComparison.OrdinalIgnoreCase)) {
 			return false;
 		}
-		int lastDot = bindingPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < bindingPath.Length - 1
-			? bindingPath[(lastDot + 1)..]
-			: bindingPath;
-		return string.Equals(resourceKey, columnCode, StringComparison.OrdinalIgnoreCase);
+		return IsDsBoundAttribute(bindingAttribute, modelPaths);
 	}
 
 	private static bool TryGetBindingAttribute(

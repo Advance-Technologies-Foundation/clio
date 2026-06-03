@@ -35,7 +35,7 @@ public sealed class PageModificationGuidanceResource {
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
 		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, OR your change adds/edits ANY user-visible string-like property (label, caption, title, tooltip, placeholder, description, button captions, tab/group titles, validator/dialog messages — examples, not exhaustive) | `page-schema-resources` | Every user-visible string must be a localizable-string binding, not an inline literal. Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary because the platform auto-provides them; guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
-		       | body contains `operation:"insert"` in `viewConfigDiff` for a standard field component (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) | `page-modification` (this guide — see the "Inserted-field contract" section below) | A field control insert is a 3-part edit; missing the viewModelConfigDiff attribute or the label resource is silently catastrophic (no data source / blank caption) and now hard-rejected by `update-page` validation. |
+		       | body contains `operation:"insert"` in `viewConfigDiff` for a standard field component (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) | `page-modification` (this guide — see the "Inserted-field contract" section below) | A field control insert is more than a viewConfigDiff entry — missing the viewModelConfigDiff binding attribute or a resolvable label is silently catastrophic (no data source / blank caption) and now hard-rejected by `update-page` validation. |
 
 		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
 
@@ -144,17 +144,17 @@ public sealed class PageModificationGuidanceResource {
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
 
-		       Inserted-field contract — 3-part payload for a new data-bound field control
+		       Inserted-field contract for a new data-bound field control
 		       """
 		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"
 		       + """
-		       Validation is fragment-scoped and runs BEFORE the append merge: in append mode too, all three edits below must be present in the SAME payload you send, regardless of what the current server body already contains. (If the binding attribute is genuinely supplied by a parent schema or already declared in the current body, use `operation:"merge"` for the viewConfigDiff entry instead of `insert` — the contract above does not apply to merge.)
+		       Validation is fragment-scoped and runs BEFORE the append merge: in append mode too, both payload edits below must be present in the SAME payload you send, regardless of what the current server body already contains. (If the binding attribute is genuinely supplied by a parent schema or already declared in the current body, use `operation:"merge"` for the viewConfigDiff entry instead of `insert` — the contract above does not apply to merge.)
 
-		       Three required edits for a single new field:
+		       In payload terms, that contract is TWO edits:
 
-		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.
+		       1. `viewConfigDiff` — insert the control, carrying both its `control` binding and its `label`.
 		       2. `viewModelConfigDiff` — merge a matching attribute entry that declares `modelConfig.path` to the entity column the control reads/writes.
-		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<columnCode>` (the LAST segment of the binding attribute's `modelConfig.path`, e.g. `UsrCompleted` for `PDS.UsrCompleted`) so the platform auto-provides the caption from the entity column. The auto-provided form requires the binding attribute itself to have a `modelConfig.path` (step 2 above); auto-provide is keyed by column code, not by view-model attribute name.
+		       Set the `label` in edit 1 to `$Resources.Strings.<bindingAttribute>` — the same attribute `control` binds to (e.g. `$Resources.Strings.PDS_UsrEstimatedMinutes` for control `$PDS_UsrEstimatedMinutes`) — and clause (b) above is satisfied by auto-provide, with no `resources` needed. Add a `resources` entry only to override the caption or for a non-DS-bound key. The canonical payload below shows exactly this.
 
 		       Canonical payload — adding a `crt.NumberInput` "Estimated minutes" field bound to `UsrEstimatedMinutes`:
 
@@ -193,24 +193,24 @@ public sealed class PageModificationGuidanceResource {
 		                   validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
 		               };
 		           });
-		       ` resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'
+		       `
 		       ```
 
-		       Note: passing `resources` is one of two valid options. The shorter alternative is to rebind the label to the entity column code (the LAST segment of `modelConfig.path`), which the platform auto-provides from the column caption. Auto-provide is keyed by COLUMN CODE, not by view-model attribute name — so `PDS_UsrEstimatedMinutes` as the resource key is NOT auto-provided, but `UsrEstimatedMinutes` IS.
+		       Note: this payload passes NO `resources` parameter because the label `$Resources.Strings.PDS_UsrEstimatedMinutes` is auto-provided — its key equals the DS-bound binding attribute `PDS_UsrEstimatedMinutes` (declared in viewModelConfigDiff), so the platform resolves the caption from the entity column automatically. Pass `resources` only to (a) override the auto caption with a custom string, or (b) register a key that is not a DS-bound attribute name.
 
-		       Apply this single-line change to the canonical payload above (everything else stays the same — the attribute name `PDS_UsrEstimatedMinutes` keeps its `modelConfig.path: "PDS.UsrEstimatedMinutes"` declaration in viewModelConfigDiff):
+		       Auto-provide is keyed by the view-model ATTRIBUTE NAME, not the entity column code. Compare (same canonical payload, only the label key changes — the attribute name `PDS_UsrEstimatedMinutes` keeps its `modelConfig.path: "PDS.UsrEstimatedMinutes"` declaration in viewModelConfigDiff):
 
 		       ```
-		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // ← before: requires `resources` parameter
-		       "label": "$Resources.Strings.UsrEstimatedMinutes"      // ← after:  auto-provided, omit `resources`
+		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // auto-provided — key equals the DS-bound binding attribute (no resources needed)
+		       "label": "$Resources.Strings.UsrEstimatedMinutes"      // renders BLANK — bare column code is not the attribute name
 		       ```
 
-		       The control binding (`$PDS_UsrEstimatedMinutes`) does NOT change — it still references the view-model attribute. Only the label resource key changes to the column code form so the platform can resolve it from the entity column caption automatically.
+		       The label key must match the control's binding attribute (`PDS_UsrEstimatedMinutes`) exactly. Rebinding it to the bare column code (`UsrEstimatedMinutes`) does NOT resolve — the platform auto-provides captions under the attribute name, not the column code.
 
 		       Common validation diagnostics
 
 		       - "Inserted field 'X' (type 'Y') binds to '$Z' but the body does not declare attribute 'Z' in viewModelConfigDiff." — Step 2 missing. Add the `viewModelConfigDiff` merge for attribute `Z` with the correct `modelConfig.path`. If `Z` is supposed to come from a parent schema, change `operation:"insert"` to `operation:"merge"` on the `viewConfigDiff` entry instead.
-		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or rebind the label to `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (auto-provided from the entity column caption). The binding attribute name itself (e.g. `PDS_<columnCode>`) is NOT a valid auto-provide key — only the column code is.
+		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or set the label to `$Resources.Strings.<bindingAttribute>` — the SAME view-model attribute the control binds to, which must have a `modelConfig.path` (auto-provided from the entity column caption). The bare entity column code (the last path segment) is NOT a valid auto-provide key unless it equals the attribute name.
 
 		       Adding a button with a click handler
 		       Body structure for `update-page` (preserve all marker pairs — do not remove or reorder them):

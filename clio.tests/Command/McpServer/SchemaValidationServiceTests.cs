@@ -1296,7 +1296,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label using a sibling DS-bound attribute name that does NOT match the column code warns — the platform auto-provides captions only when the resource key equals the entity column code (last segment of the DS path), not for arbitrary aliases sharing the same path.")]
+	[Description("Label using a DS-bound SIBLING attribute name that is not the field's own binding attribute warns — auto-provide is keyed by the control's binding attribute, and 'UsrNameAlias' is a different attribute than the bound 'UsrName' even though both share the same DS path.")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1333,12 +1333,12 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because the missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
-			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
+			"because the label key is a different attribute than the control's binding attribute 'UsrName', so the platform does not auto-provide the caption under it");
 	}
 
 	[Test]
-	[Description("Label using a DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by column code, not by arbitrary attribute name. Production evidence: PDS_UsrCompleted attribute bound to PDS.UsrCompleted column does NOT auto-provide caption because resource key 'PDS_UsrCompleted' differs from column code 'UsrCompleted'.")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameNotMatchingColumnCode_ReturnsWarning() {
+	[Description("Label whose key equals the field's DS-bound binding attribute is auto-provided even when the attribute name differs from the entity column code — no warning. Verified against TestApp1_FormPage/Column8: the platform resolves the caption by attribute name, then follows modelConfig.path to the column.")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsBindingAttributeNotMatchingColumnCode_ReturnsNoWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1369,8 +1369,8 @@ public sealed class SchemaValidationServiceTests
 
 		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("UsrLabel") && w.Contains("render blank"),
-			"because UsrLabel does not match the column code 'UsrFullName' so the platform does not auto-provide the caption");
+		result.Warnings.Should().BeEmpty(
+			"because the label key 'UsrLabel' equals the DS-bound binding attribute; the platform auto-provides the caption from the bound column regardless of the column code 'UsrFullName'");
 	}
 
 	[Test]
@@ -1581,8 +1581,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when the label resource is not registered. The platform auto-provides captions only when the resource key matches the entity column code (last segment of the DS path), so the path-with-underscores form is NOT auto-provided even when declared as a DS-bound attribute.")]
-	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
+	[Description("Insert of a new field whose label key equals its DS-bound binding attribute (path-with-underscores form, e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is ACCEPTED with no resources — the platform auto-provides the caption under the attribute name. Verified against TestApp1_FormPage/Column8.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1609,12 +1609,80 @@ public sealed class SchemaValidationServiceTests
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeFalse("because the resource key 'PDS_UsrCompleted' does not match the column code 'UsrCompleted', so the platform does not auto-provide the caption");
-		result.Errors.Should().ContainSingle(error =>
-			error.Contains("UsrCompleted") &&
-			error.Contains("PDS_UsrCompleted") &&
-			error.Contains("render blank"),
-			"because the diagnostic should name the field, the unregistered resource key, and what will go wrong at runtime");
+		result.IsValid.Should().BeTrue("because the label key 'PDS_UsrCompleted' equals the DS-bound binding attribute; the platform auto-provides the caption from the column 'PDS.UsrCompleted' under the attribute name");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert whose label uses the entity COLUMN CODE while the binding attribute has a different name is rejected — the column code is not a valid resource key; the platform auto-provides only under the attribute name. Guards the false-accept exposed by Column8: $Resources.Strings.<columnCode> renders blank.")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithColumnCodeLabelNotMatchingAttribute_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Column8",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.Column8",
+								"control":"$UsrColumn8"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrColumn8":{"modelConfig":{"path":"PDS.Column8"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the label key 'Column8' is the bare column code, not the DS-bound binding attribute 'UsrColumn8'; the platform auto-provides only under the attribute name");
+		result.Errors.Should().Contain(error =>
+			error.Contains("Column8") && error.Contains("render blank"),
+			"because the diagnostic should flag the column-code label that will render blank at runtime");
+	}
+
+	[Test]
+	[Description("Warning path: a label using the bare entity column code for a control whose binding attribute has a different name is flagged — the column code does not auto-provide (Column8 renders blank).")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsColumnCodeNotMatchingAttribute_ReturnsWarning() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Column8",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.Column8",
+								"control":"$UsrColumn8"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrColumn8":{"modelConfig":{"path":"PDS.Column8"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateStandardFieldBindings(
+			body,
+			new Dictionary<string, string> { ["SomeUnrelatedKey"] = "value" });
+
+		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
+		result.Errors.Should().BeEmpty();
+		result.Warnings.Should().ContainSingle(w => w.Contains("Column8") && w.Contains("render blank"),
+			"because the bare column code 'Column8' is not the DS-bound binding attribute 'UsrColumn8', so the platform does not auto-provide the caption");
 	}
 
 	[Test]
@@ -5712,7 +5780,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Mobile: label using a sibling DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by entity column code (last segment of DS path), not by arbitrary alias.")]
+	[Description("Mobile: label using a DS-bound SIBLING attribute name that is not the field's own binding attribute warns — auto-provide is keyed by the control's binding attribute, not by an arbitrary alias sharing the same DS path.")]
 	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = """
 		              {
@@ -5749,7 +5817,7 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
-			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
+			"because the label key is a different attribute than the control's binding attribute 'UsrName', so the platform does not auto-provide the caption under it");
 	}
 
 	#endregion

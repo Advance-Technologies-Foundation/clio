@@ -45,14 +45,14 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       Same key name can require registration on one page and not on another. Prefixes (`PDS_`, `PageParameters_`, `MyDs_`, `AttachmentListDS_`, or none) are NOT signals — only the underlying DS binding matters.
 
 		       KEY NAMING for data-bound controls — two distinct cases:
-		       - AUTO-PROVIDED caption (DS-bound attribute, default caption, register nothing): the label key must be the ENTITY COLUMN CODE — the LAST segment of the binding attribute's `modelConfig.path` — NOT the view model attribute name. The platform resolves auto-provided captions by column code only. Examples: attribute `$PDS_UsrStatus` (path `PDS.UsrStatus`) → label `$Resources.Strings.UsrStatus`; attribute `$UsrName` (path `PDS.UsrName`) → label `$Resources.Strings.UsrName`. The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided.
+		       - AUTO-PROVIDED caption (DS-bound attribute, default caption, register nothing): the label key must be the VIEW-MODEL ATTRIBUTE NAME — the same attribute the control binds to — and that attribute must have a DS-bound `modelConfig.path`. The platform resolves the caption from the column the attribute points to. The attribute name is whatever the page declares (`PDS_UsrStatus`, `UsrName`, `Name123`, a designer hash-suffixed `PDS_UsrColumn2_r2s859x`) — all auto-provide as long as the label key equals the attribute name. Examples: attribute `$PDS_UsrStatus` (path `PDS.UsrStatus`) → label `$Resources.Strings.PDS_UsrStatus`; attribute `$Name123` (path `PDS.Name`) → label `$Resources.Strings.Name123`. The bare entity column code is NOT auto-provided unless it equals the attribute name — e.g. `$Resources.Strings.UsrStatus` renders blank for a `PDS_UsrStatus` attribute.
 		       - EXPLICITLY REGISTERED caption (you pass a `resources` entry): the label key and the `resources` key must be identical; you control both. You may use the binding attribute name or any other key. Example: `resources: '{"PDS_UsrStatus": "Status"}'` paired with label `$Resources.Strings.PDS_UsrStatus`.
-		       For `operation:"insert"`, update-page rejects an inserted field whose label is neither auto-provided (column-code key) nor explicitly registered — the attribute-name key form (`PDS_<columnCode>`) only works when you register it.
+		       For `operation:"insert"`, update-page rejects an inserted field whose label is neither auto-provided (label key equal to the DS-bound binding attribute) nor explicitly registered — the bare column-code key form only works when it equals the attribute name or you register it.
 
 		       PAIRED EXAMPLES — same field, opposite handling depending on the page
 		       - Page A has `PDS_UsrStatus` bound to DS column `PDS.UsrStatus`, default caption:
-		         ✅ Bind `$Resources.Strings.UsrStatus` (column-code form) and pass nothing — platform auto-provides the caption from the entity column.
-		         ❌ Bind `$Resources.Strings.PDS_UsrStatus` and pass nothing — NOT auto-provided (key is not the column code); on `operation:"insert"` this is rejected, and the label renders blank otherwise.
+		         ✅ Bind `$Resources.Strings.PDS_UsrStatus` (the DS-bound attribute name) and pass nothing — platform auto-provides the caption from the entity column.
+		         ❌ Bind `$Resources.Strings.UsrStatus` (the bare column code) and pass nothing — NOT auto-provided (the key is not a DS-bound attribute name); on `operation:"insert"` this is rejected, and the label renders blank otherwise.
 		         ✅ `resources: '{"PDS_UsrStatus": "Custom status caption"}'` paired with label `$Resources.Strings.PDS_UsrStatus` ONLY to deliberately override with a custom caption under that key.
 		       - Page B has `UsrLocalFlag` declared in `viewModelConfigDiff` with no DS binding:
 		         ✅ `resources: '{"UsrLocalFlag": "Local flag"}'` — required, or `$Resources.Strings.UsrLocalFlag` will not resolve.
@@ -65,7 +65,7 @@ public sealed class PageSchemaResourcesGuidanceResource {
 
 		       | Scenario | Reference syntax | Pass `resources` param? |
 		       | --- | --- | --- |
-		       | Key is the entity column code of a DS-bound attribute on the page, default caption acceptable | `$Resources.Strings.<columnCode>` (last path segment, NOT the `PDS_`-prefixed attribute name) | NO — platform auto-provides |
+		       | Key is the name of a DS-bound attribute on the page (the control's binding attribute), default caption acceptable | `$Resources.Strings.<attributeName>` (the binding attribute, any prefix/suffix — NOT the bare column code) | NO — platform auto-provides |
 		       | DS-bound attribute, overriding the caption (any key form) | `$Resources.Strings.<Key>` | YES — register the same key with the override value |
 		       | Key has NO matching DS-bound attribute (custom tab/group title, button caption, custom grid column, free-form `viewModelConfigDiff` attribute) | `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for grid column captions by convention) | YES — must register with an explicit value |
 		       | Validator error message | `#ResourceString(<Key>)#` (macro form required) | YES — always register with an explicit value |
