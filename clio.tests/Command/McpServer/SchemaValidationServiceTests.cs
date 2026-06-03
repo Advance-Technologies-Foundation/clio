@@ -1337,8 +1337,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label using a DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by column code, not by arbitrary attribute name. Production evidence: PDS_UsrCompleted attribute bound to PDS.UsrCompleted column does NOT auto-provide caption because resource key 'PDS_UsrCompleted' differs from column code 'UsrCompleted'.")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameNotMatchingColumnCode_ReturnsWarning() {
+	[Description("Label keyed by a DS-bound attribute name whose column code differs is auto-provided — NO warning. Production evidence: in SsoSamlBase_FormPage the attribute 'PartnerIdentityName' is bound to 'SsoSamlProviderDS.EntityID' (column code 'EntityID') and ships with label '$Resources.Strings.PartnerIdentityName' and no explicit resource; the platform auto-provides the caption. Auto-provide is keyed by the attribute name, not the column code.")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsDsBoundAttributeName_NoWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1358,7 +1358,8 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrLabel":{"modelConfig":{"path":"PDS.UsrFullName"}}}
+						"path":[],
+						"values":{"attributes":{"UsrLabel":{"modelConfig":{"path":"PDS.UsrFullName"}}}}
 					}
 				]
 			""");
@@ -1367,10 +1368,10 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["SomeOtherKey"] = "Other" });
 
-		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
+		result.IsValid.Should().BeTrue("because the field binding is valid");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("UsrLabel") && w.Contains("render blank"),
-			"because UsrLabel does not match the column code 'UsrFullName' so the platform does not auto-provide the caption");
+		result.Warnings.Should().NotContain(w => w.Contains("UsrLabel") && w.Contains("render blank"),
+			"because the label key 'UsrLabel' equals the DS-bound binding attribute, so the platform auto-provides the caption regardless of the column code 'UsrFullName'");
 	}
 
 	[Test]
@@ -1548,7 +1549,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field using the Designer format (path:[], values.attributes nesting) with a label resource matching the column code is accepted — the platform auto-provides the caption from the entity column.")]
+	[Description("Insert of a new field using the Designer format (path:[], values.attributes nesting) with the label resource keyed by the BINDING ATTRIBUTE NAME is accepted — the platform auto-provides the caption from the DS-bound entity column. This is the form the Designer emits (label key == control attribute name).")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithAutoProvidedLabel_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1559,7 +1560,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.NumberInput",
-								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
 								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
@@ -1577,13 +1578,71 @@ public sealed class SchemaValidationServiceTests
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeTrue("because the binding attribute is declared in Designer format (path:[], values.attributes nesting) and the label key 'UsrEstimatedMinutes' is the column code so the platform auto-provides the caption");
+		result.IsValid.Should().BeTrue("because the label key equals the DS-bound binding attribute 'PDS_UsrEstimatedMinutes', so the platform auto-provides the caption from the entity column");
 		result.Errors.Should().BeEmpty();
 	}
 
 	[Test]
-	[Description("Insert using Designer format (path:[], values.attributes) with a PDS_-prefixed label key and no explicit resource is rejected — PDS_X is not auto-provided, only the column code X is.")]
-	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
+	[Description("VERIFY: real Designer output uses the ATTRIBUTE-NAME label form ($Resources.Strings.AccountDS_Name_ud92nhf), not the column code, with NO explicit resource — the platform auto-provides it from the DS-bound column caption. This must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_AttributeNameLabelForm_AutoProvided_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.AccountDS_Name_ud92nhf","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the real Designer emits the attribute-name label form which the platform auto-provides from the DS-bound column caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Custom 'Title on page': when the user overrides a field's title, the Designer emits a #ResourceString({component}_label)# macro label and registers the resource explicitly. The macro form is not a reactive $Resources.Strings.* binding, so the auto-provide check does not apply — the inserted field with a properly-nested binding must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_CustomTitleMacroLabelForm_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"#ResourceString(Input_zl5k81v_label)#","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the custom-title macro label form is not a reactive binding subject to the auto-provide check, and the field binding is properly nested");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert whose label key does NOT match the binding attribute and is not registered is rejected — only '$Resources.Strings.{bindingAttribute}' is auto-provided for a DS-bound attribute, so a mismatched key would render blank.")]
+	public void ValidateInsertedFieldSelfConsistency_LabelKeyNotMatchingBindingAndNoResource_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1593,7 +1652,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.Checkbox",
-								"label":"$Resources.Strings.PDS_UsrCompleted",
+								"label":"$Resources.Strings.SomeUnrelatedCaption",
 								"control":"$PDS_UsrCompleted"
 							}
 					}
@@ -1611,12 +1670,11 @@ public sealed class SchemaValidationServiceTests
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeFalse("because the resource key 'PDS_UsrCompleted' does not match the column code 'UsrCompleted', so the platform does not auto-provide the caption");
+		result.IsValid.Should().BeFalse("because the label key 'SomeUnrelatedCaption' is neither the binding attribute 'PDS_UsrCompleted' (which would be auto-provided) nor registered in resources");
 		result.Errors.Should().ContainSingle(error =>
-			error.Contains("UsrCompleted") &&
-			error.Contains("PDS_UsrCompleted") &&
+			error.Contains("SomeUnrelatedCaption") &&
 			error.Contains("render blank"),
-			"because the diagnostic should name the field, the unregistered resource key, and what will go wrong at runtime");
+			"because the diagnostic should name the unresolved resource key and what will go wrong at runtime");
 	}
 
 	[Test]
@@ -1797,7 +1855,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.NumberInput",
-								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
 								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
@@ -1834,7 +1892,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.NumberInput",
-								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
 								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
@@ -1906,8 +1964,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Designer format with label using full PDS_-prefixed attribute name but no explicit resources must be rejected because PDS_X is not auto-provided — only the column code X is.")]
-	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PdsUnderscoreLabelWithoutResources_ReturnsInvalid() {
+	[Description("Designer format with the label keyed by the full PDS_-prefixed attribute name and no explicit resource is accepted — the label key equals the DS-bound binding attribute, so the platform auto-provides the caption. (Auto-provide is keyed by attribute name, not column code.)")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PdsUnderscoreLabelMatchingBinding_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1941,8 +1999,8 @@ public sealed class SchemaValidationServiceTests
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeFalse("because 'PDS_UsrEstimatedMinutes' is not auto-provided — only the column code 'UsrEstimatedMinutes' is");
-		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrEstimatedMinutes") && e.Contains("render blank"));
+		result.IsValid.Should().BeTrue("because the label key 'PDS_UsrEstimatedMinutes' equals the DS-bound binding attribute, so the platform auto-provides the caption");
+		result.Errors.Should().BeEmpty();
 	}
 
 	[Test]
@@ -1993,7 +2051,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.NumberInput",
-								"label":"$Resources.Strings.UsrEstimatedMinutes",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
 								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
@@ -2025,12 +2083,12 @@ public sealed class SchemaValidationServiceTests
 					{
 						"operation":"insert",
 						"name":"UsrA",
-						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrA","control":"$PDS_UsrA"}
+						"values":{"type":"crt.Input","label":"$Resources.Strings.PDS_UsrA","control":"$PDS_UsrA"}
 					},
 					{
 						"operation":"insert",
 						"name":"UsrB",
-						"values":{"type":"crt.NumberInput","label":"$Resources.Strings.UsrB","control":"$PDS_UsrB"}
+						"values":{"type":"crt.NumberInput","label":"$Resources.Strings.PDS_UsrB","control":"$PDS_UsrB"}
 					}
 				]
 			""",

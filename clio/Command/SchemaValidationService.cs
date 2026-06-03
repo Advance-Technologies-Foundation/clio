@@ -108,10 +108,12 @@ public static class SchemaValidationService
 		"via the preferred path:[] + values.attributes form (e.g. {\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"PDS_UsrX\":{\"modelConfig\":{\"path\":\"PDS.UsrX\"}}}}}) " +
 		"or the legacy path:[\"attributes\"] form (where values itself is the attribute map); " +
 		"putting the attribute directly in values with no path (the flat form) is silently accepted on save but fails at runtime — controls render with no data, and " +
-		"(b) the label resource — either passed in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
-		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
-		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
-		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
+		"(b) the label resource — either passed in the 'resources' parameter, or set to $Resources.Strings.<bindingAttribute> " +
+		"where <bindingAttribute> is the binding attribute name itself (the same name as the control, e.g. $Resources.Strings.PDS_UsrX " +
+		"for control $PDS_UsrX). Auto-provide is keyed by the view-model attribute name, NOT by the entity column code: the platform " +
+		"auto-provides the caption for a DS-bound attribute under its attribute-name key (this is the only form the Freedom UI Designer " +
+		"emits — the label key always equals the control attribute name). A bare column-code key (the last path segment) is NOT the " +
+		"auto-provided key. Payloads that " +
 		"violate this contract are rejected at update-page validation time; the diagnostic names " +
 		"the offending field, attribute, and section. The contract does NOT apply to " +
 		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
@@ -1072,15 +1074,10 @@ public static class SchemaValidationService
 	private static string BuildAutoProvideSuggestion(
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
-		    !boundPath.Contains('.', StringComparison.Ordinal)) {
-			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		if (modelPaths.ContainsKey(bindingAttribute)) {
+			return $"or set the label to '$Resources.Strings.{bindingAttribute}' (the binding attribute name) so the platform auto-provides the caption from the DS-bound entity column";
 		}
-		int lastDot = boundPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
-			? boundPath[(lastDot + 1)..]
-			: boundPath;
-		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+		return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<bindingAttribute>' (the attribute name) so the platform auto-provides the caption";
 	}
 
 	private readonly record struct InsertedFieldDescriptor(
@@ -1455,14 +1452,15 @@ public static class SchemaValidationService
 		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
-			return false;
-		}
-		int lastDot = bindingPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < bindingPath.Length - 1
-			? bindingPath[(lastDot + 1)..]
-			: bindingPath;
-		return string.Equals(resourceKey, columnCode, StringComparison.OrdinalIgnoreCase);
+		// The platform auto-provides the caption for a DS-bound view-model attribute under a
+		// resource key equal to the ATTRIBUTE NAME itself — e.g. label
+		// "$Resources.Strings.AccountDS_Name_xxx" for a control bound to "$AccountDS_Name_xxx".
+		// This is the only form the Freedom UI Designer emits: verified against shipped FormPage
+		// schemas, the label key always equals the control's attribute name. Auto-provide is keyed
+		// by the attribute name, NOT by the entity column code (the last path segment) — a bare
+		// column-code label is never emitted and is not auto-provided.
+		return string.Equals(resourceKey, bindingAttribute, StringComparison.Ordinal) &&
+		       modelPaths.ContainsKey(bindingAttribute);
 	}
 
 	private static bool TryGetBindingAttribute(

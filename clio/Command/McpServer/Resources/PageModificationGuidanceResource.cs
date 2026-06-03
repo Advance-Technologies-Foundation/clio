@@ -155,7 +155,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.
 		       2. `viewModelConfigDiff` — a single merge entry with `"path": []` (root) and a `values.attributes` object declaring the attribute with its `modelConfig.path` to the entity column. The attribute name is conventionally `{DataSourceName}_{ColumnName}` (e.g. `PDS_UsrEstimatedMinutes` when the data source is `PDS`). Do NOT put the attribute directly in `values` — it must be nested under `values.attributes`.
-		       3. Label resource — either pass an explicit entry in the `resources` parameter, OR rebind the label to `$Resources.Strings.<columnCode>` (the LAST segment of the binding attribute's `modelConfig.path`, e.g. `UsrEstimatedMinutes` for `PDS.UsrEstimatedMinutes`) so the platform auto-provides the caption from the entity column. Auto-provide is keyed by column code, not by view-model attribute name — so `PDS_UsrEstimatedMinutes` as the resource key is NOT auto-provided, but `UsrEstimatedMinutes` IS.
+		       3. Label resource — set the label to `$Resources.Strings.<bindingAttribute>` where `<bindingAttribute>` is the binding attribute name itself (the SAME name as the control, e.g. `$Resources.Strings.PDS_UsrEstimatedMinutes` for control `$PDS_UsrEstimatedMinutes`). For a DS-bound attribute the platform auto-provides the caption from the entity column under that attribute-name key — no `resources` entry needed. Auto-provide is keyed by the view-model ATTRIBUTE NAME, not by the column code (verified against shipped FormPage schemas: the Designer always emits the label key equal to the control attribute name, e.g. `$Resources.Strings.PartnerIdentityName` for an attribute bound to `SsoSamlProviderDS.EntityID`). If you want a caption different from the column's, pass an explicit entry in the `resources` parameter under the same attribute-name key (or use the `#ResourceString(<key>)#` macro form with a registered resource — this is what the Designer emits when a custom "Title on page" is set).
 
 		       Static vs diff body forms — read `raw.body` before editing
 		       FormPages created by `create-app` or `create-app-section` use the STATIC form: `viewModelConfig` (not `viewModelConfigDiff`) and `modelConfig` (not `modelConfigDiff`). The editable body marker is `SCHEMA_VIEW_MODEL_CONFIG`, not `SCHEMA_VIEW_MODEL_CONFIG_DIFF`.
@@ -189,7 +189,7 @@ public sealed class PageModificationGuidanceResource {
 		                           "name": "UsrEstimatedMinutes",
 		                           "values": {
 		                               "type": "crt.NumberInput",
-		                               "label": "$Resources.Strings.UsrEstimatedMinutes",
+		                               "label": "$Resources.Strings.PDS_UsrEstimatedMinutes",
 		                               "control": "$PDS_UsrEstimatedMinutes",
 		                               "labelPosition": "auto"
 		                           },
@@ -220,7 +220,7 @@ public sealed class PageModificationGuidanceResource {
 		       `
 		       ```
 
-		       The label `$Resources.Strings.UsrEstimatedMinutes` uses the column code (LAST segment of `modelConfig.path`). This is auto-provided from the entity column caption — no explicit `resources` parameter needed. If you prefer to use the full attribute name in the label (`$Resources.Strings.PDS_UsrEstimatedMinutes`), pass it explicitly in `resources`: `resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'`.
+		       The label `$Resources.Strings.PDS_UsrEstimatedMinutes` uses the binding attribute name (same as the control `$PDS_UsrEstimatedMinutes`). For a DS-bound attribute the platform auto-provides the caption from the entity column under that attribute-name key — no explicit `resources` parameter needed. To override the caption with custom text, pass it explicitly under the same key — `resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'` — or emit the `#ResourceString(<componentName>_label)#` macro label with a registered resource (the form the Designer writes for a custom "Title on page").
 
 		       modelConfigDiff — declaring a data source for new pages
 		       For app FormPages created via `create-app-section`, the data source (PDS) is already declared in the parent schema — you only need `viewModelConfigDiff` entries (leave `modelConfigDiff: []`).
@@ -258,7 +258,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       - "Inserted field 'X' (type 'Y') binds to '$Z' but the body does not declare attribute 'Z' in viewModelConfigDiff." — Step 2 missing entirely. Add the `viewModelConfigDiff` entry: `{"operation":"merge","path":[],"values":{"attributes":{"Z":{"modelConfig":{"path":"<DS>.<Column>"}}}}}`. If `Z` is supposed to come from a parent schema, change `operation:"insert"` to `operation:"merge"` on the `viewConfigDiff` entry instead.
 		       - "Inserted field 'X' (type 'Y') binds to '$Z' which is declared in viewModelConfigDiff without the required nesting ... the control will render but read and write no data." — Step 2 present but FLAT. The attribute is declared directly under `values` (or under a `path:[]` entry with no `attributes` wrapper) instead of under `values.attributes`, so it lands at the `viewModelConfig` root and the runtime ignores it. Move it to the properly-nested form: `{"operation":"merge","path":[],"values":{"attributes":{"Z":{"modelConfig":{"path":"<DS>.<Column>"}}}}}` (or the legacy `path:["attributes"]` form).
-		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3 missing. Either add `{"K":"<Caption>"}` to the `resources` parameter, or rebind the label to `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (auto-provided from the entity column caption). The binding attribute name itself (e.g. `PDS_<columnCode>`) is NOT a valid auto-provide key — only the column code is.
+		       - "Inserted field 'X' has label '$Resources.Strings.K' but resource 'K' is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute." — Step 3: the label key `K` does not match the binding attribute. Set the label to `$Resources.Strings.<bindingAttribute>` (the SAME name as the control) so the platform auto-provides the caption from the DS-bound column — auto-provide is keyed by the attribute name, not the column code. Or add `{"K":"<Caption>"}` to the `resources` parameter to register `K` explicitly.
 
 		       Adding a button with a click handler
 		       Body structure for `update-page` (preserve all marker pairs — do not remove or reorder them):
