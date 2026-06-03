@@ -289,6 +289,7 @@ internal static class ToolContractCatalog {
 		new Dictionary<string, ToolContractDefinition>(StringComparer.OrdinalIgnoreCase) {
 			[ToolContractGetTool.ToolName] = BuildToolContractGet(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
+			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
@@ -576,6 +577,69 @@ internal static class ToolContractCatalog {
 				"Call this tool before workflows that require canonical clio MCP guidance text, especially when page prompts or app prompts reference a named guide."),
 			[],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildExecuteEsq() {
+		return new ToolContractDefinition(
+			ExecuteEsqTool.ToolName,
+			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape.",
+			new ToolInputSchemaContract(
+				[QueryFieldName, EnvironmentNameFieldName],
+				[
+					Field(QueryFieldName, ObjectType, "Raw ESQ SelectQuery object with 'rootSchemaName' and usually 'columns' (an 'items' map) and/or 'filters'. Read the 'esq' guidance for the SelectQuery envelope and 'esq-filters' for the filter tree."),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field("timeout", NumberType, "Request timeout in milliseconds (1000-120000, default 30000).")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("count", NumberType, "Number of rows returned."),
+				Field("rows", ArrayType, "Rows returned by the SelectQuery."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Count all contacts", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[QueryFieldName] = new Dictionary<string, object?> {
+						["rootSchemaName"] = ExampleContactSchemaName,
+						["operationType"] = 0,
+						["allColumns"] = false,
+						["columns"] = new Dictionary<string, object?> {
+							["items"] = new Dictionary<string, object?> {
+								["ContactCount"] = new Dictionary<string, object?> {
+									["expression"] = new Dictionary<string, object?> {
+										["expressionType"] = 1,
+										["functionType"] = 2,
+										["aggregationType"] = 1,
+										["aggregationEvalType"] = 2,
+										["functionArgument"] = new Dictionary<string, object?> {
+											["expressionType"] = 0,
+											["columnPath"] = "Id"
+										}
+									}
+								}
+							}
+						}
+					}
+				})
+			],
+			Flow(
+				[
+					GuidanceGetTool.ToolName,
+					ExecuteEsqTool.ToolName
+				],
+				"Read the 'esq' and 'esq-filters' guidance with get-guidance before composing a SelectQuery, then run it with execute-esq."),
+			[],
+			[],
+			null,
+			[
+				"Read the 'esq' and 'esq-filters' guidance via get-guidance before composing a query — ESQ is a proprietary format and hand-guessed enum values, expression shapes, and date encodings fail."
+			]);
 	}
 
 	private static ToolContractDefinition BuildApplicationCreate() {
@@ -1575,7 +1639,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
 						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
-						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -1784,7 +1848,7 @@ internal static class ToolContractCatalog {
 						ODataReadTool.ToolName,
 						CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id."),
+					"When the application exists but the entity is not a part of it. Find entity using find-entity or dataforge-find-tables. Resolve lookup constants to real record Ids before rule creation with odata-read or execute-esq; with odata-read, filter records by lookup values using traversal paths such as Account/Id."),
 				Flow(
 					[
 						ApplicationCreateTool.ApplicationCreateToolName,
@@ -1802,7 +1866,7 @@ internal static class ToolContractCatalog {
 				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
 				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
-				"When any lookup condition or lookup set-values constant is needed, call odata-read first and use an existing record Id."
+				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
 	}
 
@@ -1907,7 +1971,7 @@ internal static class ToolContractCatalog {
 						ODataReadTool.ToolName,
 						CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 					],
-					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Use odata-read structured filters before rule creation when lookup constants must be resolved to real record Ids; filter records by lookup values with traversal paths such as Account/Id.")
+					"When the target page belongs to a known application, inspect the application first and then fetch the page bundle before creating the rule. Resolve lookup constants to real record Ids before rule creation with odata-read or execute-esq; with odata-read, filter records by lookup values using traversal paths such as Account/Id.")
 			],
 			[],
 			[
@@ -1918,7 +1982,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-page-business-rule.",
 				"Call get-tool-contract for create-page-business-rule before building the final payload.",
-				"When any lookup condition constant is needed, call odata-read first and use an existing record Id. When filtering records by a lookup value, use structured filters with a traversal path such as Account/Id."
+				"When any lookup condition constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id. With odata-read, filter records by a lookup value using a structured-filter traversal path such as Account/Id."
 			]);
 	}
 
@@ -1937,7 +2001,7 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
-				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling the business-rule creation tool; when filtering records by a lookup value, use traversal paths such as Account/Id.")
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(

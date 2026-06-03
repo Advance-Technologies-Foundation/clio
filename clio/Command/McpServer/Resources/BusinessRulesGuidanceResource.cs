@@ -86,7 +86,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       2. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
 		       3. Determine whether the rule is entity-level or page-level.
 		       4. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
-		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` structured `filters`. Example lookup read by display value: `odata-read` with entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
+		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` or `execute-esq`. Example lookup read by display value with `odata-read`: entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
 		       6. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
@@ -100,7 +100,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
-		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read`.
+		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read` (or `execute-esq`).
 		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.
 		       - Do NOT use `targetFilterPath` or `sourceFilterPath` that resolve to scalar `Guid` columns such as `Lookup.Id`; those paths must resolve to Lookup attributes.
 		       - Do NOT set `populateValue=true` together with `sourceFilterPath`; current platform behavior does not support that combination cleanly.
