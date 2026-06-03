@@ -227,6 +227,8 @@ internal static class ToolContractCatalog {
 	private const string ExampleEqualComparison = "EQUAL";
 	private const string ExampleOwnerAttributeName = "Owner";
 	private const string ExampleAssigneeAttributeName = "Assignee";
+	private const string ExampleTaskSchemaName = "UsrTask";
+	private const string ExampleEqualConditionComparison = "equal";
 	private const string IconBackgroundFieldName = "icon-background";
 	private const string InvalidLocalizationMapCode = "invalid-localization-map";
 	private const string KeyValueFieldName = "key-value";
@@ -354,6 +356,13 @@ internal static class ToolContractCatalog {
 			[SysSettingsListTool.ListSysSettingsToolName] = BuildListSysSettings(),
 			[SysSettingCreateTool.CreateSysSettingToolName] = BuildCreateSysSetting(),
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
+			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
+			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
+			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
+			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
+			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
+			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
+			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
 		};
 
@@ -430,21 +439,31 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
-			if (!Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
-				return new ToolContractGetResponse(
-					false,
-					Error: new ToolContractError(
-						"tool-not-found",
-						$"Tool '{normalizedName}' is not registered by clio MCP.",
-						BuildSuggestions(normalizedName)));
+			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
+				results.Add(contract);
+				continue;
 			}
-			results.Add(contract);
+			// No curated contract: fall back to a contract synthesized from the tool's own input
+			// schema so that any registered-but-uncurated tool stays discoverable instead of
+			// returning tool-not-found.
+			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
+				results.Add(schemaContract);
+				continue;
+			}
+			return new ToolContractGetResponse(
+				false,
+				Error: new ToolContractError(
+					"tool-not-found",
+					$"Tool '{normalizedName}' is not registered by clio MCP.",
+					BuildSuggestions(normalizedName)));
 		}
 		return new ToolContractGetResponse(true, results);
 	}
 
 	private static IReadOnlyList<string> BuildSuggestions(string requestedName) {
 		return Contracts.Keys
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderBy(name => ComputeDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
@@ -1595,7 +1614,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
 					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
-						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on BirthDate; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). 'aged between X and Y'/'age = N' has no Age column: translate to a BirthDate range with computed ISO date constants. See guidance resource business-rules for the full contract."),
+						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
 						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} structured filters to resolve or verify the lookup record Id before calling create-entity-business-rule; when filtering records by a lookup value, use traversal paths such as Account/Id.")
 				]),
@@ -1606,25 +1625,25 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				BusinessRuleExample("Create a required-field rule when owner equals a lookup constant",
-					"UsrTask", "Require status for a specific owner", ExampleOwnerAttributeName, "equal",
+					ExampleTaskSchemaName, "Require status for a specific owner", ExampleOwnerAttributeName, ExampleEqualConditionComparison,
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
-					"UsrTask", "Lock planned date when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", "is-filled-in",
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
-					"UsrTask", "Lock name and description when completed", "Completed", "equal",
+					ExampleTaskSchemaName, "Lock name and description when completed", "Completed", ExampleEqualConditionComparison,
 					MakeReadOnlyActionTypeName, ["Name", "Description"], true),
 				BusinessRuleExample("Create a required-field rule when annual revenue reaches a numeric threshold",
 					ExampleAccountSchemaName, "Require owner for high-revenue accounts", "AnnualRevenue", "greater-than-or-equal",
 					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], 1000000),
 				BusinessRuleExample("Create a required-field rule when created date is before a cutoff",
-					"UsrTask", "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
+					ExampleTaskSchemaName, "Require owner before the 2025 cutoff", "CreatedOn", "less-than-or-equal",
 					MakeRequiredActionTypeName, [ExampleOwnerAttributeName], "2025-01-01T00:00:00Z"),
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
-					"UsrTask", "Lock reminder note after local noon", "ReminderTime", "greater-than",
+					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
-					"UsrTask", "Populate defaults when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
 						BusinessRuleSetValueItem("UsrScore", 42),
@@ -1635,12 +1654,12 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
-					"UsrTask", "Calculate total effort when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
 					]),
 				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
-					"UsrTask", "Copy creator age when name changes", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", "is-filled-in",
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
 					]),
@@ -1677,7 +1696,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to contacts whose type is one of several lookup values (multi-value IN)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to selected contact types",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1691,7 +1710,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to contacts with a mobile phone",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1716,7 +1735,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts whose Age equals 30 ('show the Assignee field only for contacts where Age = 30' is a lookup restriction, NOT field visibility; filter the Age column directly when it exists)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts aged 30",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1727,7 +1746,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts that have more than 10 activities (backward COUNT aggregation)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts with more than 10 activities",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1743,7 +1762,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts whose account was created this year (forward path + relative-date macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts whose account is created this year",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1754,7 +1773,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit assignee to contacts with a birthday tomorrow",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
@@ -1765,7 +1784,7 @@ internal static class ToolContractCatalog {
 					}),
 				ApplyStaticFilterBusinessRuleExample(
 					"Apply a static filter limiting an Owner lookup to the current user's contact (CurrentUserContact macros)",
-					"UsrTask",
+					ExampleTaskSchemaName,
 					"Limit owner to current user",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
@@ -1822,6 +1841,7 @@ internal static class ToolContractCatalog {
 			null,
 			[
 				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
+				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
 				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, call odata-read first and use an existing record Id."
 			]);
@@ -1877,7 +1897,7 @@ internal static class ToolContractCatalog {
 					ExampleOrderPageSchemaName,
 					"Require close date for closed stage",
 					"PDS_UsrStage",
-					"equal",
+					ExampleEqualConditionComparison,
 					MakeRequiredActionTypeName,
 					["CloseDateInput"],
 					"Closed"),
@@ -1886,7 +1906,7 @@ internal static class ToolContractCatalog {
 					ExampleOrderPageSchemaName,
 					"Make comment optional when flag is false",
 					"PDS_UsrFlag",
-					"equal",
+					ExampleEqualConditionComparison,
 					"make-optional",
 					["CommentInput"],
 					false),
@@ -1895,7 +1915,7 @@ internal static class ToolContractCatalog {
 					"Case_FormPage",
 					"Hide Escalate when priority matches",
 					"PDS_Priority",
-					"equal",
+					ExampleEqualConditionComparison,
 					"hide-element",
 					["EscalateButton"],
 					ExampleLookupValueId),
@@ -2176,7 +2196,7 @@ internal static class ToolContractCatalog {
 								["type"] = "AttributeValue",
 								["path"] = "PDS_UsrPlannedDate"
 							},
-							["comparisonType"] = "equal",
+							["comparisonType"] = ExampleEqualConditionComparison,
 							["rightExpression"] = new Dictionary<string, object?> {
 								["type"] = "AttributeValue",
 								["path"] = "PDS_UsrActualDate"
@@ -3420,7 +3440,7 @@ internal static class ToolContractCatalog {
 			[
 				Example("Search for schemas containing a substring", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
-					[SearchPatternFieldName] = "UsrTask"
+					[SearchPatternFieldName] = ExampleTaskSchemaName
 				}),
 				Example("Look up a schema by exact name", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -3533,6 +3553,38 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildInstallGate() {
+		return new ToolContractDefinition(
+			InstallGateTool.InstallGateToolName,
+			"Installs (or updates) the bundled cliogate package into a registered Creatio environment. cliogate exposes the server-side API that workspace and package tooling depends on. Run this once per freshly deployed instance, or whenever a gate-dependent tool fails with \"you need to install the cliogate package version ... or higher\".",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install cliogate into a freshly deployed environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					InstallGateTool.InstallGateToolName,
+					RestoreWorkspaceTool.RestoreWorkspaceToolName
+				],
+				"Install cliogate first, then retry the gate-dependent tool (for example restore-workspace) that reported the missing-cliogate error."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app).",
+				"A gate-dependent tool reported \"you need to install the cliogate package version ... or higher\", or this is a freshly deployed instance that has not yet had cliogate installed."
+			]);
+	}
+
 	private const string WorkspaceDirectoryFieldName = "workspaceDirectory";
 	private const string ProjectNameFieldName = "projectName";
 	private const string VendorPrefixFieldName = "vendorPrefix";
@@ -3638,6 +3690,215 @@ internal static class ToolContractCatalog {
 				$"`{ProjectNameFieldName}` is snake_case matching `^[0-9a-z_]+$`.",
 				"`packageName` is a simple identifier matching `^[A-Za-z0-9_]+$`.",
 				$"`{VendorPrefixFieldName}` is lowercase-only matching `^[a-z]{{1,50}}$`."
+			]);
+	}
+
+	private const string SiteNameFieldName = "site-name";
+	private const string ZipFileFieldName = "zip-file";
+	private const string SitePortFieldName = "site-port";
+	private const string DbServerNameFieldName = "db-server-name";
+	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SkipBackupFieldName = "skip-backup";
+	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
+
+	private static ToolContractDefinition BuildAssertInfrastructure() {
+		return new ToolContractDefinition(
+			AssertInfrastructureTool.AssertInfrastructureToolName,
+			"Runs the full infrastructure assertion sweep (Kubernetes, local infrastructure, and filesystem) in one call and returns a machine-readable aggregate result with per-section assertion results plus normalized database candidates. Call this first in the deploy lifecycle to inspect failing or degraded areas before selecting a deployment target.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field(StatusFieldName, StringType, "Overall infrastructure assertion status: pass, partial, or fail."),
+				Field("exit-code", NumberType, "Overall infrastructure assertion exit code."),
+				Field("summary", StringType, "Human-readable summary of the assertion sweep."),
+				Field("sections", ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
+				Field("database-candidates", ArrayType, "Normalized database candidates discovered across passing sections.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Run the full infrastructure assertion sweep", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Canonical deploy preflight: assert full infrastructure, narrow to passing choices, pick a safe local IIS port, then deploy. See the deploy-lifecycle guidance topic via get-guidance."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildShowPassingInfrastructure() {
+		return new ToolContractDefinition(
+			ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+			"Returns only the passing infrastructure choices that are safe to use for deployment selection, plus the recommended deploy-creatio argument bundle for the current infrastructure state. Run assert-infrastructure first to inspect failing or degraded areas.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field(StatusFieldName, StringType, "Passing-infrastructure availability status: available or unavailable."),
+				Field("summary", StringType, "Human-readable summary of the passing infrastructure discovery."),
+				Field("kubernetes", ObjectType, "Passing Kubernetes deployment choices."),
+				Field("local", ObjectType, "Passing local deployment choices."),
+				Field("filesystem", ObjectType, "Passing filesystem readiness relevant for deployment."),
+				Field("recommendedDeployment", ObjectType, "Recommended passing choice to merge into a deploy-creatio call."),
+				Field("recommendedByEngine", ObjectType, "Recommended passing choices grouped by database engine.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Show passing infrastructure and deployment recommendations", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Use the recommended bundle from this tool as the deploy-creatio argument source after assert-infrastructure confirms readiness."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildFindEmptyIisPort() {
+		return new ToolContractDefinition(
+			FindEmptyIisPortTool.FindEmptyIisPortToolName,
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			new ToolInputSchemaContract([], []),
+			StructuredResultOutput(
+				Field("status", StringType, "Availability status for the requested range."),
+				Field("summary", StringType, "Human-readable scan summary."),
+				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
+				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
+				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Find a safe local IIS port for deployment", new Dictionary<string, object?>())
+			],
+			Flow(
+				[
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDeployCreatio() {
+		return new ToolContractDefinition(
+			InstallerCommandTool.DeployCreatioToolName,
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure.",
+			new ToolInputSchemaContract(
+				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
+				[
+					Field(SiteNameFieldName, StringType, "Creatio instance name."),
+					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
+					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
+					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
+					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Deploy a local IIS instance after the deploy preflight", new Dictionary<string, object?> {
+					[SiteNameFieldName] = "creatio-app",
+					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
+					[SitePortFieldName] = 40001,
+					[DbServerNameFieldName] = "postgres-local",
+					[RedisServerNameFieldName] = "redis-local"
+				})
+			],
+			Flow(
+				[
+					AssertInfrastructureTool.AssertInfrastructureToolName,
+					ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+					FindEmptyIisPortTool.FindEmptyIisPortToolName,
+					InstallerCommandTool.DeployCreatioToolName
+				],
+				"Always run the full deploy preflight before deploy-creatio. After deployment, register the instance with reg-web-app and install cliogate with install-gate before using workspace tools."),
+			[],
+			[],
+			Preconditions: [
+				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
+				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
+				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildRestoreWorkspace() {
+		return new ToolContractDefinition(
+			RestoreWorkspaceTool.RestoreWorkspaceToolName,
+			"Restores the local workspace at workspace-path from the specified Creatio environment. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, WorkspacePathFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(WorkspacePathFieldName, StringType, WorkspacePathDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Restore a workspace from a registered environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[WorkspacePathFieldName] = ExampleWorkspaceAbsolutePath
+				})
+			],
+			Flow(
+				[
+					RestoreWorkspaceTool.RestoreWorkspaceToolName,
+					PushWorkspaceTool.PushWorkspaceToolName
+				],
+				"Restore packages from the environment into the local workspace, then push local changes back with push-workspace."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app).",
+				"cliogate is installed on the target environment; if restore fails with a missing-cliogate error, run install-gate and retry.",
+				"workspace-path is a local absolute path to an existing directory (network-share paths are not supported)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildPushWorkspace() {
+		return new ToolContractDefinition(
+			PushWorkspaceTool.PushWorkspaceToolName,
+			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, WorkspacePathFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+					Field(SkipBackupFieldName, BooleanType, "When true, skips package backup before workspace install.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Push a local workspace to a registered environment", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[WorkspacePathFieldName] = ExampleWorkspaceAbsolutePath
+				})
+			],
+			Flow(
+				[
+					PushWorkspaceTool.PushWorkspaceToolName,
+					CompileCreatioTool.CompileCreatioToolName
+				],
+				"Push the workspace, then run compile-creatio only when the pushed packages contain C# schema changes that require compilation."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app).",
+				"workspace-path is a local absolute path to an existing workspace directory (network-share paths are not supported)."
 			]);
 	}
 

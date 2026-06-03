@@ -133,13 +133,23 @@ internal sealed class LocalEsqFilterBuilder {
 		Guid id = ResolveLookupId(rawValue, column);
 		string idString = id.ToString("D");
 		string? displayName = GuidRegex.IsMatch(rawValue) ? null : rawValue;
-		// When the caller passed a GUID directly we still try to enrich Name/displayValue from the lookup
-		// so the stored value matches the platform-canonical form (Name + displayValue alongside Id + value).
+		// When the caller passed a GUID directly we enrich Name/displayValue from the lookup so the stored value
+		// matches the platform-canonical form (Name + displayValue alongside Id + value).
 		if (displayName is null
 			&& _lookupResolver is not null
 			&& !string.IsNullOrEmpty(column.ReferenceSchemaName)
 			&& _lookupResolver.TryResolveDisplayNameById(column.ReferenceSchemaName!, id, out string? resolved)) {
 			displayName = resolved;
+		}
+
+		// A Lookup filter value MUST carry Name/displayValue: the Freedom UI lookup control reads them off the
+		// parameter value and fails to render an Id-only value. Enrichment is therefore mandatory, not best-effort.
+		if (string.IsNullOrEmpty(displayName)) {
+			throw new ArgumentException(
+				$"filter: could not resolve the display name for Lookup value '{idString}' on schema "
+				+ $"'{column.ReferenceSchemaName}'. A Lookup filter value must carry Name/displayValue or the Freedom UI "
+				+ "lookup control fails to render it. Pass the lookup's display name instead of a raw GUID (clio resolves "
+				+ "the Id and keeps the name), or verify the GUID exists in that schema.");
 		}
 
 		return new EsqParameterExpressionDto {
