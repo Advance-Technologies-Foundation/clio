@@ -59,6 +59,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
+		parameterDescription.Description.Should().Contain("indicator-widget",
+			because: "the top-level argument hint should mention the dedicated indicator widget guidance name");
+		parameterDescription.Description.Should().Contain("esq-filters",
+			because: "the top-level argument hint should mention the dedicated ESQ filters guidance name");
 		parameterDescription.Description.Should().Contain("page-modification",
 			because: "the top-level argument hint should mention the general page modification guidance name");
 		propertyDescription.Description.Should().Contain("configuration-webservice",
@@ -69,8 +73,58 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
+		propertyDescription.Description.Should().Contain("indicator-widget",
+			because: "the serialized name field hint should mention the dedicated indicator widget guidance name");
+		propertyDescription.Description.Should().Contain("esq-filters",
+			because: "the serialized name field hint should mention the dedicated ESQ filters guidance name");
 		propertyDescription.Description.Should().Contain("page-modification",
 			because: "the serialized name field hint should stay aligned with the known page modification guidance name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical ESQ filters guidance article when the caller requests esq-filters.")]
+	public async Task GuidanceGet_Should_Return_Esq_Filters_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("esq-filters"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "esq-filters is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the guidance tool should preserve the canonical esq-filters guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP ESQ filters guide",
+			because: "the guidance tool should return the canonical ESQ filters article text");
+		result.Article.Text.Should().Contain("Column-path normalization",
+			because: "the ESQ filters guide should expose the normalized-path guidance explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical indicator widget guidance article when the caller requests indicator-widget.")]
+	public async Task GuidanceGet_Should_Return_Indicator_Widget_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("indicator-widget"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "indicator-widget is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the guidance tool should preserve the canonical indicator-widget guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the guidance tool should return the canonical indicator widget article text");
+		result.Article.Text.Should().Contain("CreatedByNameSupervisor",
+			because: "the indicator widget guide should carry a concrete portable user-filter example");
 	}
 
 	[Test]
@@ -268,6 +322,8 @@ public sealed class GuidanceGetToolTests {
 				"creatio-freedom-iframe-section",
 				"data-bindings",
 				"existing-app-maintenance",
+				"indicator-widget",
+				"esq-filters",
 				"feature-toggle",
 				"feature-toggle-tests",
 				"page-schema-converters",

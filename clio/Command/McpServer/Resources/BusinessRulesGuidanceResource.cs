@@ -87,6 +87,7 @@ public sealed class BusinessRulesGuidanceResource {
 		         - "birthday today/tomorrow" (day-and-month match ignoring year) → `valueMacros: "DayOfYearTodayPlusDaysOffset"` with `valueMacrosArgument` = day offset (0=today, 1=tomorrow), applied to whichever Date column actually holds the birth date on the reference schema (confirm its name first; do not assume it is called BirthDate). This is NOT the same as `Today`/`Tomorrow` (which match the full date including year).
 		         - "age = N" / "age < N" / "aged between X and Y": resolve the reference schema's columns FIRST (get-entity-schema-properties or dataforge-get-table-columns) and decide from what actually exists — never assume. (a) If a numeric age column exists, filter it directly — "age = N" → <AgeColumn> EQUAL N, "age < N" → <AgeColumn> LESS N, "aged between X and Y" → <AgeColumn> GREATER_OR_EQUAL X AND LESS_OR_EQUAL Y. (b) Otherwise, if a birth-date column exists, translate to a date range: resolve today's date (call GetCurrentDateTime if unsure), then <BirthDateColumn> GREATER_OR_EQUAL (today − Y years) AND LESS_OR_EQUAL (today − X years) for "between X and Y"; "age = N" → a one-year window; "age < N" → <BirthDateColumn> GREATER (today − N years). Emit fixed ISO date constants (column arithmetic inside filter values is not supported). Pick the real column names from the schema metadata, not from these placeholders.
 		       - discovery flow (ALWAYS, no assumptions): before building any filter, resolve the target lookup's reference schema and confirm every columnPath segment and its data value type with `get-entity-schema-properties` (or `dataforge-get-table-columns`). Do not assume a column exists, is absent, or has a given type from its name or from prior schemas — verify against THIS environment's schema. The schema-aware validator rejects unknown columns and type-mismatched comparisons, so resolving first avoids a failed call. Use `find-entity-schema` to locate the schema and `odata-read` to resolve any non-GUID lookup value to a real Id.
+		       - before authoring a non-trivial static filter, call `get-guidance` with name `esq-filters` for normalized-path, lookup-value, and relative-date pitfalls.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -116,6 +117,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` structured `filters`. Example lookup read by display value: `odata-read` with entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
 		       6. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
+		          - For `apply-static-filter`, read `esq-filters` first when the filter involves lookup constants, relative-date language, `...Id` paths, or child-record conditions.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       7. Call `create-entity-business-rule` or `create-page-business-rule`.
 		       8. Verify by checking the entity or page on the environment.
@@ -128,6 +130,8 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
 		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read`.
+		       - Do NOT author `...Id` paths by reflex when the target filter contract expects object-path semantics such as `CreatedBy` or `[Contact:Account]`.
+		       - Do NOT serialize date-relative wording like "this year" or "next 7 days" as plain text constants.
 		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.
 		       - Do NOT use `targetFilterPath` or `sourceFilterPath` that resolve to scalar `Guid` columns such as `Lookup.Id`; those paths must resolve to Lookup attributes.
 		       - Do NOT set `populateValue=true` together with `sourceFilterPath`; current platform behavior does not support that combination cleanly.

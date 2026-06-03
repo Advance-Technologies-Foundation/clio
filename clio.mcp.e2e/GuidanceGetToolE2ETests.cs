@@ -177,6 +177,66 @@ public sealed class GuidanceGetToolE2ETests {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical indicator widget guidance article")]
+	public async Task GuidanceGet_Should_Return_Indicator_Widget_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "indicator-widget"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "indicator-widget is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the guidance tool should return the canonical indicator widget guide text");
+		response.Article.Text.Should().Contain("CreatedByNameSupervisor",
+			because: "the guide should expose the concrete portable user-filter example to external callers too");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical ESQ filters guidance article")]
+	public async Task GuidanceGet_Should_Return_Esq_Filters_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "esq-filters"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "esq-filters is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP ESQ filters guide",
+			because: "the guidance tool should return the canonical ESQ filters guide text");
+		response.Article.Text.Should().Contain("Lookup-filter conversion guidance",
+			because: "the guide should expose lookup filter pitfalls to external callers too");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange

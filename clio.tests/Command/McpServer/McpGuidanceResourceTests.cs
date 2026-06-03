@@ -1414,6 +1414,104 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI indicator widgets so AI callers can translate Copilot metric intent into runtime widget config.")]
+	public void IndicatorWidgetGuidanceResource_Should_Return_Canonical_Indicator_Widget_Guide() {
+		// Arrange
+		IndicatorWidgetGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the indicator widget guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the resource should expose a stable MCP URI for indicator widget guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the indicator widget guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the article should identify itself as the dedicated indicator-widget guide");
+		article.Text.Should().Contain("config.data.providing.schemaName",
+			because: "the guide should translate Copilot's conceptual source entity into the runtime widget payload");
+		article.Text.Should().Contain("from` -> `config.data.providing.schemaName",
+			because: "the guide should publish the Copilot-to-runtime mapping explicitly");
+		article.Text.Should().Contain("CreatedByNameSupervisor",
+			because: "the guide should include a concrete portable user-filter example");
+		article.Text.Should().Contain("Do NOT copy Copilot's conceptual `from` / `select` / `filters` object directly into the page body",
+			because: "the guide should prevent callers from pasting the wrong payload shape into update-page");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
+	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
+		// Arrange
+		EsqFiltersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the ESQ filters guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the ESQ filters guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP ESQ filters guide",
+			because: "the article should identify itself as the dedicated ESQ filters guide");
+		article.Text.Should().Contain("Column-path normalization",
+			because: "the guide should cover normalized path semantics explicitly");
+		article.Text.Should().Contain("Lookup-filter conversion guidance",
+			because: "the guide should cover lookup value-shape rules explicitly");
+		article.Text.Should().Contain("Relative-date conversion guidance",
+			because: "the guide should cover relative-date pitfalls explicitly");
+		article.Text.Should().Contain("`CreatedById` -> `CreatedBy`",
+			because: "the guide should include a concrete normalized-path example");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes indicator-widget so AI callers can retrieve indicator widget authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Indicator_Widget_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("indicator-widget", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose indicator-widget so get-guidance can return it by name");
+		entry.Name.Should().Be("indicator-widget",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("indicator widgets",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose esq-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("esq-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("filter authoring",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents business-rule support and offline limitations.")]
 	public void MobilePageGuidanceResource_Should_Return_Canonical_Mobile_Page_Guide() {
 		// Arrange
