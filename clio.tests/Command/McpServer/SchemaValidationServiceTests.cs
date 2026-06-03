@@ -2101,6 +2101,65 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Static viewModelConfig form: a binding attribute placed at the viewModelConfig ROOT (a sibling of .attributes) instead of under .attributes is NOT recognised as declared, so the inserted field is rejected. This is the static-body analogue of the ENG-90846 runtime symptom where new attributes ended up at the viewModelConfig root (sibling of attributes) and the Freedom UI runtime ignored them — the controls rendered with no data.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeAtRootNotUnderAttributes_ReturnsInvalid() {
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":{"type":"crt.NumberInput","control":"$UsrEstimatedMinutes"}
+				}
+			]
+		""";
+		// Attribute sits at the viewModelConfig root (sibling of "attributes"), NOT under .attributes —
+		// the form the runtime ignores.
+		string viewModelConfig = """
+			{
+				"attributes": {},
+				"UsrEstimatedMinutes": { "modelConfig": { "path": "PDS.UsrEstimatedMinutes" } }
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because an attribute at the viewModelConfig root (not under .attributes) is ignored by the runtime, so the control would render with no data");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("UsrEstimatedMinutes") &&
+			error.Contains("does not declare attribute"));
+	}
+
+	[Test]
+	[Description("Static viewModelConfig form: an inserted field whose binding attribute is declared nowhere (empty attributes map) is rejected with the binding-declaration diagnostic — the static-form counterpart of the diff-form InsertWithoutViewModelAttribute case.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeMissing_ReturnsInvalid() {
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":{"type":"crt.NumberInput","control":"$UsrEstimatedMinutes"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {}
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because the static viewModelConfig.attributes map does not declare the bound attribute, so the control would have no data source");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("UsrEstimatedMinutes") &&
+			error.Contains("does not declare attribute"));
+	}
+
+	[Test]
 	[Description("Legacy diff format path:[\"attributes\"] (older platform form, values IS the attributes container) is recognised as properly-nested and accepted by ValidateInsertedFieldSelfConsistency.")]
 	public void ValidateInsertedFieldSelfConsistency_LegacyPathAttributesFormat_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
