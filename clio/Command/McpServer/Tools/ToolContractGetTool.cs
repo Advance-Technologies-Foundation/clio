@@ -218,6 +218,7 @@ internal static class ToolContractCatalog {
 	private const string LoginFieldName = "login";
 	private const string NumberType = "number";
 	private const string ObjectType = "object";
+	private const string ComponentTypeFieldName = "component-type";
 	private const string OperationsFieldName = "operations";
 	private const string PackageNameFieldName = "package-name";
 	private const string PasswordFieldName = "password";
@@ -2967,7 +2968,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("component-type", StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -2992,18 +2993,18 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			[
-				Alias(ParameterScope, "component-type", "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
 				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
 			[],
 			[
 				Example("Inspect one component contract", new Dictionary<string, object?> {
-					["component-type"] = "crt.TabContainer"
+					[ComponentTypeFieldName] = "crt.TabContainer"
 				}),
 				Example("List the full component catalog", new Dictionary<string, object?>()),
 				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
-					["component-type"] = "crt.Toggle",
+					[ComponentTypeFieldName] = "crt.Toggle",
 					["schema-type"] = "mobile"
 				})
 			],
