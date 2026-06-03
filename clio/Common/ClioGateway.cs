@@ -77,7 +77,9 @@ public class ClioGateway : IClioGateway
 
 	public void CheckCompatibleVersion(string version){
 		if (!IsCompatibleWith(version)) {
-			throw new NotSupportedException($"To use this command, you need to install the cliogate package version {version} or higher.");
+			throw new NotSupportedException(
+				$"To use this command, you need to install the cliogate package version {version} or higher. " +
+				"Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) and retry.");
 		}
 	}
 
