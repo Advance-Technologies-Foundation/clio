@@ -66,6 +66,10 @@ internal static class GuidanceCatalog {
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
 				AgentExecutionGuidanceResource.Guide),
+			["deploy-lifecycle"] = Create(
+				"deploy-lifecycle",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio, plus build discovery, registration, and cliogate installation.",
+				DeployLifecycleGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
