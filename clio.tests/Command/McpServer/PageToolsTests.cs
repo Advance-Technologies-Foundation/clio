@@ -2495,7 +2495,16 @@ public class PageToolsTests
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
 		failingFs.Path.Combine(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1), ci.ArgAt<string>(2)));
+		failingFs.Path.GetFullPath(Arg.Any<string>()).Returns(ci => ci.ArgAt<string>(0));
 		failingFs.Directory.GetCurrentDirectory().Returns("/workspace");
+		// Configure the workspace-root walk-up so it terminates: a bare IDirectoryInfo substitute
+		// returns a non-null recursive substitute for .Parent, so PageOutputDirectoryResolver
+		// would loop forever and exhaust memory. A single directory whose Parent is null models a
+		// filesystem root and lets the resolver fall through to the current directory.
+		System.IO.Abstractions.IDirectoryInfo workspaceDir = Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		workspaceDir.FullName.Returns("/workspace");
+		workspaceDir.Parent.Returns((System.IO.Abstractions.IDirectoryInfo)null);
+		failingFs.DirectoryInfo.New(Arg.Any<string>()).Returns(workspaceDir);
 		failingFs.Directory.When(d => d.CreateDirectory(Arg.Any<string>()))
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
 		PageGetTool tool = new(command, logger, commandResolver, failingFs);

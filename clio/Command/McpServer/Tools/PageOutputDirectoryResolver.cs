@@ -69,7 +69,15 @@ internal static class PageOutputDirectoryResolver {
 			if (fileSystem.File.Exists(marker)) {
 				return directory.FullName;
 			}
-			directory = directory.Parent;
+			var parent = directory.Parent;
+			// Stop at the filesystem root. On a real filesystem Parent is null at the root; the
+			// FullName-equality guard is belt-and-suspenders against a pathological IFileSystem
+			// whose Parent never returns null (e.g. an under-specified test substitute), which
+			// would otherwise loop forever and exhaust memory.
+			if (parent is null || string.Equals(parent.FullName, directory.FullName, StringComparison.Ordinal)) {
+				break;
+			}
+			directory = parent;
 		}
 		return null;
 	}
