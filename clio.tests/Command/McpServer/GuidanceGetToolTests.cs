@@ -508,4 +508,29 @@ public sealed class GuidanceGetToolTests {
 		result.Article.Text.Should().Contain("shell-execution tool",
 			because: "the CLI anti-pattern must be tool-agnostic (Bash/run_in_terminal/execution_subagent) rather than naming one specific shell tool");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical deploy-lifecycle guidance article when the caller requests deploy-lifecycle.")]
+	public async Task GuidanceGet_Should_Return_Deploy_Lifecycle_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("deploy-lifecycle"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "deploy-lifecycle is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/deploy-lifecycle",
+			because: "the guidance tool should preserve the canonical deploy-lifecycle guide URI in the response");
+		result.Article.Text.Should().Contain("assert-infrastructure",
+			because: "the deploy lifecycle guide must spell out the infrastructure preflight as the first step");
+		result.Article.Text.Should().Contain("deploy-creatio",
+			because: "the deploy lifecycle guide must culminate in the deployment call");
+		result.Article.Text.Should().Contain("install-gate",
+			because: "the deploy lifecycle guide must cover cliogate installation as a post-deploy readiness step");
+	}
 }

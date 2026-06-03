@@ -1564,4 +1564,41 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
 			because: "the article URI in the catalog must match the resource URI");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article dedicated to the apply-static-filter friendly filter contract.")]
+	public void BusinessRuleFiltersGuidanceResource_Should_Return_Canonical_Filter_Contract_Guide() {
+		BusinessRuleFiltersGuidanceResource resource = new();
+
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the filter-contract guide should be returned as a plain-text MCP resource").Subject;
+
+		article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
+			because: "the resource should expose a stable MCP URI for the filter contract");
+		article.MimeType.Should().Be("text/plain");
+		article.Text.Should().Contain("apply-static-filter",
+			because: "the guide should identify itself as the apply-static-filter filter contract");
+		article.Text.Should().Contain("backwardReferenceFilters",
+			because: "the guide should document backward reference filters");
+		article.Text.Should().Contain("aggregationType",
+			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
+		article.Text.Should().Contain("discovery flow",
+			because: "the guide should keep the no-assumptions discovery flow");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rule-filters so AI callers can retrieve the filter contract by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rule_Filters_Entry() {
+		bool found = GuidanceCatalog.TryGet("business-rule-filters", out GuidanceCatalogEntry entry);
+
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rule-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rule-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
+			because: "the article URI in the catalog must match the resource URI");
+	}
 }

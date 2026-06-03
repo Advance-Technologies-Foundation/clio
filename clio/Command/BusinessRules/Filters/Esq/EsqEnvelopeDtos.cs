@@ -128,6 +128,9 @@ internal sealed class EsqInFilterDto {
 	[JsonPropertyName("isEnabled")]
 	public bool IsEnabled { get; set; } = true;
 
+	[JsonPropertyName("trimDateTimeParameterToDate")]
+	public bool TrimDateTimeParameterToDate { get; set; }
+
 	[JsonPropertyName("leftExpression")]
 	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
 

@@ -338,7 +338,7 @@ public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : Enti
 	/// Gets the friendly filter definition.
 	/// </summary>
 	[JsonPropertyName("filter")]
-	[Description("Friendly filter definition for apply-static-filter. Use get-guidance name=business-rules for the full contract.")]
+	[Description("Friendly filter definition for apply-static-filter. Use get-guidance name=business-rule-filters for the full contract.")]
 	[Required]
 	public JsonElement Filter { get; init; }
 
