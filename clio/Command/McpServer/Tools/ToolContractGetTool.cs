@@ -50,27 +50,9 @@ public sealed class ToolContractGetTool {
 	private const string ToolNamesParam = "tool-names";
 
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
-		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
-			return null;
-		}
-		List<string> mapped = [];
-		List<string> unknown = [];
-		foreach (string key in args.ExtensionData.Keys) {
-			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
-			} else {
-				unknown.Add($"'{key}'");
-			}
-		}
-		List<string> parts = [];
-		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped) + ". tool-names must be an array of strings.");
-		}
-		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown)
-				+ ". Valid: tool-names (array of strings). Omit args to list all tools.");
-		}
-		return parts.Count > 0 ? string.Join(" ", parts) : null;
+		return McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ". tool-names must be an array of strings.",
+			"Valid: tool-names (array of strings). Omit args to list all tools.");
 	}
 }
 
@@ -236,6 +218,7 @@ internal static class ToolContractCatalog {
 	private const string LoginFieldName = "login";
 	private const string NumberType = "number";
 	private const string ObjectType = "object";
+	private const string ComponentTypeFieldName = "component-type";
 	private const string OperationsFieldName = "operations";
 	private const string PackageNameFieldName = "package-name";
 	private const string PasswordFieldName = "password";
@@ -464,34 +447,10 @@ internal static class ToolContractCatalog {
 		return Contracts.Keys
 			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => ComputeDistance(requestedName, name))
+			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
 			.ToArray();
-	}
-
-	private static int ComputeDistance(string source, string target) {
-		if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase)) {
-			return 0;
-		}
-		string left = source.ToLowerInvariant();
-		string right = target.ToLowerInvariant();
-		int[,] matrix = new int[left.Length + 1, right.Length + 1];
-		for (int i = 0; i <= left.Length; i++) {
-			matrix[i, 0] = i;
-		}
-		for (int j = 0; j <= right.Length; j++) {
-			matrix[0, j] = j;
-		}
-		for (int i = 1; i <= left.Length; i++) {
-			for (int j = 1; j <= right.Length; j++) {
-				int cost = left[i - 1] == right[j - 1] ? 0 : 1;
-				matrix[i, j] = Math.Min(
-					Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-					matrix[i - 1, j - 1] + cost);
-			}
-		}
-		return matrix[left.Length, right.Length];
 	}
 
 	private static ToolContractDefinition BuildToolContractGet() {
@@ -3005,12 +2964,18 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildComponentInfo() {
 		return new ToolContractDefinition(
 			ComponentInfoTool.ToolName,
-			"Returns grouped Freedom UI component summaries or a full component contract for one component type.",
+			"Returns a flat list of Freedom UI component summaries or the full contract for one component type.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("component-type", StringType, "Optional component type. Omit or use list to return the grouped catalog."),
-					Field("search", StringType, "Optional keyword filter for list mode.")
+					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
+					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
+					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3020,18 +2985,27 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("mode", StringType, "detail or list."),
 				Field("count", NumberType, "Number of matching components."),
-				Field("groups", ArrayType, "Grouped list-mode results."),
-				Field("componentType", StringType, "Component type for detail mode."),
+				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
+				Field("componentType", StringType, "Component type echoed back in detail mode."),
+				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' or 'latest-fallback'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
 			[
-				Alias(ParameterScope, "component-type", "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'.")
+				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
 			[],
 			[
 				Example("Inspect one component contract", new Dictionary<string, object?> {
-					["component-type"] = "crt.TabContainer"
+					[ComponentTypeFieldName] = "crt.TabContainer"
+				}),
+				Example("List the full component catalog", new Dictionary<string, object?>()),
+				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
+					[ComponentTypeFieldName] = "crt.Toggle",
+					["schema-type"] = "mobile"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),
