@@ -83,7 +83,10 @@ public class ConsoleLogger : ILogger, IDisposable{
 				DebugMessage debugMessage => () => PrintDebugInternal(debugMessage.Value.ToString()),
 				var _ => throw new ArgumentOutOfRangeException()
 			};
-			action.Invoke();
+			try {
+				action.Invoke();
+			} catch (ObjectDisposedException) {
+			}
 		}
 	}
 
