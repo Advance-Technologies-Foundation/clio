@@ -20,7 +20,9 @@ public sealed class PageGetTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
-		"Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ in the working directory and returns file paths. " +
+		"Get a Freedom UI page. Writes body.js / bundle.json / meta.json to .clio-pages/{schema-name}/ and returns file paths. " +
+		"Output is anchored at the clio workspace root (the nearest ancestor containing .clio/workspaceSettings.json), or at an explicit `output-directory` when supplied. " +
+		"When the server runs from the home directory and no workspace is found, output falls back to the managed clio home root instead of littering $HOME — pass `output-directory` (your project root) to keep page files next to your code. " +
 		"body.js contains the EDITABLE own-body of the replacing schema in the design package (empty template when no replacing schema exists yet) — this is what update-page should receive. " +
 		"bundle.json contains the full merged view of the entire hierarchy and is the correct source for reading what components are on the page. " +
 		"IMPORTANT: bundle.json is a JSON document. Use a JSON parsing tool (jq, PowerShell ConvertFrom-Json, Python json.load) to navigate it; do NOT rely on grep or line-oriented text search — it is typically minified to a single line. " +
@@ -53,15 +55,20 @@ public sealed class PageGetTool(
 			}
 			resolvedCommand.TryGetPage(options, out PageGetResponse response);
 			if (response.Success) {
-				return WriteFilesAndCompact(response, args.SchemaName);
+				return WriteFilesAndCompact(response, args.SchemaName, args.OutputDirectory);
 			}
 			return response;
 		});
 	}
 
-	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName) {
-		string rootDir = fileSystem.Path.Combine(
-			fileSystem.Directory.GetCurrentDirectory(), ".clio-pages");
+	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName, string? outputDirectory) {
+		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+			fileSystem,
+			fileSystem.Directory.GetCurrentDirectory(),
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			ClioRuntimePaths.Home,
+			outputDirectory);
+		string rootDir = fileSystem.Path.Combine(anchor, ".clio-pages");
 		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
 		try {
 			if (fileSystem.Directory.Exists(schemaDir)) {
@@ -134,5 +141,9 @@ public sealed record PageGetArgs(
 	string? Login,
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+
+	[property: JsonPropertyName("output-directory")]
+	[property: Description("Optional. Directory to anchor .clio-pages output under — typically your project/workspace root. When omitted, the workspace root is auto-detected by walking up for .clio/workspaceSettings.json; if the server runs from the home directory with no workspace found, output falls back to the clio home root rather than $HOME.")]
+	string? OutputDirectory = null
 );

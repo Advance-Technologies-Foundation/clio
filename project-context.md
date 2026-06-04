@@ -20,9 +20,15 @@
 ## Architecture Rules (non-obvious)
 
 ### Command pattern
-- All CLI commands use **MediatR** — every new command needs a `Request` + `Handler` pair
-- Handlers live in `clio/Application/{Feature}/` or adjacent namespace
-- Commands are registered via DI in `clio/` startup — never forget to register
+- **Do NOT use MediatR for new commands.** MediatR is a legacy approach that is
+  being actively removed from the codebase — do not add new `Request` + `Handler`
+  pairs and do not route new commands through MediatR.
+- New CLI commands derive from `Command<TOptions>` (see `clio/Command/Command.cs`),
+  take their dependencies via **constructor injection**, and call collaborating
+  **services** directly. Existing command families such as the skill commands
+  (`clio/Command/SkillCommands.cs`) are the reference pattern.
+- Commands are registered via DI in `clio/BindingsModule.cs` and wired as verbs in
+  `clio/Program.cs` — never forget to register.
 - `IApplicationClient` / `CreatioClient` is the ONLY way to talk to Creatio HTTP API — never use raw `HttpClient`
 
 ### CLI flag naming — HARD RULE

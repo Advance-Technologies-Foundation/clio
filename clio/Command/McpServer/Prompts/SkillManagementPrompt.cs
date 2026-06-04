@@ -1,78 +1,63 @@
-using System;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using Clio.Command.McpServer.Tools;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Prompts;
 
 /// <summary>
-/// Prompt helpers for scope-aware skill management MCP tools.
+/// Prompt helpers for the multi-agent skill management MCP tools.
 /// </summary>
-[McpServerPromptType, Description("Prompts for installing, updating, and deleting managed skills in workspace or user scope")]
+[McpServerPromptType, Description("Prompts for installing, updating, and deleting the Creatio toolkit skill across coding agents")]
 public static class SkillManagementPrompt {
 	/// <summary>
-	/// Builds guidance for installing managed skills through MCP.
+	/// Builds guidance for installing the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "install-skills-guidance"), Description("Prompt to install managed skills")]
+	[McpServerPrompt(Name = "install-adac-guidance"), Description("Prompt to install the Creatio toolkit skill")]
 	public static string InstallSkills(
-		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
-		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null,
-		[Description("Optional skill name")] string skillName = null,
-		[Description("Optional repository path or git URL")] string repo = null) =>
+		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null,
+		[Description("Optional source override (marketplace git URL, or path/URL for cursor)")] string repo = null) =>
 		$"""
 		 Use clio MCP tool `{InstallSkillsTool.ToolName}`.
-		 Pass `scope` as `{scope}`.
-		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
-			 ? "Omit `workspacePath` when installing into user scope."
-			 : $"Pass `workspacePath` as `{workspacePath}` when installing into workspace scope.")}
-		 {(string.IsNullOrWhiteSpace(skillName)
-			 ? "Omit `skillName` to install all available skills."
-			 : $"Pass `skillName` as `{skillName}` to install a single skill.")}
-		 {(string.IsNullOrWhiteSpace(repo)
-			 ? "Omit `repo` to use the default bootstrap skills repository."
-			 : $"Pass `repo` as `{repo}` to use that local repository path or git URL.")}
-		 Do not overwrite unmanaged skill folders.
+		 {TargetGuidance(target, "install")}
+		 {RepoGuidance(repo)}
+		 Installs the whole Creatio AI App Development Toolkit bundle per agent using each agent's
+		 native plugin mechanism. There is no per-skill selection.
 		 """;
 
 	/// <summary>
-	/// Builds guidance for updating managed skills through MCP.
+	/// Builds guidance for updating the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "update-skill-guidance"), Description("Prompt to update managed skills")]
+	[McpServerPrompt(Name = "update-adac-guidance"), Description("Prompt to update the Creatio toolkit skill")]
 	public static string UpdateSkill(
-		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
-		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null,
-		[Description("Optional managed skill name")] string skillName = null,
-		[Description("Optional repository path or git URL")] string repo = null) =>
+		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null,
+		[Description("Optional source override (marketplace git URL, or path/URL for cursor)")] string repo = null) =>
 		$"""
 		 Use clio MCP tool `{UpdateSkillTool.ToolName}`.
-		 Pass `scope` as `{scope}`.
-		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
-			 ? "Omit `workspacePath` when updating user-scope skills."
-			 : $"Pass `workspacePath` as `{workspacePath}` when updating workspace-scope skills.")}
-		 {(string.IsNullOrWhiteSpace(skillName)
-			 ? "Omit `skillName` to update all managed skills registered for the selected repository."
-			 : $"Pass `skillName` as `{skillName}` to update one managed skill.")}
-		 {(string.IsNullOrWhiteSpace(repo)
-			 ? "Omit `repo` to use the default bootstrap skills repository."
-			 : $"Pass `repo` as `{repo}` to select the repository whose commit hash should be checked.")}
-		 Updates only apply to clio-managed skills and only when the repository HEAD hash changed.
+		 {TargetGuidance(target, "update")}
+		 {RepoGuidance(repo)}
+		 Updates every detected agent, including Claude (refreshed via `claude plugin update`).
 		 """;
 
 	/// <summary>
-	/// Builds guidance for deleting a managed skill through MCP.
+	/// Builds guidance for uninstalling the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "delete-skill-guidance"), Description("Prompt to delete a managed skill")]
+	[McpServerPrompt(Name = "delete-adac-guidance"), Description("Prompt to uninstall the Creatio toolkit skill")]
 	public static string DeleteSkill(
-		[Required] [Description("Managed skill name")] string skillName,
-		[Description("Skill target scope: workspace or user")] string scope = SkillScopeParser.Workspace,
-		[Description("Absolute local workspace path when scope is workspace")] string workspacePath = null) =>
+		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null) =>
 		$"""
-		 Use clio MCP tool `{DeleteSkillTool.ToolName}` with `skillName` set to `{skillName}`.
-		 Pass `scope` as `{scope}`.
-		 {(string.Equals(scope, SkillScopeParser.User, StringComparison.OrdinalIgnoreCase)
-			 ? "Omit `workspacePath` when deleting a user-scope managed skill."
-			 : $"Pass `workspacePath` as `{workspacePath}` when deleting a workspace-scope managed skill.")}
-		 Delete only managed skills recorded by clio.
+		 Use clio MCP tool `{DeleteSkillTool.ToolName}`.
+		 {TargetGuidance(target, "uninstall from")}
+		 The shared `clio` MCP server entry is intentionally left in place. Delete is idempotent —
+		 an already-clean agent is reported as success.
 		 """;
+
+	private static string TargetGuidance(string target, string verb) =>
+		string.IsNullOrWhiteSpace(target)
+			? $"Omit `target` to {verb} all detected agents."
+			: $"Pass `target` as `{target}` to {verb} only that agent.";
+
+	private static string RepoGuidance(string repo) =>
+		string.IsNullOrWhiteSpace(repo)
+			? "Omit `repo` to use the default public toolkit marketplace."
+			: $"Pass `repo` as `{repo}` to override the source.";
 }
