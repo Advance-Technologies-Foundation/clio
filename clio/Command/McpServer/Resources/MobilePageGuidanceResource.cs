@@ -219,6 +219,15 @@ public sealed class MobilePageGuidanceResource {
 		         crt.ColorPicker, crt.TagSelect, crt.MultiSelect, crt.IFrame,
 		         crt.Chat, crt.Dashboards
 
+		       VERIFY, DON'T DOWNGRADE. Neither list above is exhaustive — `get-component-info
+		       schema-type: "mobile"` is the authoritative source for what runs on mobile. A type
+		       existing on web does NOT make it web-only: if it IS in the mobile catalog it IS
+		       implemented, so use it (the inverse of the NO INVENTION rule above). When a column
+		       has a specific data type (phone, email, number, date, etc.), do NOT default it to a
+		       generic input out of caution — check the catalog you already retrieved and PREFER
+		       the matching specialized input. Fall back to a generic input only when the catalog
+		       has no specialized match.
+
 		       ─────────────────────────────────────────────────────────────
 		       ADAPTIVE BREAKPOINTS
 		       ─────────────────────────────────────────────────────────────
