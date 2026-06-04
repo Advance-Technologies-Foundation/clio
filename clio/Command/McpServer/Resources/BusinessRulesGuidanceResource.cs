@@ -90,7 +90,6 @@ public sealed class BusinessRulesGuidanceResource {
 		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` or `execute-esq`. Example lookup read by display value with `odata-read`: entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
 		       6. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
-		          - For `apply-static-filter`, read `esq-filters` first when the filter involves lookup constants, relative-date language, `...Id` paths, or child-record conditions.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       7. Call `create-entity-business-rule` or `create-page-business-rule`.
 		       8. Verify by checking the entity or page on the environment.

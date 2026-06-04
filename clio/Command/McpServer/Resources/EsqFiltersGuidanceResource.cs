@@ -188,7 +188,6 @@ public sealed class EsqFiltersGuidanceResource {
 		       Related guidance
 		       - Read `esq` for the SelectQuery envelope, columns/select, expression building blocks, the forward/backward reference grammar, aggregations, and the master enum tables.
 		       - Read `indicator-widget` when the filter is part of a `crt.IndicatorWidget` aggregate payload.
-		       - Read `business-rules` when the filter is being authored for `apply-static-filter` or another declarative rule action.
 		       - Read `page-modification` for page-body save mechanics after the filter shape is decided.
 		       """
 	};
