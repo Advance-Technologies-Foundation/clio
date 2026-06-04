@@ -8,6 +8,14 @@ jobs:
   build:
     name: release-to-nuget
     runs-on: self-hosted
+    # Override the runner's Restricted PowerShell execution policy at Process scope so the
+    # powershell steps below can load their temp scripts. Process scope wins over LocalMachine,
+    # and using the env var (rather than a custom -ExecutionPolicy shell) keeps GitHub's built-in
+    # $LASTEXITCODE propagation intact, so a failing test/build still blocks the publish.
+    # Fixes the publish failing at "Extract Version from Tag" with
+    # "running scripts is disabled on this system" (PSSecurityException / UnauthorizedAccess).
+    env:
+      PSExecutionPolicyPreference: Bypass
     steps:
       - uses: actions/checkout@v5
         with:

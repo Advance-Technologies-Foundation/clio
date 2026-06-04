@@ -72,30 +72,9 @@ public sealed class PageListTool(
 	}
 
 	private static string? GetLegacyAliasError(PageListArgs args) {
-		if (args.ExtensionData is null || args.ExtensionData.Count == 0) {
-			return null;
-		}
-		List<string> mapped = [];
-		List<string> unknown = [];
-		foreach (string key in args.ExtensionData.Keys) {
-			if (LegacyAliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
-			} else {
-				unknown.Add($"'{key}'");
-			}
-		}
-		if (mapped.Count == 0 && unknown.Count == 0) {
-			return null;
-		}
-		List<string> parts = [];
-		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped));
-		}
-		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown)
-				+ ". Valid: package-name, code, search-pattern, limit, environment-name, uri, login, password.");
-		}
-		return string.Join(" ", parts);
+		return McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, string.Empty,
+			"Valid: package-name, code, search-pattern, limit, environment-name, uri, login, password.");
 	}
 }
 
