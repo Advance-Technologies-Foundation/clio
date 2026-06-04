@@ -101,6 +101,54 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 	}
 
 	[Test]
+	[Description("Falls back to UI markers and returns false (Framework) when both service probes fail but only the .NET Framework UI marker succeeds — the scenario seen on 120458-studio.creatio.com.")]
+	public void Detect_Should_Return_False_When_Both_Service_Probes_Fail_But_Only_NetFramework_Ui_Marker_Succeeds() {
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.OK,
+			[BuildHealthUrl(false)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
+		});
+		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
+		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework returned HTML.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		bool result = sut.Detect(CreateEnvironment());
+
+		result.Should().BeFalse(because: "NuiLogin.aspx present and Login.html absent is the .NET Framework fingerprint");
+	}
+
+	[Test]
+	[Description("Falls back to UI markers and returns true (NetCore) when both service probes fail but only the .NET Core UI marker succeeds.")]
+	public void Detect_Should_Return_True_When_Both_Service_Probes_Fail_But_Only_NetCore_Ui_Marker_Succeeds() {
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.OK,
+			[BuildHealthUrl(false)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
+		});
+		IApplicationClient netCoreClient = Substitute.For<IApplicationClient>();
+		IApplicationClient netFrameworkClient = Substitute.For<IApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		bool result = sut.Detect(CreateEnvironment());
+
+		result.Should().BeTrue(because: "Login.html present and NuiLogin.aspx absent is the .NET Core fingerprint");
+	}
+
+	[Test]
 	[Description("Chooses .NET Core when both service probes succeed but only the .NET Core login marker is reachable.")]
 	public void Detect_Should_Return_True_When_Both_Service_Probes_Succeed_But_Only_NetCore_Ui_Marker_Is_Reachable() {
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
