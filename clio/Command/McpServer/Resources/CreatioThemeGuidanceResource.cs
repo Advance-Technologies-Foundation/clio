@@ -14,7 +14,7 @@ public sealed class CreatioThemeGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	[McpServerResource(UriTemplate = ResourceUri, Name = "creatio-theme-guidance")]
-	[Description("Returns canonical MCP guidance for Creatio Freedom UI custom themes: the theme.json + theme.css artifact, the --crt-* token contract, platform :root primitives that must not be redefined, font integration (local and Google Fonts), scaffolding a theme with new-theme, and activation (push-workspace + clear-redis-db).")]
+	[Description("Returns canonical MCP guidance for Creatio Freedom UI custom themes: the theme.json + theme.css artifact, what a theme may redefine vs the platform :root primitives it must not, font integration (local and Google Fonts), scaffolding a theme with new-theme, and activation (push-workspace + clear-redis-db); the full --crt-* token catalog is in the design-tokens guide.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -26,6 +26,8 @@ public sealed class CreatioThemeGuidanceResource {
 		       Scope
 		       - Use this guide when the user asks to create, edit, or delete a Creatio Freedom UI custom theme in a clio workspace.
 		       - Themes are supported on Creatio 10.x and later.
+		       - For the full `--crt-*` token catalog (every token name and its default value), read the `design-tokens`
+		         guide (get-guidance design-tokens). This guide covers theme authoring, not the token list.
 
 		       What a theme is
 		       - A theme is a FILE artifact inside a package, NOT a database entity. It is two files:
@@ -38,20 +40,16 @@ public sealed class CreatioThemeGuidanceResource {
 
 		       Token contract (theme.css)
 		       - Everything lives under the single root selector `.<cssClassName>`.
-		       - Semantic colors: background / border / text / icon, each with Base and Role variants
-		         (primary, secondary, accent, error, success) and states (hover, selected, subtle, soft, on-*).
-		         These are defined via `var(--crt-palette-*)` / `var(--crt-color-*)`.
-		       - Typography mapping: large-1..4, headline-1..5, body-1..2, caption, button, button-small, overline.
-		         These reference `var(--crt-font-family-heading|body)`, `var(--crt-font-size-*)`,
-		         `var(--crt-font-weight-*)`, `var(--crt-line-height-*)`.
-		       - Palettes: primary, secondary, accent, neutral, error, success — shades 10,25,50,100..900 (concrete hex).
+		       - A theme DEFINES the semantic colors (background / border / text / icon, with Base + role variants and
+		         states), the typography roles, and the palette shades. The authoritative list of every `--crt-*`
+		         name and its default value lives in the `design-tokens` guide — consult it for token names/values;
+		         this guide does not repeat them.
 
 		       Platform :root primitives — DO NOT redefine in a theme
-		       - These live globally on `:root` and are owned by the platform. A theme only CONSUMES them via
-		         `var(...)`; it must NOT declare them inside `.<cssClassName>`:
-		         `--crt-color-base-light` / `--crt-color-base-dark`, `--crt-radius-*`, `--crt-spacing-*`,
-		         `--crt-font-size-*`, `--crt-line-height-*`, `--crt-font-weight-*`, and the glassmorphism tokens
-		         (`--crt-glass-color-light/dark-*`, `--crt-color-text/icon-glassmorphic-*`).
+		       - The tokens the `design-tokens` guide marks as defined on `:root` (base colors, `--crt-radius-*`,
+		         `--crt-spacing-*`, `--crt-font-size-*`, `--crt-line-height-*`, `--crt-font-weight-*`, and the
+		         glassmorphism tokens) are owned by the platform. A theme only CONSUMES them via `var(...)`; it must
+		         NOT declare them inside `.<cssClassName>`.
 		       - Safe to change: palette hex values, semantic-color mappings, typography sizes/weights, and the font.
 		       - Strongly discouraged: redefining the :root primitives, renaming `--crt-*` variables, removing whole
 		         token blocks, or introducing non-`--crt-*` custom properties.

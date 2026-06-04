@@ -68,6 +68,15 @@
 		<Content Include="tpl\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
+
+		<!-- Single source for the design-token catalog: embedded so the design-tokens MCP guidance reads it
+		     from the assembly, and still copied to output so the ui-project scaffold ships its own ./ai-guides/ copy. -->
+		<None Remove="tpl\ui-project\ai-guides\DESIGN_TOKENS_AI_GUIDE.md"/>
+		<Content Remove="tpl\ui-project\ai-guides\DESIGN_TOKENS_AI_GUIDE.md"/>
+		<EmbeddedResource Include="tpl\ui-project\ai-guides\DESIGN_TOKENS_AI_GUIDE.md">
+			<LogicalName>DESIGN_TOKENS_AI_GUIDE.md</LogicalName>
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</EmbeddedResource>
 		<None Include="cliogate\**"/>
 		<Content Include="cliogate\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>

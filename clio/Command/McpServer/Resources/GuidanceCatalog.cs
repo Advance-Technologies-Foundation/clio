@@ -88,8 +88,12 @@ internal static class GuidanceCatalog {
 				WorkspaceUiProjectGuidanceResource.Guide),
 			["creatio-theme"] = Create(
 				"creatio-theme",
-				"Canonical MCP guidance for Creatio Freedom UI custom themes: the theme.json + theme.css artifact, the --crt-* token contract and platform :root primitives, fonts (local and Google), and scaffolding a theme with new-theme.",
-				CreatioThemeGuidanceResource.Guide)
+				"Canonical MCP guidance for Creatio Freedom UI custom themes: the theme.json + theme.css artifact, what a theme may redefine vs the platform :root primitives it must not, fonts (local and Google), and scaffolding a theme with new-theme; defers the full --crt-* token catalog to the design-tokens guide.",
+				CreatioThemeGuidanceResource.Guide),
+			["design-tokens"] = Create(
+				"design-tokens",
+				"Canonical catalog of Creatio --crt-* design tokens: semantic colors, typography roles, palettes, spacing/radius primitives, and font weights, with names and default-theme values. Single source shared by component styling and theme authoring.",
+				DesignTokensGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

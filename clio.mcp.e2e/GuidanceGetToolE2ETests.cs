@@ -341,6 +341,34 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the guidance tool should return the canonical theme guide text");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical design-tokens guide")]
+	public async Task GuidanceGet_Should_Return_Design_Tokens_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "design-tokens"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "design-tokens is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/design-tokens",
+			because: "the canonical resource URI for the design-tokens guide should be stable");
+		response.Article.Text.Should().Contain("--crt-color-text-body",
+			because: "the guidance tool should return the embedded design-token catalog text end-to-end");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
