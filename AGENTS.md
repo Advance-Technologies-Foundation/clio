@@ -387,7 +387,7 @@ This file is the single source of truth for Clio-specific constraints that canno
 be derived from reading the code alone:
 
 - CLI flag kebab-case rule (CLIO001)
-- MediatR handler pattern
+- Command pattern (`Command<TOptions>` + DI services; MediatR is deprecated, do not use)
 - Test categories (`Unit` / `Integration` / `E2E`)
 - IApplicationClient usage policy
 - Test naming convention

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.Package;
@@ -24,12 +25,14 @@ internal static class SelectQueryHelper
 	internal static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
 		IServiceUrlBuilder serviceUrlBuilder,
-		object query)
+		object query,
+		int requestTimeout = Timeout.Infinite)
 		where T : SelectQueryResponseBaseDto
 	{
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
-			JsonSerializer.Serialize(query));
+			JsonSerializer.Serialize(query),
+			requestTimeout);
 		if (string.IsNullOrWhiteSpace(responseJson))
 		{
 			throw new InvalidOperationException("SelectQuery returned an empty response.");
@@ -47,7 +50,8 @@ internal static class SelectQueryHelper
 	internal static object BuildSelectQuery(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
-		IReadOnlyList<SelectQueryFilterDefinition> filters)
+		IReadOnlyList<SelectQueryFilterDefinition> filters,
+		int rowCount = 10000)
 	{
 		Dictionary<string, object> columnItems = columns
 			.ToDictionary(
@@ -99,7 +103,7 @@ internal static class SelectQueryHelper
 			allColumns = false,
 			isDistinct = false,
 			ignoreDisplayValues = false,
-			rowCount = 10000,
+			rowCount,
 			rowsOffset = -1,
 			isPageable = false,
 			columns = new

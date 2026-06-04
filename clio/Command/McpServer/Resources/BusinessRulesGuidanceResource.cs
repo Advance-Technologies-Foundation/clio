@@ -87,7 +87,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       2. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
 		       3. Determine whether the rule is entity-level or page-level.
 		       4. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
-		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` structured `filters`. Example lookup read by display value: `odata-read` with entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
+		       5. Resolve every lookup condition value and lookup set-values constant with `odata-read` or `execute-esq`. Example lookup read by display value with `odata-read`: entity `Contact`, filters `{ "all": [{ "field": "Name", "op": "contains", "value": "Andrew" }] }`, select `["Id","Name"]`, top `5`.
 		       6. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
 		          - For `apply-static-filter`, read `esq-filters` first when the filter involves lookup constants, relative-date language, `...Id` paths, or child-record conditions.
@@ -102,7 +102,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
-		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read`.
+		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read` (or `execute-esq`).
 		       - Do NOT author `...Id` paths by reflex when the target filter contract expects object-path semantics such as `CreatedBy` or `[Contact:Account]`.
 		       - Do NOT serialize date-relative wording like "this year" or "next 7 days" as plain text constants.
 		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.

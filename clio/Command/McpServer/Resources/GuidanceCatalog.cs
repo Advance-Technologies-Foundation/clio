@@ -62,6 +62,14 @@ internal static class GuidanceCatalog {
 				"page-modification",
 				"Canonical MCP guidance for Freedom UI page modification: replacing-schema concept, bundle.json structure, update-page write modes, multi-app target-package-uid resolution, and container selection.",
 				PageModificationGuidanceResource.Guide),
+			["esq"] = Create(
+				"esq",
+				"Canonical MCP guidance for EntitySchemaQuery authoring: the DataService SelectQuery envelope, columns/select, expression building blocks, forward/backward reference column-path grammar, aggregations, and master enum tables.",
+				EsqGuidanceResource.Guide),
+			["esq-filters"] = Create(
+				"esq-filters",
+				"Canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.",
+				EsqFiltersGuidanceResource.Guide),
 			["indicator-widget"] = Create(
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
