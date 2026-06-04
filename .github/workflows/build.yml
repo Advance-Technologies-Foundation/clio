@@ -60,7 +60,6 @@ jobs:
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category!=Integration" `
-            --blame-hang --blame-hang-timeout 120s --blame-hang-dump-type mini `
             -p:RunAnalyzers=false;
 
   # ── Integration tests (run on PRs and master, after unit tests pass) ──
