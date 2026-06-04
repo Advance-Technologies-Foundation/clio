@@ -27,6 +27,8 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 	IServiceUrlBuilder serviceUrlBuilder)
 	: IBusinessRuleLookupReferenceValidator {
 
+	private const int RequestTimeoutMs = 30_000;
+
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
@@ -161,7 +163,7 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 		LookupExistsResponseDto response;
 		try {
 			response = SelectQueryHelper.ExecuteSelectQuery<LookupExistsResponseDto>(
-				applicationClient, serviceUrlBuilder, query);
+				applicationClient, serviceUrlBuilder, query, RequestTimeoutMs);
 		} catch (InvalidOperationException exception) {
 			// Preserve the validator's ArgumentException contract: consumers (e.g. PageBusinessRuleValidator)
 			// catch only ArgumentException, so a transport/server SelectQuery failure must surface as one.

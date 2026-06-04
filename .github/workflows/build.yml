@@ -61,6 +61,7 @@ jobs:
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category!=Integration" `
             --collect:"XPlat Code Coverage" `
+            --blame-hang --blame-hang-timeout 120s --blame-hang-dump-type mini `
             -p:RunAnalyzers=false;
 
       - name: Publish coverage report
