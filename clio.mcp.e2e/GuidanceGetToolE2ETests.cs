@@ -201,8 +201,8 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("clio MCP indicator widget guide",
 			because: "the guidance tool should return the canonical indicator widget guide text");
-		response.Article.Text.Should().Contain("CreatedByNameSupervisor",
-			because: "the guide should expose the concrete portable user-filter example to external callers too");
+		response.Article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point external callers to get-component-info as the source of truth");
 	}
 
 	[Test]

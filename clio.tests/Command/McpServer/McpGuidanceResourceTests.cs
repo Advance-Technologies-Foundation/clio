@@ -1431,14 +1431,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the indicator widget guide should be discoverable as plain text");
 		article.Text.Should().Contain("clio MCP indicator widget guide",
 			because: "the article should identify itself as the dedicated indicator-widget guide");
-		article.Text.Should().Contain("config.data.providing.schemaName",
-			because: "the guide should translate Copilot's conceptual source entity into the runtime widget payload");
-		article.Text.Should().Contain("from` -> `config.data.providing.schemaName",
-			because: "the guide should publish the Copilot-to-runtime mapping explicitly");
-		article.Text.Should().Contain("CreatedByNameSupervisor",
-			because: "the guide should include a concrete portable user-filter example");
-		article.Text.Should().Contain("Do NOT copy Copilot's conceptual `from` / `select` / `filters` object directly into the page body",
-			because: "the guide should prevent callers from pasting the wrong payload shape into update-page");
+		article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point callers to get-component-info as the single source of truth");
 	}
 
 	[Test]

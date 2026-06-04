@@ -22,55 +22,33 @@ public sealed class IndicatorWidgetGuidanceResource {
 		Text = """
 		       clio MCP indicator widget guide
 
-		       Scope
-		       - Use this guide whenever the requirement is to create, edit, filter, or troubleshoot a `crt.IndicatorWidget` on a Freedom UI web page.
-		       - This guide adapts the internal Copilot metric-widget authoring rules into the runtime page-body shape that `get-page` / `update-page` use in clio MCP.
-		       - Read this guide before editing a page body when the task mentions indicator, metric, KPI, aggregate count, sum, average, min, max, or a static widget filter.
+		       Before you create, edit, filter, or troubleshoot a `crt.IndicatorWidget` on a Freedom UI page,
+		       you MUST call `get-component-info` for `crt.IndicatorWidget` and read its documentation in full,
+		       including every reference and link it points to.
 
-		       Core translation: Copilot intent shape vs clio runtime shape
-		       - Copilot-style authoring intent is conceptual: `from`, `select`, `filters`.
-		       - clio page editing writes the runtime widget payload inside `viewConfigDiff[*].values.config.data.providing`.
-		       - Canonical mapping:
-		         - `from` -> `config.data.providing.schemaName`
-		         - `select` -> `config.data.providing.aggregation.column.expression`
-		         - `filters` -> `config.data.providing.filters`
-		         - result formatting -> `config.data.formatting`
-		         - displayed metric text -> `config.text`
+		       That component documentation is the single source of truth for indicator widgets. It owns the
+		       generation contract (diff sections, aggregation expression, filter-leaf shapes), the intent ->
+		       runtime config translation, the authoring workflow, and the related `esq-filters`,
+		       `page-modification`, and `page-schema-resources` guidance.
 
-		       Canonical MCP workflow
-		       1. Call `list-pages` and `get-page` to inspect the current page and choose the target container.
-		       2. Call `get-component-info` for `crt.IndicatorWidget` if you need the exact insert shape or property defaults.
-		       3. Resolve the data source entity and aggregation column from the requirement.
-		       4. Build the widget filter logic using the rules below.
-		       5. Write the widget into `viewConfigDiff` using `update-page` or `sync-pages`.
-		       6. Verify the saved page body or read it back with `verify: true`.
-
-		     
-		       Aggregation selection (value choice, not shape)
-		       - Decide which aggregation the requirement implies, then pick the target column: `COUNT` aggregates `Id`; `SUM`, `AVG`, `MIN`, `MAX` target the explicit business column from the requirement, never `Id`.
-		       - The expression JSON and aggregation enum values that encode this are part of the component contract; do not hand-build them from memory — confirm them via `get-component-info`.
-		       - Do not load records manually in handlers just to compute a metric. The widget queries and aggregates at runtime.
-		       - Do not replace a static aggregate/filter requirement with business rules or JavaScript handlers.
-
-		       Filter authoring (which filter, not its JSON)
-		       - The runtime filter-leaf shapes (scalar compare, lookup, range, backward-reference / EXISTS) are part of the component contract — get them from `get-component-info` rather than reconstructing the JSON here.
-		       - Before finalizing non-trivial filter paths, lookup constants, or relative-date wording, read `esq-filters`.
-		       - Decide the value family first: scalar literal, lookup value, date / relative-date, or a condition on related child records.
-		       - `BETWEEN` is modeled as two bounds joined by `AND`, not one leaf.
-		       - For conditions on child records rather than direct columns on the aggregated root schema, use a backward-reference / EXISTS-style filter instead of inventing unsupported flat column paths.
-		       - Resolve lookup GUIDs upstream; never fabricate lookup GUIDs or root schema names.
-
-		       Common mistakes to avoid
-		       - Do NOT guess lookup GUIDs or root schema names.
-		       - Do NOT flatten child-schema conditions into unsupported `columnPath` strings when the requirement actually needs EXISTS semantics.
-		       - Do NOT remove the root filter-group envelope (`filterType: 6`, `rootSchemaName`, `logicalOperation`) even for a single static condition.
-		       - Do NOT manually query data in handlers to emulate a metric widget that the platform can express declaratively.
-
-		       Related guidance
-		       - Use `get-component-info` for `crt.IndicatorWidget` as the source of truth for the generation contract: runtime field shapes, filter-leaf forms, and aggregation enum values. This guide owns intent translation and value selection; the component owns shape.
-		       - Read `esq-filters` for normalized path, lookup-value, and relative-date filter guidance.
-		       - Read `page-modification` for replacing-schema and minimal-body write rules.
-		       - Read `page-schema-resources` before adding new user-visible titles, labels, or hints.
+		       Do NOT author or edit an indicator widget payload from memory or from this pointer alone — read
+		       the `get-component-info` documentation and its references first.
+		       
+		       ----
+		       
+		       ## Placement rules
+		        Never set `parentName` as code of dashboard component. 
+		        You may use `parentName`: "Main" only when working with Home pages.
+		        On any other page use next rule - if user asks to add widget but does not clarify where on the page, and you know there are other widgets - place it near existing ones (use same `parentName` as in another widget)
+		        
+		       
+		       ## Styling presets
+		       User can ask to create an indicator widget on different pages inside Creatio. Use next guidelines, as default, depending on which page you are working on.
+		       
+		       - For desktops, by default use `layout.color`: "transparent", `theme`: "glassmorphism". 
+		       - For List pages and Form Pages use `theme`: "without-fill". Never use transparent color, unless user asked for glassmorphism style.
+		       - For Home pages use `theme`: "full-fill" and try guess color by other components from schema. Never use transparent color, unless user asked for glassmorphism style.
+		       
 		       """
 	};
 

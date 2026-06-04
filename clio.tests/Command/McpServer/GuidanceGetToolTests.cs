@@ -123,8 +123,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should preserve the canonical indicator-widget guide URI in the response");
 		result.Article.Text.Should().Contain("clio MCP indicator widget guide",
 			because: "the guidance tool should return the canonical indicator widget article text");
-		result.Article.Text.Should().Contain("CreatedByNameSupervisor",
-			because: "the indicator widget guide should carry a concrete portable user-filter example");
+		result.Article.Text.Should().Contain("get-component-info",
+			because: "the trimmed indicator widget guide should point callers to get-component-info as the source of truth");
 	}
 
 	[Test]
