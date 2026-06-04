@@ -1,5 +1,4 @@
-﻿using System.Globalization;
-using System.Text;
+using System.Globalization;
 
 namespace Clio.Package
 {
@@ -37,7 +36,6 @@ namespace Clio.Package
 
 		#region Constants: Private
 
-		private const string packagesDirectoryName = "packages";
 		private const string projectsDirectoryName = "projects";
 
 		/// <summary>Name of the MSBuild project SDK that wraps the npm/Angular build.</summary>
@@ -60,11 +58,7 @@ namespace Clio.Package
 			".json", ".js", ".ts", ".conf", ".config", ".scss", ".css"
 		};
 
-		private readonly EnvironmentSettings _environmentSettings;
-		private readonly IWorkspace _workspace;
-		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
-		private readonly IPackageCreator _packageCreator;
-		private readonly IPackageDownloader _packageDownloader;
+		private readonly IWorkspacePackageProvisioner _packageProvisioner;
 		private readonly IWorkspacePathBuilder _workspacePathBuilder;
 		private readonly ITemplateProvider _templateProvider;
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
@@ -75,25 +69,17 @@ namespace Clio.Package
 
 		#region Constructors: Public
 
-		public UiProjectCreator(EnvironmentSettings environmentSettings, IWorkspace workspace,
-			IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
-			IPackageDownloader packageDownloader, IWorkspacePathBuilder workspacePathBuilder,
-			ITemplateProvider templateProvider, IWorkingDirectoriesProvider workingDirectoriesProvider,
-			IFileSystem fileSystem, ISolutionCreator solutionCreator) {
-			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
-			workspace.CheckArgumentNull(nameof(workspace));
-			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
-			packageCreator.CheckArgumentNull(nameof(packageCreator));
-			packageDownloader.CheckArgumentNull(nameof(packageDownloader));
+		public UiProjectCreator(IWorkspacePackageProvisioner packageProvisioner,
+			IWorkspacePathBuilder workspacePathBuilder, ITemplateProvider templateProvider,
+			IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem,
+			ISolutionCreator solutionCreator) {
+			packageProvisioner.CheckArgumentNull(nameof(packageProvisioner));
+			workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 			templateProvider.CheckArgumentNull(nameof(templateProvider));
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
-			_environmentSettings = environmentSettings;
-			_workspace = workspace;
-			_applicationPackageListProvider = applicationPackageListProvider;
-			_packageCreator = packageCreator;
-			_packageDownloader = packageDownloader;
+			_packageProvisioner = packageProvisioner;
 			_workspacePathBuilder = workspacePathBuilder;
 			_templateProvider = templateProvider;
 			_workingDirectoriesProvider = workingDirectoriesProvider;
@@ -106,11 +92,6 @@ namespace Clio.Package
 		#region Properties: Private
 
 		private bool IsWorkspace => _workspacePathBuilder.IsWorkspace;
-
-		private string PackagesPath =>
-			IsWorkspace
-				? _workspacePathBuilder.PackagesFolderPath
-				: Path.Combine(_workingDirectoriesProvider.CurrentDirectory, packagesDirectoryName);
 
 		private string ProjectsPath =>
 			IsWorkspace
@@ -143,9 +124,6 @@ namespace Clio.Package
 		/// </summary>
 		private static string BuildDistPath(string packageName, string projectName) =>
 			Path.Combine("../../", "packages/", packageName + "/", "Files/", "src/", "js/", projectName);
-		private void CreatePackage(string packageName) {
-			_packageCreator.Create(PackagesPath, packageName);
-		}
 
 		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 			string creatioVersion) {
@@ -222,17 +200,6 @@ namespace Clio.Package
 			throw new ArgumentException("Not correct project name. Use only 'snake_case' format");
 		}
 
-		private PackageInfo FindExistingPackage(string packageName) {
-			try {
-				IEnumerable<PackageInfo> packages = _applicationPackageListProvider.GetPackages();
-				var package = packages.FirstOrDefault(p =>
-					p.Descriptor.Name.Equals(packageName, StringComparison.InvariantCultureIgnoreCase));
-				return package;
-			} catch (Exception) {
-				return null;
-			}
-		}
-
 		#endregion
 
 		#region Methods: Public
@@ -240,14 +207,7 @@ namespace Clio.Package
 		public void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty,
 			string creatioVersion, Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
-			var package = FindExistingPackage(packageName);
-			if (package != null && enableDownloadPackage(packageName)) {
-				_packageDownloader.DownloadPackage(packageName, _environmentSettings,
-					_workspacePathBuilder.PackagesFolderPath);
-				_workspace.AddPackageIfNeeded(packageName);
-			} else {
-				CreatePackage(packageName);
-			}
+			_packageProvisioner.EnsurePackage(packageName, enableDownloadPackage);
 			CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
 			IntegrateEsprojIntoSolution(projectName, packageName);
 		}

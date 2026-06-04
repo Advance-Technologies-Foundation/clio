@@ -61,12 +61,9 @@ public class UiProjectCreatorIntegrationTests {
 		pathBuilder.MainSolutionFolderPath.Returns(_tempDir);
 		pathBuilder.MainSolutionPath.Returns(Path.Combine(_tempDir, "MainSolution.slnx"));
 
+		IWorkspacePackageProvisioner packageProvisioner = Substitute.For<IWorkspacePackageProvisioner>();
 		_creator = new UiProjectCreator(
-			new EnvironmentSettings(),
-			Substitute.For<IWorkspace>(),
-			Substitute.For<IApplicationPackageListProvider>(),
-			Substitute.For<IPackageCreator>(),
-			Substitute.For<IPackageDownloader>(),
+			packageProvisioner,
 			pathBuilder,
 			templateProvider,
 			workingDirectoriesProvider,

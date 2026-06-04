@@ -11,8 +11,44 @@
 #   S — < 2 hours
 #   M — half day
 #   L — full day
+#
+# Note: code + unit/integration tests for all four stories are committed on
+# branch feature/ENG-89624_creatio-themes (not pushed). MCP e2e coverage in
+# clio.mcp.e2e (new-theme tool + creatio-theme guidance) is a pending follow-up.
 
-stories: []
+stories:
+  - id: story-creatio-themes-1
+    title: "Shared core — ThemeArtifactBuilder + baseline templates"
+    feature: creatio-themes
+    size: M
+    status: in-progress
+    file: spec/stories/story-creatio-themes-1.md
+    prd: spec/prd/prd-creatio-themes.md
+    adr: spec/adr/adr-creatio-themes.md
+  - id: story-creatio-themes-2
+    title: "new-theme CLI command (Contour A scaffold)"
+    feature: creatio-themes
+    size: M
+    status: in-progress
+    file: spec/stories/story-creatio-themes-2.md
+    prd: spec/prd/prd-creatio-themes.md
+    adr: spec/adr/adr-creatio-themes.md
+  - id: story-creatio-themes-3
+    title: "new-theme MCP tool (Contour A)"
+    feature: creatio-themes
+    size: M
+    status: in-progress
+    file: spec/stories/story-creatio-themes-3.md
+    prd: spec/prd/prd-creatio-themes.md
+    adr: spec/adr/adr-creatio-themes.md
+  - id: story-creatio-themes-4
+    title: "General theme guidance article"
+    feature: creatio-themes
+    size: S
+    status: in-progress
+    file: spec/stories/story-creatio-themes-4.md
+    prd: spec/prd/prd-creatio-themes.md
+    adr: spec/adr/adr-creatio-themes.md
 
 # Example entry (uncomment when first story is created):
 #

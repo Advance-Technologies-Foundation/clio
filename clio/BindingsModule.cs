@@ -325,6 +325,7 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<CreateUiProjectTool>();
+		services.AddTransient<NewThemeTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
 		services.AddTransient<SysSettingsListTool>();
@@ -402,6 +403,8 @@ public class BindingsModule {
 		services.AddTransient<Marketplace>();
 		services.AddTransient<CreateUiProjectCommand>();
 		services.AddTransient<CreateUiProjectOptionsValidator>();
+		services.AddTransient<NewThemeCommand>();
+		services.AddTransient<NewThemeOptionsValidator>();
 		services.AddTransient<SetIconParametersValidator>();
 		services.AddTransient<DownloadConfigurationCommand>();
 		services.AddTransient<DeployCommand>();

@@ -313,6 +313,34 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the mobile guide must document that handlers are not supported in mobile pages");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical Creatio theme guide")]
+	public async Task GuidanceGet_Should_Return_Creatio_Theme_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "creatio-theme"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "creatio-theme is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/creatio-theme",
+			because: "the canonical resource URI for the theme guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP Creatio theme guide",
+			because: "the guidance tool should return the canonical theme guide text");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

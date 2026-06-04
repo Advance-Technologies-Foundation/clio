@@ -379,6 +379,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ui"></a>
 <a id="uiproject"></a>
 - [`new-ui-project`](docs/commands/new-ui-project.md) - Create a new Freedom UI project, `create-ui-project`, `createup`, `new-ui`, `ui`, `uiproject`
+<a id="new-theme"></a>
+- [`new-theme`](docs/commands/new-theme.md) - Add a new theme
 <a id="open-settings"></a>
 <a id="conf"></a>
 <a id="configuration"></a>

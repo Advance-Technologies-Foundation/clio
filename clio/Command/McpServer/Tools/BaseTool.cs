@@ -80,6 +80,9 @@ public abstract class BaseTool<T>(
 									   CreateUiProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
 										   && string.IsNullOrWhiteSpace(envOptions.Uri)
 										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
+									   NewThemeOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
+										   && string.IsNullOrWhiteSpace(envOptions.Uri)
+										   => commandResolver.ResolveWithoutEnvironment<TCommand>(envOptions),
 
 									   EnvironmentOptions envOptions => commandResolver.Resolve<TCommand>(envOptions),
 									   var _ => throw new InvalidOperationException(

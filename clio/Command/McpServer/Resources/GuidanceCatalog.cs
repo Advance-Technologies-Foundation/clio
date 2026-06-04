@@ -85,7 +85,11 @@ internal static class GuidanceCatalog {
 			["ui-project"] = Create(
 				"ui-project",
 				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
-				WorkspaceUiProjectGuidanceResource.Guide)
+				WorkspaceUiProjectGuidanceResource.Guide),
+			["creatio-theme"] = Create(
+				"creatio-theme",
+				"Canonical MCP guidance for Creatio Freedom UI custom themes: the theme.json + theme.css artifact, the --crt-* token contract and platform :root primitives, fonts (local and Google), and scaffolding a theme with new-theme.",
+				CreatioThemeGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

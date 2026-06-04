@@ -21,7 +21,7 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `60` tools
+- `61` tools
 - `50` prompts
 - `4` resources
 - `53` tools with explicit safety metadata
@@ -288,6 +288,7 @@ This part makes the MCP useful for real development work, not just runtime inspe
 - `create-workspace`
 - `add-package`
 - `new-test-project`
+- `new-theme`
 - `download-configuration-by-environment`
 - `download-configuration-by-build`
 - `link-from-repository-by-environment`
@@ -422,6 +423,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/creatio-theme`
+  Canonical guide for Creatio Freedom UI custom themes: theme.json + theme.css artifact, the --crt-* token contract and :root primitives, fonts, workspace (new-theme), and activation
 
 How an external AI should interpret resources:
 

@@ -38,6 +38,7 @@ public class UiProjectCreatorTests {
 
 	#region Fields: Private
 
+	private IWorkspacePackageProvisioner _packageProvisioner;
 	private IWorkspacePathBuilder _workspacePathBuilder;
 	private ITemplateProvider _templateProvider;
 	private IFileSystem _fileSystem;
@@ -77,12 +78,10 @@ public class UiProjectCreatorTests {
 		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_workingDirectoriesProvider.CurrentDirectory.Returns(RootPath);
 
+		_packageProvisioner = Substitute.For<IWorkspacePackageProvisioner>();
+
 		_creator = new UiProjectCreator(
-			new EnvironmentSettings(),
-			Substitute.For<IWorkspace>(),
-			Substitute.For<IApplicationPackageListProvider>(),
-			Substitute.For<IPackageCreator>(),
-			Substitute.For<IPackageDownloader>(),
+			_packageProvisioner,
 			_workspacePathBuilder,
 			_templateProvider,
 			_workingDirectoriesProvider,
