@@ -34,6 +34,8 @@ A Creatio button is defined by two independent axes — pick one value from each
 - `warn` (*Warning*) — red filled destructive / error action.
 - `plain-white` / `outline-white` — white text for placement over dark or glassmorphic backgrounds. Use only over dark / image surfaces.
 
+> A secondary button shown next to a `primary` button is `default` (Plain) `contained` — or `outline` — at the **same size and `contained` display type**. Do not use a `text` button as the secondary, and do not mix display types or sizes between buttons shown together.
+
 > A button uses **one foreground color per state** for both the label and the icon — the icon inherits it via `currentColor`; the button never sets a separate icon color. The token in each cell is the design system's fixed pick, so copy it exactly. It is **not** a choice between the `--crt-color-text-*` and `--crt-color-icon-*` families — that is why some cells use a `text-*` token and others an `icon-*` token.
 
 #### Color tokens — `contained` (filled)
@@ -68,7 +70,7 @@ The color token becomes the **foreground** color; the background stays transpare
 #### Shared chrome (all buttons)
 
 - **Typography:** `contained` → `--crt-button-*` role (14 / 500, line-height 16px); `text` → `--crt-button-small-*` role (12 / 500, line-height 16px). `text-transform: none`.
-- **Radius:** `--crt-radius-150` (6px) standard; `--crt-radius-infinite` (999px) for a pill / rounded button.
+- **Radius:** `--crt-radius-100` (4px) standard; `--crt-radius-infinite` (999px) for a pill / rounded button.
 - **Icon ↔ label gap:** `--crt-spacing-100` (4px).
 - **Focus:** `outline: 2px solid var(--crt-color-border-selected, #004fd6); outline-offset: 2px;` (see WCAG_ACCESSIBILITY_AI_GUIDE.md).
 
@@ -97,7 +99,7 @@ The color token becomes the **foreground** color; the background stays transpare
   height: 32px;
   padding: 0 var(--crt-spacing-400, 16px);
   border: none;
-  border-radius: var(--crt-radius-150, 6px);
+  border-radius: var(--crt-radius-100, 4px);
   cursor: pointer;
 
   font-family: var(--crt-button-font-family, 'Montserrat', sans-serif);
@@ -124,6 +126,20 @@ The color token becomes the **foreground** color; the background stays transpare
 
 For another color, swap only `background` / `:hover` / `:active` / `color` from the contained table — keep chrome, size, and focus identical.
 
+#### Recipe — secondary (Plain, contained)
+
+Same chrome, size, and focus as the primary recipe; override only the colors (Plain keeps a transparent fill, including when disabled):
+
+```scss
+.button--secondary {
+  color: var(--crt-color-text-on-primary-subtle, #001c5a);
+  background: transparent;
+}
+.button--secondary:hover { background: var(--crt-color-background-primary-subtle-hover, #eff4fb); }
+.button--secondary:active { background: var(--crt-color-background-primary-subtle-selected, #e3ebfa); }
+.button--secondary:disabled { background: transparent; color: var(--crt-color-text-disabled, #757575); }
+```
+
 #### Recipe — default, text (ghost action)
 
 ```scss
@@ -136,7 +152,7 @@ For another color, swap only `background` / `:hover` / `:active` / `color` from 
   padding: 0 var(--crt-spacing-400, 16px);
   border: none;
   background: transparent;
-  border-radius: var(--crt-radius-150, 6px);
+  border-radius: var(--crt-radius-100, 4px);
   cursor: pointer;
 
   font-family: var(--crt-button-small-font-family, 'Montserrat', sans-serif);
@@ -162,7 +178,7 @@ Two appearances — like the button's display type:
 - `fill` (default) — no box; a single **bottom underline**. The Freedom UI default.
 - `outline` — a full 1px **border box** with corner radius.
 
-Both share the same text, label, placeholder, and state colors; only the border treatment differs. **Anatomy:** an optional caption label + the input control; typed text uses the `--crt-body-2-*` role, the label uses `--crt-caption-*`.
+**If the requirement does not name an appearance, use `fill`** (the Freedom UI default). Both share the same text, label, placeholder, and state colors; only the border treatment differs. **Anatomy:** an optional caption label + the input control; typed text uses the `--crt-body-2-*` role, the label uses `--crt-caption-*`.
 
 #### Text, label & placeholder (both appearances)
 
@@ -254,7 +270,7 @@ Two parts: the **trigger** (the closed field) and the **dropdown panel** of opti
 
 #### Dropdown panel & options
 
-The panel is a bordered surface (square corners) that scrolls. Options use the `--crt-body-2-*` role; an optional secondary line uses `--crt-caption-*` muted.
+The panel is a rounded bordered surface that scrolls; option rows are rounded pills inset from the panel edges. Options use the `--crt-body-2-*` role; an optional secondary line uses `--crt-caption-*` muted.
 
 | part | background | text |
 |---|---|---|
@@ -265,7 +281,7 @@ The panel is a bordered surface (square corners) that scrolls. Options use the `
 | option · disabled / empty / "no items" | — | `--crt-color-text-muted` `#606060` |
 | option secondary line | — | `--crt-color-text-muted` `#606060` (`--crt-caption-*`) |
 
-> Option row ≈ 32px tall, panel min-width 240px, max-height ≈ 400px (scrolls). Multi-select: each option row pairs the Checkbox (see *Checkbox*) with the label.
+> Option row ≈ 40px tall, max-height ≈ 400px (scrolls). Multi-select: each option row pairs the Checkbox (see *Checkbox*) with the label.
 
 #### Recipe — panel + options
 
@@ -275,17 +291,19 @@ For the trigger, use the *Text input* recipe and add a trailing chevron coloured
 .select-panel {
   background: var(--crt-color-background-base, #ffffff);
   border: 1px solid var(--crt-color-border-base, #dfdfdf);
+  border-radius: var(--crt-radius-100, 4px);
   box-shadow: 0 0 4px var(--crt-color-shadow, rgba(24, 24, 24, 0.1));
-  min-width: 240px;
   max-height: 400px;
   overflow-y: auto;
-  padding: 0;
+  padding: var(--crt-spacing-100, 4px) 0;
 }
 .select-option {
   display: flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 var(--crt-spacing-300, 12px);
+  min-height: 40px;
+  margin: 0 var(--crt-spacing-100, 4px);   /* inset → rounded pill */
+  border-radius: var(--crt-radius-100, 4px);
+  padding: 0 var(--crt-spacing-400, 16px);
   cursor: pointer;
 
   font-family: var(--crt-body-2-font-family, 'Montserrat', sans-serif);
@@ -438,16 +456,17 @@ Item height 40px; items reserve a leading-icon column so labels align. Optional 
 .menu-panel {
   background: var(--crt-color-background-base, #ffffff);
   border: 1px solid var(--crt-color-border-base, #dfdfdf);
+  border-radius: var(--crt-radius-100, 4px);
   box-shadow: 0 0 4px var(--crt-color-shadow, rgba(24, 24, 24, 0.1));
   padding: var(--crt-spacing-200, 8px) 0;
-  min-width: 180px;
 }
 .menu-item {
   display: flex;
   align-items: center;
   gap: var(--crt-spacing-200, 8px);
-  width: 100%;
   height: 40px;
+  margin: 0 var(--crt-spacing-200, 8px);   /* inset → rounded pill */
+  border-radius: var(--crt-radius-100, 4px);
   padding: 0 var(--crt-spacing-400, 16px);
   border: none;
   background: transparent;

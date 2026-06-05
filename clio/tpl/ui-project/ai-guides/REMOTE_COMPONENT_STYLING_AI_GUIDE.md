@@ -74,6 +74,7 @@ All token **names, default-theme values, naming conventions, and scope** live in
 - **Prefer semantic tokens** (named by role: `--crt-color-text-*`, `--crt-color-background-*`, `--crt-color-border-*`, `--crt-color-icon-*`, and the `--crt-<role>-*` typography roles). They encode the right shade per theme and adapt automatically. Reach for raw palette/primitive tokens only when no semantic role fits.
 - **Use only tokens listed in the tokens guide.** Those are defined globally (`:root` or the active theme's root) and therefore inherit into your shadow root. A `--crt-*` token that is not listed there may exist only in another scope (e.g. the design-time properties panel's `--crt-size-*`) and will resolve to nothing inside a runtime shadow root.
 - **Every `var(--crt-..., <fallback>)` needs a fallback** — use the token's default-theme value from the tokens guide as the second argument.
+- **Spacing & radius are fixed scales, not arbitrary px — never invent a step; confirm the exact `--crt-spacing-*` / `--crt-radius-*` value in the tokens guide before use.**
 
 ---
 
