@@ -29,7 +29,7 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Filter shape essentials
 		       - Filters are JSON objects with NUMERIC enum values: `filterType`, `comparisonType`, and `dataValueType` are integers (catalogs below), never strings.
-		       - Every leaf carries explicit expression objects (`leftExpression`/`rightExpression`/`rightExpressions`) and values live inside a `parameter` envelope. This is exactly the shape stored in real Creatio page bodies, in an indicator widget's `config.data.providing.filters.filter`, and in a DataService SelectQuery body.
+		       - Every leaf carries explicit expression objects (`leftExpression`/`rightExpression`/`rightExpressions`) and values live inside a `parameter` envelope. This is exactly the shape stored in real Creatio page bodies and in a DataService SelectQuery body.
 		       - A relative date is always a macro EXPRESSION (`{ "expressionType": 1, "functionType": 1, "macrosType": <n> }`), never a literal text value.
 
 		       The filter group envelope (filterType 6)
@@ -41,7 +41,7 @@ public sealed class EsqFiltersGuidanceResource {
 		         - `rootSchemaName`: the entity the paths are resolved against.
 		         - `isEnabled`: true. A disabled group/leaf is ignored at runtime.
 		       - To nest groups (mix AND and OR), place another `filterType: 6` object as one of the `items`. There is no depth limit.
-		       - Widget envelope reminder: in a widget the group lives at `config.data.providing.filters.filter`. An empty filter is `{ "items": {}, "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<Schema>" }`.
+		       - An empty filter is still the full group envelope: `{ "items": {}, "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<Schema>" }`.
 
 		       Anatomy of a leaf filter
 		       - Common fields on a leaf (compare/in/isnull/between/exists):
@@ -187,7 +187,6 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Related guidance
 		       - Read `esq` for the SelectQuery envelope, columns/select, expression building blocks, the forward/backward reference grammar, aggregations, and the master enum tables.
-		       - Read `indicator-widget` when the filter is part of a `crt.IndicatorWidget` aggregate payload.
 		       - Read `page-modification` for page-body save mechanics after the filter shape is decided.
 		       """
 	};
