@@ -101,6 +101,8 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
 		       - Do NOT use random GUIDs for lookup constants. Resolve or verify them with `odata-read` (or `execute-esq`).
+		       - Do NOT author `...Id` paths by reflex when the target filter contract expects object-path semantics such as `CreatedBy` or `[Contact:Account]`.
+		       - Do NOT serialize date-relative wording like "this year" or "next 7 days" as plain text constants.
 		       - Do NOT use `apply-filter` on non-lookup targets or non-lookup sources.
 		       - Do NOT use `targetFilterPath` or `sourceFilterPath` that resolve to scalar `Guid` columns such as `Lookup.Id`; those paths must resolve to Lookup attributes.
 		       - Do NOT set `populateValue=true` together with `sourceFilterPath`; current platform behavior does not support that combination cleanly.

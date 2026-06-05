@@ -70,6 +70,10 @@ internal static class GuidanceCatalog {
 				"esq-filters",
 				"Canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.",
 				EsqFiltersGuidanceResource.Guide),
+			["indicator-widget"] = Create(
+				"indicator-widget",
+				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
+				IndicatorWidgetGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
