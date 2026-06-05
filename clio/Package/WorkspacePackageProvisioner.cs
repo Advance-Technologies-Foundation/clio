@@ -63,6 +63,7 @@ public class WorkspacePackageProvisioner : IWorkspacePackageProvisioner
 	private readonly IWorkspace _workspace;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 
 	#endregion
@@ -72,7 +73,7 @@ public class WorkspacePackageProvisioner : IWorkspacePackageProvisioner
 	public WorkspacePackageProvisioner(EnvironmentSettings environmentSettings,
 		IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
 		IPackageDownloader packageDownloader, IWorkspace workspace, IWorkspacePathBuilder workspacePathBuilder,
-		IWorkingDirectoriesProvider workingDirectoriesProvider, ILogger logger) {
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IFileSystem fileSystem, ILogger logger) {
 		environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 		applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
 		packageCreator.CheckArgumentNull(nameof(packageCreator));
@@ -80,6 +81,7 @@ public class WorkspacePackageProvisioner : IWorkspacePackageProvisioner
 		workspace.CheckArgumentNull(nameof(workspace));
 		workspacePathBuilder.CheckArgumentNull(nameof(workspacePathBuilder));
 		workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
+		fileSystem.CheckArgumentNull(nameof(fileSystem));
 		logger.CheckArgumentNull(nameof(logger));
 		_environmentSettings = environmentSettings;
 		_applicationPackageListProvider = applicationPackageListProvider;
@@ -88,6 +90,7 @@ public class WorkspacePackageProvisioner : IWorkspacePackageProvisioner
 		_workspace = workspace;
 		_workspacePathBuilder = workspacePathBuilder;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_fileSystem = fileSystem;
 		_logger = logger;
 	}
 
@@ -127,6 +130,9 @@ public class WorkspacePackageProvisioner : IWorkspacePackageProvisioner
 
 	/// <inheritdoc/>
 	public void EnsurePackage(string packageName, Func<string, bool> enableDownloadPackage) {
+		if (_fileSystem.ExistsDirectory(Path.Combine(PackagesPath, packageName))) {
+			return;
+		}
 		PackageInfo existingPackage = FindExistingPackage(packageName);
 		if (existingPackage != null && enableDownloadPackage(packageName)) {
 			_packageDownloader.DownloadPackage(packageName, _environmentSettings,

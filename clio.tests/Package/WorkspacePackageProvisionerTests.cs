@@ -31,6 +31,7 @@ public class WorkspacePackageProvisionerTests {
 	private IWorkspace _workspace;
 	private IWorkspacePathBuilder _workspacePathBuilder;
 	private IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private IFileSystem _fileSystem;
 	private ILogger _logger;
 	private WorkspacePackageProvisioner _provisioner;
 	private string _packagesFolder;
@@ -61,10 +62,11 @@ public class WorkspacePackageProvisionerTests {
 		_workspacePathBuilder.PackagesFolderPath.Returns(_packagesFolder);
 		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_workingDirectoriesProvider.CurrentDirectory.Returns(RootPath);
+		_fileSystem = Substitute.For<IFileSystem>();
 		_logger = Substitute.For<ILogger>();
 
 		_provisioner = new WorkspacePackageProvisioner(_environmentSettings, _packageListProvider, _packageCreator,
-			_packageDownloader, _workspace, _workspacePathBuilder, _workingDirectoriesProvider, _logger);
+			_packageDownloader, _workspace, _workspacePathBuilder, _workingDirectoriesProvider, _fileSystem, _logger);
 	}
 
 	[Test]
@@ -143,6 +145,21 @@ public class WorkspacePackageProvisionerTests {
 		_packageCreator.Received(1).Create(_packagesFolder, PackageName);
 		_logger.ReceivedWithAnyArgs(1).WriteWarning(default);
 		_packageDownloader.DidNotReceiveWithAnyArgs().DownloadPackage(default, default, default);
+	}
+
+	[Test]
+	[Description("Reuses an existing local package without querying the environment, downloading, or creating when the package directory already exists.")]
+	public void EnsurePackage_ShouldReuseExistingLocalPackage_WhenDirectoryExists() {
+		// Arrange
+		_fileSystem.ExistsDirectory(Path.Combine(_packagesFolder, PackageName)).Returns(true);
+
+		// Act
+		_provisioner.EnsurePackage(PackageName, _ => true);
+
+		// Assert
+		_packageCreator.DidNotReceiveWithAnyArgs().Create(default(string), default(string));
+		_packageDownloader.DidNotReceiveWithAnyArgs().DownloadPackage(default, default, default);
+		_packageListProvider.DidNotReceiveWithAnyArgs().GetPackages();
 	}
 
 	#endregion
