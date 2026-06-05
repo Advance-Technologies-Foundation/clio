@@ -176,6 +176,10 @@ public class PageToolsTests
 			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
+		prompt.Should().Contain("Before inserting ANY new component",
+			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
+		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
+			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",

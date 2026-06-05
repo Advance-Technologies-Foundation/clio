@@ -33,6 +33,7 @@ public static class PagePrompt {
 		 `{PageGetTool.ToolName}` writes three files to `.clio-pages/<schema-name>/`: `body.js` (editable body), `bundle.json` (merged hierarchy), `meta.json` (page metadata). Read them via `files.bodyFile`, `files.bundleFile`, `files.metaFile` in the response.
 		 Read layout and container hierarchy from `bundle.json` at `files.bundleFile`.
 		 When `bundle.json` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
+		 Before inserting ANY new component, call `{ComponentInfoTool.ToolName}` with `component-type` set to the exact type you intend to use (and `environment-name` set to the page's environment) and confirm it exists: `{PageSyncTool.ToolName}`/`update-page` accept an unknown `crt.*` type and report success, but Freedom UI renders it as a broken placeholder box. Never invent or guess a component type from memory. If no existing component matches the requirement, stop and ask the user whether to use one of the existing components or build a custom one — do not silently substitute or fabricate a type.
 		 Read page metadata from `files.metaFile`, and treat `files.bodyFile` as the editable JavaScript source of truth.
 		 Do not send bundle data back to page tools; only the content of `body.js` is the writable payload.
 		 When you need to edit the page, read `files.bodyFile`, modify it, and send the updated body through `{PageSyncTool.ToolName}` as the canonical page write path.
