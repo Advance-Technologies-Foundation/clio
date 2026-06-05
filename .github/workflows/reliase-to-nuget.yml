@@ -87,13 +87,21 @@ jobs:
       - name: Verify packaged tool version
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
           $version = "${{ steps.extract_version.outputs.VERSION }}"
           $toolPath = Join-Path $PWD "tool-smoke"
+          # Remove any leftover tool-path so a stale install manifest cannot make the install below
+          # fail with exit code 1. This replaces a prior `dotnet tool uninstall` call, which always
+          # targeted the just-deleted path and, under $ErrorActionPreference='Stop' in PowerShell 5.1,
+          # promoted its "Tool path does not exist." stderr to a terminating error that failed the step.
           if (Test-Path $toolPath) {
             Remove-Item $toolPath -Recurse -Force
           }
 
           dotnet tool install clio --tool-path $toolPath --version $version --add-source (Join-Path $PWD "output")
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet tool install failed with exit code $LASTEXITCODE"
+          }
 
           $clioExecutable = Join-Path $toolPath "clio"
           if (-not (Test-Path $clioExecutable)) {

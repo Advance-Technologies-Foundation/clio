@@ -127,9 +127,11 @@ namespace Clio.Command {
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
+				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
 				return true;
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };

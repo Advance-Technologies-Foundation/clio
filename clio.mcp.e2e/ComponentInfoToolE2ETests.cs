@@ -211,8 +211,8 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "every standard field component must advertise the three-part inserted-field contract that update-page enforces");
 		fieldResponse.DataSourceBindingContract!.Should().Contain("viewModelConfigDiff",
 			because: "the contract must name the section where the binding attribute is declared");
-		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<columnCode>",
-			because: "the contract must describe the auto-provided label form that the strict IsAutoProvidedLabelResourceKey rule accepts");
+		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<bindingAttribute>",
+			because: "the contract must describe the auto-provided label form — keyed by the view-model attribute name — that the IsAutoProvidedLabelResourceKey rule accepts");
 		fieldResponse.DataSourceBindingContract.Should().Contain("operation:\"merge\"",
 			because: "the contract must clarify that merge operations are exempt from the new strict rule");
 		containerResponse.Success.Should().BeTrue(

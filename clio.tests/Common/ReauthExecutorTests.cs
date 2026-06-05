@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
+using Newtonsoft.Json;
 using NSubstitute;
 using NUnit.Framework;
 using ILogger = Clio.Common.ILogger;
@@ -295,6 +296,44 @@ internal class ReauthExecutorTests {
 		// Assert
 		act.Should().Throw<ArgumentNullException>(
 			because: "Execute cannot decide whether to retry without an unauthorized predicate");
+	}
+
+	[Test]
+	[Description("Execute retries after reauth when the first call throws JsonException — Creatio.Client throws instead of returning HTML when the server responds with a login page during file upload")]
+	public void Execute_ShouldReauthAndRetry_WhenFirstCallThrowsJsonException() {
+		// Arrange
+		int loginCallCount = 0;
+		int callCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCallCount++);
+
+		// Act — first call throws JsonException (server returned HTML), second call succeeds
+		string result = sut.Execute(() => {
+			callCount++;
+			if (callCount == 1) {
+				throw new JsonReaderException("'<' is an invalid start of a value.");
+			}
+			return "ok";
+		}, _ => false);
+
+		// Assert
+		result.Should().Be("ok", because: "after reauth the retry must return the successful response");
+		loginCallCount.Should().Be(1, because: "exactly one Login must be issued for the JsonException path");
+	}
+
+	[Test]
+	[Description("Execute propagates JsonException when both the first call and the retry throw — the server is genuinely broken, not just returning a login page")]
+	public void Execute_ShouldPropagateJsonException_WhenRetryAlsoThrows() {
+		// Arrange
+		ReauthExecutor sut = CreateExecutor(() => { });
+
+		// Act — both calls throw JsonException
+		Action act = () => sut.Execute<string>(
+			() => throw new JsonReaderException("'<' is an invalid start of a value."),
+			_ => false);
+
+		// Assert
+		act.Should().Throw<JsonReaderException>(
+			because: "a retry that also fails must not be swallowed — the caller needs to see the error");
 	}
 
 	#endregion

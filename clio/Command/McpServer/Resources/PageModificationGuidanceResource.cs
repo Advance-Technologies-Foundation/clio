@@ -37,7 +37,7 @@ public sealed class PageModificationGuidanceResource {
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
 		       | any static/generated filter where path normalization, lookup GUID resolution, date-relative wording, or child-record conditions are involved | `esq-filters` | Filter generation frequently fails on `...Id` path usage, lookup value shape, relative-date semantics, and missing EXISTS/backward-reference modeling. Read the dedicated filter guide before writing the payload. |
 		       | body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, OR your change adds/edits ANY user-visible string-like property (label, caption, title, tooltip, placeholder, description, button captions, tab/group titles, validator/dialog messages — examples, not exhaustive) | `page-schema-resources` | Every user-visible string must be a localizable-string binding, not an inline literal. Most resource registrations for DS-bound captions (e.g. `PDS_UsrStatus`) are unnecessary because the platform auto-provides them; guidance specifies which keys must vs must-not be registered, and `$Resources.Strings.*` is rejected in validator params. |
-		       | body contains `operation:"insert"` in `viewConfigDiff` for a standard field component (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) | `page-modification` (this guide — see the "Inserted-field contract" section below) | A field control insert is a 3-part edit; missing the viewModelConfigDiff attribute or the label resource is silently catastrophic (no data source / blank caption) and now hard-rejected by `update-page` validation. |
+		       | body contains `operation:"insert"` in `viewConfigDiff` for a standard field component (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) | `page-modification` (this guide — see the "Inserted-field contract" section below) | A field control insert is more than a viewConfigDiff entry — missing the viewModelConfigDiff binding attribute or a resolvable label is silently catastrophic (no data source / blank caption) and now hard-rejected by `update-page` validation. |
 
 		       STOP. Do NOT call get-component-info and pick a component type to solve a display transformation requirement until you have read `page-schema-converters` and confirmed the OOTB decision table does not cover your case. A common mistake is treating a display transformation as a component selection problem.
 
@@ -103,6 +103,8 @@ public sealed class PageModificationGuidanceResource {
 		         * `handlers` — concat + dedupe by `request` string (incoming wins)
 		         * `converters` — merge object by key (incoming wins)
 		         * `viewModelConfigDiff` / `modelConfigDiff` — plain concat (no dedupe)
+		       - Append does NOT support a body in the full `viewModelConfig`/`modelConfig` form (instead of the `*Diff` form); use replace mode for such bodies.
+		       - Modifying an existing component: edit the operation that introduces it. Changing an own-body `insert` to a same-`name` `merge`/`move`/`remove` discards the insert, so unless a parent schema inserts that name the component is orphaned (disappears at runtime). Identify own-body inserts via `ownBodySummary.viewConfigDiffOps` (`operation: insert`) and edit their `values`; reserve `merge`/`move`/`remove` for parent-introduced elements. `update-page`/`sync-pages` warn (advisory, never block) when they detect this against the prior body.
 		       - Append mode is permissive about the incoming body: pass only the sections you want to merge (for example, just `SCHEMA_VIEW_CONFIG_DIFF` + `SCHEMA_HANDLERS`). Missing sections are skipped; the current body's values stay intact for those sections. No need to pad with empty `[]` / `{}` markers.
 		       - Never invent custom markers (for example `SCHEMA_WRAPPERS` is not a valid marker). Stick to: `SCHEMA_DEPS`, `SCHEMA_ARGS`, `SCHEMA_VIEW_CONFIG_DIFF`, `SCHEMA_VIEW_MODEL_CONFIG_DIFF`, `SCHEMA_MODEL_CONFIG_DIFF`, `SCHEMA_HANDLERS`, `SCHEMA_CONVERTERS`, `SCHEMA_VALIDATORS`. Static-form FormPage bodies (see "Static vs diff body forms" below) instead carry `SCHEMA_VIEW_MODEL_CONFIG` and `SCHEMA_MODEL_CONFIG` (no `_DIFF`) in place of the two `_DIFF` markers — those are equally valid; preserve whichever pair the body you read from `get-page` already uses, and do not convert one form to the other.
 
@@ -148,10 +150,12 @@ public sealed class PageModificationGuidanceResource {
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
 
-		       Inserted-field contract — 3-part payload for a new data-bound field control
+		       Inserted-field contract for a new data-bound field control
 		       """
 		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"
 		       + """
+		       Validation is fragment-scoped and runs BEFORE the append merge: in append mode too, the payload edits below must be present in the SAME payload you send, regardless of what the current server body already contains. (If the binding attribute is genuinely supplied by a parent schema or already declared in the current body, use `operation:"merge"` for the viewConfigDiff entry instead of `insert` — the contract above does not apply to merge.)
+
 		       Three required edits for a single new field:
 
 		       1. `viewConfigDiff` — insert the visual control with its `control` binding and `label` expression.
@@ -222,6 +226,13 @@ public sealed class PageModificationGuidanceResource {
 		       ```
 
 		       The label `$Resources.Strings.PDS_UsrEstimatedMinutes` uses the binding attribute name (same as the control `$PDS_UsrEstimatedMinutes`). For a DS-bound attribute the platform auto-provides the caption from the entity column under that attribute-name key — no explicit `resources` parameter needed. To override the caption with custom text, pass it explicitly under the same key — `resources='{"PDS_UsrEstimatedMinutes": "Estimated minutes"}'` — or emit the `#ResourceString(<componentName>_label)#` macro label with a registered resource (the form the Designer writes for a custom "Title on page").
+
+		       Auto-provide is keyed by the view-model ATTRIBUTE NAME, not the entity column code — only the binding-attribute key resolves:
+
+		       ```
+		       "label": "$Resources.Strings.PDS_UsrEstimatedMinutes"   // auto-provided — key equals the DS-bound binding attribute (no resources needed)
+		       "label": "$Resources.Strings.UsrEstimatedMinutes"      // renders BLANK — bare column code is not the attribute name
+		       ```
 
 		       modelConfigDiff — declaring a data source for new pages
 		       For app FormPages created via `create-app-section`, the data source (PDS) is already declared in the parent schema — you only need `viewModelConfigDiff` entries (leave `modelConfigDiff: []`).

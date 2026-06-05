@@ -168,6 +168,7 @@ public sealed class PageSyncTool(
 					Error = updateResponse.Error
 				};
 			}
+			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 			if (verify && getCommand != null) {
 				PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
 				getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -256,6 +257,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
 		SchemaValidationResult schemaDepsResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
+		SchemaValidationResult contextAwaitResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateContextAccessAwait(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			syntaxResult,
@@ -272,7 +275,7 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
@@ -337,7 +340,8 @@ public sealed class PageSyncTool(
 	private static List<string> CollectWarnings(
 		SchemaValidationResult fieldResult,
 		SchemaValidationResult bindingResult,
-		SchemaValidationResult schemaDepsResult) {
+		SchemaValidationResult schemaDepsResult,
+		SchemaValidationResult contextAwaitResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -351,7 +355,30 @@ public sealed class PageSyncTool(
 			warnings.AddRange(schemaDepsResult.Warnings);
 		}
 
+		if (contextAwaitResult.Warnings.Count > 0) {
+			warnings.AddRange(contextAwaitResult.Warnings);
+		}
+
 		return warnings;
+	}
+
+	private static PageSyncValidationResult AppendCommandWarnings(
+		PageSyncValidationResult validation, IReadOnlyList<string> commandWarnings) {
+		if (commandWarnings == null || commandWarnings.Count == 0) {
+			return validation;
+		}
+		var warnings = new List<string>();
+		if (validation?.Warnings != null) {
+			warnings.AddRange(validation.Warnings);
+		}
+		warnings.AddRange(commandWarnings);
+		return new PageSyncValidationResult {
+			MarkersOk = validation?.MarkersOk ?? true,
+			JsSyntaxOk = validation?.JsSyntaxOk ?? true,
+			ContentOk = validation?.ContentOk ?? true,
+			Errors = validation?.Errors,
+			Warnings = warnings
+		};
 	}
 
 	private static PageSyncValidationResult BuildValidationResult(

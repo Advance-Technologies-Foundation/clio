@@ -563,6 +563,80 @@ public sealed class PageSyncToolTests {
 			because: "the error should indicate that verification failed after save");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Propagates the command's insert->merge downgrade warning onto the per-page sync result (locks AppendCommandWarnings).")]
+	public async Task SyncPages_Should_Surface_InsertDowngradeWarning_PerPage() {
+		// Arrange — the stored schema inserts UsrName; the incoming body downgrades it to a merge.
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithInsertPriorBody();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", MergeUsrNameBody)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the downgrade is advisory and must not fail the per-page save");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "AppendCommandWarnings must attach the command warning even when client-side validation is skipped");
+		response.Pages[0].Validation!.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "the per-page result must propagate the command's insert->merge downgrade warning");
+	}
+
+	private const string InsertUsrNamePriorBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private const string MergeUsrNameBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private static PageUpdateCommand CreatePageUpdateCommandWithInsertPriorBody() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "test-uid", ["SchemaType"] = 9 } }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject { ["body"] = InsertUsrNamePriorBody }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+	}
+
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
