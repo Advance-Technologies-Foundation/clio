@@ -74,10 +74,6 @@ internal static class GuidanceCatalog {
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
 				IndicatorWidgetGuidanceResource.Guide),
-			["esq-filters"] = Create(
-				"esq-filters",
-				"Canonical MCP guidance for ESQ-style filter authoring: normalized column paths, lookup-value handling, relative-date semantics, and common generation pitfalls.",
-				EsqFiltersGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",

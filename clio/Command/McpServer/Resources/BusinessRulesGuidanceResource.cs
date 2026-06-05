@@ -60,7 +60,6 @@ public sealed class BusinessRulesGuidanceResource {
 		       - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
 		       - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
 		       - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
-		       - before authoring a non-trivial static filter, call `get-guidance` with name `esq-filters` for normalized-path, lookup-value, and relative-date pitfalls.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
