@@ -17,6 +17,25 @@ jobs:
     env:
       PSExecutionPolicyPreference: Bypass
     steps:
+      - name: Free disk space
+        shell: powershell
+        run: |
+          # Remove previous build artifacts to prevent "not enough space on disk" errors
+          # on the self-hosted runner across repeated release runs.
+          $paths = @(
+            (Join-Path $env:GITHUB_WORKSPACE "clio\bin"),
+            (Join-Path $env:GITHUB_WORKSPACE "clio.tests\bin"),
+            (Join-Path $env:GITHUB_WORKSPACE "output"),
+            (Join-Path $env:GITHUB_WORKSPACE "tool-smoke")
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p"
+              Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+          dotnet build-server shutdown 2>$null
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
