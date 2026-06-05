@@ -71,8 +71,20 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		response.SamplingReview = samplingReview;
-		response.Warnings = validationWarnings;
+		IReadOnlyList<string> mergedWarnings = MergeWarnings(validationWarnings, response.Warnings);
+		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
+	}
+
+	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {
+		var combined = new List<string>();
+		if (first != null) {
+			combined.AddRange(first);
+		}
+		if (second != null) {
+			combined.AddRange(second);
+		}
+		return combined;
 	}
 
 	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
@@ -149,10 +161,11 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
-		SchemaValidationResult depsResult = SchemaValidationService.ValidateSchemaDepsCompleteness(body);
-		List<string> warnings = depsResult.Warnings.Count > 0 ? depsResult.Warnings : null;
+		var warnings = new List<string>();
+		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
+		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
 		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
-		return (error, warnings);
+		return (error, warnings.Count > 0 ? warnings : null);
 	}
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {

@@ -78,7 +78,9 @@ public sealed class PageValidateTool(
 			ValidatorFactoryShape: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)),
 			SchemaDeps: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)));
+				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)),
+			ContextAwait: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateContextAccessAwait(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -95,6 +97,7 @@ public sealed class PageValidateTool(
 			warnings.AddRange(content.Binding.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
+		warnings.AddRange(content.ContextAwait.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
 			content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
@@ -145,7 +148,8 @@ public sealed class PageValidateTool(
 		SchemaValidationResult HandlerStructure,
 		SchemaValidationResult ValidatorDecl,
 		SchemaValidationResult ValidatorFactoryShape,
-		SchemaValidationResult SchemaDeps);
+		SchemaValidationResult SchemaDeps,
+		SchemaValidationResult ContextAwait);
 }
 
 public sealed record PageValidateArgs(

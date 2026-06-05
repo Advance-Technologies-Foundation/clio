@@ -64,6 +64,17 @@ public static class SchemaValidationService
 
 	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>
+	/// Matches a reactive view-model context attribute read of the form
+	/// <c>$context["Attr"]</c> or <c>request.$context["Attr"]</c>, capturing an optional
+	/// immediately-preceding <c>await</c> keyword so the validator can tell awaited reads
+	/// from un-awaited ones. The <c>name</c> group holds the attribute name.
+	/// </summary>
+	private static readonly Regex ContextBracketReadPattern = new(
+		@"(?<await>\bawait\s+)?(?:request\s*\.\s*)?\$context\s*\[\s*(?<quote>[""'])(?<name>[^""']+)\k<quote>\s*\]",
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		RegexTimeout);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
@@ -91,32 +102,46 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Canonical clause stating the binding half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/> and the per-field diagnostic in
+	/// <c>AppendBindingDeclarationError</c>, so the rule an agent is told is identical to the rule
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> rejects on.
+	/// </summary>
+	internal const string InsertedFieldBindingClause =
+		"the body must declare the control's binding attribute in viewModelConfigDiff with a " +
+		"DS-bound modelConfig.path, or the control has no data source";
+
+	/// <summary>
+	/// Canonical clause stating the label half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/>. The resource nuance (prefixes, and
+	/// why the bare column code is not the key unless it equals the attribute name) lives in the
+	/// <c>page-schema-resources</c> guide, not here.
+	/// </summary>
+	internal const string InsertedFieldLabelClause =
+		"the label must resolve — prefer the auto-provided form: set it to " +
+		"$Resources.Strings.<bindingAttribute> (the control's own DS-bound attribute) and the platform " +
+		"supplies the caption with no registration; pass the key via the 'resources' parameter only to " +
+		"override the caption or for a non-DS-bound key. See the page-schema-resources guide for the full rule";
+
+	/// <summary>
 	/// Canonical statement of the inserted-field contract enforced by
-	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>, composed from the shared
+	/// <see cref="InsertedFieldBindingClause"/> and <see cref="InsertedFieldLabelClause"/> so it
+	/// cannot drift from the diagnostics that reuse the same clauses. Surfaced to MCP agents from
 	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
-	/// <c>page-modification</c> guidance resource so all three describe the same rule in
-	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
-	/// attributes (which only accept compile-time constant expressions).
+	/// <c>page-modification</c> guidance resource so all describe the same rule in identical words.
+	/// Keep this <c>const</c> so it stays usable inside <c>[Description]</c> attributes (which only
+	/// accept compile-time constant expressions).
 	/// </summary>
 	internal const string InsertedFieldContractSummary =
 		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
 		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
 		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
-		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
-		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
-		"with a modelConfig.path to the entity column — the attribute MUST reach viewModelConfig.attributes, " +
-		"via the preferred path:[] + values.attributes form (e.g. {\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"PDS_UsrX\":{\"modelConfig\":{\"path\":\"PDS.UsrX\"}}}}}) " +
-		"or the legacy path:[\"attributes\"] form (where values itself is the attribute map); " +
-		"putting the attribute directly in values with no path (the flat form) is silently accepted on save but fails at runtime — controls render with no data, and " +
-		"(b) the label resource — either passed in the 'resources' parameter, or set to $Resources.Strings.<bindingAttribute> " +
-		"where <bindingAttribute> is the binding attribute name itself (the same name as the control, e.g. $Resources.Strings.PDS_UsrX " +
-		"for control $PDS_UsrX). Auto-provide is keyed by the view-model attribute name, NOT by the entity column code: the platform " +
-		"auto-provides the caption for a DS-bound attribute under its attribute-name key (this is the only form the Freedom UI Designer " +
-		"emits — the label key always equals the control attribute name). A bare column-code key (the last path segment) is NOT the " +
-		"auto-provided key. Payloads that " +
-		"violate this contract are rejected at update-page validation time; the diagnostic names " +
-		"the offending field, attribute, and section. The contract does NOT apply to " +
-		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+		"via operation:\"insert\" in viewConfigDiff are validated for self-consistency in the SAME " +
+		"update-page call: (a) " + InsertedFieldBindingClause + "; and (b) " + InsertedFieldLabelClause +
+		". Violations are rejected at update-page validation time; the diagnostic names the offending " +
+		"field, attribute, and section. This contract does NOT apply to operation:\"merge\" — a parent " +
+		"schema or the current body may legitimately provide the attribute and resource.";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -565,6 +590,83 @@ public static class SchemaValidationService
 			return false;
 		}
 		return SdkUsagePattern.IsMatch(convertersContent);
+	}
+
+	/// <summary>
+	/// Detects reactive context attribute reads of the form <c>$context["Attr"]</c> or
+	/// <c>request.$context["Attr"]</c> that are NOT preceded by <c>await</c>, anywhere in the
+	/// page body (handler bodies, converters, and free module-scope helper functions alike).
+	/// </summary>
+	/// <remarks>
+	/// In a Freedom UI page body the bracket accessor on <c>$context</c> is asynchronous: it
+	/// returns a <c>Promise</c>, so the read MUST be awaited (<c>await request.$context["Attr"]</c>).
+	/// An un-awaited read yields a <c>Promise</c> object instead of the value; because a Promise is
+	/// always truthy and never nullish, it silently breaks the surrounding expression — most often a
+	/// <c>?? fallback</c> chain that never reaches its fallback, a comparison that is always false, or
+	/// an argument passed on un-resolved. The mistake is valid JavaScript, so neither marker, JSON,
+	/// nor JS-syntax validation catches it; this heuristic does.
+	/// <para>
+	/// All findings are WARNINGS, not errors. The check is a regex heuristic over raw text, so it
+	/// cannot exclude an occurrence inside a string literal or comment, and it does not resolve a
+	/// <c>$context</c> handle aliased to another variable. It therefore advises rather than blocks,
+	/// matching the fail-open posture of <see cref="ValidateSchemaDepsCompleteness"/>. Bracket reads
+	/// used as an assignment target (<c>$context["X"] = ...</c>) are skipped because that is a write,
+	/// not a read; the dedicated write API is <c>$context.set(...)</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is always valid; its warnings list one entry per
+	/// distinct attribute name read without <c>await</c>.
+	/// </returns>
+	public static SchemaValidationResult ValidateContextAccessAwait(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		var reported = new HashSet<string>(StringComparer.Ordinal);
+		try {
+			foreach (Match match in ContextBracketReadPattern.Matches(jsBody)) {
+				if (match.Groups["await"].Success) {
+					continue;
+				}
+				if (IsAssignmentTarget(jsBody, match.Index + match.Length)) {
+					continue;
+				}
+				string attributeName = match.Groups["name"].Value;
+				if (!reported.Add(attributeName)) {
+					continue;
+				}
+				result.Warnings.Add(
+					$"Page body reads '$context[\"{attributeName}\"]' without 'await'. Reactive context attribute reads " +
+					"are asynchronous and return a Promise; an un-awaited read yields a Promise object — always truthy and " +
+					"never nullish — which silently breaks '??' fallbacks, comparisons, and arguments built from it. " +
+					$"Change it to 'await $context[\"{attributeName}\"]' (e.g. 'const x = arg ?? (await $context[\"{attributeName}\"]) ?? fallback;'). " +
+					"Call get-guidance with name 'page-schema-handlers' for the read/write contract.");
+			}
+		} catch (RegexMatchTimeoutException) {
+			// Advisory heuristic: a pathological body that trips the regex timeout must fail open, not
+			// surface as a hard error. update-page's ValidateWebPageBody calls this directly (RunContentValidation
+			// is only a short-circuit, not a timeout guard), so the fail-open guard belongs here.
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Reports whether the first non-whitespace character at or after <paramref name="indexAfterRead"/>
+	/// begins a plain assignment (<c>=</c> not followed by <c>=</c> or <c>&gt;</c>), which marks the
+	/// preceding bracket access as a write target rather than an un-awaited read.
+	/// </summary>
+	private static bool IsAssignmentTarget(string jsBody, int indexAfterRead) {
+		int i = indexAfterRead;
+		while (i < jsBody.Length && char.IsWhiteSpace(jsBody[i])) {
+			i++;
+		}
+		if (i >= jsBody.Length || jsBody[i] != '=') {
+			return false;
+		}
+		// Distinguish assignment '=' from comparison '=='/'===' and arrow '=>', which are reads.
+		return i + 1 >= jsBody.Length || (jsBody[i + 1] != '=' && jsBody[i + 1] != '>');
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {
@@ -1046,8 +1148,9 @@ public static class SchemaValidationService
 			"but the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
 			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
 			canonicalEntry + " so the control binds to the entity column. " +
-			"If the attribute is already provided by the parent schema, " +
-			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+			"If the attribute is already provided by a parent schema or the current body, " +
+			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'. " +
+			"Rule: " + InsertedFieldBindingClause + ".");
 	}
 
 	private static void AppendLabelResourceError(
@@ -1067,17 +1170,33 @@ public static class SchemaValidationService
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
-			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
+			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="bindingAttribute"/> is a non-empty view-model
+	/// attribute whose <c>modelConfig.path</c> is DS-bound (resolves to <c>DataSource.Column</c>).
+	/// Single definition of "DS-bound" shared by the auto-provide gate
+	/// (<see cref="IsAutoProvidedLabelResourceKey"/>), the suggestion text
+	/// (<see cref="BuildAutoProvideSuggestion"/>), and the preferred-label resolver
+	/// (<see cref="TryResolvePreferredLabelBinding"/>) so the rule the validator enforces and the
+	/// remedy it suggests cannot disagree.
+	/// </summary>
+	private static bool IsDsBoundAttribute(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) =>
+		!string.IsNullOrWhiteSpace(bindingAttribute)
+		&& modelPaths.TryGetValue(bindingAttribute, out string boundPath)
+		&& boundPath.Contains('.', StringComparison.Ordinal);
 
 	private static string BuildAutoProvideSuggestion(
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (modelPaths.ContainsKey(bindingAttribute)) {
-			return $"or set the label to '$Resources.Strings.{bindingAttribute}' (the binding attribute name) so the platform auto-provides the caption from the DS-bound entity column";
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
+			return "Give the control's binding attribute a DS-bound modelConfig.path and point the label at it via '$Resources.Strings.<bindingAttribute>' so the platform auto-provides the caption";
 		}
-		return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<bindingAttribute>' (the attribute name) so the platform auto-provides the caption";
+		return $"Set the label to '$Resources.Strings.{bindingAttribute}' (the control's DS-bound binding attribute) so the platform auto-provides the caption from the entity column it points to";
 	}
 
 	private readonly record struct InsertedFieldDescriptor(
@@ -1387,7 +1506,8 @@ public static class SchemaValidationService
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
-				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is not in the provided resources — the label will render blank.");
+				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +
+				$"Rule: {InsertedFieldLabelClause}.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
 		    !TryGetMacroResourceKey(captionExpression, out string resourceKey) ||
@@ -1409,47 +1529,41 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
 	/// the preferred label in validator error/warning messages. The platform auto-provides the
-	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
-	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
-	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
-	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
-	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
-	/// auto-provided.
+	/// caption keyed by the VIEW-MODEL ATTRIBUTE NAME — the control's binding attribute — and
+	/// resolves the caption from the column that attribute's <c>modelConfig.path</c> points to. So
+	/// the suggestion is <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> (for example,
+	/// <c>$Resources.Strings.PDS_UsrStatus</c> for a <c>PDS_UsrStatus</c> attribute bound to
+	/// <c>PDS.UsrStatus</c>). The entity column code is NOT auto-provided unless it equals the
+	/// attribute name.
 	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
 		string bindingAttribute,
 		out string preferredLabelBinding) {
 		preferredLabelBinding = string.Empty;
-		if (string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
-			return false;
-		}
-		int lastDot = modelPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
-			? modelPath[(lastDot + 1)..]
-			: modelPath;
-		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
+		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
 		return true;
 	}
 
 	/// <summary>
-	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
-	/// caption resource for the control's binding attribute. The platform auto-provides
-	/// captions ONLY when the resource key equals the entity column code (the last segment
-	/// of the binding attribute's <c>modelConfig.path</c>) — e.g. <c>UsrCompleted</c> for
-	/// path <c>PDS.UsrCompleted</c>. Path-with-underscores forms like <c>PDS_UsrCompleted</c>
-	/// are NOT auto-provided even when declared as DS-bound view-model attributes, because
-	/// the platform resolves caption resources by entity-column code, not by arbitrary
-	/// view-model attribute name.
+	/// Returns <c>true</c> when <paramref name="resourceKey"/> is the auto-provided DS caption
+	/// resource for the control's binding attribute. The platform auto-provides captions keyed by
+	/// the VIEW-MODEL ATTRIBUTE NAME: the label key must equal the control's binding attribute
+	/// (<paramref name="bindingAttribute"/>), and that attribute must be DS-bound (its
+	/// <c>modelConfig.path</c> resolves to <c>DataSource.Column</c>). The caption is then resolved
+	/// from the bound column. The attribute name is arbitrary — <c>UsrStatus</c>,
+	/// <c>PDS_UsrStatus</c>, <c>Name123</c> all auto-provide when the label key equals them. The
+	/// entity column code (the last segment of the path) is NOT a valid key unless it happens to
+	/// equal the attribute name.
 	/// </summary>
 	private static bool IsAutoProvidedLabelResourceKey(
 		string resourceKey,
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (string.IsNullOrWhiteSpace(resourceKey)) {
 			return false;
 		}
 		// The platform auto-provides the caption for a DS-bound view-model attribute under a
@@ -1459,8 +1573,10 @@ public static class SchemaValidationService
 		// schemas, the label key always equals the control's attribute name. Auto-provide is keyed
 		// by the attribute name, NOT by the entity column code (the last path segment) — a bare
 		// column-code label is never emitted and is not auto-provided.
-		return string.Equals(resourceKey, bindingAttribute, StringComparison.Ordinal) &&
-		       modelPaths.ContainsKey(bindingAttribute);
+		if (!string.Equals(resourceKey, bindingAttribute, StringComparison.Ordinal)) {
+			return false;
+		}
+		return IsDsBoundAttribute(bindingAttribute, modelPaths);
 	}
 
 	private static bool TryGetBindingAttribute(
