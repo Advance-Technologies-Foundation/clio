@@ -14,6 +14,12 @@
 
 ---
 
+## Defaults are deterministic
+
+Several elements below expose more than one variant (button display type and color, input appearance, …). When the requirement does not name a variant, use the one marked as the default — do not pick at random, and do not choose a more decorative variant because it looks nicer. Deviating from the default requires an explicit instruction in the requirement.
+
+---
+
 ## Component recipes
 
 > Each recipe documents the type taxonomy, the `--crt-*` tokens per type and state, shared chrome, and sizes.
@@ -27,14 +33,14 @@ A Creatio button is defined by two independent axes — pick one value from each
 - `text` — no fill; the color shows as the foreground color (label + icon) — ghost / link-like action. Uses the `--crt-button-small-*` typography role.
 
 **Axis 2 — color** (intent / visual style; the designer caption is in parentheses):
-- `primary` — blue filled brand action (Save / Submit).
-- `default` (*Plain*) — transparent with subtle text; the neutral action. **Default color.**
-- `outline` — light fill + border; a secondary action with more emphasis than Plain.
+- `primary` — blue filled brand action; the form's main action (Save / Submit).
+- `default` (*Plain*) — transparent with subtle text, no border; the neutral action, and the default secondary next to a `primary`.
+- `outline` — light fill + border; a higher-emphasis secondary. Use only on explicit request.
 - `accent` (*Focus*) — green filled positive action.
 - `warn` (*Warning*) — red filled destructive / error action.
 - `plain-white` / `outline-white` — white text for placement over dark or glassmorphic backgrounds. Use only over dark / image surfaces.
 
-> A secondary button shown next to a `primary` button is `default` (Plain) `contained` — or `outline` — at the **same size and `contained` display type**. Do not use a `text` button as the secondary, and do not mix display types or sizes between buttons shown together.
+> A secondary button shown next to a `primary` button is `default` (Plain) `contained` at the **same size and `contained` display type**; use `outline` only when the requirement explicitly asks for a more prominent secondary. Do not use a `text` button as the secondary, and do not mix display types or sizes between buttons shown together.
 
 > A button uses **one foreground color per state** for both the label and the icon — the icon inherits it via `currentColor`; the button never sets a separate icon color. The token in each cell is the design system's fixed pick, so copy it exactly. It is **not** a choice between the `--crt-color-text-*` and `--crt-color-icon-*` families — that is why some cells use a `text-*` token and others an `icon-*` token.
 
@@ -174,11 +180,11 @@ Same chrome, size, and focus as the primary recipe; override only the colors (Pl
 
 ### Text input
 
-Two appearances — like the button's display type:
-- `fill` (default) — no box; a single **bottom underline**. The Freedom UI default.
-- `outline` — a full 1px **border box** with corner radius.
+Two appearances:
+- `fill` (default) — no box; a single **bottom underline**, matching the Freedom UI default.
+- `outline` — a full 1px **border box** with corner radius. Use only on explicit request.
 
-**If the requirement does not name an appearance, use `fill`** (the Freedom UI default). Both share the same text, label, placeholder, and state colors; only the border treatment differs. **Anatomy:** an optional caption label + the input control; typed text uses the `--crt-body-2-*` role, the label uses `--crt-caption-*`.
+Both share the same text, label, placeholder, and state colors; only the border treatment differs. **Anatomy:** an optional caption label + the input control; typed text uses the `--crt-body-2-*` role, the label uses `--crt-caption-*`.
 
 #### Text, label & placeholder (both appearances)
 
@@ -200,6 +206,14 @@ Two appearances — like the button's display type:
 | invalid | `--crt-color-border-error` `#d2310d` | `--crt-color-border-error` `#d2310d` |
 
 > `fill` draws only the bottom border — dotted at rest, solid on hover, `border-selected` on focus. `outline` is a full box with radius `--crt-radius-100` (4px).
+
+#### Required field
+
+Mark a required field by appending a red `*` to the label — `<span class="required">*</span>` after the label text — colored `--crt-color-text-error` (`#d2310d`); the label text itself stays `--crt-color-text-muted`. The control keeps its normal underline states (resting / hover / focus); on validation failure it shows the invalid state (`--crt-color-border-error`) plus an error message — never signal the error by color alone (see WCAG_ACCESSIBILITY_AI_GUIDE.md).
+
+```scss
+.field__label .required { color: var(--crt-color-text-error, #d2310d); font-weight: bold; }
+```
 
 #### Recipe — fill (underline, default)
 
@@ -256,7 +270,7 @@ Same label and text; replace the border block:
 
 Two parts: the **trigger** (the closed field) and the **dropdown panel** of options.
 
-**The trigger is a Text input field.** The closed select/combobox reuses the *Text input* field exactly — same appearances (`fill` / `outline`), border, text, label, and state tokens. It only adds a trailing expander icon and shows the selected value as the field text. For border / focus / disabled / invalid, follow *Text input*; the table below lists only what the trigger adds.
+**The trigger is a Text input field.** The closed select/combobox reuses the *Text input* field exactly — same appearances (`fill` default, `outline`), border, text, label, and state tokens. It only adds a trailing expander icon and shows the selected value as the field text. For border / focus / disabled / invalid, follow *Text input*; the table below lists only what the trigger adds.
 
 #### Trigger — added tokens
 
@@ -510,6 +524,24 @@ Item height 40px; items reserve a leading-icon column so labels align. Optional 
   border-top: 1px solid var(--crt-color-border-base, #dfdfdf);
 }
 ```
+
+---
+
+## Field metrics
+
+Form fields have a fixed geometry — unlike buttons there is no per-size axis. Match these native values:
+
+| metric | value |
+|---|---|
+| Control row height (label beside the control) | 32px |
+| Field block height (label above the control) | 52px |
+| `fill` control content area | 24px tall, sitting 4px above its 1px underline |
+| Label | `--crt-caption-*` (12 / 500 / 16), min-height 16px |
+| Label → control gap | `--crt-spacing-100` (4px) |
+| Label column width (label-beside layout) | 136px, with a 10px gap to the control |
+| Option / menu row height | 40px |
+
+**Vertical rhythm between fields is the host's job, not the component's.** Stacked fields are spaced by the host layout's grid `row-gap`, which uses the `--crt-spacing-*` scale (4 / 8 / 16 / 24px, default 8px). A component embedded in a Creatio form must inherit that gap — do not hardcode margins between fields. Set an explicit gap only inside a standalone widget that owns its own field group, and use `--crt-spacing-200` (8px) to match the default.
 
 ---
 Last updated: 2026-06-04

@@ -8,8 +8,8 @@
 
 **Related guides:**
 - **Runtime behavior guide:** See REMOTE_COMPONENT_RUNTIME_AI_GUIDE.md from @creatio-devkit/common package — read FIRST. It owns component structure, inputs/outputs, registration, tests.
-- **Design tokens catalog:** See ./DESIGN_TOKENS_AI_GUIDE.md (co-located in this folder) — the single source of truth for all `--crt-*` token names and default values referenced throughout this guide.
-- **Native component look (recipes):** See ./REMOTE_COMPONENT_NATIVE_LOOK_AI_GUIDE.md (co-located in this folder). Use it when the component must reproduce a built-in Creatio element (button, input, dropdown, …): this guide owns tokens/theming, that one owns per-element composition built on top of these tokens.
+- **Design tokens catalog:** See ./DESIGN_TOKENS_AI_GUIDE.md (co-located in this folder) — catalog of all `--crt-*` token names and default values.
+- **Native component look (recipes):** See ./REMOTE_COMPONENT_NATIVE_LOOK_AI_GUIDE.md (co-located in this folder). Use it when the component must reproduce a built-in Creatio element (button, input, dropdown, …).
 - **Accessibility guide:** See WCAG_ACCESSIBILITY_AI_GUIDE.md from @creatio-devkit/common package — focus-visible, color-contrast, and "color not sole indicator" rules interact with styling.
 - **Design-time panel styling:** See PROPERTIES_PANEL_AI_STYLES_TEMPLATE.md from @creatio/interface-designer package. **Do NOT apply that template to runtime components** — see the Shadow DOM section below for why.
 
@@ -80,6 +80,8 @@ All token **names, default-theme values, naming conventions, and scope** live in
 
 ## PATTERNS (copy, then adapt)
 
+For a complete per-element recipe — button, text input, select, checkbox, menu, or field label, with its default appearance, geometry, and states — use ./REMOTE_COMPONENT_NATIVE_LOOK_AI_GUIDE.md.
+
 ### Pattern A — Text / value display
 
 ```scss
@@ -104,74 +106,6 @@ All token **names, default-theme values, naming conventions, and scope** live in
 }
 ```
 
-### Pattern C — Primary button
-
-```scss
-.button {
-  font-family: var(--crt-button-font-family, 'Montserrat', sans-serif);
-  font-size: var(--crt-button-font-size, 14px);
-  font-weight: var(--crt-button-font-weight, 500);
-  line-height: var(--crt-button-line-height, 16px);
-
-  color: var(--crt-color-text-on-primary, #ffffff);
-  background: var(--crt-color-background-primary, #004fd6);
-  border: none;
-  border-radius: var(--crt-radius-150, 6px);
-  padding: var(--crt-spacing-200, 8px) var(--crt-spacing-400, 16px);
-  cursor: pointer;
-}
-.button:hover {
-  background: var(--crt-color-background-primary-hover, #0041b5);
-}
-.button:active {
-  background: var(--crt-color-background-primary-selected, #003495);
-}
-.button:disabled {
-  background: var(--crt-color-background-disabled, #ededed);
-  color: var(--crt-color-text-disabled, #757575);
-  cursor: not-allowed;
-}
-.button:focus-visible {
-  outline: 2px solid var(--crt-color-border-selected, #004fd6);
-  outline-offset: 2px;
-}
-```
-
-### Pattern D — Text input
-
-```scss
-.input {
-  font-family: var(--crt-body-2-font-family, 'Montserrat', sans-serif);
-  font-size: var(--crt-body-2-font-size, 13px);
-  color: var(--crt-color-text-body, #181818);
-
-  background: var(--crt-color-background-base, #ffffff);
-  border: 1px solid var(--crt-color-border-base, #dfdfdf);
-  border-radius: var(--crt-radius-100, 4px);
-  padding: var(--crt-spacing-200, 8px) var(--crt-spacing-300, 12px);
-}
-.input:focus-visible {
-  border-color: var(--crt-color-border-selected, #004fd6);
-  outline: none;
-}
-.input:disabled {
-  background: var(--crt-color-background-disabled, #ededed);
-  color: var(--crt-color-text-disabled, #757575);
-}
-```
-
-### Pattern E — Field label
-
-```scss
-.label {
-  font-family: var(--crt-caption-font-family, 'Montserrat', sans-serif);
-  font-size: var(--crt-caption-font-size, 12px);
-  font-weight: var(--crt-caption-font-weight, 500);
-  line-height: var(--crt-caption-line-height, 16px);
-  color: var(--crt-color-text-muted, #606060);
-}
-```
-
 ---
 
 ## HARD FAIL
@@ -186,6 +120,8 @@ Generation MUST be rejected and regenerated if any of these appear in a runtime 
 | `var()` without fallback | `color: var(--crt-color-text-body);` | `color: var(--crt-color-text-body, #181818);` |
 | Presentational `@Input` defaults to a literal | `public color = 'black';` | `public accentColor = 'var(--crt-color-text-action, #0d2e4e)';` |
 | Color as the only state signal | red text only for error | icon/text + `--crt-color-text-error` (see WCAG guide) |
+| Boxed text input when `fill` is the default | `border: 1px solid` + `border-radius` on the input | `border-bottom` underline (`fill`); a box only on explicit request |
+| Secondary button with a border instead of Plain | `border: 1px solid` on the secondary button | transparent `default` (Plain), no border |
 
 **Exception to _Hardcoded UI font-family_:** `'Courier New', monospace` is allowed ONLY for code/raw-data display (the design system has no monospace token).
 
@@ -214,6 +150,8 @@ public accentColor = 'var(--crt-color-text-action, #0d2e4e)';
 - [ ] Presentational @Input defaults to a token, not a literal
 - [ ] Every var(--crt-*) has a fallback second argument
 - [ ] Hover / disabled / :focus-visible states use tokens
+- [ ] Text input uses the fill underline by default (a box only on explicit request)
+- [ ] Secondary button is Plain (transparent, no border), not bordered
 - [ ] Component verified across themes (colors adapt correctly when the active theme changes)
 - [ ] Color is never the sole state indicator (WCAG)
 ```

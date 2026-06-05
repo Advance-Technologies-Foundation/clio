@@ -6,10 +6,6 @@
 
 **Scope:** All `--crt-*` design tokens: names, default-theme values, naming conventions, and where each token is defined (its scope).
 
-**Related guides:**
-- **Runtime component styling:** See ./REMOTE_COMPONENT_STYLING_AI_GUIDE.md (co-located in this folder) — how to consume these tokens inside a Shadow DOM runtime component.
-- **Native component look:** See ./REMOTE_COMPONENT_NATIVE_LOOK_AI_GUIDE.md (co-located in this folder) — per-element recipes built from these tokens.
-
 ---
 
 ## How tokens are scoped
