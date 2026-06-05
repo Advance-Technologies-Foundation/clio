@@ -20,7 +20,18 @@ internal static class EntitySchemaDesignerSupport
 	private const string DateTimeTypeName = "datetime";
 	private const string FileTypeName = "file";
 	private const string ImageTypeName = "image";
+	private const string ImageLookupTypeName = "imageLookup";
 	private const string SecureTextTypeName = "secureText";
+
+	/// <summary>
+	/// UId of the platform <c>SysImage</c> schema that every <c>ImageLookup</c> ("Image link") column references.
+	/// Mirrors the server-side <c>EntitySchemaDesigner.ImageLookupReferenceSchemaUId</c> resolution
+	/// (<c>SchemaManager.GetItemByName("SysImage")</c>).
+	/// </summary>
+	internal static readonly Guid SysImageReferenceSchemaUId = new("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8");
+
+	/// <summary>Name of the platform <c>SysImage</c> schema referenced by <c>ImageLookup</c> columns.</summary>
+	internal const string SysImageReferenceSchemaName = "SysImage";
 
 	internal static readonly Dictionary<string, int> SupportedDataValueTypes =
 		new(StringComparer.OrdinalIgnoreCase) {
@@ -36,6 +47,7 @@ internal static class EntitySchemaDesignerSupport
 			["richText"] = 43,
 			[BinaryTypeName] = 13,
 			[ImageTypeName] = 14,
+			[ImageLookupTypeName] = 16,
 			[FileTypeName] = 25,
 			[SecureTextTypeName] = 24,
 			["integer"] = 4,
@@ -61,6 +73,7 @@ internal static class EntitySchemaDesignerSupport
 			["longtext"] = "text500",
 			["maxsizetext"] = "textUnlimited",
 			["emailaddress"] = "email",
+			["imagelink"] = ImageLookupTypeName,
 			["blob"] = BinaryTypeName,
 			["float"] = "decimal2",
 			["date"] = DateTimeTypeName,
@@ -351,6 +364,26 @@ internal static class EntitySchemaDesignerSupport
 
 	internal static bool IsBinaryLikeDataValueType(int dataValueType) {
 		return BinaryLikeDataValueTypes.Contains(dataValueType);
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> when the data value type is <c>ImageLookup</c> ("Image link", code 16),
+	/// the reference type required by the <c>crt.ImageInput</c> Freedom UI component.
+	/// </summary>
+	internal static bool IsImageLookupDataValueType(int dataValueType) {
+		return dataValueType == SupportedDataValueTypes[ImageLookupTypeName];
+	}
+
+	/// <summary>
+	/// Builds the implicit <c>SysImage</c> reference schema carried by every <c>ImageLookup</c> column.
+	/// The server-side designer mapper persists <c>ReferenceSchema.UId</c>, so clio must supply it explicitly.
+	/// </summary>
+	internal static EntityDesignSchemaDto CreateSysImageReferenceSchema() {
+		return new EntityDesignSchemaDto {
+			UId = SysImageReferenceSchemaUId,
+			Name = SysImageReferenceSchemaName,
+			Caption = [CreateLocalizableString(SysImageReferenceSchemaName)]
+		};
 	}
 
 	internal static Guid GetDataValueTypeUIdForRuntimeType(int runtimeDataValueType) {

@@ -266,6 +266,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 					}
 				]
 			};
+		} else if (EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+			// ImageLookup ("Image link") is the column type crt.ImageInput binds to. It always references the
+			// platform SysImage schema and is indexed; the reference is implicit, never user-supplied.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
 		}
 
 		return column;
