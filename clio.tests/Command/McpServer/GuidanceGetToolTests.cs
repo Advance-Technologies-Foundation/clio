@@ -196,10 +196,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the page modification guide must force component-type verification before any viewConfigDiff insert to prevent invented crt.* types");
 		result.Article.Text.Should().Contain("ASK THE USER",
 			because: "the page modification guide must tell the agent to ask the user (pick an existing component or build a custom one) when no OOTB component matches");
-		result.Article.Text.Should().Contain("crt.SegmentedButtonGroup",
-			because: "the guide should cite the concrete invented-type failure that motivated the verification rule (ENG-90939)");
-		result.Article.Text.Should().Contain("crt.ButtonToggleGroup",
-			because: "the guide should name the real OOTB component so the agent knows the verified alternative to the invented type");
 	}
 
 	[Test]

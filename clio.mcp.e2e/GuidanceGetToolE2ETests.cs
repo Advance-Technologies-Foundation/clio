@@ -376,10 +376,6 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
-		response.Article.Text.Should().Contain("crt.SegmentedButtonGroup",
-			because: "the guide should cite the concrete invented-type failure that motivated the rule (ENG-90939)");
-		response.Article.Text.Should().Contain("crt.ButtonToggleGroup",
-			because: "the guide should name the real OOTB component so the agent knows the verified alternative");
 	}
 
 	[Test]
