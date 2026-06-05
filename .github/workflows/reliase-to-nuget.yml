@@ -84,17 +84,6 @@ jobs:
             /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version /p:InformationalVersion=$version
         shell: powershell
 
-      - name: Free runner disk space
-        shell: powershell
-        run: |
-          # Self-hosted runners are not cleaned between jobs, so NuGet's http-cache and temp
-          # caches grow unbounded on C: and can exhaust the disk during `dotnet tool install`.
-          # Clear only those two caches (NOT global-packages) so no packages need re-downloading.
-          dotnet build-server shutdown 2>$null
-          dotnet nuget locals http-cache --clear
-          dotnet nuget locals temp --clear
-          Write-Host "Cleared NuGet http-cache and temp."
-
       - name: Verify packaged tool version
         shell: powershell
         run: |
