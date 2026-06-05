@@ -100,7 +100,7 @@ public sealed class EsqGuidanceResource {
 		         - `aggregationType`: 1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max (0 None, 6 TopOne).
 		         - `aggregationEvalType`: 1 All, 2 Distinct (0 None). COUNT typically uses 2 (Distinct) over `Id`; SUM/AVG/MIN/MAX use 1 (All) over the business column.
 		         - `functionArgument`: the column being aggregated (a SchemaColumn expression). It may itself use a forward/backward path, e.g. `Account.AnnualRevenue` or a backward sub-query.
-		       - In a widget, the aggregation lives at `config.data.providing.aggregation.column.expression` (the SelectQueryColumn wrapper adds `orderDirection`/`orderPosition`/`isVisible`). See `indicator-widget`.
+		       - When a consumer stores the aggregation as a SelectQueryColumn, the `expression` above is nested inside a column object that adds `orderDirection`/`orderPosition`/`isVisible`.
 		       - In a standalone SelectQuery, place the aggregation as the `expression` of a `columns.items` entry; the result row carries the value under that alias.
 
 		       The filter envelope (cross-reference)
@@ -173,11 +173,10 @@ public sealed class EsqGuidanceResource {
 		       Running a query with execute-esq
 		       - Build the SelectQuery and run it with the `execute-esq` tool to read data from a live environment — the returned rows are the query result.
 		       - Response shape: `execute-esq` returns `{ success, count, rows }`. `rows` is the array of result records and `count` is the NUMBER OF ROWS — not your aggregate. For a COUNT(Id) query the answer is the aggregate value inside `rows[0]` under your column alias (e.g. `rows[0].RecordsCount`), and `count` is just 1. Result rows also include the record `Id` even when you did not select it.
-		       - Running a query is also the fastest way to check a filter: a successful call confirms the schema name, every column path, and the whole filter tree parse and resolve. To check a widget filter, (1) take the filter group you plan to put in `config.data.providing.filters.filter`, (2) wrap it in a SelectQuery with a single COUNT(Id) aggregation and the same `rootSchemaName`, (3) execute it, (4) compare the count to expectations, (5) only then write the widget. This catches wrong paths, wrong lookup objects, and wrong macros before they reach a page.
+		       - Running a query is also the fastest way to check a filter: a successful call confirms the schema name, every column path, and the whole filter tree parse and resolve. To check a filter before saving it anywhere, (1) take the filter group you plan to use, (2) wrap it in a SelectQuery with a single COUNT(Id) aggregation and the same `rootSchemaName`, (3) execute it, (4) compare the count to expectations, (5) only then commit it to its destination. This catches wrong paths, wrong lookup objects, and wrong macros before they reach a page.
 
 		       Related guidance
 		       - Read `esq-filters` for the complete filter tree: every filter type and operator, value shapes per data type, lookup objects, the date-macro catalog, and backward-reference Exists filters.
-		       - Read `indicator-widget` for how the aggregation + filter group embed in a `crt.IndicatorWidget` page payload.
 		       """
 	};
 
