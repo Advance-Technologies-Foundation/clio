@@ -17,6 +17,7 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleConditionTypeName = "Terrasoft.Core.BusinessRules.Models.Conditions.BusinessRuleCondition";
 	internal const string BusinessRuleAttributeExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression";
 	internal const string BusinessRuleValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleValueExpression";
+	internal const string BusinessRuleSysValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysValueExpression";
 	internal const string BusinessRuleFormulaExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleFormulaExpression";
 	internal const string BusinessRuleContextExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleContextExpression";
 	internal const string BusinessRuleParameterMappingTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.ParameterMapping";
@@ -42,6 +43,7 @@ internal static class BusinessRuleConstants {
 	internal const string AttributeValueExpressionType = "AttributeValue";
 	internal const string ConstExpressionType = "Const";
 	internal const string FormulaExpressionType = "Formula";
+	internal const string SysValueExpressionType = "SysValue";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;
@@ -119,4 +121,30 @@ internal static class BusinessRuleConstants {
 			"not-equal"
 		};
 
+	/// <summary>
+	/// System variables supported as the right-hand expression of a business-rule condition.
+	/// Keyed by the platform <c>sysValueName</c>. The value carries the system variable's
+	/// data value type and, for lookup variables, the schema it references.
+	/// </summary>
+	internal static readonly IReadOnlyDictionary<string, SystemVariableDescriptor> SupportedSystemVariables =
+		new Dictionary<string, SystemVariableDescriptor>(StringComparer.OrdinalIgnoreCase) {
+			["CurrentDate"] = new("Date", null),
+			["CurrentTime"] = new("Time", null),
+			["CurrentDateTime"] = new("DateTime", null),
+			["CurrentUser"] = new("Lookup", "SysAdminUnit"),
+			["CurrentUserContact"] = new("Lookup", "Contact"),
+			["CurrentUserAccount"] = new("Lookup", "Account"),
+			["CurrentUserRoles"] = new("Lookup", "SysAdminUnit")
+		};
+
+	internal static readonly string SupportedSystemVariablesDescription =
+		"CurrentDate, CurrentTime, CurrentDateTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles";
+
 }
+
+/// <summary>
+/// Metadata describing a system variable usable in a business-rule condition.
+/// </summary>
+/// <param name="DataValueTypeName">Data value type the system variable resolves to.</param>
+/// <param name="ReferenceSchemaName">Schema referenced by a lookup system variable, or <c>null</c> for non-lookup variables.</param>
+internal sealed record SystemVariableDescriptor(string DataValueTypeName, string? ReferenceSchemaName);

@@ -16,6 +16,12 @@ Page-level rule creation must:
    - support left and right expression types:
       - declared page attribute
       - constant
+      - system variable (right side only)
+   - support system variables on the right side of a condition:
+      - `CurrentDate` (Date), `CurrentTime` (Time), `CurrentDateTime` (DateTime)
+      - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (Lookup → `SysAdminUnit`)
+      - the system variable's data value type must match the left attribute's resolved data value type
+      - for lookup system variables the left attribute must resolve to a lookup that references the variable's reference schema
    - support condition attributes only when they are declared in `bundle.viewModelConfig.attributes` and bound to an entity datasource column through `modelConfig.path`
    - use declared page attribute names in payloads, for example `PDS_UsrText_r07ym9c`
    - do not use datasource paths in payloads, for example `PDS.UsrText`
@@ -88,6 +94,9 @@ Page-level rule creation must reject the request when:
 - a referenced condition attribute cannot be resolved to an entity schema column
 - left and right attribute expressions resolve to different data value types
 - a constant value does not match the resolved left attribute data value type
+- a right-side system variable name is unknown
+- a right-side system variable data value type does not match the resolved left attribute data value type
+- a right-side lookup system variable references a different schema than the resolved left lookup attribute
 - the request uses an unsupported page action type
 - an action has no target page elements
 - a referenced action target does not exist as a named element in the merged recursive `viewConfig`

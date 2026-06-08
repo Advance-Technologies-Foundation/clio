@@ -11,7 +11,7 @@ internal static class BusinessRuleAddonReadback {
 		string environmentName,
 		string packageName,
 		string entitySchemaName,
-		string expectedCaption,
+		string expectedRuleName,
 		string expectedActionTypeName,
 		IReadOnlyCollection<string> expectedActionItems,
 		string expectedConditionPath,
@@ -29,11 +29,57 @@ internal static class BusinessRuleAddonReadback {
 			packageUId,
 			schema,
 			"EntitySchemaManager",
-			expectedCaption,
+			expectedRuleName,
 			expectedActionTypeName,
 			expectedActionItems,
 			expectedConditionPath,
 			cancellationToken);
+	}
+
+	public static async Task AssertEntityRuleSysValueConditionExistsAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		string packageName,
+		string entitySchemaName,
+		string expectedRuleName,
+		string expectedConditionPath,
+		string expectedSysValueName,
+		string expectedSysValueDataValueType,
+		string? expectedSysValueReferenceSchemaName,
+		CancellationToken cancellationToken) {
+		string packageUId = await QueryPackageUIdAsync(settings, environmentName, packageName, cancellationToken);
+		SchemaMetadata schema = await QueryEntityTargetSchemaMetadataAsync(
+			settings,
+			environmentName,
+			entitySchemaName,
+			packageUId,
+			cancellationToken);
+		JsonObject addonResponse = await CallJsonServiceAsync(
+			settings,
+			environmentName,
+			"ServiceModel/AddonSchemaDesignerService.svc/GetSchema",
+			new JsonObject {
+				["addonName"] = "BusinessRule",
+				["targetSchemaUId"] = schema.UId,
+				["targetParentSchemaUId"] = schema.ParentUId,
+				["targetPackageUId"] = packageUId,
+				["targetSchemaManagerName"] = "EntitySchemaManager",
+				["useFullHierarchy"] = true
+			},
+			cancellationToken);
+
+		addonResponse["success"]?.GetValue<bool>().Should().BeTrue(
+			because: "BusinessRule add-on readback should succeed for the same entity schema targeted by the destructive system-variable test");
+		string? metadata = addonResponse["schema"]?["metaData"]?.GetValue<string>();
+		metadata.Should().NotBeNullOrWhiteSpace(
+			because: "BusinessRule add-on readback should include the saved system-variable metadata payload");
+		AssertSysValueConditionMetadata(
+			metadata!,
+			expectedRuleName,
+			expectedConditionPath,
+			expectedSysValueName,
+			expectedSysValueDataValueType,
+			expectedSysValueReferenceSchemaName);
 	}
 
 	public static async Task AssertEntityApplyFilterRuleFamilyExistsAsync(
@@ -41,7 +87,7 @@ internal static class BusinessRuleAddonReadback {
 		string environmentName,
 		string packageName,
 		string entitySchemaName,
-		string expectedCaption,
+		string expectedRuleName,
 		string targetPath,
 		string targetFilterPath,
 		string sourcePath,
@@ -77,7 +123,7 @@ internal static class BusinessRuleAddonReadback {
 			because: "BusinessRule add-on readback should include the saved apply-filter metadata payload");
 		AssertApplyFilterRuleFamilyMetadata(
 			metadata!,
-			expectedCaption,
+			expectedRuleName,
 			targetPath,
 			targetFilterPath,
 			sourcePath,
@@ -91,7 +137,7 @@ internal static class BusinessRuleAddonReadback {
 		string environmentName,
 		string packageName,
 		string rootSchemaUId,
-		string expectedCaption,
+		string expectedRuleName,
 		string expectedActionTypeName,
 		IReadOnlyCollection<string> expectedActionItems,
 		string expectedConditionPath,
@@ -111,7 +157,7 @@ internal static class BusinessRuleAddonReadback {
 			packageUId,
 			schema,
 			"ClientUnitSchemaManager",
-			expectedCaption,
+			expectedRuleName,
 			expectedActionTypeName,
 			expectedActionItems,
 			expectedConditionPath,
@@ -124,7 +170,7 @@ internal static class BusinessRuleAddonReadback {
 		string packageUId,
 		SchemaMetadata schema,
 		string schemaManagerName,
-		string expectedCaption,
+		string expectedRuleName,
 		string expectedActionTypeName,
 		IReadOnlyCollection<string> expectedActionItems,
 		string expectedConditionPath,
@@ -148,7 +194,7 @@ internal static class BusinessRuleAddonReadback {
 		string? metadata = addonResponse["schema"]?["metaData"]?.GetValue<string>();
 		metadata.Should().NotBeNullOrWhiteSpace(
 			because: "BusinessRule add-on readback should include the saved metadata payload");
-		AssertRuleMetadata(metadata!, expectedCaption, expectedActionTypeName, expectedActionItems, expectedConditionPath);
+		AssertRuleMetadata(metadata!, expectedRuleName, expectedActionTypeName, expectedActionItems, expectedConditionPath);
 	}
 
 	private static async Task<SchemaMetadata> QueryEntityTargetSchemaMetadataAsync(
@@ -292,14 +338,16 @@ internal static class BusinessRuleAddonReadback {
 
 	private static void AssertRuleMetadata(
 		string metadata,
-		string expectedCaption,
+		string expectedRuleName,
 		string expectedActionTypeName,
 		IReadOnlyCollection<string> expectedActionItems,
 		string expectedConditionPath) {
 		JsonObject root = JsonNode.Parse(metadata)!.AsObject();
 		JsonArray rules = root["rules"] as JsonArray ?? [];
+		// The platform persists the generated rule `name` on the rule object; the friendly caption is stored
+		// as a separate addon resource ({uId}.Caption), so the rule is matched by its generated name.
 		JsonObject? rule = rules.OfType<JsonObject>().SingleOrDefault(candidate =>
-			string.Equals(candidate["caption"]?.GetValue<string>(), expectedCaption, StringComparison.Ordinal));
+			string.Equals(ReadString(candidate["name"]), expectedRuleName, StringComparison.Ordinal));
 		rule.Should().NotBeNull(
 			because: "the destructive MCP test should verify the rule was persisted to the intended add-on target");
 		AssertConditionMetadata(rule!, expectedConditionPath);
@@ -309,7 +357,7 @@ internal static class BusinessRuleAddonReadback {
 
 	private static void AssertApplyFilterRuleFamilyMetadata(
 		string metadata,
-		string expectedCaption,
+		string expectedRuleName,
 		string targetPath,
 		string targetFilterPath,
 		string sourcePath,
@@ -318,8 +366,10 @@ internal static class BusinessRuleAddonReadback {
 		bool expectPopulateChild) {
 		JsonObject root = JsonNode.Parse(metadata)!.AsObject();
 		JsonArray rules = root["rules"] as JsonArray ?? [];
+		// The create returns the generated parent rule name; child rules are linked by parentUId/parentActionUId
+		// and distinguished by their autogenerated names (captions are stored as addon resources, not on the rule).
 		JsonObject? parentRule = rules.OfType<JsonObject>().SingleOrDefault(candidate =>
-			string.Equals(candidate["caption"]?.GetValue<string>(), expectedCaption, StringComparison.Ordinal));
+			string.Equals(ReadString(candidate["name"]), expectedRuleName, StringComparison.Ordinal));
 		parentRule.Should().NotBeNull(
 			because: "the destructive MCP test should verify the parent apply-filter rule was persisted");
 
@@ -359,13 +409,13 @@ internal static class BusinessRuleAddonReadback {
 			: $"{sourcePath}.{sourceFilterPath}";
 		if (expectClearChild) {
 			JsonObject clearRule = childRules.Single(rule =>
-				string.Equals(ReadString(rule["caption"]), $"ChildRule-{parentRuleUId}-ClearValue", StringComparison.Ordinal));
+				string.Equals(ReadString(rule["name"]), $"Autogenerated_{parentRuleUId}_ClearValue", StringComparison.Ordinal));
 			AssertApplyFilterClearChild(clearRule, sourceComparisonPath, targetPath, targetRelatedPath);
 		}
 
 		if (expectPopulateChild) {
 			JsonObject populateRule = childRules.Single(rule =>
-				string.Equals(ReadString(rule["caption"]), $"ChildRule-{parentRuleUId}-PopulateValue", StringComparison.Ordinal));
+				string.Equals(ReadString(rule["name"]), $"Autogenerated_{parentRuleUId}_PopulateValue", StringComparison.Ordinal));
 			AssertApplyFilterPopulateChild(populateRule, targetPath, sourcePath, targetRelatedPath);
 		}
 	}
@@ -375,12 +425,12 @@ internal static class BusinessRuleAddonReadback {
 		triggers.Should().NotBeNullOrEmpty(
 			because: "the persisted apply-filter parent rule should include trigger metadata");
 		triggers!.OfType<JsonObject>().Any(trigger =>
-			ReadInt(trigger["type"]) == 2
+			ReadTriggerType(trigger) == 2
 			&& string.IsNullOrEmpty(ReadString(trigger["name"])))
 			.Should().BeTrue(
 			because: "apply-filter parent rules should reload on data loaded");
 		triggers.OfType<JsonObject>().Any(trigger =>
-			ReadInt(trigger["type"]) == 0
+			ReadTriggerType(trigger) == 0
 			&& string.Equals(ReadString(trigger["name"]), expectedSourcePath, StringComparison.Ordinal))
 			.Should().BeTrue(
 			because: "apply-filter parent rules should react when the source lookup changes");
@@ -393,8 +443,10 @@ internal static class BusinessRuleAddonReadback {
 		string targetRelatedPath) {
 		JsonObject clearCondition = clearRule["cases"]?[0]?["condition"]!.AsObject()
 			?? throw new InvalidOperationException("The persisted apply-filter clear child should contain a direct condition.");
-		ReadInt(clearCondition["comparisonType"]).Should().Be(2,
-			because: "the clear child should compare source and target filter values for mismatch");
+		// Clio emits ComparisonNotEqual (3) for the clear child: clear the target when the source value
+		// no longer matches the target's related lookup value.
+		ReadInt(clearCondition["comparisonType"]).Should().Be(3,
+			because: "the clear child should compare source and target filter values for mismatch (not-equal)");
 		ReadString(clearCondition["leftExpression"]?["path"]).Should().Be(sourceComparisonPath,
 			because: "the clear child should compare against the source lookup path");
 		ReadString(clearCondition["rightExpression"]?["path"]).Should().Be(targetRelatedPath,
@@ -418,8 +470,10 @@ internal static class BusinessRuleAddonReadback {
 		string targetRelatedPath) {
 		JsonObject populateCondition = populateRule["cases"]?[0]?["condition"]!.AsObject()
 			?? throw new InvalidOperationException("The persisted apply-filter populate child should contain a direct condition.");
-		ReadInt(populateCondition["comparisonType"]).Should().Be(9,
-			because: "the populate child should only run when the target lookup is filled in");
+		// Clio emits ComparisonIsFilledIn (1) for the populate child: populate the source only when the
+		// target lookup is filled in.
+		ReadInt(populateCondition["comparisonType"]).Should().Be(1,
+			because: "the populate child should only run when the target lookup is filled in (is-filled-in)");
 		ReadString(populateCondition["leftExpression"]?["path"]).Should().Be(targetPath,
 			because: "the populate child should react to the selected target lookup");
 
@@ -432,6 +486,43 @@ internal static class BusinessRuleAddonReadback {
 			because: "the populate child should write back to the source lookup");
 		ReadString(populateItems[0]?["value"]?["path"]).Should().Be(targetRelatedPath,
 			because: "the populate child should copy the resolved target lookup path");
+	}
+
+	private static void AssertSysValueConditionMetadata(
+		string metadata,
+		string expectedRuleName,
+		string expectedConditionPath,
+		string expectedSysValueName,
+		string expectedSysValueDataValueType,
+		string? expectedSysValueReferenceSchemaName) {
+		JsonObject root = JsonNode.Parse(metadata)!.AsObject();
+		JsonArray rules = root["rules"] as JsonArray ?? [];
+		// Match by the generated rule name persisted on the rule object (the caption lives in addon resources).
+		JsonObject? rule = rules.OfType<JsonObject>().SingleOrDefault(candidate =>
+			string.Equals(ReadString(candidate["name"]), expectedRuleName, StringComparison.Ordinal));
+		rule.Should().NotBeNull(
+			because: "the destructive system-variable MCP test should verify the rule was persisted to the intended add-on target");
+
+		JsonArray? conditions = rule!["cases"]?[0]?["condition"]?["conditions"] as JsonArray;
+		conditions.Should().NotBeNullOrEmpty(
+			because: "the persisted system-variable business rule should include condition metadata");
+		JsonObject condition = conditions!.OfType<JsonObject>().Single(candidate =>
+			string.Equals(ReadString(candidate["leftExpression"]?["path"]), expectedConditionPath, StringComparison.Ordinal));
+
+		JsonObject rightExpression = condition["rightExpression"]!.AsObject();
+		ReadString(rightExpression["typeName"]).Should().Be(
+			"Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysValueExpression",
+			because: "system-variable conditions should persist the core BusinessRuleSysValueExpression type");
+		ReadString(rightExpression["type"]).Should().Be("SysValue",
+			because: "the persisted right expression should keep its SysValue discriminator");
+		ReadString(rightExpression["sysValueName"]).Should().Be(expectedSysValueName,
+			because: "the persisted right expression should keep the selected system variable name");
+		ReadString(rightExpression["dataValueTypeName"]).Should().Be(expectedSysValueDataValueType,
+			because: "the persisted system-variable expression should inherit the left attribute data value type");
+		if (!string.IsNullOrWhiteSpace(expectedSysValueReferenceSchemaName)) {
+			ReadString(rightExpression["referenceSchemaName"]).Should().Be(expectedSysValueReferenceSchemaName,
+				because: "the persisted lookup system-variable expression should inherit the left lookup reference schema");
+		}
 	}
 
 	private static void AssertConditionMetadata(JsonObject rule, string expectedConditionPath) {
@@ -465,16 +556,21 @@ internal static class BusinessRuleAddonReadback {
 		triggers.Should().NotBeNullOrEmpty(
 			because: "the persisted business-rule payload should include trigger metadata");
 		triggers!.OfType<JsonObject>().Any(trigger =>
-			ReadInt(trigger["type"]) == 2
+			ReadTriggerType(trigger) == 2
 			&& string.IsNullOrEmpty(ReadString(trigger["name"])))
 			.Should().BeTrue(
 			because: "business rules should reload on data loaded");
 		triggers.OfType<JsonObject>().Any(trigger =>
-			ReadInt(trigger["type"]) == 0
+			ReadTriggerType(trigger) == 0
 			&& string.Equals(ReadString(trigger["name"]), expectedConditionPath, StringComparison.Ordinal))
 			.Should().BeTrue(
 			because: "business rules should react when the condition attribute changes");
 	}
+
+	// AddonSchemaDesignerService.GetSchema omits the trigger `type` when it is the default
+	// ChangeAttributeValue value (0), so a missing `type` must be read as 0.
+	private static int ReadTriggerType(JsonObject trigger) =>
+		trigger["type"] is { } node ? node.GetValue<int>() : 0;
 
 	private static IReadOnlySet<string> ReadActionItems(JsonObject action) {
 		JsonNode? itemsNode = action["items"];

@@ -474,11 +474,50 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			return;
 		}
 
+		if (string.Equals(rightExpression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			ValidateSysValueRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
+			return;
+		}
+
 		if (!string.Equals(rightExpression.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.");
+			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.");
 		}
 
 		ValidateConstantRightExpression(rightExpression, leftDataValueTypeName);
+	}
+
+	private static void ValidateSysValueRightExpression(
+		BusinessRuleExpression rightExpression,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string leftPath,
+		string leftDataValueTypeName) {
+		if (string.IsNullOrWhiteSpace(rightExpression.SysValueName)) {
+			throw new ArgumentException(
+				"rule.condition.conditions[*].rightExpression.sysValueName is required when rightExpression.type is 'SysValue'.");
+		}
+
+		if (!SupportedSystemVariables.TryGetValue(rightExpression.SysValueName, out SystemVariableDescriptor? sysValue)) {
+			throw new ArgumentException(
+				$"Unsupported rule.condition.conditions[*].rightExpression.sysValueName '{rightExpression.SysValueName}'. Supported values: {SupportedSystemVariablesDescription}.");
+		}
+
+		if (!string.Equals(leftDataValueTypeName, sysValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftDataValueTypeName}) to system variable '{rightExpression.SysValueName}' ({sysValue.DataValueTypeName}). The system variable data value type must match the left attribute data value type.");
+		}
+
+		if (sysValue.ReferenceSchemaName is null) {
+			return;
+		}
+
+		BusinessRuleAttributeDescriptor leftDescriptor = ResolveAttribute(
+			attributeMap,
+			leftPath,
+			"rule.condition.conditions[*].leftExpression.path");
+		if (!string.Equals(leftDescriptor.ReferenceSchemaName, sysValue.ReferenceSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*] compares lookup attribute '{leftPath}' ({leftDescriptor.ReferenceSchemaName}) to system variable '{rightExpression.SysValueName}' ({sysValue.ReferenceSchemaName}). The lookup system variable must reference the same schema as the left lookup attribute.");
+		}
 	}
 
 	private static void ValidateAttributeRightExpression(

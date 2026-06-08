@@ -1619,7 +1619,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. A condition rightExpression may be a constant (type Const), another attribute (type AttributeValue), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1666,6 +1666,14 @@ internal static class ToolContractCatalog {
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
+				SysValueBusinessRuleExample("Create a required-field rule when owner equals the current user contact (SysValue)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Require status when owner is the current user",
+					ExampleOwnerAttributeName, ExampleEqualConditionComparison, "CurrentUserContact",
+					MakeRequiredActionTypeName, ["Status"]),
+				SysValueBusinessRuleExample("Create a readonly rule when due date is on or before the current date (SysValue)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when due on or before today",
+					"DueDate", "less-than-or-equal", "CurrentDate",
+					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
 					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
@@ -1881,7 +1889,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. A condition rightExpression may be a constant (type Const), another page attribute (type AttributeValue), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1952,6 +1960,10 @@ internal static class ToolContractCatalog {
 					"show-element",
 					["HighAmountWarningLabel"],
 					100000),
+				SysValueBusinessRuleExample("Hide a control when due date is on or before the current date (SysValue)",
+					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide reminder when due on or before today",
+					"PDS_UsrDueDate", "less-than-or-equal", "CurrentDate",
+					"hide-element", ["ReminderLabel"]),
 				PageBusinessRuleAttributeComparisonExample()
 			],
 			Flow(
@@ -2002,7 +2014,9 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
-				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
+			new ToolContractValidator("sys-value", "unsupported-system-variable", "rule.condition.conditions[*].rightExpression.sysValueName",
+				Context: $"When rightExpression.type is SysValue, sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. The system variable data value type must match the left attribute type (CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount/CurrentUserRoles=Lookup). For the lookup variables the left attribute must be a lookup that references the same schema as the variable (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit).")
 		];
 
 	private static ToolContractExample BusinessRuleExample(
@@ -2232,6 +2246,50 @@ internal static class ToolContractCatalog {
 					new Dictionary<string, object?> {
 						["type"] = "hide-element",
 						["items"] = new object[] { "DateMismatchWarningLabel" }
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample SysValueBusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string sysValueName,
+		string actionType,
+		object[] actionItems) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType,
+			["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.SysValueExpressionType,
+				["sysValueName"] = sysValueName
+			}
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
 					}
 				}
 			}

@@ -470,6 +470,59 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes a condition with a system-variable right expression and preserves the SysValue type and sysValueName.")]
+	public void BusinessRuleCreate_Should_Deserialize_Condition_With_SysValue_Right_Expression() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Require status when owner is the current user",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "AttributeValue",
+		            "path": "Owner"
+		          },
+		          "comparisonType": "equal",
+		          "rightExpression": {
+		            "type": "SysValue",
+		            "sysValueName": "CurrentUserContact"
+		          }
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "make-required",
+		        "items": [ "Status" ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "system-variable business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleExpression rightExpression = payloadArgs!.Rule.ToBusinessRule().Condition.Conditions[0].RightExpression!;
+		rightExpression.Type.Should().Be("SysValue",
+			because: "the SysValue discriminator should be preserved through MCP payload binding");
+		rightExpression.SysValueName.Should().Be("CurrentUserContact",
+			because: "the selected system variable name should survive MCP payload binding for downstream conversion");
+		rightExpression.Value.Should().BeNull(
+			because: "system-variable right expressions carry no static constant value");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deserializes apply-filter actions and preserves target/source lookup settings for downstream validation and conversion.")]
 	public void BusinessRuleCreate_Should_Deserialize_ApplyFilter_Action() {
 		// Arrange

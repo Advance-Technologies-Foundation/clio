@@ -13,6 +13,12 @@ Entity-level rule creation must:
    - support left and right expression types:
       - attribute
       - constant
+      - system variable (right side only)
+   - support system variables on the right side of a condition:
+      - `CurrentDate` (Date), `CurrentTime` (Time), `CurrentDateTime` (DateTime)
+      - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (Lookup → `SysAdminUnit`)
+      - the system variable's data value type must match the left attribute's data value type
+      - for lookup system variables the left attribute must be a lookup that references the variable's reference schema
    - support data value types for attributes and constants:
       - text
       - number
@@ -76,6 +82,9 @@ Entity-level rule creation must reject the request when:
 - a unary comparison includes `rightExpression`
 - a binary comparison omits `rightExpression`
 - a relational comparison targets a non-numeric and non-temporal left attribute
+- a right-side system variable name is unknown
+- a right-side system variable data value type does not match the left attribute data value type
+- a right-side lookup system variable references a different schema than the left lookup attribute
 - a referenced condition attribute does not exist in the target entity scope
 - a referenced action target does not exist in the target entity scope
 - a set value attribute source does not exist in the target entity scope

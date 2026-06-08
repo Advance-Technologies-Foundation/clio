@@ -45,6 +45,14 @@ public sealed class BusinessRulesGuidanceResource {
 		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
 		       - When a requirement describes state that must switch in both directions, create an explicit inverse business rule for the opposite condition and corresponding opposite action.
 
+		       System variables in condition right-side expressions
+		       - A condition's right-side expression can be a system variable instead of a constant or another attribute. Set rightExpression.type to "SysValue" and rightExpression.sysValueName to one of:
+		         - CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime)
+		         - CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (Lookup referencing SysAdminUnit)
+		       - Use these for "compare to today/now" and "compare to the current user" conditions, e.g. Owner == CurrentUserContact, or DueDate < CurrentDate.
+		       - Type rules: the system variable's data value type must match the left attribute's data value type. For the lookup variables the left attribute must be a lookup that references the SAME schema as the variable (CurrentUserContact → Contact, CurrentUserAccount → Account, CurrentUser/CurrentUserRoles → SysAdminUnit). Mismatched pairings (e.g. CurrentTime vs a Date column, or CurrentUserAccount vs a Contact lookup) are rejected before any server call.
+		       - System variables are supported on the right side only, in both entity-level and page-level conditions. The left expression stays an attribute.
+
 		       Two levels of business rules
 
 		       1. Entity-level business rules

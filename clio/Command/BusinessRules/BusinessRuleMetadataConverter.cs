@@ -163,6 +163,17 @@ internal static class BusinessRuleMetadataConverter {
 				includeAttributeReferenceSchemaName: includeAttributeReferenceSchemaName);
 		}
 
+		if (string.Equals(right.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			return new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleSysValueExpressionTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Type = SysValueExpressionType,
+				DataValueTypeName = leftDataValueTypeName,
+				ReferenceSchemaName = leftDescriptor.ReferenceSchemaName,
+				SysValueName = right.SysValueName
+			};
+		}
+
 		object? value = ConvertJsonElement(right.Value!.Value, leftDataValueTypeName);
 
 		return new BusinessRuleExpressionMetadataDto {
