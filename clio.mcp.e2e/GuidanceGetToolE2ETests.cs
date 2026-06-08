@@ -204,7 +204,37 @@ public sealed class GuidanceGetToolE2ETests {
 		response.Article.Text.Should().Contain("get-component-info",
 			because: "the trimmed guide should point external callers to get-component-info as the source of truth");
 	}
-	
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical related-list guidance article")]
+	public async Task GuidanceGet_Should_Return_Related_List_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "related-list"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "related-list is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP related list guide",
+			because: "the guidance tool should return the canonical related-list guide text");
+		response.Article.Text.Should().Contain("filterAttributes",
+			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
+	}
+
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
