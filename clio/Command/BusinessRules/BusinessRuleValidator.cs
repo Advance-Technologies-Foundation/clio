@@ -189,7 +189,6 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			leftPath,
 			"rule.condition.conditions[*].leftExpression.path");
 		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
-		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
 		ValidateComparisonOperands(
 			condition.RightExpression,
 			comparisonType,
