@@ -192,6 +192,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical page modification article text");
 		result.Article.Text.Should().Contain("page-schema-resources",
 			because: "the page modification guide should route localizable string edits to the resources guide");
+		result.Article.Text.Should().Contain("COMPONENT-TYPE VERIFICATION IS MANDATORY",
+			because: "the page modification guide must force component-type verification before any viewConfigDiff insert to prevent invented crt.* types");
+		result.Article.Text.Should().Contain("ASK THE USER",
+			because: "the page modification guide must tell the agent to ask the user (pick an existing component or build a custom one) when no OOTB component matches");
 		result.Article.Text.Should().Contain("WEB, MOBILE, OR BOTH",
 			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
 		result.Article.Text.Should().Contain("default to web",
