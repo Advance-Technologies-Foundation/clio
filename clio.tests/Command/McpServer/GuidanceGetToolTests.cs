@@ -192,6 +192,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical page modification article text");
 		result.Article.Text.Should().Contain("page-schema-resources",
 			because: "the page modification guide should route localizable string edits to the resources guide");
+		result.Article.Text.Should().Contain("WEB, MOBILE, OR BOTH",
+			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
+		result.Article.Text.Should().Contain("default to web",
+			because: "Step 0 must default to web when the requirement does not name a surface");
 	}
 
 	[Test]
