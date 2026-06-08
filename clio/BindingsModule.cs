@@ -19,6 +19,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
+using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -223,6 +224,9 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
 		services.AddTransient<CreateEntityBusinessRuleCommand>();
+		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
+		services.AddTransient<IRelatedPageService, RelatedPageService>();
+		services.AddTransient<RegisterRelatedPageCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
@@ -284,6 +288,18 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
+		// Page-conversion rules reuse the same versioned local→cache→CDN pipeline as the registries,
+		// with their own cache subdirectory + CDN file + local-override env var. The CDN file is not
+		// published yet, so the catalog falls back to the bundled rules shipped with clio.
+		services.AddSingleton<IWebToMobilePageConversionRulesRegistryClient>(sp => new WebToMobilePageConversionRulesRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.WebToMobilePageConversionRules.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WebToMobilePageConversionRulesRegistryClient>>()));
+		services.AddSingleton<IWebToMobilePageConversionRulesCatalog, WebToMobilePageConversionRulesCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -301,6 +317,7 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionCreateTool>();
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
+		services.AddTransient<RelatedPageTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
@@ -322,6 +339,7 @@ public class BindingsModule {
 		services.AddTransient<SqlSchemaInstallTool>();
 		services.AddTransient<DeleteSchemaTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddTransient<MobilePageConversionGuideTool>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<PackageHotfixTool>();

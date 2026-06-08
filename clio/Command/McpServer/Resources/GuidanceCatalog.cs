@@ -82,6 +82,10 @@ internal static class GuidanceCatalog {
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
 				MobilePageGuidanceResource.Guide),
+			["freedom-page-web-to-mobile-conversion"] = Create(
+				"freedom-page-web-to-mobile-conversion",
+				"Canonical MCP guidance for converting a source page into a Freedom UI MOBILE page via get-mobile-page-conversion-guide: advisory guide (detected sourceType, recommended template, container map, component suggestions, inline mobile contracts), the model-driven flow where you build the body with create-page/update-page/validate-page, the five component categories, the Freedom-UI-only precondition (Classic UI must be converted to Freedom UI web first), mobile constraints, and how to finish in Freedom UI Mobile Designer.",
+				FreedomToMobileConversionGuidanceResource.Guide),
 			["sys-settings"] = Create(
 				"sys-settings",
 				"Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.",

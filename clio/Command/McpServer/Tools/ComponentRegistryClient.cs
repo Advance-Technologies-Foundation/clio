@@ -98,6 +98,20 @@ public sealed record RegistryFlavor(
 		CdnRegistryFileName: "MobileComponentRegistry.json",
 		LocalFileEnvironmentVariable: "CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE",
 		CacheSubdirectoryName: "mobile");
+
+	/// <summary>
+	/// Web→mobile page-conversion-rules flavor: same wrapped fallback chain, separate file —
+	/// <c>academy/api/mcp/{version}/WebToMobilePageConversionRules.json</c>. Cache lives under a
+	/// dedicated <c>web-to-mobile-page-conversion-rules/</c> subfolder. The CDN file is not
+	/// published yet, so today the catalog falls back to a bundled rules file; publishing the CDN
+	/// file later switches the source with no code change. A future classic→freedom converter gets
+	/// its own flavor and file.
+	/// </summary>
+	public static readonly RegistryFlavor WebToMobilePageConversionRules = new(
+		DisplayName: "web-to-mobile-page-conversion-rules",
+		CdnRegistryFileName: "WebToMobilePageConversionRules.json",
+		LocalFileEnvironmentVariable: "CLIO_WEB_TO_MOBILE_PAGE_CONVERSION_RULES_LOCAL_FILE",
+		CacheSubdirectoryName: "web-to-mobile-page-conversion-rules");
 }
 
 /// <summary>
@@ -521,6 +535,29 @@ public sealed class MobileComponentRegistryClient : ComponentRegistryClient, IMo
 		IFileSystem fileSystem,
 		ILogger<MobileComponentRegistryClient> logger)
 		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.Mobile) {
+	}
+}
+
+/// <summary>
+/// Marker interface that selects the web→mobile page-conversion-rules registry client at DI time.
+/// Identical contract to <see cref="IComponentRegistryClient"/>; only the constructor-time
+/// <see cref="RegistryFlavor"/> differs.
+/// </summary>
+public interface IWebToMobilePageConversionRulesRegistryClient : IComponentRegistryClient {
+}
+
+/// <summary>
+/// Concrete subtype used to register the web→mobile page-conversion-rules flavor through standard
+/// DI. Implementation is inherited verbatim from <see cref="ComponentRegistryClient"/>; only the
+/// flavor selection happens here.
+/// </summary>
+public sealed class WebToMobilePageConversionRulesRegistryClient : ComponentRegistryClient, IWebToMobilePageConversionRulesRegistryClient {
+	public WebToMobilePageConversionRulesRegistryClient(
+		IHttpClientFactory httpClientFactory,
+		IComponentRegistryCacheStore cacheStore,
+		IFileSystem fileSystem,
+		ILogger<WebToMobilePageConversionRulesRegistryClient> logger)
+		: base(httpClientFactory, cacheStore, fileSystem, logger, RegistryFlavor.WebToMobilePageConversionRules) {
 	}
 }
 

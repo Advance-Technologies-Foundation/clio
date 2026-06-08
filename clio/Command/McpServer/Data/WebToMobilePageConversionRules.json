@@ -1,0 +1,91 @@
+{
+  "version": "latest",
+  "templates": [
+    {
+      "web": "ListPageV3Template",
+      "mobile": "BaseMobileListTemplate",
+      "note": "Section / list page.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer", "note": "filters area." },
+        { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
+      ]
+    },
+    {
+      "web": "PageWithTabsFreedomTemplate",
+      "mobile": "MobilePageWithTabsFreedomTemplate",
+      "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
+      "containers": [
+        { "web": "CardContentWrapper", "mobile": "MainContainer" },
+        { "web": "CenterContainer", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "SideContainer", "mobile": "GeneralTabContainer" },
+        { "web": "GeneralInfoTabContainer", "mobile": "GeneralTabContainer", "note": "Main fields grid." },
+        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer", "note": "Mobile has no side area; profile fields go to AreaProfileContainer." },
+        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content." },
+        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content." }
+      ]
+    },
+    {
+      "web": "BasePageFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Base record page (non-tabbed). Web BasePageFreedomTemplate maps to the mobile base record page.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BlankPageTemplate",
+      "mobile": "BlankMobilePageTemplate",
+      "note": "Blank page. Mobile blank exposes only the Scaffold root.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BasePageTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Base page template; maps to the mobile base record page. Universal fallback container is MainContainer.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    },
+    {
+      "web": "BaseTemplate",
+      "mobile": "BaseMobileTemplate",
+      "note": "Base web template root; maps to the mobile structural root. Universal fallback container is MainContainer.",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "web": ["crt.Checkbox"],
+      "mobile": ["crt.Toggle"],
+      "category": "AlternativeAvailable",
+      "note": "Boolean fields on mobile use crt.Toggle instead of the web crt.Checkbox."
+    },
+    {
+      "web": ["crt.HtmlEditor"],
+      "mobile": ["crt.RichTextEditor"],
+      "category": "AlternativeAvailable",
+      "note": "Rich text on mobile uses crt.RichTextEditor instead of the web crt.HtmlEditor."
+    },
+    {
+      "web": ["crt.DataGrid", "crt.DataTable"],
+      "mobile": ["crt.List"],
+      "category": "AlternativeAvailable",
+      "note": "Web grid maps to the mobile list; web columns do not map 1:1 to mobile list items (itemLayout.body) — finalize via get-component-info."
+    },
+    {
+      "web": ["crt.FolderTree", "crt.FolderTreeActions"],
+      "mobile": ["crt.FolderTreeActions"],
+      "category": "AlternativeAvailable",
+      "primaryWeb": "crt.FolderTree",
+      "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
+    }
+  ]
+}
