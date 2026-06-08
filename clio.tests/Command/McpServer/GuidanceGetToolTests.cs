@@ -154,6 +154,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
 		result.Article.Text.Should().Contain("get-component-info",
 			because: "the related-list guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
+		result.Article.Text.Should().Contain("is not a container for other items",
+			because: "the related-list guide must warn that an inserted container without an initialized items slot fails at runtime");
 	}
 
 	[Test]

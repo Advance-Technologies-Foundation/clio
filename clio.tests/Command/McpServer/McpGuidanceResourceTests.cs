@@ -1464,6 +1464,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must call out the exact mistake that leaves a detail showing all records");
 		article.Text.Should().Contain("$Id",
 			because: "the guide must bind the master record through the page $Id parameter in the filter right expression");
+		article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
+		article.Text.Should().Contain("\"items\": []",
+			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
 	}
 
 	[Test]

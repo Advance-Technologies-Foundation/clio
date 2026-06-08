@@ -46,6 +46,20 @@ public sealed class RelatedListGuidanceResource {
 		       - Always confirm live component names (`crt.MultiList`, `crt.ListWidget`, `crt.FilterableList`,
 		         etc.) with `get-component-info` against the target environment before authoring.
 
+		       Insert the composite — initialize every container's slot (or the page will not render)
+		       - When you INSERT a container node in `viewConfigDiff` (the new `crt.TabContainer`, the wrapping
+		         `crt.GridContainer`/`crt.FlexContainer`, and the `crt.ExpansionPanel`), you MUST initialize its
+		         content-slot array in `values`: `"items": []` on EVERY container, PLUS `"tools": []` on the
+		         `crt.ExpansionPanel` (it declares `contentSlots: ['items', 'tools']`).
+		       - Omitting `items` is the #1 detail footgun. The view-engine does NOT treat a slot-less panel as
+		         a container, so the page fails at RUNTIME with `Error: Item "<PanelName>" is not a container for
+		         other items` and the whole record card stops rendering. `update-page` still returns
+		         `success: true` — the break only surfaces in the browser, so always reload and verify the page
+		         renders (and the detail's tab appears) after saving.
+		       - Build the composite as separate `viewConfigDiff` inserts chained by `parentName`:
+		         Tab -> GridContainer -> ExpansionPanel -> GridContainer -> DataGrid; each parent keeps its own
+		         `items: []`, and the grid binds `items` to the `$<CollectionAttr>` collection attribute.
+
 		       Filter the list by page data (the master-detail pattern) — the critical part
 		       A detail is scoped to the current record by an entity data source + a collection attribute whose
 		       data source carries a filter that matches the child foreign-key column to the master record id.
@@ -131,7 +145,10 @@ public sealed class RelatedListGuidanceResource {
 		         filter. Confirm the relationship with `get-app-info` / `get-entity-schema-properties` first
 		         (see `app-modeling` and `existing-app-maintenance`).
 
-		       Common mistakes (these are why a detail shows ALL records or none)
+		       Common mistakes (these are why a detail shows ALL records or none — or the page will not render)
+		       - Inserting the `crt.ExpansionPanel` (or any wrapping container) without `"items": []` in its
+		         `values`. The engine rejects it at runtime with `is not a container for other items` and the
+		         record card does not render at all — even though `update-page` reported `success: true`.
 		       - Putting an inline `filter` directly on the collection attribute instead of a separate filter
 		         attribute referenced through `modelConfig.filterAttributes`. The inline form is silently ignored
 		         and the list shows every child record.
