@@ -233,6 +233,8 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the guidance tool should return the canonical related-list guide text");
 		response.Article.Text.Should().Contain("filterAttributes",
 			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
+		response.Article.Text.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the related-list guide must teach the init handler that injects the open-record id into the filter at runtime");
 	}
 
 	[Test]

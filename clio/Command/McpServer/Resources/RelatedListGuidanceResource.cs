@@ -62,8 +62,9 @@ public sealed class RelatedListGuidanceResource {
 
 		       Filter the list by page data (the master-detail pattern) — the critical part
 		       A detail is scoped to the current record by an entity data source + a collection attribute whose
-		       data source carries a filter that matches the child foreign-key column to the master record id.
-		       Three model edits make this work:
+		       data source carries a filter that matches the child foreign-key column to the master record id,
+		       plus an init handler that injects the open record's id into that filter at runtime.
+		       Four edits make this work:
 
 		       1. Page-scoped `crt.EntityDataSource` for the CHILD entity under `modelConfig.dataSources`
 		          (e.g. data source `UsrContactDS` over entity `UsrContact`).
@@ -76,13 +77,27 @@ public sealed class RelatedListGuidanceResource {
 		          `modelConfig.filterAttributes`. That filter attribute's `value` is a filter GROUP
 		          (`filterType: 6`) containing a single CompareFilter leaf (`filterType: 1`,
 		          `comparisonType: 3` = Equal) whose `leftExpression` is the child FOREIGN-KEY column and whose
-		          `rightExpression` is the page-record id bound as the `$Id` parameter.
+		          `rightExpression` is a PARAMETER (`expressionType: 2`). SEED that parameter's `value` with the
+		          empty Guid `00000000-0000-0000-0000-000000000000` (a VALID Guid placeholder) — do NOT put `$Id`
+		          here. The framework does NOT resolve a `$`-parameter inside a static filter value; it serializes
+		          the literal string into the ESQ query, the server rejects it with
+		          `FormatException: Guid should contain 32 digits with 4 dashes` (HTTP 500), and the record card
+		          fails to render. The empty-Guid seed simply returns 0 rows on first load; the real id is injected
+		          at runtime in step 4.
+		       4. A `crt.HandleViewModelInitRequest` handler that scopes the list to the OPEN record. After
+		          `await next?.handle(request)`, read the open-record id from `$context["Id"]` and, when it is set,
+		          `$context.set("<FilterAttr>", { ...the same filter group with the real Guid in
+		          rightExpression.parameter.value... })`. Because the collection attribute lists this filter under
+		          `filterAttributes` with `loadOnChange: true`, setting it reloads the grid scoped to the record.
+		          This handler — not a static `$Id` — is the runtime-verified way to filter a hand-authored detail
+		          by the page record. (See `page-schema-handlers` for the handler contract.)
 
-		       Verified runtime payload (a Contact detail on an Account/Client FormPage, filtered to the open
-		       record via the child FK column `UsrClient`). This is static-form `viewModelConfig` as emitted by
-		       `create-app` FormPages — in a diff-form replacing schema, carry the same two attributes through a
-		       `viewModelConfigDiff` `{ "operation": "merge", "path": [], "values": { "attributes": { ... } } }`
-		       entry (see `page-modification` for the static-vs-diff body decision):
+		       Runtime-verified payload (a Contact detail on an Account/Client FormPage, filtered to the open
+		       record via the child FK column `UsrClient`). Shown as static-form `viewModelConfig`; in a diff-form
+		       replacing schema, carry the same two attributes through a `viewModelConfigDiff`
+		       `{ "operation": "merge", "path": [], "values": { "attributes": { ... } } }` entry (see
+		       `page-modification` for the static-vs-diff body decision). The filter is SEEDED with the empty Guid
+		       and the real id is set by the init handler shown right after:
 
 		       ```jsonc
 		       // under viewModelConfig.attributes — the collection attribute the grid binds to:
@@ -110,7 +125,7 @@ public sealed class RelatedListGuidanceResource {
 		               "isEnabled": true,
 		               "trimDateTimeParameterToDate": false,
 		               "leftExpression": { "expressionType": 0, "columnPath": "UsrClient" },
-		               "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 0, "value": "$Id" } }
+		               "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 0, "value": "00000000-0000-0000-0000-000000000000" } }
 		             }
 		           },
 		           "logicalOperation": 0,
@@ -120,15 +135,46 @@ public sealed class RelatedListGuidanceResource {
 		       }
 		       ```
 
+		       Then inject the real open-record id at runtime with a `crt.HandleViewModelInitRequest` handler (in the
+		       schema `handlers` array). This is the runtime-verified master-detail scoping — the static seed above
+		       only keeps the first load from 500-ing; this handler is what actually filters by the open record:
+
+		       ```js
+		       handlers: /**SCHEMA_HANDLERS*/[
+		         {
+		           request: "crt.HandleViewModelInitRequest",
+		           handler: async (request, next) => {
+		             await next?.handle(request);
+		             const id = await request.$context["Id"];
+		             if (id) {
+		               await request.$context.set("UsrContactGridFilter", {
+		                 items: {
+		                   masterRecordFilter: {
+		                     filterType: 1, comparisonType: 3, isEnabled: true,
+		                     trimDateTimeParameterToDate: false,
+		                     leftExpression: { expressionType: 0, columnPath: "UsrClient" },
+		                     rightExpression: { expressionType: 2, parameter: { dataValueType: 0, value: id } }
+		                   }
+		                 },
+		                 logicalOperation: 0, isEnabled: true, filterType: 6
+		               });
+		             }
+		           }
+		         }
+		       ]/**SCHEMA_HANDLERS*/
+		       ```
+
 		       Wiring rules
 		       - `leftExpression.columnPath` is the CHILD entity's foreign-key column that points back at the
 		         master (here `UsrClient` on `UsrContact`), NOT a path on the master entity and NOT a `...Id`
 		         suffix form. Use the bare reference column name.
-		       - `rightExpression` binds the master record through the page `$Id` parameter
-		         (`{ "expressionType": 2, "parameter": { "dataValueType": 0, "value": "$Id" } }`). `$Id` is the
-		         open record's primary-key attribute on the FormPage.
-		       - `filterAttributes[].loadOnChange: true` reloads the list when the bound record id changes (for
-		         example right after the master record is first saved); use it for master-detail scoping.
+		       - `rightExpression` is a parameter whose `value` is a REAL Guid. Seed the static filter with the
+		         empty Guid `00000000-0000-0000-0000-000000000000` and set the live record id from
+		         `$context["Id"]` in the `crt.HandleViewModelInitRequest` handler (steps 3-4). A `$Id` string left
+		         in the static `value` is sent to the server verbatim and 500s — it is NOT auto-resolved.
+		       - `filterAttributes[].loadOnChange: true` reloads the list when the filter attribute changes — this
+		         is what makes the init handler's `$context.set(...)` re-query the grid scoped to the record. Keep
+		         it on; without it the list never re-scopes after the handler sets the real id.
 		       - The grid `items` binding and the panel/grid `viewConfigDiff` inserts are normal page edits — see
 		         `page-modification` for the `crt.ExpansionPanel` + `crt.DataGrid` insert shape and
 		         `parentName`/`propertyName`/`index` placement, and `get-component-info` for `columns`,
@@ -154,8 +200,12 @@ public sealed class RelatedListGuidanceResource {
 		         and the list shows every child record.
 		       - Filtering on the master entity's primary key path instead of the child's foreign-key column in
 		         `leftExpression.columnPath`.
-		       - Hardcoding a literal id in `rightExpression` instead of binding the `$Id` page parameter.
-		       - Omitting `loadOnChange`, so the list never scopes after the record id resolves.
+		       - Putting `$Id` (or any `$`-parameter) as the static `rightExpression.parameter.value`. It is NOT
+		         resolved — the server receives the literal string "$Id" and fails with
+		         `FormatException: Guid should contain 32 digits with 4 dashes` (HTTP 500), so the page does not
+		         open. Seed an empty Guid and set the real id in the `crt.HandleViewModelInitRequest` handler.
+		       - Omitting the init handler (or `loadOnChange`), so the list never scopes to the open record — it
+		         stays empty (the empty-Guid seed matches nothing) or shows every child record.
 		       - Using a `...Id` path form for the FK column — see `esq-filters` column-path normalization.
 		       """
 	};
