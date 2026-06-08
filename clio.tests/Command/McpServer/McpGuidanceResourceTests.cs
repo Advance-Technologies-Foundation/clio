@@ -1462,8 +1462,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must teach the separate filter attribute that scopes the list by page data");
 		article.Text.Should().Contain("DO NOT inline a `filter` object on the collection attribute",
 			because: "the guide must call out the exact mistake that leaves a detail showing all records");
-		article.Text.Should().Contain("$Id",
-			because: "the guide must bind the master record through the page $Id parameter in the filter right expression");
+		article.Text.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the guide must teach the init handler that injects the real open-record id into the filter at runtime");
+		article.Text.Should().Contain("FormatException",
+			because: "the guide must warn that a static $Id parameter is sent as a literal string and 500s with a Guid FormatException");
+		article.Text.Should().Contain("00000000-0000-0000-0000-000000000000",
+			because: "the guide must show seeding the static filter with the empty Guid placeholder instead of $Id");
+		article.Text.Should().Contain("loadOnChange",
+			because: "the guide must keep loadOnChange so the init handler's filter update re-queries the grid");
 		article.Text.Should().Contain("is not a container for other items",
 			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
 		article.Text.Should().Contain("\"items\": []",

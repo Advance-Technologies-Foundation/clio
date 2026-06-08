@@ -156,6 +156,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the related-list guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
 		result.Article.Text.Should().Contain("is not a container for other items",
 			because: "the related-list guide must warn that an inserted container without an initialized items slot fails at runtime");
+		result.Article.Text.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the related-list guide must teach the init handler that scopes the list to the open record instead of a static $Id parameter");
 	}
 
 	[Test]
