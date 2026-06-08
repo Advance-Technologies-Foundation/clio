@@ -769,12 +769,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 		SetupLoadedSchema();
 
 		// Act
-		_manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle"
 		});
 
 		// Assert
+		result.PackageName.Should().Be("UsrPkg",
+			because: "a package-scoped read must report the requested package, not the merged-all-packages label");
 		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
 		_runtimeEntitySchemaReader.DidNotReceiveWithAnyArgs().GetByName(default);
 	}
@@ -1264,10 +1266,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		// The merged label and the <none> parent placeholder are the human-facing signals that this read is not
-		// scoped to a single package; NSubstitute Received assertions carry the intent in the comment instead of a because.
-		_logger.Received().WriteInfo($"Package: {RemoteEntitySchemaColumnManager.MergedSchemaPackageName}");
-		_logger.Received().WriteInfo("Parent schema: <none>");
+		List<string> loggedMessages = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+			.Select(call => (string)call.GetArguments()[0]!)
+			.ToList();
+		loggedMessages.Should().Contain($"Package: {RemoteEntitySchemaColumnManager.MergedSchemaPackageName}",
+			because: "the merged read must signal that it is not scoped to a single package via the synthetic package label");
+		loggedMessages.Should().Contain("Parent schema: <none>",
+			because: "the parent schema name is not exposed by the by-name runtime endpoint, so the merged read renders the unresolved placeholder");
 	}
 
 	private void SetupLoadedSchema() {
