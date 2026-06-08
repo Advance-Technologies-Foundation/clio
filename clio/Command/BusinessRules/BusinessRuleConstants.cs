@@ -56,8 +56,10 @@ internal static class BusinessRuleConstants {
 	internal const int ComparisonLessThanOrEqual = 6;
 	internal const int ComparisonGreaterThan = 7;
 	internal const int ComparisonGreaterThanOrEqual = 8;
+	internal const int ComparisonContain = 11;
+	internal const int ComparisonNotContain = 12;
 	internal const string SupportedComparisonTypesDescription =
-		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal";
+		"equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal, contain, not-contain";
 	internal const string SupportedActionTypesDescription =
 		"make-editable, make-read-only, make-required, make-optional, set-values, apply-filter, apply-static-filter";
 	internal const string SupportedPageActionTypesDescription =
@@ -98,7 +100,9 @@ internal static class BusinessRuleConstants {
 			["less-than"] = ComparisonLessThan,
 			["less-than-or-equal"] = ComparisonLessThanOrEqual,
 			["greater-than"] = ComparisonGreaterThan,
-			["greater-than-or-equal"] = ComparisonGreaterThanOrEqual
+			["greater-than-or-equal"] = ComparisonGreaterThanOrEqual,
+			["contain"] = ComparisonContain,
+			["not-contain"] = ComparisonNotContain
 		};
 
 	internal static readonly IReadOnlySet<string> UnaryComparisonTypeNames =
@@ -122,6 +126,17 @@ internal static class BusinessRuleConstants {
 		};
 
 	/// <summary>
+	/// Collection-membership comparisons. Used for an <c>ObjectList</c> left operand
+	/// (for example the <c>CurrentUserRoles</c> system variable) against a single lookup value,
+	/// and for text "contains" comparisons.
+	/// </summary>
+	internal static readonly IReadOnlySet<string> ContainComparisonTypeNames =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"contain",
+			"not-contain"
+		};
+
+	/// <summary>
 	/// Ordered catalog of system variables supported as the right-hand expression of a
 	/// business-rule condition. The order is the documented order surfaced through the MCP
 	/// tool contract and guidance text; both <see cref="SupportedSystemVariables"/> and
@@ -135,7 +150,7 @@ internal static class BusinessRuleConstants {
 		new("CurrentUser", "Lookup", "SysAdminUnit"),
 		new("CurrentUserContact", "Lookup", "Contact"),
 		new("CurrentUserAccount", "Lookup", "Account"),
-		new("CurrentUserRoles", "Lookup", "SysAdminUnit")
+		new("CurrentUserRoles", "ObjectList", "SysAdminUnit")
 	];
 
 	/// <summary>

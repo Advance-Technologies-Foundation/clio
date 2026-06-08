@@ -82,6 +82,65 @@ internal static class BusinessRuleAddonReadback {
 			expectedSysValueReferenceSchemaName);
 	}
 
+	public static async Task AssertEntityRuleRoleGateConditionExistsAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		string packageName,
+		string entitySchemaName,
+		string expectedRuleName,
+		string expectedSysValueName,
+		int expectedComparisonType,
+		string expectedRightValue,
+		string expectedRightReferenceSchemaName,
+		CancellationToken cancellationToken) {
+		string packageUId = await QueryPackageUIdAsync(settings, environmentName, packageName, cancellationToken);
+		SchemaMetadata schema = await QueryEntityTargetSchemaMetadataAsync(
+			settings, environmentName, entitySchemaName, packageUId, cancellationToken);
+		JsonObject addonResponse = await CallJsonServiceAsync(
+			settings,
+			environmentName,
+			"ServiceModel/AddonSchemaDesignerService.svc/GetSchema",
+			new JsonObject {
+				["addonName"] = "BusinessRule",
+				["targetSchemaUId"] = schema.UId,
+				["targetParentSchemaUId"] = schema.ParentUId,
+				["targetPackageUId"] = packageUId,
+				["targetSchemaManagerName"] = "EntitySchemaManager",
+				["useFullHierarchy"] = true
+			},
+			cancellationToken);
+		addonResponse["success"]?.GetValue<bool>().Should().BeTrue(
+			because: "BusinessRule add-on readback should succeed for the destructive role-gate test");
+		string? metadata = addonResponse["schema"]?["metaData"]?.GetValue<string>();
+		metadata.Should().NotBeNullOrWhiteSpace(
+			because: "BusinessRule add-on readback should include the saved role-gate metadata payload");
+
+		JsonObject root = JsonNode.Parse(metadata!)!.AsObject();
+		JsonObject? rule = (root["rules"] as JsonArray ?? []).OfType<JsonObject>()
+			.SingleOrDefault(candidate => string.Equals(ReadString(candidate["name"]), expectedRuleName, StringComparison.Ordinal));
+		rule.Should().NotBeNull(
+			because: "the destructive role-gate test should verify the rule was persisted to the intended add-on target");
+
+		JsonObject condition = (rule!["cases"]?[0]?["condition"]?["conditions"] as JsonArray)!.OfType<JsonObject>().First();
+		ReadInt(condition["comparisonType"]).Should().Be(expectedComparisonType,
+			because: "the persisted comparison should match the requested collection-membership/equality comparison");
+		JsonObject leftExpression = condition["leftExpression"]!.AsObject();
+		ReadString(leftExpression["typeName"]).Should().Be(
+			"Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysValueExpression",
+			because: "a system variable on the left should persist as the core BusinessRuleSysValueExpression type");
+		ReadString(leftExpression["type"]).Should().Be("SysValue",
+			because: "the left expression discriminator should be SysValue");
+		ReadString(leftExpression["sysValueName"]).Should().Be(expectedSysValueName,
+			because: "the persisted system variable name should match the requested role/user variable");
+		JsonObject rightExpression = condition["rightExpression"]!.AsObject();
+		ReadString(rightExpression["dataValueTypeName"]).Should().Be("Lookup",
+			because: "the compared role/contact constant persists as a single Lookup");
+		ReadString(rightExpression["referenceSchemaName"]).Should().Be(expectedRightReferenceSchemaName,
+			because: "the constant inherits the reference schema from the system variable it is compared against");
+		ReadString(rightExpression["value"]).Should().Be(expectedRightValue,
+			because: "the persisted role/contact record id should match the requested value");
+	}
+
 	public static async Task AssertEntityApplyFilterRuleFamilyExistsAsync(
 		McpE2ESettings settings,
 		string environmentName,

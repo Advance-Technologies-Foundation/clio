@@ -523,6 +523,63 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes a role-gate condition with a system variable on the left and a contain comparison.")]
+	public void BusinessRuleCreate_Should_Deserialize_Condition_With_SysValue_Left_And_Contain() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "entity-schema-name": "UsrOrder",
+		  "rule": {
+		    "caption": "Require status for administrators",
+		    "condition": {
+		      "logicalOperation": "AND",
+		      "conditions": [
+		        {
+		          "leftExpression": {
+		            "type": "SysValue",
+		            "sysValueName": "CurrentUserRoles"
+		          },
+		          "comparisonType": "contain",
+		          "rightExpression": {
+		            "type": "Const",
+		            "value": "83a43ebc-f36b-1410-298d-001e8c82bcad"
+		          }
+		        }
+		      ]
+		    },
+		    "actions": [
+		      {
+		        "type": "make-required",
+		        "items": [ "Status" ]
+		      }
+		    ]
+		  }
+		}
+		""";
+
+		// Act
+		CreateEntityBusinessRuleArgs? payloadArgs = JsonSerializer.Deserialize<CreateEntityBusinessRuleArgs>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "role-gate business-rule payloads should deserialize from the MCP JSON shape");
+		BusinessRuleCondition condition = payloadArgs!.Rule.ToBusinessRule().Condition.Conditions[0];
+		condition.ComparisonType.Should().Be("contain",
+			because: "the contain comparison should survive MCP payload binding");
+		condition.LeftExpression.Type.Should().Be("SysValue",
+			because: "a system variable on the left should bind as a SysValue expression");
+		condition.LeftExpression.SysValueName.Should().Be("CurrentUserRoles",
+			because: "the role-collection system variable name should survive binding");
+		condition.RightExpression!.Type.Should().Be("Const",
+			because: "the compared role should bind as a constant");
+		condition.RightExpression.Value!.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "the role record id is a GUID string");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Deserializes apply-filter actions and preserves target/source lookup settings for downstream validation and conversion.")]
 	public void BusinessRuleCreate_Should_Deserialize_ApplyFilter_Action() {
 		// Arrange

@@ -172,29 +172,36 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
-		if (condition.LeftExpression is null || !string.Equals(condition.LeftExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.");
+		if (condition.LeftExpression is null) {
+			throw new ArgumentException("rule.condition.conditions[*].leftExpression is required.");
 		}
 
-		if (string.IsNullOrWhiteSpace(condition.LeftExpression.Path)) {
-			throw new ArgumentException("rule.condition.conditions[*].leftExpression.path is required.");
-		}
-
-		string leftPath = condition.LeftExpression.Path;
-		ValidateDirectAttributePath(
-			leftPath,
-			"rule.condition.conditions[*].leftExpression.path");
-		BusinessRuleAttributeDescriptor leftDescriptor = ResolveAttribute(
-			attributeMap,
-			leftPath,
-			"rule.condition.conditions[*].leftExpression.path");
 		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
-		ValidateComparisonOperands(
-			condition.RightExpression,
-			comparisonType,
-			leftPath,
-			leftDescriptor,
-			attributeMap);
+		bool requiresRight = !IsUnaryComparisonType(comparisonType);
+
+		// Either side may be an AttributeValue, Const, or SysValue; type/reference-schema
+		// compatibility is the only constraint, so resolve and structurally validate each operand.
+		ConditionOperand left = ResolveOperand(
+			condition.LeftExpression, attributeMap, "rule.condition.conditions[*].leftExpression");
+
+		if (!requiresRight) {
+			if (condition.RightExpression is not null) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*].rightExpression must be omitted when comparisonType is '{comparisonType}'.");
+			}
+
+			return;
+		}
+
+		if (condition.RightExpression is null) {
+			throw new ArgumentException(
+				$"rule.condition.conditions[*].rightExpression is required when comparisonType is '{comparisonType}'.");
+		}
+
+		ConditionOperand right = ResolveOperand(
+			condition.RightExpression, attributeMap, "rule.condition.conditions[*].rightExpression");
+
+		ValidateComparison(comparisonType, left, right);
 	}
 
 	private static void ValidateEntityAction(
@@ -430,169 +437,196 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		return comparisonType.Trim();
 	}
 
-	private static void ValidateComparisonOperands(
-		BusinessRuleExpression? rightExpression,
-		string comparisonType,
-		string leftPath,
-		BusinessRuleAttributeDescriptor leftDescriptor,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
-		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
-		if (IsUnaryComparisonType(comparisonType)) {
-			if (rightExpression is not null) {
+	private static ConditionOperand ResolveOperand(
+		BusinessRuleExpression expression,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string fieldName) {
+		if (expression is null) {
+			throw new ArgumentException($"{fieldName} is required.");
+		}
+
+		if (string.Equals(expression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			if (string.IsNullOrWhiteSpace(expression.Path)) {
+				throw new ArgumentException($"{fieldName}.path is required when {fieldName}.type is 'AttributeValue'.");
+			}
+
+			ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
+			BusinessRuleAttributeDescriptor descriptor = ResolveAttribute(attributeMap, expression.Path, $"{fieldName}.path");
+			return new ConditionOperand(
+				fieldName,
+				OperandKind.Attribute,
+				$"attribute '{expression.Path}'",
+				new OperandType(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName),
+				expression);
+		}
+
+		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (string.IsNullOrWhiteSpace(expression.SysValueName)) {
+				throw new ArgumentException($"{fieldName}.sysValueName is required when {fieldName}.type is 'SysValue'.");
+			}
+
+			if (!SupportedSystemVariables.TryGetValue(expression.SysValueName, out SystemVariableDescriptor? sysValue)) {
 				throw new ArgumentException(
-					$"rule.condition.conditions[*].rightExpression must be omitted when comparisonType is '{comparisonType}'.");
+					$"Unsupported {fieldName}.sysValueName '{expression.SysValueName}'. Supported values: {SupportedSystemVariablesDescription}.");
+			}
+
+			return new ConditionOperand(
+				fieldName,
+				OperandKind.SysValue,
+				$"system variable '{sysValue.SysValueName}'",
+				new OperandType(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName),
+				expression);
+		}
+
+		if (string.Equals(expression.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (expression.Value is null) {
+				throw new ArgumentException($"{fieldName}.value is required when {fieldName}.type is 'Const'.");
+			}
+
+			return new ConditionOperand(fieldName, OperandKind.Const, "constant value", null, expression);
+		}
+
+		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', or 'SysValue'.");
+	}
+
+	private static void ValidateComparison(string comparisonType, ConditionOperand left, ConditionOperand right) {
+		OperandType? leftType = left.Type;
+		OperandType? rightType = right.Type;
+
+		// The "comparison value type" drives the relational/equality family checks and the Const
+		// value-kind validation. It comes from whichever operand is typed (an ObjectList collection
+		// such as CurrentUserRoles compares against a single Lookup element of the same schema).
+		OperandType comparisonValueType = (leftType ?? rightType)?.AsValueType() ?? OperandType.Text;
+
+		if (leftType is not null && rightType is not null) {
+			OperandType leftValue = leftType.AsValueType();
+			OperandType rightValue = rightType.AsValueType();
+			if (!string.Equals(leftValue.DataValueTypeName, rightValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*] compares {left.Label} ({Describe(leftType)}) to {right.Label} ({Describe(rightType)}). Both operands must resolve to the same data value type.");
+			}
+
+			if (IsLookupValueType(leftValue)
+				&& !string.Equals(leftValue.ReferenceSchemaName, rightValue.ReferenceSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*] compares {left.Label} ({leftValue.ReferenceSchemaName}) to {right.Label} ({rightValue.ReferenceSchemaName}). Both lookup operands must reference the same schema.");
+			}
+
+			comparisonValueType = leftValue;
+		}
+
+		ValidateComparisonFamily(comparisonType, left, comparisonValueType);
+
+		if (left.Kind == OperandKind.Const) {
+			ValidateConstantValue(left.Expression.Value!.Value, rightType?.AsValueType() ?? OperandType.Text, left.FieldName);
+		}
+
+		if (right.Kind == OperandKind.Const) {
+			ValidateConstantValue(right.Expression.Value!.Value, leftType?.AsValueType() ?? OperandType.Text, right.FieldName);
+		}
+	}
+
+	private static void ValidateComparisonFamily(
+		string comparisonType,
+		ConditionOperand left,
+		OperandType comparisonValueType) {
+		if (ContainComparisonTypeNames.Contains(comparisonType)) {
+			string? leftRawType = left.Type?.DataValueTypeName;
+			bool leftIsCollectionOrText = leftRawType is not null
+				&& (string.Equals(leftRawType, "ObjectList", StringComparison.OrdinalIgnoreCase)
+					|| IsTextDataValueType(leftRawType));
+			if (!leftIsCollectionOrText) {
+				throw new ArgumentException(
+					$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported when the left operand is a collection (ObjectList, for example CurrentUserRoles) or a text type. Left operand is {left.Label}{(leftRawType is null ? string.Empty : $" ({leftRawType})")}.");
 			}
 
 			return;
 		}
 
-		if (rightExpression is null) {
+		if (IsRelationalComparisonType(comparisonType) && !IsRelationalDataValueType(comparisonValueType.DataValueTypeName)) {
 			throw new ArgumentException(
-				$"rule.condition.conditions[*].rightExpression is required when comparisonType is '{comparisonType}'.");
+				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and date/time operands. The compared value type is {comparisonValueType.DataValueTypeName}.");
 		}
 
-		if (IsRelationalComparisonType(comparisonType) && !IsRelationalDataValueType(leftDataValueTypeName)) {
+		if (IsEqualityComparisonType(comparisonType) && IsUnsupportedEqualityDataValueType(comparisonValueType.DataValueTypeName)) {
 			throw new ArgumentException(
-				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is only supported for numeric and date/time left attributes. Left attribute '{leftPath}' has type {leftDataValueTypeName}.");
-		}
-
-		if (IsEqualityComparisonType(comparisonType) && IsUnsupportedEqualityDataValueType(leftDataValueTypeName)) {
-			throw new ArgumentException(
-				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute '{leftPath}' with type {leftDataValueTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.");
-		}
-
-		ValidateRightExpression(rightExpression, attributeMap, leftPath, leftDescriptor);
-	}
-
-	private static void ValidateRightExpression(
-		BusinessRuleExpression rightExpression,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		string leftPath,
-		BusinessRuleAttributeDescriptor leftDescriptor) {
-		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
-		if (string.Equals(rightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			ValidateAttributeRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
-			return;
-		}
-
-		if (string.Equals(rightExpression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			ValidateSysValueRightExpression(rightExpression, leftPath, leftDescriptor);
-			return;
-		}
-
-		if (!string.Equals(rightExpression.Type, "Const", StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.");
-		}
-
-		ValidateConstantRightExpression(rightExpression, leftDataValueTypeName);
-	}
-
-	private static void ValidateSysValueRightExpression(
-		BusinessRuleExpression rightExpression,
-		string leftPath,
-		BusinessRuleAttributeDescriptor leftDescriptor) {
-		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
-		if (string.IsNullOrWhiteSpace(rightExpression.SysValueName)) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.sysValueName is required when rightExpression.type is 'SysValue'.");
-		}
-
-		if (!SupportedSystemVariables.TryGetValue(rightExpression.SysValueName, out SystemVariableDescriptor? sysValue)) {
-			throw new ArgumentException(
-				$"Unsupported rule.condition.conditions[*].rightExpression.sysValueName '{rightExpression.SysValueName}'. Supported values: {SupportedSystemVariablesDescription}.");
-		}
-
-		if (!string.Equals(leftDataValueTypeName, sysValue.DataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException(
-				$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftDataValueTypeName}) to system variable '{rightExpression.SysValueName}' ({sysValue.DataValueTypeName}). The system variable data value type must match the left attribute data value type.");
-		}
-
-		if (sysValue.ReferenceSchemaName is null) {
-			return;
-		}
-
-		if (!string.Equals(leftDescriptor.ReferenceSchemaName, sysValue.ReferenceSchemaName, StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException(
-				$"rule.condition.conditions[*] compares lookup attribute '{leftPath}' ({leftDescriptor.ReferenceSchemaName}) to system variable '{rightExpression.SysValueName}' ({sysValue.ReferenceSchemaName}). The lookup system variable must reference the same schema as the left lookup attribute.");
+				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for {comparisonValueType.DataValueTypeName} operands. RichText and Image operands do not support equal or not-equal business-rule conditions.");
 		}
 	}
 
-	private static void ValidateAttributeRightExpression(
-		BusinessRuleExpression rightExpression,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		string leftPath,
-		string leftDataValueTypeName) {
-		if (string.IsNullOrWhiteSpace(rightExpression.Path)) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.path is required when rightExpression.type is 'AttributeValue'.");
-		}
-
-		string rightPath = rightExpression.Path;
-		ValidateDirectAttributePath(
-			rightPath,
-			"rule.condition.conditions[*].rightExpression.path");
-		BusinessRuleAttributeDescriptor rightDescriptor = ResolveAttribute(
-			attributeMap,
-			rightPath,
-			"rule.condition.conditions[*].rightExpression.path");
-		string rightDataValueTypeName = rightDescriptor.DataValueTypeName;
-		if (!string.Equals(leftDataValueTypeName, rightDataValueTypeName, StringComparison.OrdinalIgnoreCase)) {
-			throw new ArgumentException(
-				$"rule.condition.conditions[*] compares left attribute '{leftPath}' ({leftDataValueTypeName}) to right attribute '{rightPath}' ({rightDataValueTypeName}). Both attributes must have the same data value type.");
-		}
-	}
-
-	private static void ValidateConstantRightExpression(
-		BusinessRuleExpression rightExpression,
-		string leftDataValueTypeName) {
-		if (rightExpression.Value is null) {
-			throw new ArgumentException("rule.condition.conditions[*].rightExpression.value is required when rightExpression.type is 'Const'.");
-		}
-
-		JsonElement rightValue = rightExpression.Value.Value;
-		switch (leftDataValueTypeName) {
+	private static void ValidateConstantValue(JsonElement value, OperandType valueType, string fieldName) {
+		string dataValueTypeName = valueType.DataValueTypeName;
+		switch (dataValueTypeName) {
 			case "Lookup":
-				ValidateGuidString(rightValue,
-					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.");
+				ValidateGuidString(value, $"{fieldName}.value must be a GUID string when compared against a Lookup operand.");
 				return;
 			case "Guid":
-				ValidateGuidString(rightValue,
-					"rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is Guid.");
+				ValidateGuidString(value, $"{fieldName}.value must be a GUID string when compared against a Guid operand.");
 				return;
 			case "Boolean":
-				if (rightValue.ValueKind != JsonValueKind.True && rightValue.ValueKind != JsonValueKind.False) {
-					throw new ArgumentException(
-						"rule.condition.conditions[*].rightExpression.value must be a JSON boolean when the left attribute is Boolean.");
+				if (value.ValueKind != JsonValueKind.True && value.ValueKind != JsonValueKind.False) {
+					throw new ArgumentException($"{fieldName}.value must be a JSON boolean when compared against a Boolean operand.");
 				}
+
 				return;
 		}
 
-		if (IsTextDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.String) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.value must be a JSON string when the left attribute is a text type.");
+		if (IsTextDataValueType(dataValueTypeName)) {
+			if (value.ValueKind != JsonValueKind.String) {
+				throw new ArgumentException($"{fieldName}.value must be a JSON string when compared against a text operand.");
+			}
+
+			return;
 		}
 
-		if (IsNumericDataValueType(leftDataValueTypeName) && rightValue.ValueKind != JsonValueKind.Number) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.");
+		if (IsNumericDataValueType(dataValueTypeName)) {
+			if (value.ValueKind != JsonValueKind.Number || !TryConvertSupportedNumericConstant(value, out _)) {
+				throw new ArgumentException(
+					$"{fieldName}.value must be a JSON number representable as Int64 or Decimal when compared against a numeric operand.");
+			}
+
+			return;
 		}
 
-		if (IsNumericDataValueType(leftDataValueTypeName)
-			&& !TryConvertSupportedNumericConstant(rightValue, out _)) {
-			throw new ArgumentException(
-				"rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when the left attribute is a numeric type.");
+		if (IsDateTimeDataValueType(dataValueTypeName)) {
+			if (!TryConvertDateTimeConstant(value, dataValueTypeName, out _)) {
+				throw new ArgumentException(GetDateTimeConstantValidationMessage(dataValueTypeName));
+			}
+
+			return;
 		}
 
-		if (IsDateTimeDataValueType(leftDataValueTypeName)
-			&& !TryConvertDateTimeConstant(rightValue, leftDataValueTypeName, out _)) {
-			throw new ArgumentException(GetDateTimeConstantValidationMessage(leftDataValueTypeName));
-		}
+		throw new ArgumentException($"{fieldName}.value (Const) is not supported when compared against a '{dataValueTypeName}' operand.");
+	}
 
-		if (!IsTextDataValueType(leftDataValueTypeName)
-			&& !IsNumericDataValueType(leftDataValueTypeName)
-			&& !IsDateTimeDataValueType(leftDataValueTypeName)) {
-			throw new ArgumentException(
-				$"Const rightExpression is not supported for left attribute type '{leftDataValueTypeName}'.");
-		}
+	private static bool IsLookupValueType(OperandType type) =>
+		string.Equals(type.DataValueTypeName, "Lookup", StringComparison.OrdinalIgnoreCase);
+
+	private static string Describe(OperandType type) =>
+		string.IsNullOrWhiteSpace(type.ReferenceSchemaName)
+			? type.DataValueTypeName
+			: $"{type.DataValueTypeName} -> {type.ReferenceSchemaName}";
+
+	private enum OperandKind {
+		Attribute,
+		Const,
+		SysValue
+	}
+
+	private sealed record ConditionOperand(
+		string FieldName,
+		OperandKind Kind,
+		string Label,
+		OperandType? Type,
+		BusinessRuleExpression Expression);
+
+	private sealed record OperandType(string DataValueTypeName, string? ReferenceSchemaName) {
+		public static readonly OperandType Text = new("Text", null);
+
+		public OperandType AsValueType() =>
+			string.Equals(DataValueTypeName, "ObjectList", StringComparison.OrdinalIgnoreCase)
+				? new OperandType("Lookup", ReferenceSchemaName)
+				: this;
 	}
 
 	private static void ValidateGuidString(JsonElement value, string errorMessage) {

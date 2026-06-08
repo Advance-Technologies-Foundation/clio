@@ -10,15 +10,18 @@ Entity-level rule creation must:
 
 - create a new editable rule for the selected entity
 - conditions
-   - support left and right expression types:
+   - support left and right expression types on either side, in any pairing:
       - attribute
       - constant
-      - system variable (right side only)
-   - support system variables on the right side of a condition:
+      - system variable
+   - support system variables on either side of a condition:
       - `CurrentDate` (Date), `CurrentTime` (Time), `CurrentDateTime` (DateTime)
-      - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (Lookup → `SysAdminUnit`)
-      - the system variable's data value type must match the left attribute's data value type
-      - for lookup system variables the left attribute must be a lookup that references the variable's reference schema
+      - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (ObjectList of `SysAdminUnit` roles)
+      - role-based logic: `CurrentUserRoles` `contain`/`not-contain` a constant `SysAdminUnit` role id
+      - both operands must resolve to the same data value type (an `ObjectList` is compared element-wise to a `Lookup`)
+      - lookup operands must reference the same schema
+      - a constant operand inherits its data value type and reference schema from the operand it is compared against
+   - support comparison types `contain` and `not-contain` for collection (`ObjectList`) and text operands
    - support data value types for attributes and constants:
       - text
       - number
