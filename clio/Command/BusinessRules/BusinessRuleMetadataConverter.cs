@@ -164,13 +164,20 @@ internal static class BusinessRuleMetadataConverter {
 		}
 
 		if (string.Equals(right.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			// Persist the canonical catalog name rather than the caller-supplied casing: the
+			// validator accepts the name case-insensitively, but the platform resolves system
+			// variables by exact name at runtime, so a casing variant must be normalized here.
+			string sysValueName =
+				SupportedSystemVariables.TryGetValue(right.SysValueName!, out SystemVariableDescriptor? descriptor)
+					? descriptor.SysValueName
+					: right.SysValueName;
 			return new BusinessRuleExpressionMetadataDto {
 				TypeName = BusinessRuleSysValueExpressionTypeName,
 				UId = Guid.NewGuid().ToString(),
 				Type = SysValueExpressionType,
 				DataValueTypeName = leftDataValueTypeName,
 				ReferenceSchemaName = leftDescriptor.ReferenceSchemaName,
-				SysValueName = right.SysValueName
+				SysValueName = sysValueName
 			};
 		}
 

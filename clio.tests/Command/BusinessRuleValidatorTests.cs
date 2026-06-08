@@ -64,6 +64,30 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 9, "ReminderTime", "13:45:00+02:00" }
 	];
 
+	// Each case: sysValueName, leftPath, leftDataValueType, leftReferenceSchemaName, comparisonType.
+	// Data value type codes: Date=8, Time=9, DateTime=7, Lookup=10 (see CreatioDataValueType / existing cases).
+	private static readonly object?[] SupportedSystemVariableMatchCases = [
+		new object?[] { "CurrentDate", "DateCol", 8, null, "equal" },
+		new object?[] { "CurrentTime", "TimeCol", 9, null, "equal" },
+		new object?[] { "CurrentDateTime", "DateTimeCol", 7, null, "equal" },
+		new object?[] { "CurrentUser", "UserCol", 10, "SysAdminUnit", "equal" },
+		new object?[] { "CurrentUserContact", "ContactCol", 10, "Contact", "equal" },
+		new object?[] { "CurrentUserAccount", "AccountCol", 10, "Account", "equal" },
+		new object?[] { "CurrentUserRoles", "RolesCol", 10, "SysAdminUnit", "equal" }
+	];
+
+	// Each case: sysValueName, leftPath, mismatched leftDataValueType, mismatched leftReferenceSchemaName.
+	// Non-lookup variables mismatch on data value type; lookup variables mismatch on reference schema.
+	private static readonly object?[] SupportedSystemVariableMismatchCases = [
+		new object?[] { "CurrentDate", "TimeCol", 9, null },
+		new object?[] { "CurrentTime", "DateCol", 8, null },
+		new object?[] { "CurrentDateTime", "DateCol", 8, null },
+		new object?[] { "CurrentUser", "ContactCol", 10, "Contact" },
+		new object?[] { "CurrentUserContact", "AccountCol", 10, "Account" },
+		new object?[] { "CurrentUserAccount", "ContactCol", 10, "Contact" },
+		new object?[] { "CurrentUserRoles", "ContactCol", 10, "Contact" }
+	];
+
 	private static readonly object[] SetValuesConstantCases = [
 		new object[] { 1, "TextResult", "\"Ready\"" },
 		new object[] { 4, "Score", "42" },
@@ -330,6 +354,57 @@ public sealed class BusinessRuleValidatorTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("*only supported for numeric and date/time left attributes*",
 				because: "relational comparisons are not supported for lookup left attributes regardless of the right operand kind");
+	}
+
+	[TestCaseSource(nameof(SupportedSystemVariableMatchCases))]
+	[Category("Unit")]
+	[Description("Accepts every supported system variable against a correctly-typed left attribute, guarding the full catalog against descriptor typos.")]
+	public void Validate_Should_Accept_System_Variable_When_Left_Attribute_Type_Matches(
+		string sysValueName,
+		string leftPath,
+		int leftDataValueType,
+		string? leftReferenceSchemaName,
+		string comparisonType) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: comparisonType,
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: sysValueName));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, leftDataValueType, leftReferenceSchemaName),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: $"system variable '{sysValueName}' should validate against a left attribute that matches its catalog data value type and reference schema");
+	}
+
+	[TestCaseSource(nameof(SupportedSystemVariableMismatchCases))]
+	[Category("Unit")]
+	[Description("Rejects every supported system variable against a mismatched left attribute, covering both data-value-type and reference-schema catalog entries.")]
+	public void Validate_Should_Reject_System_Variable_When_Left_Attribute_Type_Mismatches(
+		string sysValueName,
+		string leftPath,
+		int leftDataValueType,
+		string? leftReferenceSchemaName) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: sysValueName));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, leftDataValueType, leftReferenceSchemaName),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: $"system variable '{sysValueName}' must be rejected against a left attribute that does not match its catalog data value type or reference schema");
 	}
 
 	[TestCaseSource(nameof(UnarySupportedTypeCases))]

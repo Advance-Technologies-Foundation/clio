@@ -294,6 +294,89 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "the selected date system variable name should be persisted verbatim");
 		rightExpression.DataValueTypeName.Should().Be("Date",
 			because: "the date system variable expression should inherit the left date attribute type");
+		rightExpression.Value.Should().BeNull(
+			because: "system variables resolve at runtime and carry no static value payload on the page path either");
+		metadata.Triggers.Should().ContainSingle(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType
+				&& trigger.Name == "PDS_UsrDueDate",
+			because: "only the left attribute should add a change trigger; a SysValue right side has no attribute path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Normalizes a non-canonical system variable name casing to the canonical catalog name before persisting the SysValue expression.")]
+	public void ToMetadata_Should_Persist_Canonical_SysValue_Name_When_Input_Casing_Differs() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("DueDate", 8),
+			CreateColumn("Owner", 10, "Contact"));
+		BusinessRule rule = new(
+			"Flag overdue records",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "DueDate", null),
+						"less-than-or-equal",
+						new BusinessRuleExpression("SysValue", sysValueName: "currentdate"))
+				]),
+			[
+				new MakeRequiredBusinessRuleAction(["Owner"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "system-variable conditions should still persist a grouped case condition").Subject;
+		BusinessRuleExpressionMetadataDto rightExpression = conditionGroup.Conditions[0].RightExpression!;
+		rightExpression.SysValueName.Should().Be("CurrentDate",
+			because: "the validator accepts the name case-insensitively but the platform resolves it by exact name, so the canonical catalog casing must be persisted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps a page lookup system variable into a SysValue expression that inherits the left lookup type and reference schema.")]
+	public void ToPageMetadata_Should_Map_Lookup_SysValue_Right_Expression() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_UsrOwner_a1b2c3d"] = new("PDS_UsrOwner_a1b2c3d", "Lookup", "Contact")
+			};
+		BusinessRule rule = new(
+			"Show panel when owner is the current user",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_UsrOwner_a1b2c3d", null),
+						"equal",
+						new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserContact"))
+				]),
+			[
+				new ShowElementBusinessRuleAction(["Panel_0dqt4ly"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "page system-variable conditions should still persist a grouped case condition").Subject;
+		BusinessRuleExpressionMetadataDto rightExpression = conditionGroup.Conditions[0].RightExpression!;
+		rightExpression.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSysValueExpressionTypeName,
+			because: "page lookup system variables should persist as the core BusinessRuleSysValueExpression type");
+		rightExpression.SysValueName.Should().Be("CurrentUserContact",
+			because: "the selected lookup system variable name should be persisted verbatim on the page path");
+		rightExpression.DataValueTypeName.Should().Be("Lookup",
+			because: "the page lookup system variable expression should inherit the left lookup attribute type");
+		rightExpression.ReferenceSchemaName.Should().Be("Contact",
+			because: "the page SysValue right side inherits the left lookup reference schema, unlike page AttributeValue expressions which omit it");
+		rightExpression.Value.Should().BeNull(
+			because: "system variables resolve at runtime and carry no static value payload");
 	}
 
 	[Test]

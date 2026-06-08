@@ -194,7 +194,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			condition.RightExpression,
 			comparisonType,
 			leftPath,
-			leftDataValueTypeName,
+			leftDescriptor,
 			attributeMap);
 	}
 
@@ -435,8 +435,9 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		BusinessRuleExpression? rightExpression,
 		string comparisonType,
 		string leftPath,
-		string leftDataValueTypeName,
+		BusinessRuleAttributeDescriptor leftDescriptor,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
 		if (IsUnaryComparisonType(comparisonType)) {
 			if (rightExpression is not null) {
 				throw new ArgumentException(
@@ -461,21 +462,22 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				$"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute '{leftPath}' with type {leftDataValueTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.");
 		}
 
-		ValidateRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
+		ValidateRightExpression(rightExpression, attributeMap, leftPath, leftDescriptor);
 	}
 
 	private static void ValidateRightExpression(
 		BusinessRuleExpression rightExpression,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string leftPath,
-		string leftDataValueTypeName) {
+		BusinessRuleAttributeDescriptor leftDescriptor) {
+		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
 		if (string.Equals(rightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
 			ValidateAttributeRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
 			return;
 		}
 
 		if (string.Equals(rightExpression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			ValidateSysValueRightExpression(rightExpression, attributeMap, leftPath, leftDataValueTypeName);
+			ValidateSysValueRightExpression(rightExpression, leftPath, leftDescriptor);
 			return;
 		}
 
@@ -488,9 +490,9 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	private static void ValidateSysValueRightExpression(
 		BusinessRuleExpression rightExpression,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string leftPath,
-		string leftDataValueTypeName) {
+		BusinessRuleAttributeDescriptor leftDescriptor) {
+		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
 		if (string.IsNullOrWhiteSpace(rightExpression.SysValueName)) {
 			throw new ArgumentException(
 				"rule.condition.conditions[*].rightExpression.sysValueName is required when rightExpression.type is 'SysValue'.");
@@ -510,10 +512,6 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			return;
 		}
 
-		BusinessRuleAttributeDescriptor leftDescriptor = ResolveAttribute(
-			attributeMap,
-			leftPath,
-			"rule.condition.conditions[*].leftExpression.path");
 		if (!string.Equals(leftDescriptor.ReferenceSchemaName, sysValue.ReferenceSchemaName, StringComparison.OrdinalIgnoreCase)) {
 			throw new ArgumentException(
 				$"rule.condition.conditions[*] compares lookup attribute '{leftPath}' ({leftDescriptor.ReferenceSchemaName}) to system variable '{rightExpression.SysValueName}' ({sysValue.ReferenceSchemaName}). The lookup system variable must reference the same schema as the left lookup attribute.");
