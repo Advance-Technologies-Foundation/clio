@@ -356,7 +356,10 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "(including custom columns added in other packages) — use this for column discovery. "
 		+ "Supply 'package-name' only to inspect a single package layer's slice. "
 		+ "IMPORTANT: an empty column list from a single-package read does NOT prove a column is absent; "
-		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package.")]
+		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package. "
+		+ "Note: in the merged view a few schema-level fields are not populated and default to null/0/false "
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, "
+		+ "use-live-editing); supply 'package-name' to read those authoritative values.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
 		[Description("Parameters: environment-name, schema-name (required); package-name (optional — omit for the "
 			+ "merged all-packages view, supply for a single package layer)")] [Required] GetEntitySchemaPropertiesArgs args) {
@@ -837,6 +840,12 @@ public sealed record UpdateEntitySchemaOperationArgs(
 /// <c>package-name</c> is optional: omit it to read the merged/effective schema (columns from every package),
 /// or supply it to read only that package layer's slice.
 /// </summary>
+/// <remarks>
+/// This record intentionally does NOT extend <see cref="EntitySchemaTargetArgsBase"/>: that base marks
+/// <c>package-name</c> as <c>[Required]</c>, whereas this tool makes the package optional (a <c>null</c>
+/// <c>package-name</c> is the signal to return the merged all-packages view). The shared <c>environment-name</c>
+/// and <c>schema-name</c> declarations are therefore duplicated here on purpose.
+/// </remarks>
 public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Creatio environment name")]
@@ -846,7 +855,7 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
 		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string PackageName,
+	string? PackageName,
 
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]

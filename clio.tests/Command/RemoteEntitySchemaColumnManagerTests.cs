@@ -565,27 +565,43 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "lookup columns should expose their reference schema in the schema read model");
 	}
 
+	private static readonly Guid AccountSchemaUId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+	private static readonly Guid MergedNameColumnUId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+	private static readonly Guid MergedContractColumnUId = Guid.Parse("34343434-3434-3434-3434-343434343434");
+	private static readonly Guid MergedCreatedOnColumnUId = Guid.Parse("56565656-5656-5656-5656-565656565656");
+
+	private static Clio.Common.EntitySchema.RuntimeEntitySchemaResult CreateMergedRuntimeSchema() =>
+		new(
+			UId: AccountSchemaUId,
+			Name: "Account",
+			Caption: "Account",
+			Description: "Account schema",
+			ParentUId: Guid.Parse("1bab9dcf-17d5-49f8-9536-8e0064f1dce0"),
+			ExtendParent: true,
+			IsDBView: false,
+			IsTrackChangesInDB: true,
+			IsVirtual: false,
+			ShowInAdvancedMode: true,
+			AdministratedByOperations: true,
+			AdministratedByColumns: false,
+			AdministratedByRecords: true,
+			PrimaryColumnUId: MergedNameColumnUId,
+			PrimaryDisplayColumnName: "Name",
+			PrimaryDisplayColumnUId: MergedNameColumnUId,
+			Columns: [
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					MergedNameColumnUId, "Name", "Name", null, 1, true, false, null, IsIndexed: true),
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					MergedContractColumnUId, "UsrColumn40", "Contract", null, 10, false, false, "Contract", IsIndexed: false),
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					MergedCreatedOnColumnUId, "CreatedOn", "Created on", null, 7, false, true, null, IsIndexed: false)
+			]);
+
 	[Test]
 	[Description("Returns the merged effective column set, including custom columns from other packages, when no package is supplied.")]
 	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted() {
 		// Arrange
-		Guid accountSchemaUId = Guid.Parse("99999999-9999-9999-9999-999999999999");
-		Guid nameColumnUId = Guid.Parse("12121212-1212-1212-1212-121212121212");
-		Guid contractColumnUId = Guid.Parse("34343434-3434-3434-3434-343434343434");
-		_runtimeEntitySchemaReader.GetByName("Account").Returns(new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
-			accountSchemaUId,
-			"Account",
-			nameColumnUId,
-			"Name",
-			nameColumnUId,
-			[
-				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
-					nameColumnUId, "Name", "Name", null, 1, true, false, null),
-				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
-					contractColumnUId, "UsrColumn40", "Contract", null, 10, false, false, "Contract"),
-				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
-					Guid.Parse("56565656-5656-5656-5656-565656565656"), "CreatedOn", "Created on", null, 7, false, true, null)
-			]));
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
 
 		// Act
 		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
@@ -612,6 +628,137 @@ internal class RemoteEntitySchemaColumnManagerTests
 		result.PrimaryColumnName.Should().Be("Name",
 			because: "the primary column should be resolved from the runtime primary column identifier");
 		_designerClient.DidNotReceiveWithAnyArgs().GetSchemaDesignItem(default, default);
+	}
+
+	[Test]
+	[Description("Maps the per-column indexed flag and the own/inherited source from the runtime payload in the merged view.")]
+	public void GetSchemaProperties_MapsColumnIndexedAndSource_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.Columns!.First(column => column.Name == "Name").Indexed.Should().BeTrue(
+			because: "the indexed flag must be projected from the runtime payload rather than hardcoded to false");
+		result.Columns.First(column => column.Name == "UsrColumn40").Indexed.Should().BeFalse(
+			because: "a non-indexed runtime column must report indexed=false");
+		result.Columns.First(column => column.Name == "CreatedOn").Source.Should().Be("inherited",
+			because: "runtime columns flagged IsInherited must be projected as the inherited source");
+		result.Columns.First(column => column.Name == "Name").Source.Should().Be("own",
+			because: "runtime columns not flagged IsInherited must be projected as the own source");
+	}
+
+	[Test]
+	[Description("Maps the schema-level metadata exposed by the runtime endpoint in the merged view.")]
+	public void GetSchemaProperties_MapsRuntimeSchemaLevelMetadata_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.Title.Should().Be("Account",
+			because: "the schema caption from the runtime payload must populate the title in the merged view");
+		result.Description.Should().Be("Account schema",
+			because: "the schema description from the runtime payload must be surfaced in the merged view");
+		result.ExtendParent.Should().BeTrue(
+			because: "extend-parent is exposed by the runtime endpoint and must be mapped");
+		result.TrackChangesInDb.Should().BeTrue(
+			because: "track-changes-in-db is exposed by the runtime endpoint and must be mapped");
+		result.Virtual.Should().BeFalse(
+			because: "the runtime payload reports a non-virtual schema");
+		result.ShowInAdvancedMode.Should().BeTrue(
+			because: "show-in-advanced-mode is exposed by the runtime endpoint and must be mapped");
+		result.AdministratedByOperations.Should().BeTrue(
+			because: "administration-by-operations is exposed by the runtime endpoint and must be mapped");
+		result.AdministratedByRecords.Should().BeTrue(
+			because: "administration-by-records is exposed by the runtime endpoint and must be mapped");
+	}
+
+	[Test]
+	[Description("Reports default values for the schema-level fields the by-name runtime endpoint does not expose in the merged view.")]
+	public void GetSchemaProperties_ReportsDefaultsForUnavailableFields_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.ParentSchemaName.Should().BeNull(
+			because: "the by-name runtime endpoint exposes only the parent UId, so the parent name stays unresolved in the merged view");
+		result.IndexesCount.Should().Be(0,
+			because: "the by-name runtime endpoint does not return the index collection, so the count defaults to zero");
+		result.SspAvailable.Should().BeFalse(
+			because: "ssp-available is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
+		result.UseRecordDeactivation.Should().BeFalse(
+			because: "use-record-deactivation is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
+		result.UseDenyRecordRights.Should().BeFalse(
+			because: "use-deny-record-rights is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
+		result.UseLiveEditing.Should().BeFalse(
+			because: "use-live-editing is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
+	}
+
+	[TestCase(null, TestName = "GetSchemaProperties_RoutesToMergedRead_WhenPackageIsNull")]
+	[TestCase("", TestName = "GetSchemaProperties_RoutesToMergedRead_WhenPackageIsEmpty")]
+	[TestCase("   ", TestName = "GetSchemaProperties_RoutesToMergedRead_WhenPackageIsWhitespace")]
+	[Description("Routes to the merged runtime read whenever the package is null, empty, or whitespace.")]
+	public void GetSchemaProperties_RoutesToMergedRead_WhenPackageIsBlank(string package) {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		_manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = package,
+			SchemaName = "Account"
+		});
+
+		// Assert
+		_runtimeEntitySchemaReader.Received(1).GetByName("Account");
+		_designerClient.DidNotReceiveWithAnyArgs().GetSchemaDesignItem(default, default);
+	}
+
+	[Test]
+	[Description("Trims the schema name before delegating the merged read to the runtime reader.")]
+	public void GetSchemaProperties_TrimsSchemaName_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		_manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "  Account  "
+		});
+
+		// Assert
+		_runtimeEntitySchemaReader.Received(1).GetByName("Account");
+	}
+
+	[Test]
+	[Description("Translates a runtime reader failure into the domain exception so the merged read surfaces a uniform exception type.")]
+	public void GetSchemaProperties_ThrowsEntitySchemaDesignerException_WhenRuntimeReaderFails() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account")
+			.Returns(_ => throw new InvalidOperationException("Runtime schema 'Account' was not returned by Creatio."));
+
+		// Act
+		Action act = () => _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "low-level runtime reader failures must be translated to the domain exception used by the single-package path")
+			.WithMessage("*was not returned by Creatio*",
+				because: "the original failure message must be preserved for diagnostics");
 	}
 
 	[Test]
@@ -1103,6 +1250,24 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_logger.Received().WriteInfo("Indexes: 2");
 		_logger.Received().WriteInfo("Track changes in DB: true");
 		_logger.Received().WriteInfo("Virtual: true");
+	}
+
+	[Test]
+	[Description("Renders the synthetic merged package label and the unresolved parent placeholder when the package is omitted.")]
+	public void PrintSchemaProperties_RendersMergedLabel_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+
+		// Act
+		_manager.PrintSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		// The merged label and the <none> parent placeholder are the human-facing signals that this read is not
+		// scoped to a single package; NSubstitute Received assertions carry the intent in the comment instead of a because.
+		_logger.Received().WriteInfo($"Package: {RemoteEntitySchemaColumnManager.MergedSchemaPackageName}");
+		_logger.Received().WriteInfo("Parent schema: <none>");
 	}
 
 	private void SetupLoadedSchema() {

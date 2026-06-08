@@ -563,6 +563,10 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the merged read must expose the full column set even when no package is supplied");
 		properties.Columns!.Should().Contain(column => column.Name == "Name",
 			because: "standard columns must be present in the merged all-packages read");
+		properties.Title.Should().NotBeNullOrWhiteSpace(
+			because: "the merged read must map the schema caption from the runtime payload rather than leaving it null");
+		properties.Columns!.Should().Contain(column => column.Indexed,
+			because: "the merged read must map the per-column indexed flag from the runtime payload, not hardcode it to false");
 	}
 
 	[Test]

@@ -26,10 +26,14 @@ There are two modes, selected by the presence of `--package`:
 - **Merged / effective (no `--package`)** — returns columns from **all** package
   layers, including custom columns added in packages other than the one that
   defines the schema. This is the recommended mode for column discovery and is
-  sourced from the runtime schema.
+  sourced from the runtime schema. Most schema-level metadata (title, extend
+  parent, db view, track changes, virtual, show in advanced mode, the
+  administration flags) and every column's `indexed` flag are authoritative in
+  this mode; a few fields are not exposed by the by-name runtime endpoint and
+  default to null/0/false (see Notes).
 - **Single package layer (`--package` supplied)** — returns only that package
-  layer's slice plus schema-level metadata (parent schema, indexes, SSP
-  availability, and the other schema flags).
+  layer's slice plus **every** schema-level field (parent schema name, indexes,
+  SSP availability, and the other schema flags).
 
 This is the canonical verification path after create-entity-schema.
 
@@ -71,9 +75,13 @@ from the schema summary object
   frequently added in a package other than the one that defines the schema.
   Re-read without `--package` for the merged view, or use `find-entity-schema`
   to locate the customization package.
-- in the merged (no `--package`) view, schema-level flags such as parent schema,
-  indexes, and SSP availability are populated only in the single-package mode;
-  the `package-name` field reports `(merged: all packages)`
+- in the merged (no `--package`) view, the `package-name` field reports
+  `(merged: all packages)`. Most schema-level metadata and every column's
+  `indexed` flag are authoritative, but the following fields are not exposed by
+  the by-name runtime endpoint and default to null/0/false in this mode:
+  `parent-schema-name`, `indexes-count`, `ssp-available`,
+  `use-record-deactivation`, `use-deny-record-rights`, and `use-live-editing`.
+  Supply `--package` to read those authoritative values from a single package layer
 
 ## Reporting Bugs
 

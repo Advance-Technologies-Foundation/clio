@@ -15,9 +15,10 @@ DESCRIPTION
     When --package is omitted, the MERGED/EFFECTIVE schema is returned: columns from
     ALL package layers, including custom columns added in packages other than the one
     that defines the schema. This is the recommended mode for column discovery.
-    When --package is supplied, only that single package layer's slice is returned
-    (parent schema, indexes, and other schema-level flags are included in this mode).
-    This is the canonical verification path after create-entity-schema.
+    When --package is supplied, only that single package layer's slice is returned,
+    including every schema-level field (parent schema name, indexes, SSP availability,
+    and the remaining schema flags). This is the canonical verification path after
+    create-entity-schema.
 
 OPTIONS
     --package              Optional target package name. Omit for the merged all-packages
@@ -48,9 +49,13 @@ NOTES
       NOT prove a column is absent. Custom columns are frequently added in a package other
       than the one that defines the schema. Re-read without --package for the merged view,
       or use find-entity-schema to locate the customization package.
-    - the merged (no --package) view sources columns from the runtime schema; schema-level
-      flags such as parent schema, indexes, and SSP availability are populated only in the
-      single-package mode
+    - the merged (no --package) view sources columns AND most schema-level metadata from
+      the runtime schema (title, extend parent, db view, track changes, virtual, show in
+      advanced mode, the administration flags, and every column's indexed flag are all
+      authoritative). A few fields are not exposed by the by-name runtime endpoint and
+      default to null/0/false in this mode: parent schema name, indexes count, SSP
+      availability, use record deactivation, use deny record rights, and use live editing.
+      Supply --package to read those authoritative values from a single package layer
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

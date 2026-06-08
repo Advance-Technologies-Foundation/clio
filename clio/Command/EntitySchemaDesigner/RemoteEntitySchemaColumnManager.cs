@@ -223,43 +223,63 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// including customizations contributed by packages other than the one that originally defines the schema.
 	/// </summary>
 	/// <param name="options">Options that identify the schema and remote environment. <c>Package</c> is ignored here.</param>
-	/// <returns>Structured schema properties whose <c>columns</c> reflect the full runtime column set.</returns>
+	/// <returns>
+	/// Structured schema properties whose <c>columns</c> reflect the full runtime column set. Most schema-level
+	/// metadata (title, description, extend-parent, db-view, track-changes, virtual, show-in-advanced-mode and the
+	/// administration flags) and the per-column <c>indexed</c> flag are mapped from the runtime payload. A few
+	/// fields are not exposed by the by-name runtime endpoint and are therefore reported as their defaults in this
+	/// mode: <c>parent-schema-name</c> (only the parent UId is available), <c>indexes-count</c> (0),
+	/// <c>ssp-available</c>, <c>use-record-deactivation</c>, <c>use-deny-record-rights</c> and <c>use-live-editing</c>
+	/// (false). Supply a package to read those authoritative schema-level values from a single package layer.
+	/// </returns>
 	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new EntitySchemaDesignerException("Schema name is required.");
 		}
-		RuntimeEntitySchemaResult runtimeSchema = _runtimeEntitySchemaReader.GetByName(options.SchemaName.Trim());
+		RuntimeEntitySchemaResult runtimeSchema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
 		List<EntitySchemaPropertyColumnInfo> columns = runtimeSchema.Columns
 			.Select(MapRuntimePropertyColumn)
 			.ToList();
-		int ownColumnCount = columns.Count(column => column.Source == "own");
-		int inheritedColumnCount = columns.Count - ownColumnCount;
+		int inheritedColumnCount = runtimeSchema.Columns.Count(column => column.IsInherited);
+		int ownColumnCount = runtimeSchema.Columns.Count - inheritedColumnCount;
 		string? primaryColumnName = runtimeSchema.Columns
 			.FirstOrDefault(column => column.UId == runtimeSchema.PrimaryColumnUId)?.Name;
 		return new EntitySchemaPropertiesInfo(
 			runtimeSchema.Name,
-			null,
-			null,
-			MergedSchemaPackageName,
-			null,
-			false,
-			primaryColumnName,
-			runtimeSchema.PrimaryDisplayColumnName,
-			ownColumnCount,
-			inheritedColumnCount,
-			0,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			false,
-			columns);
+			Title: runtimeSchema.Caption,
+			Description: runtimeSchema.Description,
+			PackageName: MergedSchemaPackageName,
+			ParentSchemaName: null,
+			ExtendParent: runtimeSchema.ExtendParent,
+			PrimaryColumnName: primaryColumnName,
+			PrimaryDisplayColumnName: runtimeSchema.PrimaryDisplayColumnName,
+			OwnColumnCount: ownColumnCount,
+			InheritedColumnCount: inheritedColumnCount,
+			IndexesCount: 0,
+			TrackChangesInDb: runtimeSchema.IsTrackChangesInDB,
+			DbView: runtimeSchema.IsDBView,
+			SspAvailable: false,
+			Virtual: runtimeSchema.IsVirtual,
+			UseRecordDeactivation: false,
+			ShowInAdvancedMode: runtimeSchema.ShowInAdvancedMode,
+			AdministratedByOperations: runtimeSchema.AdministratedByOperations,
+			AdministratedByColumns: runtimeSchema.AdministratedByColumns,
+			AdministratedByRecords: runtimeSchema.AdministratedByRecords,
+			UseDenyRecordRights: false,
+			UseLiveEditing: false,
+			Columns: columns);
+	}
+
+	/// <summary>
+	/// Reads the runtime schema for the merged view, translating low-level reader failures into the domain
+	/// <see cref="EntitySchemaDesignerException"/> so both read paths surface a uniform exception type.
+	/// </summary>
+	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName) {
+		try {
+			return _runtimeEntitySchemaReader.GetByName(schemaName);
+		} catch (InvalidOperationException exception) {
+			throw new EntitySchemaDesignerException(exception.Message, exception);
+		}
 	}
 
 	private static EntitySchemaPropertyColumnInfo MapRuntimePropertyColumn(RuntimeEntitySchemaColumnResult column) {
@@ -271,7 +291,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.Description,
 			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
 			column.IsRequired,
-			false,
+			column.IsIndexed,
 			column.ReferenceSchemaName);
 	}
 

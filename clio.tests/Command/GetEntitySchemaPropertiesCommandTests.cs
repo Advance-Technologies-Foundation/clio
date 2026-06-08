@@ -152,6 +152,24 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 	}
 
 	[Test]
+	[Description("Returns a failure exit code and logs the error when the merged read fails.")]
+	public void Execute_ReturnsFailure_WhenMergedReadThrows() {
+		// Arrange
+		GetEntitySchemaPropertiesOptions options = new() {
+			SchemaName = "Account"
+		};
+		_columnManager.GetSchemaProperties(options)
+			.Returns(_ => throw new EntitySchemaDesignerException("Runtime schema 'Account' was not returned by Creatio."));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a failed merged read must surface as a non-zero exit code");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("was not returned by Creatio")));
+	}
+
+	[Test]
 	[Description("Rejects requests that omit the schema name.")]
 	public void Execute_ReturnsFailure_WhenSchemaNameIsMissing() {
 		// Arrange

@@ -21,6 +21,14 @@ public sealed record EntitySchemaPropertyColumnInfo(
 /// <summary>
 /// Represents a structured snapshot of remote entity schema properties with nested column metadata.
 /// </summary>
+/// <remarks>
+/// In the merged/effective view (returned when no package is supplied) a few schema-level fields are not exposed
+/// by the by-name runtime endpoint and are therefore reported as their defaults rather than authoritative values:
+/// <c>parent-schema-name</c> (null), <c>indexes-count</c> (0), <c>ssp-available</c>, <c>use-record-deactivation</c>,
+/// <c>use-deny-record-rights</c> and <c>use-live-editing</c> (false). Supply a package to read those values from a
+/// single package layer. All other fields, including every column's <c>indexed</c> flag, are authoritative in both
+/// modes.
+/// </remarks>
 public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("title")] string? Title,
