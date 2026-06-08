@@ -192,6 +192,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical page modification article text");
 		result.Article.Text.Should().Contain("page-schema-resources",
 			because: "the page modification guide should route localizable string edits to the resources guide");
+		result.Article.Text.Should().Contain("RESOLVE CHANNEL",
+			because: "Step 0 must make the agent resolve the web/mobile channel before editing a page");
 	}
 
 	[Test]
