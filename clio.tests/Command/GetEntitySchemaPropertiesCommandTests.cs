@@ -101,6 +101,57 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 	}
 
 	[Test]
+	[Description("Reads the merged effective schema when the package is omitted.")]
+	public void Execute_ReadsMergedSchemaProperties_WhenPackageIsOmitted() {
+		// Arrange
+		GetEntitySchemaPropertiesOptions options = new() {
+			SchemaName = "Account"
+		};
+		_columnManager.GetSchemaProperties(options).Returns(new EntitySchemaPropertiesInfo(
+			"Account",
+			null,
+			null,
+			"(merged: all packages)",
+			null,
+			false,
+			"Id",
+			"Name",
+			1,
+			0,
+			0,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			[
+				new EntitySchemaPropertyColumnInfo(
+					"UsrColumn40",
+					System.Guid.Parse("34343434-3434-3434-3434-343434343434"),
+					"own",
+					"Contract",
+					null,
+					"Lookup",
+					false,
+					false,
+					"Contract")
+			]));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "omitting the package must be a valid request that returns the merged schema");
+		_columnManager.Received(1).GetSchemaProperties(options);
+	}
+
+	[Test]
 	[Description("Rejects requests that omit the schema name.")]
 	public void Execute_ReturnsFailure_WhenSchemaNameIsMissing() {
 		// Arrange

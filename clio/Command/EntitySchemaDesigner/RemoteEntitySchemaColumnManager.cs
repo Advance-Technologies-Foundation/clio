@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Package;
 using Terrasoft.Core.Entities;
 
@@ -50,18 +51,26 @@ public interface IRemoteEntitySchemaColumnManager
 
 internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColumnManager
 {
+	/// <summary>
+	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
+	/// </summary>
+	internal const string MergedSchemaPackageName = "(merged: all packages)";
+
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
+	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
+		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_logger = logger;
 	}
 
@@ -171,6 +180,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.Package)) {
+			return GetMergedSchemaProperties(options);
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
@@ -204,6 +216,63 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema.UseDenyRecordRights,
 			schema.UseLiveEditing,
 			columns);
+	}
+
+	/// <summary>
+	/// Builds the effective (merged) schema properties snapshot that unions columns from every package layer,
+	/// including customizations contributed by packages other than the one that originally defines the schema.
+	/// </summary>
+	/// <param name="options">Options that identify the schema and remote environment. <c>Package</c> is ignored here.</param>
+	/// <returns>Structured schema properties whose <c>columns</c> reflect the full runtime column set.</returns>
+	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new EntitySchemaDesignerException("Schema name is required.");
+		}
+		RuntimeEntitySchemaResult runtimeSchema = _runtimeEntitySchemaReader.GetByName(options.SchemaName.Trim());
+		List<EntitySchemaPropertyColumnInfo> columns = runtimeSchema.Columns
+			.Select(MapRuntimePropertyColumn)
+			.ToList();
+		int ownColumnCount = columns.Count(column => column.Source == "own");
+		int inheritedColumnCount = columns.Count - ownColumnCount;
+		string? primaryColumnName = runtimeSchema.Columns
+			.FirstOrDefault(column => column.UId == runtimeSchema.PrimaryColumnUId)?.Name;
+		return new EntitySchemaPropertiesInfo(
+			runtimeSchema.Name,
+			null,
+			null,
+			MergedSchemaPackageName,
+			null,
+			false,
+			primaryColumnName,
+			runtimeSchema.PrimaryDisplayColumnName,
+			ownColumnCount,
+			inheritedColumnCount,
+			0,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+			columns);
+	}
+
+	private static EntitySchemaPropertyColumnInfo MapRuntimePropertyColumn(RuntimeEntitySchemaColumnResult column) {
+		return new EntitySchemaPropertyColumnInfo(
+			column.Name,
+			column.UId,
+			column.IsInherited ? "inherited" : "own",
+			column.Caption,
+			column.Description,
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
+			column.IsRequired,
+			false,
+			column.ReferenceSchemaName);
 	}
 
 	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {

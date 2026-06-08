@@ -28,6 +28,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private IApplicationPackageListProvider _packageListProvider;
 	private IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private IRemoteEntitySchemaDesignerClient _designerClient;
+	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILogger _logger;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
@@ -38,6 +39,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_defaultValueSourceResolver = Substitute.For<IEntitySchemaDefaultValueSourceResolver>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
+		_runtimeEntitySchemaReader = Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>();
 		_logger = Substitute.For<ILogger>();
 		_savedSchema = null;
 		_loadedSchema = null;
@@ -98,6 +100,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_packageListProvider,
 			_defaultValueSourceResolver,
 			_designerClient,
+			_runtimeEntitySchemaReader,
 			_logger);
 	}
 
@@ -560,6 +563,73 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "columns loaded from schema.InheritedColumns should be marked as inherited");
 		result.Columns[2].ReferenceSchemaName.Should().Be("Contact",
 			because: "lookup columns should expose their reference schema in the schema read model");
+	}
+
+	[Test]
+	[Description("Returns the merged effective column set, including custom columns from other packages, when no package is supplied.")]
+	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted() {
+		// Arrange
+		Guid accountSchemaUId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+		Guid nameColumnUId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+		Guid contractColumnUId = Guid.Parse("34343434-3434-3434-3434-343434343434");
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
+			accountSchemaUId,
+			"Account",
+			nameColumnUId,
+			"Name",
+			nameColumnUId,
+			[
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					nameColumnUId, "Name", "Name", null, 1, true, false, null),
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					contractColumnUId, "UsrColumn40", "Contract", null, 10, false, false, "Contract"),
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					Guid.Parse("56565656-5656-5656-5656-565656565656"), "CreatedOn", "Created on", null, 7, false, true, null)
+			]));
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.Name.Should().Be("Account",
+			because: "the merged read should preserve the runtime schema name");
+		result.PackageName.Should().Be(RemoteEntitySchemaColumnManager.MergedSchemaPackageName,
+			because: "the merged read is not scoped to one package and must signal that to the caller");
+		result.Columns.Should().Contain(column => column.Name == "UsrColumn40" && column.Title == "Contract",
+			because: "custom columns added in other packages must surface in the merged read so the agent does not conclude the field is missing");
+		result.Columns!.First(column => column.Name == "UsrColumn40").Type.Should().Be("Lookup",
+			because: "runtime data-value-type ids must be projected through the shared friendly type mapping");
+		result.Columns.First(column => column.Name == "UsrColumn40").ReferenceSchemaName.Should().Be("Contract",
+			because: "lookup reference schema names from the runtime payload must be preserved");
+		result.Columns.Should().Contain(column => column.Name == "Name",
+			because: "standard columns must remain present alongside customizations in a single response");
+		result.OwnColumnCount.Should().Be(2,
+			because: "non-inherited runtime columns should be counted as own columns");
+		result.InheritedColumnCount.Should().Be(1,
+			because: "inherited runtime columns should be counted separately");
+		result.PrimaryColumnName.Should().Be("Name",
+			because: "the primary column should be resolved from the runtime primary column identifier");
+		_designerClient.DidNotReceiveWithAnyArgs().GetSchemaDesignItem(default, default);
+	}
+
+	[Test]
+	[Description("Reads the single package layer slice through the designer client when a package is supplied.")]
+	public void GetSchemaProperties_ReadsSinglePackageLayer_WhenPackageIsSupplied() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateTextColumn("Name", NameColumnUId)]);
+		SetupLoadedSchema();
+
+		// Act
+		_manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle"
+		});
+
+		// Assert
+		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
+		_runtimeEntitySchemaReader.DidNotReceiveWithAnyArgs().GetByName(default);
 	}
 
 	[Test]

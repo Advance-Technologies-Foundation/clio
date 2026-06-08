@@ -351,9 +351,15 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema.")]
+	[Description("Returns structured properties for the specified remote Creatio entity schema. "
+		+ "Omit 'package-name' to get the MERGED/EFFECTIVE schema with columns from ALL packages "
+		+ "(including custom columns added in other packages) — use this for column discovery. "
+		+ "Supply 'package-name' only to inspect a single package layer's slice. "
+		+ "IMPORTANT: an empty column list from a single-package read does NOT prove a column is absent; "
+		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("Parameters: environment-name, package-name, schema-name (all required)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("Parameters: environment-name, schema-name (required); package-name (optional — omit for the "
+			+ "merged all-packages view, supply for a single package layer)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
@@ -828,12 +834,25 @@ public sealed record UpdateEntitySchemaOperationArgs(
 
 /// <summary>
 /// Arguments for the <c>get-entity-schema-properties</c> MCP tool.
+/// <c>package-name</c> is optional: omit it to read the merged/effective schema (columns from every package),
+/// or supply it to read only that package layer's slice.
 /// </summary>
 public sealed record GetEntitySchemaPropertiesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Creatio environment name")]
+	[property: Required]
 	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
+		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
 	string PackageName,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name")]
+	[property: Required]
 	string SchemaName
-) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+);
 
 /// <summary>
 /// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.
