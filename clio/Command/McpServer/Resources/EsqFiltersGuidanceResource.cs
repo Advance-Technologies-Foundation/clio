@@ -88,6 +88,7 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Column-path normalization
 		       - `leftExpression.columnPath` is a dot-separated path resolved against the group's `rootSchemaName`.
+		       - Strip trailing `Id` from lookup column names: `CreatedById` -> `CreatedBy`, `AccountId` -> `Account`. The reference value lives in the stripped name directly.
 		       - A lookup segment is written as the lookup column's own name: `CreatedBy`, `Account`, `Owner`, `Country`, `QualifyStatus`. The reference value lives in that segment directly.
 		       - Forward references traverse lookups with dots: `Account.Owner.Name`, `QualifyStatus.IsFinal`, `Contact.Country.TimeZone`. The last segment is the actual column being compared; pick its data type accordingly.
 		       - The only legitimate `Id` segment is the primary key `Id` itself (e.g. the `.Id` leaf of a backward reference). A lookup segment is the column name on its own (`Account`), and `Account` already resolves to the related record. See `esq` for the full forward/backward reference grammar.

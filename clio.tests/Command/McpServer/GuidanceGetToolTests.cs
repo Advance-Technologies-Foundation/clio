@@ -196,6 +196,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the page modification guide must force component-type verification before any viewConfigDiff insert to prevent invented crt.* types");
 		result.Article.Text.Should().Contain("ASK THE USER",
 			because: "the page modification guide must tell the agent to ask the user (pick an existing component or build a custom one) when no OOTB component matches");
+		result.Article.Text.Should().Contain("WEB, MOBILE, OR BOTH",
+			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
+		result.Article.Text.Should().Contain("default to web",
+			because: "Step 0 must default to web when the requirement does not name a surface");
 	}
 
 	[Test]

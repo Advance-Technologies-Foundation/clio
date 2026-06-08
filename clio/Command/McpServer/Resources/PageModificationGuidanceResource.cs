@@ -23,6 +23,8 @@ public sealed class PageModificationGuidanceResource {
 		       clio MCP page modification guide
 
 		       PRE-EDIT GUIDANCE CHECKLIST — MANDATORY before writing any body
+		       STEP 0 — WEB, MOBILE, OR BOTH (before list-pages/get-page): web and mobile are SEPARATE page schemas (e.g., `<Entity>_FormPage`/`_ListPage` vs `<Entity>_MobileFormPage`/`_MobileListPage`) — editing one never affects its counterpart. Decide whether the requirement targets web, mobile, or both; if it does not say, default to web (mobile is an explicit opt-in). Then for every page it touches edit each targeted variant (mobile pass: read `mobile-page-modification` first).
+
 		       MOBILE CHECK: If `get-page` returned `schema-type: "mobile"`, STOP — call `get-guidance` with name `mobile-page-modification` instead. Mobile pages use plain JSON (NOT AMD), draw from a separate component catalog (different list of components, same wrapped registry envelope and same `get-component-info` response shape — pass `schema-type: "mobile"` to query it), and must NOT contain handlers, validators, or converters. The rules below apply ONLY to web pages (schema-type: "web"). NOTE: even on mobile, a subset of the checklist below still applies (notably `page-schema-resources` and entity-level `business-rules`) — the mobile guide lists which items carry over.
 
 		       GATE: if ANY row in the table below matches your change, you MUST call the listed guide before producing the body. Skipping a matching row is treated as a defect, not a shortcut.
@@ -61,6 +63,7 @@ public sealed class PageModificationGuidanceResource {
 		       - If no replacing schema exists, `hierarchy[0]` is the original schema and the design package is the original package.
 
 		       Canonical page modification flow
+		       0. WEB, MOBILE, OR BOTH (see Step 0): decide whether the requirement targets web, mobile, or both (default to web if unspecified); edit each affected page's web and/or mobile variant accordingly.
 		       1. `list-pages` — discover the page schema name.
 		       2. `get-page` — read `raw.body` (the editable replacing schema body) and `page` metadata.
 		       3. Edit `raw.body` as needed.
