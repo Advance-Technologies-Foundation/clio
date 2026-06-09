@@ -43,9 +43,12 @@ public static class EntitySchemaPrompt {
 		 together with `parent-schema-name`.
 		 Include `columns` only when the request explicitly describes initial fields. Every column must provide
 		 `title-localizations` with at least `en-US`. Supported column types include
-		 `Binary`, `Image`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for `Binary`,
-		 `Encrypted` / `Password` can be used as aliases for `SecureText`, and `EmailAddress`,
-		 `EmailAddress` can be used as an alias for `Email`. For `Lookup` columns,
+		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for
+		 `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password` can be used as aliases for `SecureText`,
+		 and `EmailAddress` can be used as an alias for `Email`. For an image/photo field shown with the
+		 `crt.ImageInput` component, use `ImageLookup` ("Image link"), NOT the binary `Image` type — `crt.ImageInput`
+		 cannot read or write a binary `Image` column. `ImageLookup` references the `SysImage` schema automatically,
+		 so do not pass `reference-schema-name` for it. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
@@ -122,9 +125,11 @@ public static class EntitySchemaPrompt {
 		 `default-value` only for shorthand `Const` and `None`. Do not send legacy scalar `title` or
 		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
 		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
-		 `Binary`, `Image`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for `Binary`,
-		 `Encrypted` / `Password` can be used as aliases for `SecureText`, and `EmailAddress`,
-		 `EmailAddress` can be used as an alias for `Email`. Prefer `default-value-config`
+		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for
+		 `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password` can be used as aliases for `SecureText`,
+		 and `EmailAddress` can be used as an alias for `Email`. For image/photo fields bound to `crt.ImageInput`,
+		 add an `ImageLookup` ("Image link") column instead of the binary `Image` type; `ImageLookup` references
+		 `SysImage` automatically, so do not pass `reference-schema-name` for it. Prefer `default-value-config`
 		 sources `None`, `Const`, `Settings`, `SystemValue`, or `Sequence`. Do not send `default-value` or
 		 `default-value-source=Const` for `Binary`, `Image`, or `File` operations, and use
 		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
@@ -227,9 +232,11 @@ public static class EntitySchemaPrompt {
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,
 		 prefer `default-value-config` with `source` set to `None`, `Const`, `Settings`, `SystemValue`, or
 		 `Sequence`. Keep legacy `default-value-source` and `default-value` only for shorthand `Const` and
-		 `None`. Supported types include `Binary`, `Image`, `File`, `SecureText`, and `Email`. `Blob` can be
-		 used as an alias for `Binary`, `Encrypted` / `Password` can be used as aliases for `SecureText`, and
-		 `EmailAddress` can be used as an alias for `Email`. Do not
+		 `None`. Supported types include `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`.
+		 `Blob` can be used as an alias for `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password`
+		 can be used as aliases for `SecureText`, and `EmailAddress` can be used as an alias for `Email`.
+		 For image/photo fields bound to `crt.ImageInput`, use `ImageLookup` ("Image link"), not the binary
+		 `Image` type; `ImageLookup` references `SysImage` automatically, so do not pass `reference-schema-name`. Do not
 		 send `default-value` or `default-value-source=Const` for `Binary`, `Image`, or `File`, and use
 		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.

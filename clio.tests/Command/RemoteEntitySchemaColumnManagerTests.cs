@@ -1111,6 +1111,119 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "binary-like columns should not carry lookup reference metadata after modify");
 	}
 
+	[Test]
+	[Description("Adds an ImageLookup ('Image link') column that auto-references the SysImage schema and is indexed, so crt.ImageInput can read and write it.")]
+	public void ModifyColumn_AddsImageLookupColumn_ReferencesSysImageAndIndexes() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPhoto",
+			Type = "ImageLookup",
+			Title = "Photo"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrPhoto");
+		addedColumn.DataValueType.Should().Be(16,
+			because: "ImageLookup and its ImageLink alias must map to the platform 'Image link' data value type 16");
+		addedColumn.ReferenceSchema.Should().NotBeNull(
+			because: "ImageLookup columns are reference columns and must carry a reference schema");
+		addedColumn.ReferenceSchema.Name.Should().Be("SysImage",
+			because: "ImageLookup columns reference the platform SysImage image-storage schema");
+		addedColumn.ReferenceSchema.UId.Should().Be(Guid.Parse("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8"),
+			because: "the server persists ReferenceSchema.UId, so clio must supply the SysImage schema UId");
+		addedColumn.Indexed.Should().BeTrue(
+			because: "ImageLookup columns are indexed, mirroring the platform entity designer");
+		_savedSchema.PrimaryDisplayColumn.Should().BeNull(
+			because: "an image-link column must not be promoted to the primary display column");
+	}
+
+	[Test]
+	[Description("Forces Indexed=true for an ImageLookup column even when the caller explicitly passes Indexed=false, because the platform requires image-link columns to be indexed.")]
+	public void ModifyColumn_AddsImageLookupColumn_ForcesIndexed_EvenWhenCallerPassesIndexedFalse() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPhoto",
+			Type = "ImageLookup",
+			Title = "Photo",
+			Indexed = false
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrPhoto");
+		addedColumn.Indexed.Should().BeTrue(
+			because: "the ImageLookup indexed invariant must override an explicit Indexed=false from the caller");
+	}
+
+	[Test]
+	[Description("Rejects a caller-supplied reference schema for ImageLookup because the reference is always the implicit SysImage schema.")]
+	public void ModifyColumn_Throws_WhenImageLookupSuppliesReferenceSchema() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPhoto",
+			Type = "ImageLookup",
+			ReferenceSchemaName = "Contact"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*reference the SysImage schema automatically*",
+				because: "ImageLookup columns must not accept a caller-supplied reference schema");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Switches an existing column to ImageLookup and attaches the implicit SysImage reference so the column works with crt.ImageInput.")]
+	public void ModifyColumn_UpdatesOwnColumn_ToImageLookup_ReferencesSysImage() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Payload", NameColumnUId)],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Payload",
+			Type = "ImageLookup"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "Payload");
+		savedColumn.DataValueType.Should().Be(16,
+			because: "modify flows should switch the column to the ImageLookup runtime type");
+		savedColumn.ReferenceSchema.Name.Should().Be("SysImage",
+			because: "switching to ImageLookup must attach the implicit SysImage reference");
+		savedColumn.Indexed.Should().BeTrue(
+			because: "ImageLookup columns are indexed after the type switch");
+	}
+
 	[TestCase("Binary")]
 	[TestCase("Image")]
 	[TestCase("File")]

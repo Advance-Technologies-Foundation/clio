@@ -636,10 +636,14 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
 						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
-						  Binary, Image, File, SecureText, Email.
+						  Binary, Image, ImageLookup, File, SecureText, Email.
 						  Blob is also accepted as an alias for Binary.
+						  ImageLink is also accepted as an alias for ImageLookup.
 						  Encrypted and Password are accepted as aliases for SecureText.
 						  EmailAddress is accepted as an alias for Email.
+						  For image/photo fields rendered by the crt.ImageInput Freedom UI component,
+						  use ImageLookup ("Image link") — NOT the binary Image type, which crt.ImageInput
+						  cannot read or write. ImageLookup references the SysImage schema automatically.
 						  """)]
 	[property: Required]
 	string Type,
@@ -650,7 +654,7 @@ public sealed record CreateEntitySchemaColumnArgs(
 	Dictionary<string, string> TitleLocalizations,
 
 	[property: JsonPropertyName("reference-schema-name")]
-	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account.")]
+	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account. Do not set for ImageLookup — it references the SysImage schema automatically.")]
 	string? ReferenceSchemaName = null
 ) {
 	[property: JsonPropertyName("title")]
@@ -708,12 +712,16 @@ public abstract record ColumnModificationArgsBase(
 						   Column type. Supported values:
 						   Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 						   Text, ShortText, MediumText, LongText, MaxSizeText,
-						   Binary, Image, File, Blob, SecureText,
-						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
-						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
+						   Binary, Image, ImageLookup, File, Blob, SecureText,
+						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
+						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
 						   Currency0, Currency1, Currency2, Currency3.
 						   Encrypted and Password are accepted as aliases for SecureText.
+						   ImageLink is accepted as an alias for ImageLookup.
 						   EmailAddress is accepted as an alias for Email.
+						   For image/photo fields bound to the crt.ImageInput component, use ImageLookup
+						   ("Image link") — the binary Image type does not work with crt.ImageInput.
+						   ImageLookup references the SysImage schema automatically (no reference-schema-name).
 						   """)]
 	string? Type = null,
 

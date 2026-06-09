@@ -386,6 +386,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
 				options);
 			column.ReferenceSchema = CreateReferenceSchema(referenceSchema);
+		} else if (EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+			// ImageLookup ("Image link") is the reference type required by crt.ImageInput. It always points at the
+			// platform SysImage schema and is indexed, mirroring the server-side EntitySchemaDesigner behavior.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
 		}
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
@@ -470,6 +475,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		bool isLookupType = effectiveDataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
+		bool isImageLookupType = EntitySchemaDesignerSupport.IsImageLookupDataValueType(effectiveDataValueType);
 		if (isLookupType) {
 			if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)) {
 				ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
@@ -488,6 +494,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			if (options.DoNotControlIntegrity.HasValue) {
 				column.DoNotControlIntegrity = options.DoNotControlIntegrity.Value;
 			}
+		} else if (isImageLookupType) {
+			// ImageLookup ("Image link") always references SysImage and is indexed; never a simple lookup.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
+			column.List = false;
+			column.CascadeConnection = false;
+			column.DoNotControlIntegrity = false;
 		} else {
 			column.ReferenceSchema = null;
 			column.List = false;
@@ -532,7 +545,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		ValidateLookupOptions(options, isLookup, isAdd);
+		bool isImageLookup = EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType);
+		ValidateLookupOptions(options, isLookup, isImageLookup, isAdd);
 		ValidateTextOptions(options, dataValueType);
 		ValidateMaskedOption(options, dataValueType);
 		ValidateDateTimeOptions(options, dataValueType);
@@ -542,6 +556,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void ValidateLookupOptions(
 		ModifyEntitySchemaColumnOptions options,
 		bool isLookup,
+		bool isImageLookup,
 		bool isAdd) {
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
@@ -549,10 +564,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			}
 			return;
 		}
-		if (HasLookupSpecificOptions(options)) {
-			throw new EntitySchemaDesignerException(
-				"Lookup-specific options can be used only when the effective column type is Lookup.");
+		if (!HasLookupSpecificOptions(options)) {
+			return;
 		}
+		if (isImageLookup) {
+			throw new EntitySchemaDesignerException(
+				"ImageLookup ('Image link') columns reference the SysImage schema automatically; " +
+				"do not pass --reference-schema or other lookup-specific options.");
+		}
+		throw new EntitySchemaDesignerException(
+			"Lookup-specific options can be used only when the effective column type is Lookup.");
 	}
 
 	private static bool HasLookupSpecificOptions(ModifyEntitySchemaColumnOptions options) {
