@@ -79,6 +79,19 @@ public sealed class BusinessRuleFiltersGuidanceResource {
 
 		       discovery flow (ALWAYS, no assumptions)
 		       - Before building any filter, resolve the target lookup's reference schema and confirm every columnPath segment and its data value type with `get-entity-schema-properties` (or `dataforge-get-table-columns`). Do not assume a column exists, is absent, or has a given type from its name or from prior schemas — verify against THIS environment's schema. The schema-aware validator rejects unknown columns and type-mismatched comparisons, so resolving first avoids a failed call. Use `find-entity-schema` to locate the schema. Pass lookup VALUES as their display name (clio resolves the Id and keeps the name); only fall back to `odata-read` to find a specific record's Id when one display name is ambiguous or is stored differently than the user phrased it.
+
+		       validate before create (MANDATORY)
+		       - Before calling `create-entity-business-rule`, DRY-RUN the same filter as an `execute-esq` SelectQuery on the target lookup's reference schema against the environment, with a small `top` (e.g. 5) or a COUNT, and confirm it returns the records you expect. This catches a wrong columnPath, an unresolved lookup value, or wrong relative-date / datePart / time-of-day semantics BEFORE the rule is written — the same dry-run discipline component widgets use for their tile query.
+		       - Translate the friendly leaf 1:1 into the SelectQuery filter: same columnPath, comparison, and macro/datePart. Example — to validate "created at 11:06 AM in the previous quarter" before creating the Contact-lookup rule, run an `execute-esq` SelectQuery on Contact filtering CreatedOn by PreviousQuarter AND the HourMinute datePart = 11:06 with top 5. A non-error response (even 0 rows) confirms the filter shape parses on this environment; an error means the column / macro / datePart is wrong — fix it before create.
+		       - Do NOT rely on `create-entity-business-rule` returning success as proof of correctness: a syntactically-accepted rule can still encode the wrong column or an unintended date window. The execute-esq dry-run is the real signal.
+
+		       before-create checklist
+		       - targetAttribute is a direct Lookup column on the rule entity; `rootSchemaName` is INFERRED (never sent by the caller).
+		       - every `columnPath` is rooted on the target lookup's reference schema (NOT the rule entity) and was verified with `get-entity-schema-properties`.
+		       - `comparisonType` uses UPPER_SNAKE_CASE (EQUAL, IS_NOT_NULL, GREATER_OR_EQUAL, ...), never the kebab-case condition tokens.
+		       - lookup values are passed as display names (clio enriches each to `{ Id, value, Name, displayValue }`); never a bare Id-only GUID.
+		       - relative periods use `valueMacros`; a FIXED clock time or calendar part uses `datePart` — exact time-of-day IS expressible, never drop it or call it unsupported.
+		       - the equivalent filter was dry-run through `execute-esq` and returned the expected records.
 		       """
 	};
 }

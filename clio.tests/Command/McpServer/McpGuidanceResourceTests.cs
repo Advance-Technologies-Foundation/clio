@@ -1584,6 +1584,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
 		article.Text.Should().Contain("discovery flow",
 			because: "the guide should keep the no-assumptions discovery flow");
+		article.Text.Should().Contain("validate before create (MANDATORY)",
+			because: "the guide must require an execute-esq dry-run of the filter before the rule is created");
+		article.Text.Should().Contain("DRY-RUN the same filter as an `execute-esq` SelectQuery",
+			because: "the guide must spell out the pre-save execute-esq validation discipline borrowed from the component widget recipe");
+		article.Text.Should().Contain("before-create checklist",
+			because: "the guide should end with a compact before-create checklist of the hard-won filter invariants");
 	}
 
 	[Test]
