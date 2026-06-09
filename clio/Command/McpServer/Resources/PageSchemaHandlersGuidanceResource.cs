@@ -22,7 +22,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       Scope
 		       - Use this guide when the task changes the `handlers` section of a Freedom UI page body returned by `get-page`.
 		       - Resolve exact MCP tool contracts through `get-tool-contract` before any write workflow.
-		       - If the handler body adds or edits `@creatio-devkit/common`, or if the handler reads data, system settings, model rows, processes, or backend services, you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls.
+		       - If the handler body adds or edits `@creatio-devkit/common`, or if the handler reads data, system settings, model rows, processes, or backend services, you MUST read `page-schema-creatio-devkit-common` before touching `SCHEMA_DEPS`, `SCHEMA_ARGS`, SDK services, or raw service calls. (First confirm the task is not a business rule — a current-user/role/date check is a business-rule condition, not handler data access. See BUSINESS RULES FIRST below.)
 		       - Keep runtime page-body handler work inside clio-owned guidance instead of depending on repository-local notes from another workspace.
 
 		       Canonical runtime flow
@@ -30,21 +30,24 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use the `raw.body` field from the `get-page` response as the editable source of truth and preserve the outer AMD module structure.
 		       - `SCHEMA_HANDLERS` must remain a JavaScript array section, not a JSON-only payload.
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
-		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
+		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`. (Exception: a current-user, role, or date/time check is a business-rule condition, not data access — run the BUSINESS RULES FIRST triage before treating it as a handler.)
 
 		       BUSINESS RULES FIRST — mandatory triage before authoring any handler
 		       - Before writing a handler, check whether the task can be closed with a business rule. If it can, CLOSE IT WITH A BUSINESS RULE — do NOT write a handler. A handler is only justified when no business rule covers the requirement.
 		       - Business rules are not limited to show/hide/enable/require. They can also WRITE values into columns and CLEAR columns (the `set-values` action; an empty value clears the column). This is the most common case for two interdependent fields — when changing field A should auto-fill or wipe field B, that is a business rule, not an attribute-change handler.
 		       - Do NOT mentally narrow business rules to "visibility/editability/required" and fall back to a handler for value population/clearing. Resist reaching for `crt.HandleViewModelAttributeChangeRequest` + `$context.set(...)` when a `set-values` business rule does the same job declaratively.
+		       - A business-rule condition is NOT limited to field values. It can also test the current user's ROLES (CurrentUserRoles CONTAIN / NOT_CONTAIN a role), WHO the current user is (CurrentUser / CurrentUserContact / CurrentUserAccount), or the current DATE/TIME (CurrentDate / CurrentTime / CurrentDateTime). So "show/hide/enable/require a field only for administrators, only for the Supervisor, or only on a given date" IS a business rule.
+		       - CRITICAL: checking the current user, their role, or the current date/time is a business-rule CONDITION — it is NOT the kind of "data access" that justifies a handler or reading `page-schema-creatio-devkit-common`. Do NOT reach for `crt.HandleViewModelInitRequest` (or `sdk.RightsService` / `sdk.Model` to look up the user's roles or a contact) just because the requirement mentions a role, a user, or a date. Close it with a business rule first.
 
 		       Decision tree
 		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is conditional visibility, editability, or required state based on the current user's ROLE, the current user's identity, or the current DATE/TIME (e.g. "Resolved visible only for administrators", "Assignee group visible only for the Supervisor contact", "show this label only on 2026-06-09"), this is a BUSINESS RULE, not a handler. Put the system variable in the condition: CurrentUserRoles CONTAIN / NOT_CONTAIN a role id; CurrentUser / CurrentUserContact / CurrentUserAccount equal a target id; or a CurrentDate / CurrentDateTime comparison. Use `create-page-business-rule` or `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT write a `crt.HandleViewModelInitRequest` handler, and do NOT treat the role/user/date check as "data access".
 		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
 		       - Else if the requirement is a one-step built-in page action, prefer direct request wiring from the page config instead of a custom handler.
-		       - Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body.
+		       - Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body. (A current-user, role, or date/time check does NOT count as this kind of data access — it is a business-rule condition; resolve it above, not here.)
 		       - Else use `SCHEMA_HANDLERS` for lifecycle events, attribute changes, cross-field orchestration, editor events, request guards, or domain-specific workflows.
 
 		       Direct request decision table
@@ -492,7 +495,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT parallelize multiple `$context.set(...)` calls with `Promise.all(...)` unless order independence is proven.
 
 		       BEFORE SAVE CHECKLIST
-		       - Does the requirement truly need a handler instead of a direct built-in request, validator, or converter?
+		       - Does the requirement truly need a handler instead of a BUSINESS RULE, direct built-in request, validator, or converter? In particular, conditional visibility/editability/required/value driven by a field value, the current user, the user's roles, or the current date/time is a business rule — not a handler.
 		       - If this handler touches data access, syssettings, processes, or backend services, did you read `page-schema-creatio-devkit-common` before choosing the implementation pattern?
 		       - Are the exact `/**SCHEMA_HANDLERS*/` markers still present around the handlers array?
 		       - Is `SCHEMA_HANDLERS` still a JavaScript array section?
