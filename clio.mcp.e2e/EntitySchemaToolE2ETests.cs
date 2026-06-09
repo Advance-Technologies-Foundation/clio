@@ -572,6 +572,39 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns the merged effective column set for a built-in schema when package-name is omitted.")]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Get entity schema properties returns merged columns when package is omitted")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-properties WITHOUT package-name for the built-in Contact schema and verifies the merged/effective read returns the full column set, so custom columns contributed by other packages are not missed.")]
+	public async Task GetEntitySchemaProperties_Should_Return_Merged_Columns_When_Package_Omitted() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetSchemaPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			null,
+			"Contact",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-properties must succeed without a package-name and return the merged effective schema");
+		properties.Name.Should().Be("Contact",
+			because: "the merged readback should identify the requested built-in schema");
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "the merged read must expose the full column set even when no package is supplied");
+		properties.Columns!.Should().Contain(column => column.Name == "Name",
+			because: "standard columns must be present in the merged all-packages read");
+		properties.Title.Should().NotBeNullOrWhiteSpace(
+			because: "the merged read must map the schema caption from the runtime payload rather than leaving it null");
+		properties.Columns!.Should().Contain(column => column.Indexed,
+			because: "the merged read must map the per-column indexed flag from the runtime payload, not hardcode it to false");
+	}
+
+	[Test]
 	[Description("Returns stable structured column metadata for Contact.Name so callers can inspect existing columns without destructive setup.")]
 	[AllureTag(ReadColumnToolName)]
 	[AllureName("Get entity schema column properties returns stable metadata for Contact.Name")]
@@ -1113,14 +1146,18 @@ public sealed class EntitySchemaToolE2ETests {
 		tools.Select(tool => tool.Name).Should().Contain(ReadSchemaToolName,
 			because: "the get-entity-schema-properties MCP tool must be advertised before the end-to-end call can be executed");
 
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName,
+			["schema-name"] = schemaName
+		};
+		if (packageName is not null) {
+			args["package-name"] = packageName;
+		}
+
 		return await session.CallToolAsync(
 			ReadSchemaToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["schema-name"] = schemaName
-				}
+				["args"] = args
 			},
 			cancellationToken);
 	}

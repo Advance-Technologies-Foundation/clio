@@ -17,6 +17,25 @@ jobs:
     env:
       PSExecutionPolicyPreference: Bypass
     steps:
+      - name: Free disk space
+        shell: powershell
+        run: |
+          # Remove previous build artifacts to prevent "not enough space on disk" errors
+          # on the self-hosted runner across repeated release runs.
+          $paths = @(
+            (Join-Path $env:GITHUB_WORKSPACE "clio\bin"),
+            (Join-Path $env:GITHUB_WORKSPACE "clio.tests\bin"),
+            (Join-Path $env:GITHUB_WORKSPACE "output"),
+            (Join-Path $env:GITHUB_WORKSPACE "tool-smoke")
+          )
+          foreach ($p in $paths) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p"
+              Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+          dotnet build-server shutdown 2>$null
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 1  # Shallow clones should be disabled for a better relevancy of analysis
@@ -90,14 +109,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = "${{ steps.extract_version.outputs.VERSION }}"
           $toolPath = Join-Path $PWD "tool-smoke"
+          # Remove any leftover tool-path so a stale install manifest cannot make the install below
+          # fail with exit code 1. This replaces a prior `dotnet tool uninstall` call, which always
+          # targeted the just-deleted path and, under $ErrorActionPreference='Stop' in PowerShell 5.1,
+          # promoted its "Tool path does not exist." stderr to a terminating error that failed the step.
           if (Test-Path $toolPath) {
             Remove-Item $toolPath -Recurse -Force
           }
 
-          # Uninstall any leftover clio at this tool-path before installing the new version.
-          # dotnet tool install fails instantly with exit code 1 if a previous install manifest remains,
-          # and PowerShell 5 does not automatically stop on a non-zero native exit code.
-          dotnet tool uninstall clio --tool-path $toolPath 2>$null
           dotnet tool install clio --tool-path $toolPath --version $version --add-source (Join-Path $PWD "output")
           if ($LASTEXITCODE -ne 0) {
             throw "dotnet tool install failed with exit code $LASTEXITCODE"

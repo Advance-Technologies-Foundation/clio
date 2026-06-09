@@ -78,7 +78,7 @@ public sealed class EsqGuidanceResource {
 		         - 4 ArithmeticOperation: `{ "expressionType": 4, "arithmeticOperation": <n>, "leftArithmeticOperand": <expr>, "rightArithmeticOperand": <expr> }` (0 Addition, 1 Subtraction, 2 Multiplication, 3 Division).
 
 		       Column path & reference grammar (applies to columns, order-by, and filter left expressions)
-		       - A `columnPath` is resolved against the query/group `rootSchemaName`. Verify the columns you use against the real schema with `get-entity-schema-properties` / `find-entity-schema` before composing the query — do NOT infer a column from its name. There are two failure modes: a column that does not exist fails loudly ("Column by path ... not found in schema ..."), but a column that exists yet is the WRONG one returns wrong data with NO error. Many entities expose several similar lookups — e.g. `Activity` has `Owner`, `Author`, `Contact`, and `Account`; "who owns the activity" is `Owner`, not `Contact`. When more than one column could plausibly match the requirement, inspect the schema and pick the one whose meaning matches before trusting the result.
+		       - A `columnPath` is resolved against the query/group `rootSchemaName`. Verify the columns you use against the real schema with `get-entity-schema-properties` (call it WITHOUT `package-name` for the merged all-packages view so custom columns from other packages are included) / `find-entity-schema` before composing the query — do NOT infer a column from its name, and do NOT treat an empty single-package read as proof a column is absent. There are two failure modes: a column that does not exist fails loudly ("Column by path ... not found in schema ..."), but a column that exists yet is the WRONG one returns wrong data with NO error. Many entities expose several similar lookups — e.g. `Activity` has `Owner`, `Author`, `Contact`, and `Account`; "who owns the activity" is `Owner`, not `Contact`. When more than one column could plausibly match the requirement, inspect the schema and pick the one whose meaning matches before trusting the result.
 		       - Direct column: `Name`, `Age`, `CreatedOn`.
 		       - Forward reference (one-to-one, through lookup columns): dot-separated, e.g. `Account.Owner.Name`, `Contact.Country.TimeZone`, `QualifyStatus.IsFinal`. Each non-final segment is a lookup column written by its own name (`Account`, `Owner`, `Country`); the final segment is the value column. Prefer the lookup column itself (`Account`) over its display sub-column (`Account.Name`) when you want the reference value rather than its text.
 		       - A lookup segment is the lookup column name on its own (`Account`) — it already resolves to the related record. The only `Id` in a path is the primary-key `Id` leaf.
@@ -100,7 +100,7 @@ public sealed class EsqGuidanceResource {
 		         - `aggregationType`: 1 Count, 2 Sum, 3 Avg, 4 Min, 5 Max (0 None, 6 TopOne).
 		         - `aggregationEvalType`: 1 All, 2 Distinct (0 None). COUNT typically uses 2 (Distinct) over `Id`; SUM/AVG/MIN/MAX use 1 (All) over the business column.
 		         - `functionArgument`: the column being aggregated (a SchemaColumn expression). It may itself use a forward/backward path, e.g. `Account.AnnualRevenue` or a backward sub-query.
-		       - In a widget, the aggregation lives at `config.data.providing.aggregation.column.expression` (the SelectQueryColumn wrapper adds `orderDirection`/`orderPosition`/`isVisible`). See `indicator-widget`.
+		       - When a consumer stores the aggregation as a SelectQueryColumn, the `expression` above is nested inside a column object that adds `orderDirection`/`orderPosition`/`isVisible`.
 		       - In a standalone SelectQuery, place the aggregation as the `expression` of a `columns.items` entry; the result row carries the value under that alias.
 
 		       The filter envelope (cross-reference)
@@ -173,11 +173,10 @@ public sealed class EsqGuidanceResource {
 		       Running a query with execute-esq
 		       - Build the SelectQuery and run it with the `execute-esq` tool to read data from a live environment — the returned rows are the query result.
 		       - Response shape: `execute-esq` returns `{ success, count, rows }`. `rows` is the array of result records and `count` is the NUMBER OF ROWS — not your aggregate. For a COUNT(Id) query the answer is the aggregate value inside `rows[0]` under your column alias (e.g. `rows[0].RecordsCount`), and `count` is just 1. Result rows also include the record `Id` even when you did not select it.
-		       - Running a query is also the fastest way to check a filter: a successful call confirms the schema name, every column path, and the whole filter tree parse and resolve. To check a widget filter, (1) take the filter group you plan to put in `config.data.providing.filters.filter`, (2) wrap it in a SelectQuery with a single COUNT(Id) aggregation and the same `rootSchemaName`, (3) execute it, (4) compare the count to expectations, (5) only then write the widget. This catches wrong paths, wrong lookup objects, and wrong macros before they reach a page.
+		       - Running a query is also the fastest way to check a filter: a successful call confirms the schema name, every column path, and the whole filter tree parse and resolve. To check a filter before saving it anywhere, (1) take the filter group you plan to use, (2) wrap it in a SelectQuery with a single COUNT(Id) aggregation and the same `rootSchemaName`, (3) execute it, (4) compare the count to expectations, (5) only then commit it to its destination. This catches wrong paths, wrong lookup objects, and wrong macros before they reach a page.
 
 		       Related guidance
 		       - Read `esq-filters` for the complete filter tree: every filter type and operator, value shapes per data type, lookup objects, the date-macro catalog, and backward-reference Exists filters.
-		       - Read `indicator-widget` for how the aggregation + filter group embed in a `crt.IndicatorWidget` page payload.
 		       """
 	};
 

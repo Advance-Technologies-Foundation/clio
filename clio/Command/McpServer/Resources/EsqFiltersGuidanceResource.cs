@@ -29,7 +29,7 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Filter shape essentials
 		       - Filters are JSON objects with NUMERIC enum values: `filterType`, `comparisonType`, and `dataValueType` are integers (catalogs below), never strings.
-		       - Every leaf carries explicit expression objects (`leftExpression`/`rightExpression`/`rightExpressions`) and values live inside a `parameter` envelope. This is exactly the shape stored in real Creatio page bodies, in an indicator widget's `config.data.providing.filters.filter`, and in a DataService SelectQuery body.
+		       - Every leaf carries explicit expression objects (`leftExpression`/`rightExpression`/`rightExpressions`) and values live inside a `parameter` envelope. This is exactly the shape stored in real Creatio page bodies and in a DataService SelectQuery body.
 		       - A relative date is always a macro EXPRESSION (`{ "expressionType": 1, "functionType": 1, "macrosType": <n> }`), never a literal text value.
 
 		       The filter group envelope (filterType 6)
@@ -41,7 +41,7 @@ public sealed class EsqFiltersGuidanceResource {
 		         - `rootSchemaName`: the entity the paths are resolved against.
 		         - `isEnabled`: true. A disabled group/leaf is ignored at runtime.
 		       - To nest groups (mix AND and OR), place another `filterType: 6` object as one of the `items`. There is no depth limit.
-		       - Widget envelope reminder: in a widget the group lives at `config.data.providing.filters.filter`. An empty filter is `{ "items": {}, "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<Schema>" }`.
+		       - An empty filter is still the full group envelope: `{ "items": {}, "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<Schema>" }`.
 
 		       Anatomy of a leaf filter
 		       - Common fields on a leaf (compare/in/isnull/between/exists):
@@ -88,6 +88,7 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Column-path normalization
 		       - `leftExpression.columnPath` is a dot-separated path resolved against the group's `rootSchemaName`.
+		       - Strip trailing `Id` from lookup column names: `CreatedById` -> `CreatedBy`, `AccountId` -> `Account`. The reference value lives in the stripped name directly.
 		       - A lookup segment is written as the lookup column's own name: `CreatedBy`, `Account`, `Owner`, `Country`, `QualifyStatus`. The reference value lives in that segment directly.
 		       - Forward references traverse lookups with dots: `Account.Owner.Name`, `QualifyStatus.IsFinal`, `Contact.Country.TimeZone`. The last segment is the actual column being compared; pick its data type accordingly.
 		       - The only legitimate `Id` segment is the primary key `Id` itself (e.g. the `.Id` leaf of a backward reference). A lookup segment is the column name on its own (`Account`), and `Account` already resolves to the related record. See `esq` for the full forward/backward reference grammar.
@@ -187,7 +188,6 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       Related guidance
 		       - Read `esq` for the SelectQuery envelope, columns/select, expression building blocks, the forward/backward reference grammar, aggregations, and the master enum tables.
-		       - Read `indicator-widget` when the filter is part of a `crt.IndicatorWidget` aggregate payload.
 		       - Read `page-modification` for page-body save mechanics after the filter shape is decided.
 		       """
 	};

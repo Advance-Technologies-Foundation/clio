@@ -177,6 +177,68 @@ public sealed class GuidanceGetToolE2ETests {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical indicator widget guidance article")]
+	public async Task GuidanceGet_Should_Return_Indicator_Widget_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "indicator-widget"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "indicator-widget is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the guidance tool should return the canonical indicator widget guide text");
+		response.Article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point external callers to get-component-info as the source of truth");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical related-list guidance article")]
+	public async Task GuidanceGet_Should_Return_Related_List_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "related-list"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "related-list is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP related list guide",
+			because: "the guidance tool should return the canonical related-list guide text");
+		response.Article.Text.Should().Contain("filterAttributes",
+			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
+		response.Article.Text.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the related-list guide must teach the init handler that injects the open-record id into the filter at runtime");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange
@@ -311,6 +373,41 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the mobile guide must document that validators are not supported in mobile pages");
 		response.Article.Text.Should().Contain("handlers",
 			because: "the mobile guide must document that handlers are not supported in mobile pages");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the web page modification guide with mandatory component-type verification")]
+	[Description("Verifies that get-guidance returns the page-modification article and that it mandates verifying a component type via get-component-info and asking the user when no OOTB component matches (ENG-90939).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Guide_With_Component_Verification() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the canonical resource URI for the web page guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification guide",
+			because: "the guidance tool should return the canonical web page guide text");
+		response.Article.Text.Should().Contain("COMPONENT-TYPE VERIFICATION IS MANDATORY",
+			because: "the web page guide must force component-type verification before any viewConfigDiff insert to prevent invented crt.* types");
+		response.Article.Text.Should().Contain("get-component-info",
+			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
+		response.Article.Text.Should().Contain("ASK THE USER",
+			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
 	}
 
 	[Test]
