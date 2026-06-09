@@ -458,6 +458,17 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.DataValueType = effectiveDataValueType;
 		}
 
+		ApplyColumnCaptionAndDescription(column, options, effectiveCultureName);
+		ApplyColumnScalarOptions(column, options);
+
+		ApplyColumnTypeConfiguration(package, column, options, effectiveDataValueType);
+	}
+
+	/// <summary>
+	/// Writes the column caption and description using the effective culture (override &gt; profile &gt; en-US).
+	/// </summary>
+	private static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
 		if (options.TitleLocalizations != null) {
@@ -484,6 +495,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 		column.Caption = caption;
 		column.Description = description;
+	}
+
+	/// <summary>
+	/// Applies the optional scalar column flags and default value left unspecified-as-unchanged.
+	/// </summary>
+	private void ApplyColumnScalarOptions(EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options) {
 		if (options.Required.HasValue) {
 			column.RequirementType = MapRequirementType(options.Required);
 		}
@@ -516,7 +533,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.UseSeconds.HasValue) {
 			column.UseSeconds = options.UseSeconds.Value;
 		}
+	}
 
+	/// <summary>
+	/// Applies lookup / image-lookup reference configuration for the column based on its data value type.
+	/// </summary>
+	private void ApplyColumnTypeConfiguration(PackageInfo package, EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, int effectiveDataValueType) {
 		bool isLookupType = effectiveDataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
 		bool isImageLookupType = EntitySchemaDesignerSupport.IsImageLookupDataValueType(effectiveDataValueType);
 		if (isLookupType) {

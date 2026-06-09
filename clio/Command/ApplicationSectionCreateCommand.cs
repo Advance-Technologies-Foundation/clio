@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -68,6 +69,8 @@ public interface IApplicationSectionCreateService {
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section creation.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Service composes its required collaborators (settings, client factory, URL builders, app info, sys-settings factory, logger, culture resolver) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
 public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
@@ -429,8 +432,9 @@ public sealed class ApplicationSectionCreateService(
 				return value;
 			}
 
-			// Prefer the effective culture (override > profile) when present in the readback map;
-			// fall back to en-US, then the first non-empty value. Never derives from CurrentCulture.
+			// Show the readback caption in the effective culture when that culture key exists in the
+			// returned map. Otherwise prefer the en-US value, then any non-empty value. The host
+			// machine locale is never consulted here.
 			if (!string.IsNullOrWhiteSpace(effectiveCultureName)
 				&& localizedValues.TryGetValue(effectiveCultureName, out string? effectiveCaption)
 				&& !string.IsNullOrWhiteSpace(effectiveCaption)) {

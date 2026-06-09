@@ -148,9 +148,9 @@ public sealed class CurrentUserCultureResolver : ICurrentUserCultureResolver
 				"user-culture source=environment env={Env} culture={Culture}", environmentKey, culture.Name);
 			return CultureResolution.Resolved(culture.Name);
 		}
-		catch (CultureNotFoundException)
+		catch (CultureNotFoundException ex)
 		{
-			_logger.LogInformation(
+			_logger.LogInformation(ex,
 				"user-culture source=failed reason={Reason} raw={Raw} env={Env}",
 				ReasonUserCultureInvalid, rawCulture, environmentKey);
 			return CultureResolution.Failed(ReasonUserCultureInvalid);
