@@ -235,6 +235,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// parent UId is available), <c>indexes-count</c>, <c>ssp-available</c>, <c>use-record-deactivation</c>,
 	/// <c>use-deny-record-rights</c> and <c>use-live-editing</c>. Supply a package to read those authoritative
 	/// schema-level values from a single package layer.
+	/// Note that <c>own-column-count</c>/<c>inherited-column-count</c> and each column's <c>source</c> are derived
+	/// here from runtime parent-entity-schema inheritance (the <c>IsInherited</c> flag), whereas the single-package
+	/// path splits on package-layer ownership. The two splits are NOT comparable across modes.
 	/// </returns>
 	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {

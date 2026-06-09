@@ -27,7 +27,12 @@ public sealed record EntitySchemaPropertyColumnInfo(
 /// "not available in this mode" from a genuine value: <c>parent-schema-name</c>, <c>indexes-count</c>,
 /// <c>ssp-available</c>, <c>use-record-deactivation</c>, <c>use-deny-record-rights</c> and <c>use-live-editing</c>.
 /// Supply a package to read those values authoritatively from a single package layer (in which mode they are always
-/// non-null). All other fields, including every column's <c>indexed</c> flag, are authoritative in both modes.
+/// non-null). All other scalar fields, including every column's <c>indexed</c> flag, are authoritative in both modes.
+/// NOTE: the own/inherited split has a DIFFERENT meaning per mode and must not be compared across modes. In merged
+/// mode <c>own-column-count</c>/<c>inherited-column-count</c> and each column's <c>source</c> reflect runtime
+/// inheritance from a parent ENTITY schema (e.g. <c>BaseEntity</c>); in single-package mode they reflect whether the
+/// column is defined in THIS package layer versus a lower layer. The same column can therefore be classified
+/// differently between the two modes.
 /// </remarks>
 public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("name")] string Name,
