@@ -749,6 +749,80 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
+	[Test]
+	[Description("Pins the web client type so Creatio skips the main entity mobile pages when with-mobile-pages is false and no explicit client type is supplied.")]
+	public void CreateApplication_Should_Send_WebClientTypeId_When_WithMobilePages_Is_False() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = null,
+			WithMobilePages = false,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// with-mobile-pages=false must send the web client type so the backend creates web pages only
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"clientTypeId\":\"195785B4-F55A-4E72-ACE3-6480B54C8FA5\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Omits the client type entirely when with-mobile-pages is true and no explicit client type is supplied, preserving the default full page set.")]
+	public void CreateApplication_Should_Not_Send_ClientTypeId_When_WithMobilePages_Is_True_And_None_Provided() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = null,
+			WithMobilePages = true,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// the default with-mobile-pages=true must leave clientTypeId unset so Creatio generates the full five-page set as before
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body => !body.Contains("clientTypeId", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Prefers an explicit client type over the with-mobile-pages=false mapping so callers can target a specific Creatio client type.")]
+	public void CreateApplication_Should_Prefer_Explicit_ClientTypeId_Over_WithMobilePages_False() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = "22222222-2222-2222-2222-222222222222",
+			WithMobilePages = false,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// an explicit client-type-id must take precedence over the with-mobile-pages web-client mapping
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body =>
+				body.Contains("\"clientTypeId\":\"22222222-2222-2222-2222-222222222222\"", StringComparison.Ordinal) &&
+				!body.Contains("195785B4-F55A-4E72-ACE3-6480B54C8FA5", StringComparison.Ordinal)));
+	}
+
 	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")
     {
 		_applicationClient.ExecutePostRequest(
