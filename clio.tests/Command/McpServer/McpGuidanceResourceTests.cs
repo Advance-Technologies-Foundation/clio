@@ -1437,6 +1437,47 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for adding and filtering a Freedom UI related/child list (detail) so AI callers can scope a list by the current page record.")]
+	public void RelatedListGuidanceResource_Should_Return_Canonical_Related_List_Guide() {
+		// Arrange
+		RelatedListGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the related-list guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the resource should expose a stable MCP URI for related-list guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the related-list guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP related list guide",
+			because: "the article should identify itself as the dedicated related-list guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
+		article.Text.Should().Contain("isCollection",
+			because: "the guide must teach the collection attribute that backs the child list");
+		article.Text.Should().Contain("filterAttributes",
+			because: "the guide must teach the separate filter attribute that scopes the list by page data");
+		article.Text.Should().Contain("DO NOT inline a `filter` object on the collection attribute",
+			because: "the guide must call out the exact mistake that leaves a detail showing all records");
+		article.Text.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the guide must teach the init handler that injects the real open-record id into the filter at runtime");
+		article.Text.Should().Contain("FormatException",
+			because: "the guide must warn that a static $Id parameter is sent as a literal string and 500s with a Guid FormatException");
+		article.Text.Should().Contain("00000000-0000-0000-0000-000000000000",
+			because: "the guide must show seeding the static filter with the empty Guid placeholder instead of $Id");
+		article.Text.Should().Contain("loadOnChange",
+			because: "the guide must keep loadOnChange so the init handler's filter update re-queries the grid");
+		article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
+		article.Text.Should().Contain("\"items\": []",
+			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
 	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
 		// Arrange
@@ -1481,6 +1522,26 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes related-list so AI callers can retrieve detail/master-detail filter guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Related_List_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("related-list", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose related-list so get-guidance can return it by name");
+		entry.Name.Should().Be("related-list",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("related/child list",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/related-list",
 			because: "the article URI in the catalog must match the resource URI");
 	}
 
