@@ -847,6 +847,31 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Forces Indexed=true for an ImageLookup column even when the caller explicitly passes Indexed=false, because the platform requires image-link columns to be indexed.")]
+	public void ModifyColumn_AddsImageLookupColumn_ForcesIndexed_EvenWhenCallerPassesIndexedFalse() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrPhoto",
+			Type = "ImageLookup",
+			Title = "Photo",
+			Indexed = false
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrPhoto");
+		addedColumn.Indexed.Should().BeTrue(
+			because: "the ImageLookup indexed invariant must override an explicit Indexed=false from the caller");
+	}
+
+	[Test]
 	[Description("Rejects a caller-supplied reference schema for ImageLookup because the reference is always the implicit SysImage schema.")]
 	public void ModifyColumn_Throws_WhenImageLookupSuppliesReferenceSchema() {
 		// Arrange

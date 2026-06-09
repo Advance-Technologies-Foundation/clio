@@ -183,6 +183,32 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Rejects an ImageLookup column that supplies a reference schema, because the reference is always the implicit SysImage schema (mirrors modify-entity-schema-column).")]
+	public void Create_Throws_WhenImageLookupColumnSuppliesReferenceSchema()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrPhoto:ImageLookup:Photo:Contact"]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*references the SysImage schema automatically*",
+				because: "the create path must reject a caller-supplied reference schema for ImageLookup, aligning with the modify path");
+	}
+
+	[Test]
 	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
 	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
 	{

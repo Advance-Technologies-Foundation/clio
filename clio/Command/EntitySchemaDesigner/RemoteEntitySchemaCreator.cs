@@ -436,6 +436,12 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		if (!isLookup && !string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			if (EntitySchemaDesignerSupport.TryResolveDataValueType(type, out int dataValueType)
+				&& EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+				throw new InvalidOperationException(
+					$"ImageLookup ('Image link') column '{columnSpec}' references the SysImage schema automatically; " +
+					"do not specify a reference schema name.");
+			}
 			throw new InvalidOperationException(
 				$"Column '{columnSpec}' can specify a reference schema name only for lookup columns.");
 		}

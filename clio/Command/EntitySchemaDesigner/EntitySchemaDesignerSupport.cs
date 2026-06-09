@@ -24,9 +24,11 @@ internal static class EntitySchemaDesignerSupport
 	private const string SecureTextTypeName = "secureText";
 
 	/// <summary>
-	/// UId of the platform <c>SysImage</c> schema that every <c>ImageLookup</c> ("Image link") column references.
-	/// Mirrors the server-side <c>EntitySchemaDesigner.ImageLookupReferenceSchemaUId</c> resolution
-	/// (<c>SchemaManager.GetItemByName("SysImage")</c>).
+	/// Fixed UId of the platform <c>SysImage</c> schema that every <c>ImageLookup</c> ("Image link") column references.
+	/// clio must supply this explicitly: the <c>EntitySchemaDesignerService.svc</c> save path clio uses persists
+	/// <c>ReferenceSchema.UId</c> verbatim and performs NO server-side SysImage auto-resolution (only the legacy
+	/// <c>Terrasoft.Nui</c> <c>EntitySchemaDesigner</c> web service resolved it via <c>SchemaManager.GetItemByName("SysImage")</c>).
+	/// The value is install-invariant (defined in core <c>Terrasoft.Core/Configuration/SysImage.cs</c>).
 	/// </summary>
 	internal static readonly Guid SysImageReferenceSchemaUId = new("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8");
 
