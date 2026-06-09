@@ -144,20 +144,25 @@ public static class EntitySchemaPrompt {
 		Description("Prompt to read structured remote entity schema properties")]
 	public static string GetEntitySchemaProperties(
 		[Required]
-		[Description("Target package name")]
-		string packageName,
-		[Required]
 		[Description("Entity schema name")]
 		string schemaName,
 		[Required]
 		[Description("Creatio environment name")]
-		string environmentName) =>
+		string environmentName,
+		[Description("Optional target package name; omit for the merged all-packages view")]
+		string packageName = null) =>
 		$"""
 		 Use clio mcp server `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` to read structured
-		 properties for entity schema `{schemaName}` in package `{packageName}` from environment
-		 `{environmentName}`. The result is a schema summary object with a nested `columns` list for
-		 machine-readable column inspection.
-		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided.
+		 properties for entity schema `{schemaName}` from environment `{environmentName}`. The result is a schema
+		 summary object with a nested `columns` list for machine-readable column inspection.
+		 Pass `schema-name` and `environment-name` exactly as provided. Leave `package-name` empty to get the
+		 MERGED/EFFECTIVE schema with columns from ALL packages (this is what you want for column discovery,
+		 because custom columns are frequently added in a package other than the one that defines the schema).
+		 Set `package-name` only when you intentionally want to inspect a single package layer's slice.
+		 IMPORTANT: an empty `columns` list (or `own-column-count: 0`) from a single-package read does NOT prove a
+		 column is absent. Before concluding a field is missing, re-read without `package-name`, or use
+		 `{FindEntitySchemaTool.FindEntitySchemaToolName}` to find the package that customizes the schema.
+		 Current package request: `{packageName ?? "<merged: all packages>"}`.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before `modify-entity-schema-column` or `sync-schemas`, and read the schema again after mutation when explicit verification is needed.
 		 """;

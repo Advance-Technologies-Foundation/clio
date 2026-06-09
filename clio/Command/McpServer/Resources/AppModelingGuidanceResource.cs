@@ -95,7 +95,7 @@ public sealed class AppModelingGuidanceResource {
 
 			       Page editing guardrails
 			       - `list-pages` identifies page candidates by `schema-name`.
-			       - For existing-app page/detail requests backed by data, resolve the backing schema from refreshed app context before planning schema creation: inspect `get-app-info`, then `list-pages` and `get-page`, and fall back to `get-entity-schema-properties` when the relation is still unclear.
+			       - For existing-app page/detail requests backed by data, resolve the backing schema from refreshed app context before planning schema creation: inspect `get-app-info`, then `list-pages` and `get-page`, and fall back to `get-entity-schema-properties` when the relation is still unclear. Call `get-entity-schema-properties` WITHOUT `package-name` so the merged/effective schema (columns from all packages) is returned; an empty single-package read is NOT proof a column or field is missing — re-read without `package-name` or use `find-entity-schema` before deciding to create new schema work.
 			       - If runtime context already exposes a backing supporting or link schema, treat the request as page-only/object-model reuse work. Do not create a new schema just because the current page body does not yet show the detail.
 			       - Use the raw page body returned by `get-page`, specifically `raw.body`, as the editable source of truth.
 			       - When writing pages, send the full `raw.body` string back to `sync-pages` or `update-page`. Do not send `bundle` or `bundle.viewConfig` fragments as the body payload.
