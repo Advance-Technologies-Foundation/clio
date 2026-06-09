@@ -30,6 +30,9 @@ namespace Clio.Command {
 
 		[Option("entity-schema-name", Required = false, HelpText = "Optional entity schema name to record in the new page dependencies")]
 		public string EntitySchemaName { get; set; }
+
+		[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated page caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+		public string? CaptionCulture { get; set; }
 	}
 
 	/// <summary>
@@ -46,16 +49,19 @@ namespace Clio.Command {
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ISchemaTemplateCatalog _templateCatalog;
 		private readonly ILogger _logger;
+		private readonly Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver _captionCultureResolver;
 
 		public PageCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ISchemaTemplateCatalog templateCatalog,
-			ILogger logger) {
+			ILogger logger,
+			Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_templateCatalog = templateCatalog;
 			_logger = logger;
+			_captionCultureResolver = captionCultureResolver;
 		}
 
 		public bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
@@ -126,9 +132,11 @@ namespace Clio.Command {
 					return false;
 				}
 				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
+				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
-					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings);
+					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings,
+					captionCulture);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new PageCreateResponse { Success = false, Error = saveError };
 					LogFailure(response.Error);
@@ -209,8 +217,11 @@ namespace Clio.Command {
 		private static JObject BuildSaveSchemaPayload(
 			string newSchemaUId, string schemaName, string caption, string description,
 			PageTemplateInfo template, string packageUId, string packageName, string entitySchemaUId,
-			JArray templateLocalizableStrings) {
-			var localizableCaption = new JObject { ["cultureName"] = "en-US", ["value"] = caption };
+			JArray templateLocalizableStrings, string cultureName = null) {
+			// Anchor the page caption/description to the effective culture (override > profile > en-US).
+			// A null cultureName preserves the legacy en-US default; CurrentCulture is never read.
+			string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
+			var localizableCaption = new JObject { ["cultureName"] = effectiveCulture, ["value"] = caption };
 			var schema = new JObject {
 				["uId"] = newSchemaUId,
 				["name"] = schemaName,
@@ -226,7 +237,7 @@ namespace Clio.Command {
 				["extendParent"] = false,
 				["caption"] = new JArray { localizableCaption },
 				["description"] = string.IsNullOrWhiteSpace(description) ? new JArray() : new JArray(new JObject {
-					["cultureName"] = "en-US",
+					["cultureName"] = effectiveCulture,
 					["value"] = description
 				}),
 				["localizableStrings"] = templateLocalizableStrings?.DeepClone() ?? new JArray(),

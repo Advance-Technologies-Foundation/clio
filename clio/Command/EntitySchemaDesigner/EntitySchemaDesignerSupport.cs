@@ -188,7 +188,8 @@ internal static class EntitySchemaDesignerSupport
 	internal static TitleLocalizationNormalizationResult NormalizeTitleLocalizations(
 		IReadOnlyDictionary<string, string>? values,
 		string? fallbackValue,
-		string fieldName) {
+		string fieldName,
+		string? effectiveCultureName = null) {
 		string? normalizedFallbackValue = string.IsNullOrWhiteSpace(fallbackValue)
 			? null
 			: fallbackValue.Trim();
@@ -200,7 +201,12 @@ internal static class EntitySchemaDesignerSupport
 			NormalizeLocalizationMap(values, fieldName) ?? throw new EntitySchemaDesignerException(
 				$"{fieldName} must contain at least one localization."),
 			StringComparer.OrdinalIgnoreCase);
-		string currentCultureName = GetCurrentCultureName();
+		// Creation paths pass the resolved profile culture (override > profile > en-US). When no
+		// effective culture is supplied, fall back to en-US (DefaultCultureName) — NOT the host
+		// machine's CultureInfo.CurrentCulture (M-1 / AC-08).
+		string currentCultureName = string.IsNullOrWhiteSpace(effectiveCultureName)
+			? DefaultCultureName
+			: effectiveCultureName;
 		string? effectiveTitle = null;
 		if (normalizedValues.TryGetValue(currentCultureName, out string? currentCultureValue)
 			&& !string.IsNullOrWhiteSpace(currentCultureValue)) {
@@ -216,7 +222,8 @@ internal static class EntitySchemaDesignerSupport
 
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(
 		IReadOnlyDictionary<string, string>? values,
-		string? fallbackValue) {
+		string? fallbackValue,
+		string? cultureName = null) {
 		if (values != null) {
 			return BuildLocalizableStrings(NormalizeLocalizationMap(values, "localizations"));
 		}
@@ -225,7 +232,10 @@ internal static class EntitySchemaDesignerSupport
 			return [];
 		}
 
-		return [CreateLocalizableString(fallbackValue)];
+		// When only a scalar fallback title is supplied (no localization map), anchor it to the
+		// effective creation culture (override > profile > en-US) instead of the host
+		// CultureInfo.CurrentCulture. A null cultureName preserves the legacy default.
+		return [CreateLocalizableString(fallbackValue, cultureName)];
 	}
 
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(

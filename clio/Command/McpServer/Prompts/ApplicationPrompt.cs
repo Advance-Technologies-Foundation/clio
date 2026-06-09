@@ -102,6 +102,7 @@ public static class ApplicationPrompt {
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`, generating the main entity `_MobileFormPage` and `_MobileListPage` alongside the web pages.
 		 When the user's plan is web-only (no mobile app target), proactively set `with-mobile-pages` to `false` before calling `create-app` so the mobile pages are not created and do not need manual cleanup afterwards.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the application name and captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`.
 		 """;
 
 	/// <summary>
@@ -136,6 +137,7 @@ public static class ApplicationPrompt {
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the section caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 
 	/// </summary>

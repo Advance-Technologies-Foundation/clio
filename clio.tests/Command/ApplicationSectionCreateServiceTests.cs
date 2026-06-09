@@ -46,6 +46,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
+		Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver =
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string>())
+			.Returns("en-US");
 		_sut = new ApplicationSectionCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
@@ -53,7 +57,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			serviceUrlBuilderFactory,
 			_applicationInfoService,
 			_ => _sysSettingsManager,
-			_logger);
+			_logger,
+			captionCultureResolver);
 	}
 
 	[Test]

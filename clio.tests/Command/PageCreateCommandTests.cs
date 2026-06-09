@@ -51,7 +51,8 @@ public sealed class PageCreateCommandTests
 			GroupName = "Page",
 			SchemaType = 9
 		});
-		_command = new PageCreateCommand(_applicationClient, _serviceUrlBuilder, _catalog, _logger);
+		_command = new PageCreateCommand(_applicationClient, _serviceUrlBuilder, _catalog, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
 	}
 
 	[Test]
