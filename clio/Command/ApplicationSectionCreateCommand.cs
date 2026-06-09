@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -79,7 +80,7 @@ public sealed class ApplicationSectionCreateService(
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
-	Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver)
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -116,10 +117,10 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
-			// The stored section caption is localized server-side under the connected user's profile.
-			// This effective culture only drives which value the readback surfaces (override > profile > en-US).
-			string effectiveCultureName = captionCultureResolver.Resolve(
-				new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
+		// The stored section caption is localized server-side under the connected user's profile.
+		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
+		string effectiveCultureName = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");

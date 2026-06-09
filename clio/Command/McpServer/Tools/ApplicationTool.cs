@@ -206,7 +206,8 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 					args.Description,
 					args.EntitySchemaName,
 					args.WithMobilePages,
-					resolvedIconBackground));
+					resolvedIconBackground,
+					args.CaptionCulture));
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);

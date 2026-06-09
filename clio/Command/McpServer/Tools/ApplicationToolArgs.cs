@@ -152,6 +152,10 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: Description("Create mobile pages in addition to web pages. Default: true.")]
 	bool WithMobilePages = true,
 
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the section caption readback (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	string? CaptionCulture = null,
+
 	[property: JsonPropertyName("title-localizations")]
 	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]
 	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
