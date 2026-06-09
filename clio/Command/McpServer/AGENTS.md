@@ -117,6 +117,17 @@ to `latest`, and the MCP response carries the `resolvedFrom` marker
 (`"environment"` | `"latest-fallback"`) so AI can interpret the result correctly
 (see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
 
+The soft degrade keeps the tool from erroring, but it does NOT license the agent
+to proceed blindly. On `latest-fallback` the server instructions
+(`McpServerInstructions.cs`), the tool `[Description]`, the `versionWarning`
+(`ComponentInfoResolution.LatestFallbackWarning`), and the page-modification guidance
+all direct the agent to tell the user the platform version could not be determined
+and request explicit confirmation before generating an implementation plan — it must
+not silently assume a component set. The same surfaces direct the agent to list the
+full catalog proactively (list mode, `component-type` omitted) at the start of page
+work, so non-obvious components such as `crt.Gallery` are discovered without an
+explicit user prompt.
+
 To force-refresh the local cache without waiting for the 5min TTL, use the
 `clio component-registry-refresh` verb:
 

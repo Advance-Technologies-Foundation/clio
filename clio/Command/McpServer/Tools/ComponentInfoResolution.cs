@@ -17,14 +17,20 @@ public static class ComponentInfoResolution {
 	/// mistake the <c>latest</c> catalog for the target environment's real component set.
 	/// <c>latest</c> is a superset of every GA version: a type listed here (e.g. a freshly
 	/// shipped <c>crt.Switch</c>) may not exist in the environment's actual platform version,
-	/// and a page built against it will fail to render at runtime. The remedy is to scope the
-	/// catalog to a concrete version — pass an explicit version, or target a registered
-	/// environment so clio can resolve its platform version via the cliogate <c>GetSysInfo</c> probe.
+	/// and a page built against it will fail to render at runtime. Because the target version is
+	/// unknown, the caller must NOT silently assume this component set: it must tell the user the
+	/// version could not be determined and request explicit confirmation before generating an
+	/// implementation plan. The remedy is to scope the catalog to a concrete version — pass an
+	/// explicit version, or target a registered environment so clio can resolve its platform
+	/// version via <c>ApplicationInfoService</c> (with the cliogate <c>GetSysInfo</c> probe as fallback).
 	/// </summary>
 	public const string LatestFallbackWarning =
 		"Catalog was loaded from 'latest' (a superset of all GA versions). "
 		+ "A component listed here may not exist in the target environment's actual platform version, "
 		+ "so a page built against it can fail to render at runtime. "
+		+ "The target platform version could not be determined: do NOT silently assume this component set. "
+		+ "Before generating an implementation plan, tell the user the version is unknown and request explicit "
+		+ "confirmation before proceeding against 'latest'. "
 		+ "To scope results to a real version, pass an explicit version or target a registered "
 		+ "environment so clio can resolve its platform version (no cliogate required — resolved via "
 		+ "ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).";

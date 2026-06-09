@@ -65,9 +65,12 @@ public sealed class ComponentInfoTool(
 	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
+		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
+		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
+		"When resolvedFrom is 'latest-fallback' the version is unknown: do not silently assume the component set — tell the user and request confirmation before proceeding. " +
 		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]

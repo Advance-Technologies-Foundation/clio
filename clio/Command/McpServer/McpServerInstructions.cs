@@ -58,6 +58,13 @@ internal static class McpServerInstructions
 		  and `*-by-credentials` (takes raw URL/username/password). Prefer the environment-name variant.
 		- Read the `docs://help/command/{CommandName}` resources for detailed usage of any command.
 
+		### Freedom UI components — discover and version-check BEFORE planning page work
+		Before you propose components or generate an implementation plan for a Freedom UI page, do BOTH of these — do not rely on memory or assume a component set:
+		1. **Resolve the target platform version.** Call `get-component-info` with `environment-name` set to the environment you will edit, and read `resolvedFrom` on the response:
+		   - `resolvedFrom: "environment"` — clio matched the catalog to the stand's real `CoreVersion`; the component set is authoritative, proceed.
+		   - `resolvedFrom: "latest-fallback"` — the version could NOT be determined (no active environment, probe failed, or unparseable version). Do NOT silently assume a component set. Tell the user the platform version is unknown and request explicit confirmation before proceeding, or fix the upstream signal (register/activate the environment, upgrade cliogate). The response's `versionWarning` carries this caveat.
+		2. **Discover the full component set proactively.** Call `get-component-info` with no `component-type` (list mode) to enumerate every component available for that version. Non-obvious components (e.g. `crt.Gallery`) live in the catalog and must be considered and suggested when relevant — never conclude a capability is missing, or wait for the user to ask you to search, without listing the catalog first. Pass `schema-type: "mobile"` to discover the separate mobile component set.
+
 		### Edit a page from a Creatio designer URL
 		A Freedom UI designer URL is one of:
 		- `#/PageDesigner/<pageUId>` — first edit of a page that lives in a locked package; the backend will create a virtual replacing package automatically on first save.

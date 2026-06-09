@@ -509,6 +509,21 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("The latest-fallback warning directs the agent NOT to silently assume the component set, but to inform the user the version is unknown and request confirmation before proceeding (ENG-91134).")]
+	public void LatestFallbackWarning_Should_Direct_Agent_To_Confirm_Unknown_Version_With_User() {
+		string warning = ComponentInfoResolution.LatestFallbackWarning;
+
+		warning.Should().Contain("could not be determined",
+			because: "the agent must learn the target platform version is unknown, not silently assume one");
+		warning.Should().Contain("do NOT silently assume",
+			because: "the AC forbids silently assuming a default component set when the version is unknown");
+		warning.Should().Contain("request explicit",
+			because: "the agent must request the user's confirmation before proceeding against the 'latest' catalog");
+		warning.Should().Contain("superset",
+			because: "the original superset caveat must remain so existing renderer/consumer expectations hold");
+	}
+
+	[Test]
 	[Description("When the catalog matches the resolved environment version the response omits versionWarning — there is no superset risk to flag.")]
 	public async Task ComponentInfoTool_Should_Not_Emit_Version_Warning_When_Environment_Matches() {
 		// Arrange — resolver says 8.1.5 and the catalog loads exactly that version.
