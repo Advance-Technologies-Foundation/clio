@@ -29,6 +29,10 @@ Optionally supply --icon-background as one of the Freedom UI palette colors and
 icon. When --icon-background is omitted a random palette color is assigned
 automatically.
 
+By default create-app generates the full set of five pages, including the main
+entity `_MobileFormPage` and `_MobileListPage`. Pass --with-mobile-pages false
+to create a web-only application; the two mobile pages are then skipped.
+
 ## Synopsis
 
 ```bash
@@ -58,6 +62,11 @@ clio create-app [options]
 --icon-id                        Application icon GUID or 'auto' to pick a
                                  random icon
 
+--with-mobile-pages              Create mobile pages (_MobileFormPage,
+                                 _MobileListPage) for the main entity in
+                                 addition to web pages. Optional; defaults to
+                                 true. Pass false for a web-only application.
+
 --Environment            -e      Environment name. Required.
 ```
 
@@ -74,6 +83,9 @@ clio create-app --name "My Orders App" --code OrdersApp --template-code AppFreed
 
 clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-background "#0058EF" -e dev
 # create an empty application with a specific Freedom UI palette color
+
+clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomUI --with-mobile-pages false -e dev
+# create a web-only application without the main entity mobile pages
 ```
 
 ## Notes
@@ -82,6 +94,7 @@ clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-b
 - The active `SchemaNamePrefix` system setting is read from the target environment and prepended to the code automatically. The default prefix is `Usr`. Passing the full prefixed code (e.g. `UsrOrdersApp`) also works — the prefix is not duplicated.
 - --icon-background must be one of the Freedom UI palette colors when provided; a random palette color is assigned when omitted.
 - When --icon-id is omitted the command does not assign an icon automatically.
+- --with-mobile-pages defaults to `true`; existing calls without the flag keep generating the full five-page set. Pass `false` for a web-only app to skip the main entity `_MobileFormPage` and `_MobileListPage`. An explicit client type takes precedence over this flag.
 
 ## Reporting Bugs
 
