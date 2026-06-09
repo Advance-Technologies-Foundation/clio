@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.EntitySchema;
 using Clio.Package;
@@ -227,10 +230,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Structured schema properties whose <c>columns</c> reflect the full runtime column set. Most schema-level
 	/// metadata (title, description, extend-parent, db-view, track-changes, virtual, show-in-advanced-mode and the
 	/// administration flags) and the per-column <c>indexed</c> flag are mapped from the runtime payload. A few
-	/// fields are not exposed by the by-name runtime endpoint and are therefore reported as their defaults in this
-	/// mode: <c>parent-schema-name</c> (only the parent UId is available), <c>indexes-count</c> (0),
-	/// <c>ssp-available</c>, <c>use-record-deactivation</c>, <c>use-deny-record-rights</c> and <c>use-live-editing</c>
-	/// (false). Supply a package to read those authoritative schema-level values from a single package layer.
+	/// fields are not exposed by the by-name runtime endpoint and are therefore reported as <c>null</c> in this
+	/// mode so a caller can distinguish "unavailable" from a genuine value: <c>parent-schema-name</c> (only the
+	/// parent UId is available), <c>indexes-count</c>, <c>ssp-available</c>, <c>use-record-deactivation</c>,
+	/// <c>use-deny-record-rights</c> and <c>use-live-editing</c>. Supply a package to read those authoritative
+	/// schema-level values from a single package layer.
 	/// </returns>
 	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
@@ -255,18 +259,20 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			PrimaryDisplayColumnName: runtimeSchema.PrimaryDisplayColumnName,
 			OwnColumnCount: ownColumnCount,
 			InheritedColumnCount: inheritedColumnCount,
-			IndexesCount: 0,
+			// The by-name runtime endpoint does not expose these fields; emit null (not a default) so a machine
+			// consumer can distinguish "unavailable in merged mode" from a genuine value. Supply a package to read them.
+			IndexesCount: null,
 			TrackChangesInDb: runtimeSchema.IsTrackChangesInDB,
 			DbView: runtimeSchema.IsDBView,
-			SspAvailable: false,
+			SspAvailable: null,
 			Virtual: runtimeSchema.IsVirtual,
-			UseRecordDeactivation: false,
+			UseRecordDeactivation: null,
 			ShowInAdvancedMode: runtimeSchema.ShowInAdvancedMode,
 			AdministratedByOperations: runtimeSchema.AdministratedByOperations,
 			AdministratedByColumns: runtimeSchema.AdministratedByColumns,
 			AdministratedByRecords: runtimeSchema.AdministratedByRecords,
-			UseDenyRecordRights: false,
-			UseLiveEditing: false,
+			UseDenyRecordRights: null,
+			UseLiveEditing: null,
 			Columns: columns);
 	}
 
@@ -274,10 +280,20 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Reads the runtime schema for the merged view, translating low-level reader failures into the domain
 	/// <see cref="EntitySchemaDesignerException"/> so both read paths surface a uniform exception type.
 	/// </summary>
+	/// <remarks>
+	/// The reader reaches <see cref="IApplicationClient"/> and <c>JsonSerializer</c>, so beyond the
+	/// <see cref="InvalidOperationException"/> it raises for an unsuccessful/HTML response it can surface transport
+	/// and parse faults (<see cref="HttpRequestException"/>, <see cref="TaskCanceledException"/>,
+	/// <see cref="JsonException"/>). The MCP <c>get-entity-schema-properties</c> tool calls this path directly
+	/// without the <c>BaseTool</c> catch-all, so all realistic failure types are normalized here.
+	/// </remarks>
 	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName) {
 		try {
 			return _runtimeEntitySchemaReader.GetByName(schemaName);
-		} catch (InvalidOperationException exception) {
+		} catch (Exception exception) when (exception is InvalidOperationException
+			or HttpRequestException
+			or JsonException
+			or TaskCanceledException) {
 			throw new EntitySchemaDesignerException(exception.Message, exception);
 		}
 	}
@@ -308,7 +324,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Primary display column: {FormatText(schema.PrimaryDisplayColumnName)}");
 		WriteInfo($"Own columns: {schema.OwnColumnCount}");
 		WriteInfo($"Inherited columns: {schema.InheritedColumnCount}");
-		WriteInfo($"Indexes: {schema.IndexesCount}");
+		WriteInfo($"Indexes: {FormatNullableCount(schema.IndexesCount)}");
 		WriteInfo($"Track changes in DB: {FormatBoolean(schema.TrackChangesInDb)}");
 		WriteInfo($"DB view: {FormatBoolean(schema.DbView)}");
 		WriteInfo($"SSP available: {FormatBoolean(schema.SspAvailable)}");
@@ -866,6 +882,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
+	}
+
+	private static string FormatNullableCount(int? value) {
+		return value.HasValue ? value.Value.ToString() : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

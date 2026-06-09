@@ -29,8 +29,8 @@ There are two modes, selected by the presence of `--package`:
   sourced from the runtime schema. Most schema-level metadata (title, extend
   parent, db view, track changes, virtual, show in advanced mode, the
   administration flags) and every column's `indexed` flag are authoritative in
-  this mode; a few fields are not exposed by the by-name runtime endpoint and
-  default to null/0/false (see Notes).
+  this mode; a few fields are not exposed by the by-name runtime endpoint and are
+  reported as `null` so absence is machine-distinguishable (see Notes).
 - **Single package layer (`--package` supplied)** — returns only that package
   layer's slice plus **every** schema-level field (parent schema name, indexes,
   SSP availability, and the other schema flags).
@@ -78,9 +78,11 @@ from the schema summary object
 - in the merged (no `--package`) view, the `package-name` field reports
   `(merged: all packages)`. Most schema-level metadata and every column's
   `indexed` flag are authoritative, but the following fields are not exposed by
-  the by-name runtime endpoint and default to null/0/false in this mode:
-  `parent-schema-name`, `indexes-count`, `ssp-available`,
-  `use-record-deactivation`, `use-deny-record-rights`, and `use-live-editing`.
+  the by-name runtime endpoint and are emitted as `null` in this mode (so a
+  programmatic consumer can distinguish "unavailable" from a genuine value rather
+  than reading a misleading `false`/`0`): `parent-schema-name`, `indexes-count`,
+  `ssp-available`, `use-record-deactivation`, `use-deny-record-rights`, and
+  `use-live-editing`.
   Supply `--package` to read those authoritative values from a single package layer
 
 ## Reporting Bugs

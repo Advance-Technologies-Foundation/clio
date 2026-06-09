@@ -52,8 +52,9 @@ NOTES
     - the merged (no --package) view sources columns AND most schema-level metadata from
       the runtime schema (title, extend parent, db view, track changes, virtual, show in
       advanced mode, the administration flags, and every column's indexed flag are all
-      authoritative). A few fields are not exposed by the by-name runtime endpoint and
-      default to null/0/false in this mode: parent schema name, indexes count, SSP
+      authoritative). A few fields are not exposed by the by-name runtime endpoint and are
+      reported as null in this mode (so a machine consumer can tell "unavailable" apart from
+      a real value, and the CLI prints <unknown>): parent schema name, indexes count, SSP
       availability, use record deactivation, use deny record rights, and use live editing.
       Supply --package to read those authoritative values from a single package layer
 

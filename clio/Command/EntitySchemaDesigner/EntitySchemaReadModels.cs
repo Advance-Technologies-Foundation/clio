@@ -23,11 +23,11 @@ public sealed record EntitySchemaPropertyColumnInfo(
 /// </summary>
 /// <remarks>
 /// In the merged/effective view (returned when no package is supplied) a few schema-level fields are not exposed
-/// by the by-name runtime endpoint and are therefore reported as their defaults rather than authoritative values:
-/// <c>parent-schema-name</c> (null), <c>indexes-count</c> (0), <c>ssp-available</c>, <c>use-record-deactivation</c>,
-/// <c>use-deny-record-rights</c> and <c>use-live-editing</c> (false). Supply a package to read those values from a
-/// single package layer. All other fields, including every column's <c>indexed</c> flag, are authoritative in both
-/// modes.
+/// by the by-name runtime endpoint and are therefore reported as <c>null</c> so a machine consumer can distinguish
+/// "not available in this mode" from a genuine value: <c>parent-schema-name</c>, <c>indexes-count</c>,
+/// <c>ssp-available</c>, <c>use-record-deactivation</c>, <c>use-deny-record-rights</c> and <c>use-live-editing</c>.
+/// Supply a package to read those values authoritatively from a single package layer (in which mode they are always
+/// non-null). All other fields, including every column's <c>indexed</c> flag, are authoritative in both modes.
 /// </remarks>
 public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("name")] string Name,
@@ -40,18 +40,18 @@ public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("primary-display-column-name")] string? PrimaryDisplayColumnName,
 	[property: JsonPropertyName("own-column-count")] int OwnColumnCount,
 	[property: JsonPropertyName("inherited-column-count")] int InheritedColumnCount,
-	[property: JsonPropertyName("indexes-count")] int IndexesCount,
+	[property: JsonPropertyName("indexes-count")] int? IndexesCount,
 	[property: JsonPropertyName("track-changes-in-db")] bool TrackChangesInDb,
 	[property: JsonPropertyName("db-view")] bool DbView,
-	[property: JsonPropertyName("ssp-available")] bool SspAvailable,
+	[property: JsonPropertyName("ssp-available")] bool? SspAvailable,
 	[property: JsonPropertyName("virtual")] bool Virtual,
-	[property: JsonPropertyName("use-record-deactivation")] bool UseRecordDeactivation,
+	[property: JsonPropertyName("use-record-deactivation")] bool? UseRecordDeactivation,
 	[property: JsonPropertyName("show-in-advanced-mode")] bool ShowInAdvancedMode,
 	[property: JsonPropertyName("administrated-by-operations")] bool AdministratedByOperations,
 	[property: JsonPropertyName("administrated-by-columns")] bool AdministratedByColumns,
 	[property: JsonPropertyName("administrated-by-records")] bool AdministratedByRecords,
-	[property: JsonPropertyName("use-deny-record-rights")] bool UseDenyRecordRights,
-	[property: JsonPropertyName("use-live-editing")] bool UseLiveEditing,
+	[property: JsonPropertyName("use-deny-record-rights")] bool? UseDenyRecordRights,
+	[property: JsonPropertyName("use-live-editing")] bool? UseLiveEditing,
 	[property: JsonPropertyName("columns")] IReadOnlyList<EntitySchemaPropertyColumnInfo>? Columns = null);
 
 /// <summary>

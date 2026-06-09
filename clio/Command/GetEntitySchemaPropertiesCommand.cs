@@ -84,7 +84,7 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 		_logger.WriteInfo($"Primary display column: {FormatText(properties.PrimaryDisplayColumnName)}");
 		_logger.WriteInfo($"Own columns: {properties.OwnColumnCount}");
 		_logger.WriteInfo($"Inherited columns: {properties.InheritedColumnCount}");
-		_logger.WriteInfo($"Indexes: {properties.IndexesCount}");
+		_logger.WriteInfo($"Indexes: {FormatNullableCount(properties.IndexesCount)}");
 		_logger.WriteInfo($"Track changes in DB: {FormatBoolean(properties.TrackChangesInDb)}");
 		_logger.WriteInfo($"DB view: {FormatBoolean(properties.DbView)}");
 		_logger.WriteInfo($"SSP available: {FormatBoolean(properties.SspAvailable)}");
@@ -119,6 +119,14 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
+	}
+
+	private static string FormatNullableCount(int? value) {
+		return value.HasValue ? value.Value.ToString() : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

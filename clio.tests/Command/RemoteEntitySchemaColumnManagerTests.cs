@@ -683,8 +683,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Reports default values for the schema-level fields the by-name runtime endpoint does not expose in the merged view.")]
-	public void GetSchemaProperties_ReportsDefaultsForUnavailableFields_WhenPackageIsOmitted() {
+	[Description("Reports null for the schema-level fields the by-name runtime endpoint does not expose, so a consumer can distinguish unavailable from a genuine value in the merged view.")]
+	public void GetSchemaProperties_ReportsNullForUnavailableFields_WhenPackageIsOmitted() {
 		// Arrange
 		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
 
@@ -696,16 +696,69 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		result.ParentSchemaName.Should().BeNull(
 			because: "the by-name runtime endpoint exposes only the parent UId, so the parent name stays unresolved in the merged view");
-		result.IndexesCount.Should().Be(0,
-			because: "the by-name runtime endpoint does not return the index collection, so the count defaults to zero");
-		result.SspAvailable.Should().BeFalse(
-			because: "ssp-available is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
-		result.UseRecordDeactivation.Should().BeFalse(
-			because: "use-record-deactivation is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
-		result.UseDenyRecordRights.Should().BeFalse(
-			because: "use-deny-record-rights is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
-		result.UseLiveEditing.Should().BeFalse(
-			because: "use-live-editing is not exposed by the by-name runtime endpoint and defaults to false in the merged view");
+		result.IndexesCount.Should().BeNull(
+			because: "the by-name runtime endpoint does not return the index collection, so the count is null (unavailable) rather than a misleading zero");
+		result.SspAvailable.Should().BeNull(
+			because: "ssp-available is not exposed by the by-name runtime endpoint, so it must be null to avoid a false negative against the single-package read");
+		result.UseRecordDeactivation.Should().BeNull(
+			because: "use-record-deactivation is not exposed by the by-name runtime endpoint, so it must be null rather than a plausible false");
+		result.UseDenyRecordRights.Should().BeNull(
+			because: "use-deny-record-rights is not exposed by the by-name runtime endpoint, so it must be null rather than a plausible false");
+		result.UseLiveEditing.Should().BeNull(
+			because: "use-live-editing is not exposed by the by-name runtime endpoint, so it must be null rather than a plausible false");
+	}
+
+	[Test]
+	[Description("Leaves the primary column name null in the merged view when the runtime primary column UId matches no returned column.")]
+	public void GetSchemaProperties_LeavesPrimaryColumnNameNull_WhenPrimaryColumnUIdMatchesNoColumn() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
+			UId: AccountSchemaUId,
+			Name: "Account",
+			PrimaryColumnUId: Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+			PrimaryDisplayColumnName: null,
+			PrimaryDisplayColumnUId: null,
+			Columns: [
+				new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+					MergedNameColumnUId, "Name", "Name", null, 1, true, false, null, IsIndexed: true)
+			]));
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.PrimaryColumnName.Should().BeNull(
+			because: "an unresolved primary column UId must surface as a null name rather than throw on the FirstOrDefault lookup");
+		result.Columns.Should().ContainSingle(column => column.Name == "Name",
+			because: "the rest of the merged projection must still be returned when the primary column cannot be resolved");
+	}
+
+	[Test]
+	[Description("Returns zero own and inherited counts and an empty column list when the runtime schema has no columns.")]
+	public void GetSchemaProperties_ReturnsEmptyCounts_WhenRuntimeSchemaHasNoColumns() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(new Clio.Common.EntitySchema.RuntimeEntitySchemaResult(
+			UId: AccountSchemaUId,
+			Name: "Account",
+			PrimaryColumnUId: Guid.Empty,
+			PrimaryDisplayColumnName: null,
+			PrimaryDisplayColumnUId: null,
+			Columns: []));
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.Columns.Should().BeEmpty(
+			because: "an empty runtime column set must project to an empty column list, not throw");
+		result.OwnColumnCount.Should().Be(0,
+			because: "the own/inherited counting boundary must hold at zero columns");
+		result.InheritedColumnCount.Should().Be(0,
+			because: "the own/inherited counting boundary must hold at zero columns");
 	}
 
 	[TestCase(null, TestName = "GetSchemaProperties_RoutesToMergedRead_WhenPackageIsNull")]
@@ -759,6 +812,33 @@ internal class RemoteEntitySchemaColumnManagerTests
 				because: "low-level runtime reader failures must be translated to the domain exception used by the single-package path")
 			.WithMessage("*was not returned by Creatio*",
 				because: "the original failure message must be preserved for diagnostics");
+	}
+
+	private static IEnumerable<TestCaseData> RuntimeReaderTransportFailures() {
+		yield return new TestCaseData(new System.Net.Http.HttpRequestException("network blip")).SetName(
+			"GetSchemaProperties_TranslatesHttpRequestException_WhenPackageIsOmitted");
+		yield return new TestCaseData(new System.Text.Json.JsonException("unexpected HTML error page")).SetName(
+			"GetSchemaProperties_TranslatesJsonException_WhenPackageIsOmitted");
+		yield return new TestCaseData(new System.Threading.Tasks.TaskCanceledException("request timed out")).SetName(
+			"GetSchemaProperties_TranslatesTaskCanceledException_WhenPackageIsOmitted");
+	}
+
+	[TestCaseSource(nameof(RuntimeReaderTransportFailures))]
+	[Description("Translates realistic transport/parse failures from the runtime reader into the domain exception, because the MCP merged-read path does not have the BaseTool catch-all to normalize raw faults.")]
+	public void GetSchemaProperties_TranslatesTransportAndParseFailures_WhenPackageIsOmitted(Exception readerFailure) {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(_ => throw readerFailure);
+
+		// Act
+		Action act = () => _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "transport and parse faults must reach the MCP surface as a normalized domain exception, not an unstructured fault")
+			.WithInnerException(readerFailure.GetType(),
+				because: "the original failure must be preserved as the inner exception for diagnostics");
 	}
 
 	[Test]

@@ -357,9 +357,10 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "Supply 'package-name' only to inspect a single package layer's slice. "
 		+ "IMPORTANT: an empty column list from a single-package read does NOT prove a column is absent; "
 		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package. "
-		+ "Note: in the merged view a few schema-level fields are not populated and default to null/0/false "
-		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, "
-		+ "use-live-editing); supply 'package-name' to read those authoritative values.")]
+		+ "Note: in the merged view a few schema-level fields are not exposed by the runtime endpoint and are "
+		+ "returned as null (NOT false/0), so null means 'unavailable in merged mode' rather than a real value: "
+		+ "parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, "
+		+ "use-live-editing; supply 'package-name' to read those authoritative values.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
 		[Description("Parameters: environment-name, schema-name (required); package-name (optional — omit for the "
 			+ "merged all-packages view, supply for a single package layer)")] [Required] GetEntitySchemaPropertiesArgs args) {
