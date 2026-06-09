@@ -10,7 +10,26 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 public static class ComponentInfoResolution {
 	public const string ResolvedFromEnvironment = "environment";
+	public const string ResolvedFromEnvironmentSuperset = "environment-superset";
 	public const string ResolvedFromLatestFallback = "latest-fallback";
+
+	/// <summary>
+	/// Soft caveat surfaced on every <c>environment-superset</c> response: the platform
+	/// version was known (probe-success or explicit <c>--version</c>), but the exact
+	/// per-version catalog was not published on the CDN, so <c>latest</c> was served as the
+	/// closest available. Unlike <see cref="LatestFallbackWarning"/>, no hard stop is
+	/// required — the version is known, so the agent is not blind. However, <c>latest</c>
+	/// is a superset: a component it lists may not exist in an older GA target environment,
+	/// so the agent should flag the approximation and verify critical types before committing
+	/// to an implementation plan.
+	/// </summary>
+	public const string EnvironmentSupersetWarning =
+		"The catalog for the requested platform version was not published on the CDN; "
+		+ "'latest' was served as the closest available. "
+		+ "This catalog is a superset and may include components not yet present in the target "
+		+ "environment's actual platform version. "
+		+ "Verify critical component types against the target environment before generating an "
+		+ "implementation plan, or pass an explicit version to scope the catalog precisely.";
 
 	/// <summary>
 	/// Warning surfaced on every <c>latest-fallback</c> response so the caller does not
@@ -36,32 +55,45 @@ public static class ComponentInfoResolution {
 		+ "ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).";
 
 	/// <summary>
-	/// Returns the <see cref="LatestFallbackWarning"/> when <paramref name="resolvedFrom"/> is the
-	/// <c>latest-fallback</c> tier, otherwise <c>null</c>. Centralised so the MCP tool, the CLI verb,
-	/// and the pretty renderer all gate the warning on the exact same condition.
+	/// Returns the appropriate caveat for the given <paramref name="resolvedFrom"/> tier, or <c>null</c>
+	/// when no caveat is needed. Centralised so the MCP tool, the CLI verb, and the pretty renderer all
+	/// gate the warning on the exact same condition.
+	/// <list type="bullet">
+	/// <item><c>latest-fallback</c> → <see cref="LatestFallbackWarning"/> (hard stop: version unknown)</item>
+	/// <item><c>environment-superset</c> → <see cref="EnvironmentSupersetWarning"/> (soft caveat: version known, catalog approximate)</item>
+	/// <item><c>environment</c> → <c>null</c> (exact match, no caveat)</item>
+	/// </list>
 	/// </summary>
 	public static string? GetVersionWarning(string? resolvedFrom) =>
 		string.Equals(resolvedFrom, ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase)
 			? LatestFallbackWarning
-			: null;
+			: string.Equals(resolvedFrom, ResolvedFromEnvironmentSuperset, StringComparison.OrdinalIgnoreCase)
+				? EnvironmentSupersetWarning
+				: null;
 
 	/// <summary>
-	/// Reports <c>"environment"</c> whenever the platform version is KNOWN — either the caller
-	/// passed an explicit <c>--version</c> or the environment probe succeeded. In that case the
-	/// agent is not uncertain about the version, so no version warning is emitted, even if the
-	/// exact per-version catalog was not published and the client served the <c>latest</c>
-	/// catalog as the closest available (e.g. a current in-development platform version such as
-	/// <c>10.x</c> for which only GA catalogs exist). <c>"latest-fallback"</c> is reserved for the
-	/// case where the version could NOT be determined (probe failure, no active environment, or an
-	/// unparseable CoreVersion) — only then does the agent face a blind superset and get the
-	/// hard-stop <see cref="LatestFallbackWarning"/>.
+	/// Maps the resolution state to one of three tiers:
+	/// <list type="bullet">
+	/// <item><c>"environment"</c> — version was known (probe-success or explicit <c>--version</c>)
+	/// AND the catalog loaded that exact version. The catalog is authoritative; no caveat needed.</item>
+	/// <item><c>"environment-superset"</c> — version was known but the exact per-version catalog
+	/// was not published; <c>latest</c> was served as the closest available. The version is not a
+	/// mystery, but the catalog may include components absent from an older GA target environment.
+	/// A soft <see cref="EnvironmentSupersetWarning"/> is emitted so the agent flags the approximation.</item>
+	/// <item><c>"latest-fallback"</c> — version could NOT be determined (probe failure, no active
+	/// environment, or an unparseable CoreVersion). The agent faces a blind superset and receives the
+	/// hard-stop <see cref="LatestFallbackWarning"/>.</item>
+	/// </list>
 	/// </summary>
 	public static string MapResolvedFrom(
 		VersionResolutionSource source,
 		string requestedVersion,
 		string actualResolvedVersion) {
-		return source == VersionResolutionSource.Environment
+		if (source != VersionResolutionSource.Environment) {
+			return ResolvedFromLatestFallback;
+		}
+		return string.Equals(actualResolvedVersion, requestedVersion, StringComparison.OrdinalIgnoreCase)
 			? ResolvedFromEnvironment
-			: ResolvedFromLatestFallback;
+			: ResolvedFromEnvironmentSuperset;
 	}
 }

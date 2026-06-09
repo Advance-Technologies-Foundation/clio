@@ -471,11 +471,10 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("When the platform version is KNOWN but its exact catalog is not published, the client serves 'latest' yet the response still reports 'environment' with no version warning — the agent is not uncertain about the version (ENG-91134).")]
-	public async Task ComponentInfoTool_Should_Report_Environment_When_Version_Known_But_Catalog_Falls_Back() {
+	[Description("When the platform version is KNOWN but its exact catalog is not published, the response reports 'environment-superset' with a soft caveat — the version is not a mystery but the catalog may be wider than the target.")]
+	public async Task ComponentInfoTool_Should_Report_EnvironmentSuperset_When_Version_Known_But_Catalog_Falls_Back() {
 		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
-		// back to "latest" because 8.1.5 is not yet published on the CDN. The version is KNOWN,
-		// so there is no version uncertainty to warn about.
+		// back to "latest" because 8.1.5 is not yet published on the CDN.
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
 		ComponentInfoCatalog catalog = new(client);
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
@@ -489,10 +488,10 @@ public sealed class ComponentInfoToolTests {
 			because: "the catalog still loads through the fallback chain");
 		response.ResolvedTargetVersion.Should().Be("latest",
 			because: "the response must echo the catalog version actually loaded by the client");
-		response.ResolvedFrom.Should().Be("environment",
-			because: "the platform version was determined from the environment, so the agent is not uncertain about it");
-		response.VersionWarning.Should().BeNull(
-			because: "a known platform version carries no version uncertainty, so no warning is emitted even when the exact catalog is unavailable");
+		response.ResolvedFrom.Should().Be("environment-superset",
+			because: "the platform version was known but the exact catalog was absent — the 'environment-superset' tier signals a known-version approximation rather than blind-latest");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "'latest' is a superset of older GA versions and the soft caveat must be surfaced so the agent checks critical components against the actual environment");
 	}
 
 	[Test]
