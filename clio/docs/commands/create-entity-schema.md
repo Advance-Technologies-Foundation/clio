@@ -13,6 +13,10 @@ clio create-entity-schema [options]
 
 Create an entity schema in a remote Creatio package.
 
+The command saves the schema, applies the DB structure, and publishes the
+configuration, so the new schema is immediately visible to lookup pickers and
+sys-setting reference schema lists. No separate compile is required.
+
 ## Examples
 
 ```bash

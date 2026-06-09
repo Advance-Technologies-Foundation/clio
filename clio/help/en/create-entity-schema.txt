@@ -12,8 +12,10 @@ DESCRIPTION
     EntitySchemaDesignerService.
 
     The command creates a draft schema on the server, optionally assigns a
-    parent schema, applies the requested name, title, and initial columns, and
-    then saves the result.
+    parent schema, applies the requested name, title, and initial columns,
+    saves the result, applies the DB structure, and publishes the
+    configuration so the new schema is immediately visible to lookup pickers
+    and sys-setting reference schema lists. No separate compile is required.
 
     Current clio entity-schema commands are part of the canonical clio MCP
     contract. Keep using create-entity-schema / modify-entity-schema-column
@@ -97,6 +99,9 @@ NOTES
       validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
+    - After save, the configuration is published automatically; if publication
+      fails, the schema stays saved but invisible to lookup pickers and
+      sys-setting reference lists until the configuration is compiled
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

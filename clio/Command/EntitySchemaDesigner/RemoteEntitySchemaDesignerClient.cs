@@ -19,6 +19,16 @@ internal interface IRemoteEntitySchemaDesignerClient
 	DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
+
+	/// <summary>
+	/// Publishes pending configuration changes so saved entity schemas become visible to designer
+	/// surfaces (lookup pickers, sys-setting reference schema lists). Mirrors the platform designer UI:
+	/// sends a <c>SchemaDesignerRequest</c> with <c>buildWorkspace</c> and <c>buildChangedConfiguration</c>
+	/// flags, and the server picks the publication strategy for its runtime generation — a full workspace
+	/// build on legacy instances or an incremental configuration build plus an
+	/// <c>EntitySchemaManager</c> refresh on modern ones.
+	/// </summary>
+	BaseResponse PublishConfigurationChanges(RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
@@ -99,6 +109,17 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			},
 			options,
 			"SaveSchemaDbStructure");
+	}
+
+	public BaseResponse PublishConfigurationChanges(RemoteCommandOptions options) {
+		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
+			new SchemaDesignerRequestDto {
+				BuildWorkspace = true,
+				BuildChangedConfiguration = true
+			},
+			options,
+			"PublishConfigurationChanges");
 	}
 
 	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {

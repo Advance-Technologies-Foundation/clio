@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -489,6 +491,25 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return fallbackName;
 	}
 
+	private void PublishSchema(CreateEntitySchemaOptions options) {
+		// Saving + DDL alone leave the schema invisible to lookup pickers and sys-setting reference
+		// lists: those surfaces read the web app's runtime EntitySchemaManager, which only picks the
+		// schema up after the configuration is built (ENG-90403).
+		Stopwatch stopwatch = Stopwatch.StartNew();
+		try {
+			_entitySchemaDesignerClient.PublishConfigurationChanges(options);
+		} catch (Exception exception) {
+			throw new InvalidOperationException(
+				$"Schema '{options.SchemaName}' was created and saved, but publishing the configuration failed: " +
+				$"{exception.Message} Until the configuration is built (for example via compile-creatio), the schema " +
+				"stays invisible to lookup pickers and sys-setting reference schema lists.",
+				exception);
+		}
+		stopwatch.Stop();
+		_logger.WriteInfo(
+			$"Schema '{options.SchemaName}' published in {stopwatch.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s.");
+	}
+
 	private PackageInfo ResolvePackage(string packageName) {
 		PackageInfo package = _applicationPackageListProvider
 							  .GetPackages()
@@ -533,6 +554,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				$"Schema '{options.SchemaName}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
+		PublishSchema(options);
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
 			options);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {

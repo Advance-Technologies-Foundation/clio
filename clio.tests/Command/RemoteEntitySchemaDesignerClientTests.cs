@@ -95,6 +95,37 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Posts buildWorkspace and buildChangedConfiguration flags to SchemaDesignerRequest so saved schemas get published on every runtime generation (ENG-90403).")]
+	public void PublishConfigurationChanges_PostsBuildFlagsToSchemaDesignerRequest() {
+		// Arrange
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest)
+			.Returns("http://local/DataService/json/SyncReply/SchemaDesignerRequest");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true}");
+
+		// Act
+		BaseResponse response = _client.PublishConfigurationChanges(new RemoteCommandOptions());
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a successful publish response must surface to the caller");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/DataService/json/SyncReply/SchemaDesignerRequest",
+			Arg.Is<string>(body => ContainsJsonFlag(body, "buildWorkspace")
+				&& ContainsJsonFlag(body, "buildChangedConfiguration")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	private static bool ContainsJsonFlag(string body, string flagName) {
+		string normalizedBody = body.Replace(" ", string.Empty)
+			.Replace("\r", string.Empty)
+			.Replace("\n", string.Empty);
+		return normalizedBody.Contains($"\"{flagName}\":true", StringComparison.Ordinal);
+	}
+
+	[Test]
 	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
 	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
 		// Arrange
