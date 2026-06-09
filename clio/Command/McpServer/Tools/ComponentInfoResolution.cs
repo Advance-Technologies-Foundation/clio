@@ -46,18 +46,22 @@ public static class ComponentInfoResolution {
 			: null;
 
 	/// <summary>
-	/// Reports <c>"environment"</c> only when the caller asked for a specific platform version
-	/// (probe-success or explicit <c>--version</c>) AND the catalog actually loaded that exact
-	/// version. Any fallback (CDN 404 → latest, CDN down → embedded, probe failure, default
-	/// path with no explicit request) surfaces as <c>"latest-fallback"</c>.
+	/// Reports <c>"environment"</c> whenever the platform version is KNOWN — either the caller
+	/// passed an explicit <c>--version</c> or the environment probe succeeded. In that case the
+	/// agent is not uncertain about the version, so no version warning is emitted, even if the
+	/// exact per-version catalog was not published and the client served the <c>latest</c>
+	/// catalog as the closest available (e.g. a current in-development platform version such as
+	/// <c>10.x</c> for which only GA catalogs exist). <c>"latest-fallback"</c> is reserved for the
+	/// case where the version could NOT be determined (probe failure, no active environment, or an
+	/// unparseable CoreVersion) — only then does the agent face a blind superset and get the
+	/// hard-stop <see cref="LatestFallbackWarning"/>.
 	/// </summary>
 	public static string MapResolvedFrom(
 		VersionResolutionSource source,
 		string requestedVersion,
 		string actualResolvedVersion) {
 		return source == VersionResolutionSource.Environment
-			&& string.Equals(actualResolvedVersion, requestedVersion, StringComparison.OrdinalIgnoreCase)
-				? ResolvedFromEnvironment
-				: ResolvedFromLatestFallback;
+			? ResolvedFromEnvironment
+			: ResolvedFromLatestFallback;
 	}
 }

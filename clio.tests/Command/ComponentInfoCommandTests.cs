@@ -105,8 +105,8 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
-	[Description("When the catalog returns a different version than what was requested the response says latest-fallback.")]
-	public async Task Reports_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the requested version is known but its exact catalog is unavailable, the client serves 'latest' yet the response still reports 'environment' — a known version carries no uncertainty (ENG-91134).")]
+	public async Task Reports_Environment_When_Version_Known_But_Catalog_Falls_Back() {
 		using CapturedLogger logger = new();
 		ComponentInfoCommand command = CreateCommand(logger, fallbackVersion: "latest");
 
@@ -116,7 +116,8 @@ public sealed class ComponentInfoCommandTests {
 		exit.Should().Be(0);
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
 		parsed.ResolvedTargetVersion.Should().Be("latest");
-		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromLatestFallback);
+		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironment);
+		parsed.VersionWarning.Should().BeNull();
 	}
 
 	[Test]

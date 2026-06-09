@@ -471,10 +471,11 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("When the registry client falls back to a different version, the response reports latest-fallback even if the resolver succeeded.")]
-	public async Task ComponentInfoTool_Should_Report_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the platform version is KNOWN but its exact catalog is not published, the client serves 'latest' yet the response still reports 'environment' with no version warning — the agent is not uncertain about the version (ENG-91134).")]
+	public async Task ComponentInfoTool_Should_Report_Environment_When_Version_Known_But_Catalog_Falls_Back() {
 		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
-		// back to "latest" because 8.1.5 is not yet published on the CDN.
+		// back to "latest" because 8.1.5 is not yet published on the CDN. The version is KNOWN,
+		// so there is no version uncertainty to warn about.
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
 		ComponentInfoCatalog catalog = new(client);
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
@@ -487,9 +488,11 @@ public sealed class ComponentInfoToolTests {
 		response.Success.Should().BeTrue(
 			because: "the catalog still loads through the fallback chain");
 		response.ResolvedTargetVersion.Should().Be("latest",
-			because: "the response must echo the version actually loaded by the client, not the requested one");
-		response.ResolvedFrom.Should().Be("latest-fallback",
-			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+			because: "the response must echo the catalog version actually loaded by the client");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "the platform version was determined from the environment, so the agent is not uncertain about it");
+		response.VersionWarning.Should().BeNull(
+			because: "a known platform version carries no version uncertainty, so no warning is emitted even when the exact catalog is unavailable");
 	}
 
 	[Test]
