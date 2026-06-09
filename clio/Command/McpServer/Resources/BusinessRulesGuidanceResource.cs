@@ -45,10 +45,12 @@ public sealed class BusinessRulesGuidanceResource {
 		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
 		       - When a requirement describes state that must switch in both directions, create an explicit inverse business rule for the opposite condition and corresponding opposite action.
 
-		       Role-based and current-user visibility is a business rule, not a handler
-		       - A condition operand can be a system variable (SysValue), on EITHER side, in any pairing with attributes and constants. This makes "show/hide/enable/require a field only for a role or a specific user" a declarative business rule — do NOT write a HandleViewModelInitRequest handler (or rely on column access rights just to hide a control) for it.
-		       - Role gate: compare CurrentUserRoles (the current user's roles) to a role with comparisonType contain / not-contain. Current-user gate: compare CurrentUser / CurrentUserContact / CurrentUserAccount to a specific record.
-		       - For the exact sysValueName list, the contain/not-contain comparisons, and the type/reference-schema rules, call get-tool-contract (the rule field and condition validators carry the full contract). Remember rules are one-way: add the inverse rule when visibility must toggle in both directions.
+		       Conditions on the current user, roles, or date/time (system variables)
+		       - A condition operand can be a system variable (SysValue), on EITHER side, in any pairing with attributes and constants: the current user (CurrentUser / CurrentUserContact / CurrentUserAccount), the user's roles (CurrentUserRoles, compared with contain / not-contain), or the current date/time (CurrentDate / CurrentTime / CurrentDateTime).
+		       - Such a condition gates ANY business-rule action — show/hide, make-editable/read-only/required/optional, set-values, apply-filter — in both entity-level and page-level rules. It is the condition that uses the system variable; the action is unchanged.
+		       - Because the role/current-user check lives in the condition, "do X only for a role or a specific user" (e.g. show/hide/require a field for administrators or for the supervisor) is a declarative business rule. Do NOT write a HandleViewModelInitRequest handler (or rely on column access rights just to hide a control) for it.
+		       - System variables are condition operands only; to assign the current user/date to a field, that is a separate concern (set-values does not take a system-variable source in this scope).
+		       - For the exact sysValueName list, the contain/not-contain comparisons, and the type/reference-schema rules, call get-tool-contract (the rule field and condition validators carry the full contract). Remember rules are one-way: add the inverse rule when a state must toggle in both directions.
 
 		       Two levels of business rules
 
