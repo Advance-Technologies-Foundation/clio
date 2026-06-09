@@ -275,6 +275,7 @@ internal static class ToolContractCatalog {
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
+	private const string WithMobilePagesFieldName = "with-mobile-pages";
 
 		private static readonly ToolErrorContract CommonErrorContract = new([
 			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -659,7 +660,7 @@ internal static class ToolContractCatalog {
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
 					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration."),
-					Field("with-mobile-pages", BooleanType, "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Set false for a web-only application.")
+					Field(WithMobilePagesFieldName, BooleanType, "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Set false for a web-only application.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -705,7 +706,7 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells."),
-				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
+				Default(WithMobilePagesFieldName, "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
 			],
 			[
 				Example("Create a new Freedom UI application with the minimal top-level payload", new Dictionary<string, object?> {
@@ -751,7 +752,7 @@ internal static class ToolContractCatalog {
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
 					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity."),
-					Field("with-mobile-pages", BooleanType, "Create mobile pages in addition to web pages.")
+					Field(WithMobilePagesFieldName, BooleanType, "Create mobile pages in addition to web pages.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -794,7 +795,7 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "entity-schema-name", "use-existing-entity-schema", RejectedStatus, "Use 'entity-schema-name' alone to reuse an existing entity; the boolean flag is not supported.")
 			],
 			[
-				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
+				Default(WithMobilePagesFieldName, "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
 			],
 			[
 				Example("Create a new-object section in an existing app", new Dictionary<string, object?> {
@@ -808,7 +809,7 @@ internal static class ToolContractCatalog {
 					[ApplicationCodeFieldName] = ExamplePackageName,
 					[CaptionFieldName] = "Task statuses",
 					["entity-schema-name"] = ExampleTaskStatusSchemaName,
-					["with-mobile-pages"] = true
+					[WithMobilePagesFieldName] = true
 				})
 			],
 			Flow(
