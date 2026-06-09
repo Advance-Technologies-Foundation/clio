@@ -64,12 +64,15 @@ public static class ComponentInfoResolution {
 	/// <item><c>environment</c> → <c>null</c> (exact match, no caveat)</item>
 	/// </list>
 	/// </summary>
-	public static string? GetVersionWarning(string? resolvedFrom) =>
-		string.Equals(resolvedFrom, ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase)
-			? LatestFallbackWarning
-			: string.Equals(resolvedFrom, ResolvedFromEnvironmentSuperset, StringComparison.OrdinalIgnoreCase)
-				? EnvironmentSupersetWarning
-				: null;
+	public static string? GetVersionWarning(string? resolvedFrom) {
+		if (string.Equals(resolvedFrom, ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase)) {
+			return LatestFallbackWarning;
+		}
+		if (string.Equals(resolvedFrom, ResolvedFromEnvironmentSuperset, StringComparison.OrdinalIgnoreCase)) {
+			return EnvironmentSupersetWarning;
+		}
+		return null;
+	}
 
 	/// <summary>
 	/// Maps the resolution state to one of three tiers:
