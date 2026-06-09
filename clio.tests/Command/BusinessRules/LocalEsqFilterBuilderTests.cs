@@ -686,6 +686,135 @@ public sealed class LocalEsqFilterBuilderTests {
 		act.Should().Throw<ArgumentException>().WithMessage("*cannot be used as a filter value*");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a DatePart HourMinute CompareFilter for an exact time-of-day comparison (created at 11:06 AM) on a DateTime column.")]
+	public void Build_Should_Emit_DatePart_HourMinute_For_TimeOfDay() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "HourMinute", "value": "11:06:00" } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("filterType").GetInt32().Should().Be(1, because: "a DatePart leaf is a CompareFilter");
+		filter0.GetProperty("comparisonType").GetInt32().Should().Be(3, because: "EQUAL maps to 3");
+		filter0.GetProperty("trimDateTimeParameterToDate").GetBoolean().Should().BeTrue(
+			because: "the verified platform HourMinute sample carries trimDateTimeParameterToDate=true");
+		filter0.GetProperty("dataValueType").GetInt32().Should().Be(7, because: "the source DateTime column code is 7");
+
+		JsonElement left = filter0.GetProperty("leftExpression");
+		left.GetProperty("expressionType").GetInt32().Should().Be(1, because: "ExpressionType.Function is 1");
+		left.GetProperty("functionType").GetInt32().Should().Be(3, because: "FunctionType.DatePart is 3");
+		left.GetProperty("datePartType").GetInt32().Should().Be(7, because: "DatePartType.HourMinute is 7");
+		left.GetProperty("functionArgument").GetProperty("columnPath").GetString().Should().Be("CreatedOn");
+		left.GetProperty("className").GetString().Should().Be("Terrasoft.FunctionExpression");
+
+		JsonElement param = filter0.GetProperty("rightExpression").GetProperty("parameter");
+		param.GetProperty("dataValueType").GetInt32().Should().Be(9, because: "a time-of-day value is Time (9)");
+		param.GetProperty("value").GetString().Should().Be("11:06:00");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits a DatePart Year CompareFilter comparing the extracted year to an Integer (calendar year 2021).")]
+	public void Build_Should_Emit_DatePart_Year_For_CalendarYear() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "Year", "value": 2021 } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
+
+		filter0.GetProperty("leftExpression").GetProperty("datePartType").GetInt32().Should().Be(4,
+			because: "DatePartType.Year is 4");
+		filter0.TryGetProperty("trimDateTimeParameterToDate", out _).Should().BeFalse(
+			because: "integer date-part comparisons mirror the documented year example, which omits trim");
+		filter0.TryGetProperty("dataValueType", out _).Should().BeFalse(
+			because: "an integer date-part leaf carries no dataValueType of its own; the integer lives in the right parameter");
+		JsonElement param = filter0.GetProperty("rightExpression").GetProperty("parameter");
+		param.GetProperty("dataValueType").GetInt32().Should().Be(4, because: "Integer is 4");
+		param.GetProperty("value").GetInt64().Should().Be(2021);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Combines a relative-date macros leaf and a HourMinute datePart leaf under AND for 'previous quarter at 11:06 AM'.")]
+	public void Build_Should_Combine_PreviousQuarter_Macros_And_HourMinute_DatePart() {
+		StaticFilterGroup group = Deserialize("""
+			{ "logicalOperation": "AND", "filters": [
+			  { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "valueMacros": "PreviousQuarter" },
+			  { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "HourMinute", "value": "11:06:00" }
+			] }
+			""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+
+		string json = builder.Build(group, "Contact");
+		JsonElement items = JsonDocument.Parse(json).RootElement.GetProperty("items");
+
+		items.GetProperty("Filter_0").GetProperty("rightExpression").GetProperty("macrosType").GetInt32()
+			.Should().Be(12, because: "QueryMacrosType.PreviousQuarter is 12");
+		items.GetProperty("Filter_1").GetProperty("leftExpression").GetProperty("datePartType").GetInt32()
+			.Should().Be(7, because: "the second leaf extracts the HourMinute part");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Schema-aware validation rejects a datePart on a non-date column.")]
+	public void SchemaValidation_Should_Reject_DatePart_On_Text_Column() {
+		StaticFilterGroup group = Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Name", "comparisonType": "EQUAL", "datePart": "Year", "value": 2021 } ] }""");
+		IFilterSchemaProvider schema = SchemaWith(("Contact", [("Name", "Text", null)]));
+		SchemaAwareFilterValidator validator = new(schema);
+
+		Action act = () => validator.Validate(group, "Contact");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*applies only to Date/DateTime/Time columns*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Structural validation rejects an unknown datePart name.")]
+	public void Build_Should_Reject_Unknown_DatePart() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "Nonsense", "value": 1 } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*unknown date part 'Nonsense'*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Structural validation rejects a HourMinute datePart with a non-string (numeric) value.")]
+	public void Build_Should_Reject_HourMinute_DatePart_With_Numeric_Value() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "HourMinute", "value": 1106 } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*time-of-day string*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Structural validation rejects an integer datePart (Year) with a non-numeric value.")]
+	public void Build_Should_Reject_Year_DatePart_With_String_Value() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "Year", "value": "2021" } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*expects a JSON integer*");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Structural validation rejects providing both datePart and valueMacros on the same leaf.")]
+	public void Build_Should_Reject_DatePart_With_Macros() {
+		Action act = () => Deserialize(
+			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "Year", "valueMacros": "CurrentYear" } ] }""");
+
+		act.Should().Throw<ArgumentException>().WithMessage("*datePart and valueMacros are mutually exclusive*");
+	}
+
 	private static StaticFilterGroup Deserialize(string json) {
 		JsonElement element = JsonDocument.Parse(json).RootElement.Clone();
 		StaticFilterGroup group = StaticFilterDeserializer.Deserialize(element);

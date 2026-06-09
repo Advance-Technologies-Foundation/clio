@@ -83,6 +83,10 @@ internal sealed class LocalEsqFilterBuilder {
 			return BuildIsNullFilter(comparison, normalizedColumnPath);
 		}
 
+		if (!string.IsNullOrWhiteSpace(leaf.DatePart)) {
+			return BuildDatePartCompareFilter(comparison, normalizedColumnPath, column, leaf);
+		}
+
 		if (!string.IsNullOrWhiteSpace(leaf.ValueMacros)) {
 			return BuildMacrosCompareFilter(comparison, normalizedColumnPath, column, leaf);
 		}
@@ -196,6 +200,50 @@ internal sealed class LocalEsqFilterBuilder {
 				Parameter = new EsqParameterDto {
 					DataValueType = (int)valueDataType,
 					Value = parameterValue
+				}
+			}
+		};
+	}
+
+	private static EsqCompareFilterDto BuildDatePartCompareFilter(
+		string comparison, string columnPath, FilterSchemaColumn column, StaticFilterLeaf leaf) {
+		DatePartCatalog.TryResolve(leaf.DatePart!, out EsqDatePartType partType,
+			out DatePartCatalog.DatePartValueKind valueKind);
+		JsonElement value = leaf.Value!.Value;
+		EsqDatePartFunctionExpressionDto leftExpression = new() {
+			DatePartType = (int)partType,
+			FunctionArgument = new EsqColumnExpressionDto { ColumnPath = columnPath }
+		};
+
+		if (valueKind == DatePartCatalog.DatePartValueKind.Time) {
+			// HourMinute compares the extracted time-of-day against a Time parameter. Mirrors the verified
+			// platform sample, which carries dataValueType=<column type>, isAggregative=false and
+			// trimDateTimeParameterToDate=true alongside the DatePart leftExpression.
+			return new EsqCompareFilterDto {
+				ComparisonType = MapLeafComparisonToEsq(comparison),
+				TrimDateTimeParameterToDate = true,
+				LeftExpression = leftExpression,
+				IsAggregative = false,
+				DataValueType = column.DataValueTypeCode > 0 ? column.DataValueTypeCode : null,
+				RightExpression = new EsqParameterExpressionDto {
+					Parameter = new EsqParameterDto {
+						DataValueType = (int)EsqDataValueType.Time,
+						Value = value.GetString() ?? string.Empty
+					}
+				}
+			};
+		}
+
+		// Calendar/clock parts (Day/Week/Month/Year/Weekday/Hour) compare the extracted integer part against an
+		// Integer parameter (e.g. Year EQUAL 2021, Day EQUAL 14, Hour EQUAL 11). The leaf carries no dataValueType
+		// of its own — the integer lives in the right parameter.
+		return new EsqCompareFilterDto {
+			ComparisonType = MapLeafComparisonToEsq(comparison),
+			LeftExpression = leftExpression,
+			RightExpression = new EsqParameterExpressionDto {
+				Parameter = new EsqParameterDto {
+					DataValueType = (int)EsqDataValueType.Integer,
+					Value = value.GetInt64()
 				}
 			}
 		};

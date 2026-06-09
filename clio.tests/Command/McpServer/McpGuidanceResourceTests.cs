@@ -1410,6 +1410,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 		article.Text.Should().Contain("prefer `populateValue=true` by default",
 			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+		article.Text.Should().Contain("A relative-date/time restriction is still apply-static-filter using a date macro",
+			because: "the guide must route relative/computed-date lookup restrictions to apply-static-filter, not to a page handler");
+		article.Text.Should().Contain("do NOT reach for crt.InitRequest or runtime logic",
+			because: "the guide must explicitly steer relative-date lookup restrictions away from crt.InitRequest page handlers");
 	}
 
 	[Test]

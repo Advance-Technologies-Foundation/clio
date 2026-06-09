@@ -265,6 +265,10 @@ public class PageToolsTests
 			because: "get-page description should leave specialized guide selection to the general page modification guide");
 		description.Should().NotContain("page-schema-resources",
 			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
+		description.Should().Contain("a relative-date/time restriction is still apply-static-filter using a date macro, NOT a handler",
+			because: "get-page description must route relative/computed-date lookup restrictions to apply-static-filter, not a page handler");
+		description.Should().Contain("not crt.InitRequest",
+			because: "get-page handler routing must carve out lookup record-set restriction so relative-date cases do not misroute to crt.InitRequest");
 	}
 
 	[Test]
@@ -325,6 +329,10 @@ public class PageToolsTests
 			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
 		description.Should().Contain("do NOT register localizable strings",
 			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
+		description.Should().Contain("A relative-date/time restriction is still apply-static-filter using a date macro — NOT a handler",
+			because: "update-page description must route relative/computed-date lookup restrictions to apply-static-filter, not a page handler");
+		description.Should().Contain("not crt.InitRequest",
+			because: "update-page handler routing must carve out lookup record-set restriction so relative-date cases do not misroute to crt.InitRequest");
 	}
 
 	[Test]

@@ -70,8 +70,12 @@ internal sealed class EsqCompareFilterDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? TrimDateTimeParameterToDate { get; set; }
 
+	/// <summary>
+	/// Either an <see cref="EsqColumnExpressionDto"/> (plain column) or an
+	/// <see cref="EsqDatePartFunctionExpressionDto"/> (DatePart extraction over a date/time column).
+	/// </summary>
 	[JsonPropertyName("leftExpression")]
-	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
+	public object LeftExpression { get; set; } = new EsqColumnExpressionDto();
 
 	[JsonPropertyName("isAggregative")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -285,6 +289,28 @@ internal sealed class EsqMacrosFunctionExpressionDto {
 	[JsonPropertyName("functionArgument")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public EsqParameterExpressionDto? FunctionArgument { get; set; }
+
+	[JsonPropertyName("className")]
+	public string ClassName { get; set; } = EsqFilterClassNames.FunctionExpression;
+}
+
+/// <summary>
+/// DatePart function expression used as a CompareFilter leftExpression: extracts a calendar/clock part
+/// (datePartType) from a date/time column so the comparison runs against the extracted part rather than the
+/// whole value (e.g. the time-of-day of CreatedOn EQUAL 11:06). Mirrors devkit ɵDatePartFunctionExpression.
+/// </summary>
+internal sealed class EsqDatePartFunctionExpressionDto {
+	[JsonPropertyName("expressionType")]
+	public int ExpressionType { get; set; } = (int)EsqExpressionType.Function;
+
+	[JsonPropertyName("functionType")]
+	public int FunctionType { get; set; } = (int)EsqFunctionType.DatePart;
+
+	[JsonPropertyName("datePartType")]
+	public int DatePartType { get; set; }
+
+	[JsonPropertyName("functionArgument")]
+	public EsqColumnExpressionDto FunctionArgument { get; set; } = new();
 
 	[JsonPropertyName("className")]
 	public string ClassName { get; set; } = EsqFilterClassNames.FunctionExpression;
