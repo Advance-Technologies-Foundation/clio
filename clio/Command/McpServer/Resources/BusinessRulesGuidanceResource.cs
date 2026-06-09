@@ -45,13 +45,6 @@ public sealed class BusinessRulesGuidanceResource {
 		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
 		       - When a requirement describes state that must switch in both directions, create an explicit inverse business rule for the opposite condition and corresponding opposite action.
 
-		       Conditions on the current user, roles, or date/time (system variables)
-		       - A condition operand can be a system variable (SysValue), on EITHER side, in any pairing with attributes and constants: the current user (CurrentUser / CurrentUserContact / CurrentUserAccount), the user's roles (CurrentUserRoles, compared with contain / not-contain), or the current date/time (CurrentDate / CurrentTime / CurrentDateTime).
-		       - Such a condition gates ANY business-rule action — show/hide, make-editable/read-only/required/optional, set-values, apply-filter — in both entity-level and page-level rules. It is the condition that uses the system variable; the action is unchanged.
-		       - Because the role/current-user check lives in the condition, "do X only for a role or a specific user" (e.g. show/hide/require a field for administrators or for the supervisor) is a declarative business rule. Do NOT write a HandleViewModelInitRequest handler (or rely on column access rights just to hide a control) for it.
-		       - System variables are condition operands only; to assign the current user/date to a field, that is a separate concern (set-values does not take a system-variable source in this scope).
-		       - For the exact sysValueName list, the contain/not-contain comparisons, and the type/reference-schema rules, call get-tool-contract (the rule field and condition validators carry the full contract). Remember rules are one-way: add the inverse rule when a state must toggle in both directions.
-
 		       Two levels of business rules
 
 		       1. Entity-level business rules
@@ -62,11 +55,10 @@ public sealed class BusinessRulesGuidanceResource {
 		          - `apply-filter` targets one lookup field, compares it to one source lookup field on the current record, and may auto-generate child clear/populate rules.
 		          - `apply-static-filter` narrows a target lookup by a static ESQ filter expressed in a friendly contract (constants, lookup values by GUID or display name, AND/OR groups, EXISTS/NOT_EXISTS backward references). `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller.
 		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
-
-		       apply-static-filter friendly filter contract
-		       - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
-		       - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
-		       - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
+		          - apply-static-filter friendly filter contract:
+		            - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
+		            - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
+		            - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -106,6 +98,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
 		       - Do NOT confuse business rules with business logic. Business rules are declarative condition→action pairs, not imperative code.
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
+		       - Do NOT try to assign the current user/contact/account or current date to a field via set-values — system variables (CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles, CurrentDate/Time/DateTime) are condition operands only, not set-values sources.
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
