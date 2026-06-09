@@ -658,7 +658,8 @@ internal static class ToolContractCatalog {
 					Field(DescriptionFieldName, StringType, "Optional application description."),
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
-					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration.")
+					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration."),
+					Field("with-mobile-pages", BooleanType, "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Set false for a web-only application.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -703,7 +704,8 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, IconBackgroundFieldName, "iconBackground", RejectedStatus, $"Use '{IconBackgroundFieldName}' instead of 'iconBackground'.")
 			],
 			[
-				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells.")
+				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells."),
+				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
 			],
 			[
 				Example("Create a new Freedom UI application with the minimal top-level payload", new Dictionary<string, object?> {
