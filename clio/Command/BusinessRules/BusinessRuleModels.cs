@@ -137,7 +137,7 @@ public sealed record BusinessRuleExpression
     /// </summary>
     [JsonPropertyName("sysValueName")]
     [Description(
-        "System variable name when type is SysValue. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (Lookup referencing SysAdminUnit). The system variable type must match the left attribute type, and lookup variables must match the left lookup reference schema.")]
+        "System variable name when type is SysValue. A SysValue may be on either side of a condition. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles; use comparisonType contain/not-contain against a role). Both operands must resolve to the same data value type, and lookup operands must reference the same schema.")]
     public string? SysValueName { get; init; }
 }
 

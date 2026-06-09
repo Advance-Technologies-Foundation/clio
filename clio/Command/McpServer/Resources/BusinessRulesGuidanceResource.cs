@@ -45,18 +45,10 @@ public sealed class BusinessRulesGuidanceResource {
 		       - A business rule does not automatically roll back state or apply the inverse action when its condition stops matching.
 		       - When a requirement describes state that must switch in both directions, create an explicit inverse business rule for the opposite condition and corresponding opposite action.
 
-		       System variables in conditions (including role-based and current-user visibility)
-		       - A condition operand can be a system variable. Set the expression type to "SysValue" and sysValueName to one of:
-		         - CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime)
-		         - CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles)
-		       - Either side of a condition may be an attribute (AttributeValue), a constant (Const), or a system variable (SysValue) — there is NO restriction that the left side must be an attribute. Any pairing is allowed; type/reference-schema compatibility is the only constraint.
-		       - ROLE-BASED VISIBILITY is a business rule, NOT a handler. To show/hide/enable/require a field for users in a role, put CurrentUserRoles on the left and the role (a SysAdminUnit lookup id) on the right with comparisonType contain / not-contain:
-		         - Show for admins: leftExpression { type SysValue, sysValueName CurrentUserRoles }, comparisonType "contain", rightExpression { type Const, value "<role id>" } → show-element. Add the inverse (comparisonType "not-contain" → hide-element) because rules are one-way.
-		       - CURRENT-USER visibility: compare CurrentUser / CurrentUserContact / CurrentUserAccount (e.g. show a field only for a specific Supervisor contact): leftExpression { type SysValue, sysValueName CurrentUserContact }, comparisonType "equal", rightExpression { type Const, value "<contact id>" }.
-		       - Record-relative comparisons still work too, e.g. Owner == CurrentUserContact, or DueDate < CurrentDate.
-		       - comparisonType "contain"/"not-contain" is for an ObjectList left operand (CurrentUserRoles) compared to a single lookup value, or for text "contains".
-		       - Type rules (validated before any server call): both operands must resolve to the same data value type, and lookup operands must reference the same schema (CurrentUserContact → Contact, CurrentUserAccount → Account, CurrentUser/CurrentUserRoles → SysAdminUnit). Mismatches (e.g. CurrentTime vs a Date column, or CurrentUserAccount vs a Contact lookup) are rejected.
-		       - System variables work in both entity-level and page-level conditions. For page rules this is the no-code way to do "show field X only for role/user Y" — prefer it over a HandleViewModelInitRequest handler.
+		       Role-based and current-user visibility is a business rule, not a handler
+		       - A condition operand can be a system variable (SysValue), on EITHER side, in any pairing with attributes and constants. This makes "show/hide/enable/require a field only for a role or a specific user" a declarative business rule — do NOT write a HandleViewModelInitRequest handler (or rely on column access rights just to hide a control) for it.
+		       - Role gate: compare CurrentUserRoles (the current user's roles) to a role with comparisonType contain / not-contain. Current-user gate: compare CurrentUser / CurrentUserContact / CurrentUserAccount to a specific record.
+		       - For the exact sysValueName list, the contain/not-contain comparisons, and the type/reference-schema rules, call get-tool-contract (the rule field and condition validators carry the full contract). Remember rules are one-way: add the inverse rule when visibility must toggle in both directions.
 
 		       Two levels of business rules
 
