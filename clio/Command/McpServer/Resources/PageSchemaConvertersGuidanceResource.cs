@@ -119,6 +119,14 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - The converter binding syntax uses a pipe: `"$Attr | converterName"`.
 			       - Async converters are allowed. SDK services from SCHEMA_DEPS closure are allowed. Do NOT call non-cached HTTP endpoints — they fire on every render. `SysSettingsService` is safe: OOTB settings are cached at startup; custom `usr.*` settings are cached after the first call.
 
+			       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+			       - ERROR (blocks the save; body is NOT sent to Creatio):
+			         - `converters-must-be-object` — `converters` written as an array literal instead of an object.
+			         - `converter-crt-prefix-reserved` — any converter key directly under `converters` that starts with `crt.` (the reserved built-in namespace). Rename to `usr.<Name>`.
+			       - WARNING (reported alongside the response, write still proceeds):
+			         - `converter-fetch-call` — direct `fetch(...)`, `globalThis.fetch(...)`, or `window.fetch(...)` invoked anywhere inside the `converters` subtree. Replace with a cached SDK service such as `SysSettingsService` (see the template above) — converters fire on every render of the bound control.
+			       - The lint pass scopes both rules to the `converters` subtree, so `fetch(...)` in handlers and `crt.*` references in `viewConfigDiff` are not flagged. Fix the underlying converter body; do not strip the offending converter to silence a finding.
+
 			       Minimal canonical template (custom converter)
 			       - Replace `<AttrName>` and `<ConverterName>` with live schema names.
 			         viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[

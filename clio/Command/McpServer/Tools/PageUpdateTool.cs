@@ -104,12 +104,13 @@ public sealed class PageUpdateTool(
 		return response;
 	}
 
-	// AST lint pass: runs on the success path of the regex validators so the
-	// regex messages (which existing tests and operator habits depend on)
+	// AST lint pass runs on the success path of the regex validators so the
+	// regex messages — which existing tests and operator habits depend on —
 	// remain authoritative for overlapping detections. Lint findings cover
-	// only what the regex layer does not. Returns (failure, warnings) tuple:
-	// failure non-null means at least one Error-severity finding triggered;
-	// warnings carries any Warning-severity findings on the success path.
+	// only what the regex layer does not. The returned Failure value is
+	// non-null when at least one Error-severity finding triggered; the
+	// returned Warnings list carries any Warning-severity findings on the
+	// success path.
 	private static (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) RunAstLintPass(Script parsedAst) {
 		if (parsedAst is null) {
 			return (null, Array.Empty<string>());

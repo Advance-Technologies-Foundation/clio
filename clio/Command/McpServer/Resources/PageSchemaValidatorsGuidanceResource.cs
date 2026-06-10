@@ -67,6 +67,13 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       - The error return MUST be `{ "<ValidatorType>": { message: config.message } }`. Never return `true`, `false`, `{}`, or a hardcoded string.
 			       - Treat the binding-location, control-binding, resource-string, in-place-fix, and async CRITICAL sections below as hard requirements.
 
+			       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+			       - ERROR (blocks the save; body is NOT sent to Creatio):
+			         - `validators-must-be-object` — `validators` written as an array literal instead of an object.
+			         - `validator-params-empty` — `params: []` on a custom validator.
+			         - `validator-bad-return-literal` — a validator factory returns literal `true`, `false`, a string, or empty `{}`. Returning `null` or `undefined` is allowed and signals "no error".
+			       - The lint pass walks only the `validators` subtree, so a `return true` outside a validator is untouched. Fix the underlying validator shape using the templates below — do not strip the offending validator to silence a finding.
+
 			       CRITICAL — Validator binding location
 			       - Validators MUST be bound to the model attribute in `viewModelConfig` or `viewModelConfigDiff`, NOT to the UI element in `viewConfigDiff`.
 			       - Binding to the `crt.Input` (or any UI element) in `viewConfigDiff` with a `validators` array does NOT invoke the validator at runtime — Creatio ignores it.

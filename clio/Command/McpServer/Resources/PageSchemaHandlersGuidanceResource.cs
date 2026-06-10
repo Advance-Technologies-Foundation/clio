@@ -94,6 +94,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Read and write page state through `request.$context`.
 		       - Keep handler edits minimal and coupled: usually `SCHEMA_HANDLERS`, the triggering `viewConfigDiff` action, and `SCHEMA_DEPS` / `SCHEMA_ARGS` only when imports are actually required.
 
+		       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+		       - ERROR (blocks the save; body is NOT sent to Creatio): `handlers` written as an object literal instead of an array — the lint pass fails fast with `handlers-must-be-array` and the body is rejected before sampling.
+		       - WARNING (reported alongside the response, write still proceeds): `request.viewModel`, `request.sender`, `request.$get(...)`, `request.$set(...)`, and `request.$context.get(...)` are flagged with `handler-uses-deprecated-context-api`. Migrate to the documented `request.$context["<Attr>"]` / `await request.$context.set(...)` / `request.next?.handle(request)` patterns above.
+		       - WARNING: `sdk.HandlerChainService.instance.process(...)` is flagged with `handler-uses-handler-chain-service-instance`. Prefer `await request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
+		       - The lint pass only ADDS detections — overlapping regex-validator errors keep their authoritative messages. Fix the underlying body; do not strip the offending block to silence a finding.
+
 		       Page-body runtime shape
 		       - The deployed page-body handler shape is an array of objects like:
 		         handlers: /**SCHEMA_HANDLERS*/[
