@@ -97,6 +97,24 @@ create a web-only section with automatically resolved icon metadata
   (for example caption "Orders" produces "UsrOrders" when SchemaNamePrefix is
   "Usr", or "Orders" when the setting is empty).
 
+## Troubleshooting
+
+- **"Failed to create section ... is already bound to an existing section"** —
+  the entity passed via --entity-schema-name already backs another section
+  (an entity can back only one section). Reuse the existing section, pick a
+  different entity, or omit --entity-schema-name to create a new object. Run
+  `clio list-app-sections` to inspect the sections already defined in the
+  application before retrying. This commonly happens when binding a system
+  entity such as Contact, which the out-of-the-box Contacts section already
+  uses.
+- **"Failed to create section ... a section with code ... already exists"** —
+  the caption produced a section code that collides with an existing section.
+  Change the caption to generate a different code, or reuse the existing
+  section.
+- When the underlying Creatio insert returns its own error text, that message
+  is surfaced after `Server error:` so the root cause is visible instead of a
+  generic failure.
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

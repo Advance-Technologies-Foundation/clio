@@ -502,6 +502,215 @@ public sealed class ApplicationSectionCreateServiceTests {
 			resolver);
 	}
 
+	[Test]
+	[Description("Propagates the Creatio server error message and appends an actionable hint when the section insert is rejected for a reused entity.")]
+	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_With_Server_Message() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Cannot insert duplicate key row"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				EntitySchemaName: "Contact"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected section insert must surface as a readable failure").Which;
+		exception.Message.Should().Contain("Cannot insert duplicate key row",
+			because: "the underlying Creatio server error must be propagated instead of swallowed");
+		exception.Message.Should().Contain("Contact",
+			because: "the failure should name the entity the section was being bound to");
+		exception.Message.Should().Contain("already bound to an existing section",
+			because: "the message should explain the most common cause for a reused-entity insert failure");
+		exception.Message.Should().Contain("list-app-sections",
+			because: "the message should point the user at the recovery command");
+	}
+
+	[Test]
+	[Description("Replaces the opaque 'InsertQuery failed.' fallback with an actionable message when the server rejects a reused-entity insert without a message.")]
+	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_Without_Server_Message_For_Reused_Entity() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				EntitySchemaName: "Contact"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected section insert must surface as a readable failure").Which;
+		exception.Message.Should().NotBe("InsertQuery failed.",
+			because: "the opaque legacy fallback must be replaced with a diagnostic message");
+		exception.Message.Should().Contain("Failed to create section",
+			because: "the message should clearly state the operation that failed");
+		exception.Message.Should().Contain("Contact",
+			because: "the message should name the reused entity even when the server returns no detail");
+		exception.Message.Should().Contain("already bound to an existing section",
+			because: "the message should explain the common cause when no server message is available");
+	}
+
+	[Test]
+	[Description("Attributes a new-object insert rejection to a duplicate section code without referencing entity binding when no entity-schema-name was supplied.")]
+	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_For_New_Object_Without_Server_Message() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected section insert must surface as a readable failure").Which;
+		exception.Message.Should().Contain("a section with code",
+			because: "the new-object path should attribute the failure to a duplicate section code");
+		exception.Message.Should().Contain("UsrOrders",
+			because: "the message should include the generated section code derived from the caption");
+		exception.Message.Should().NotContain("bound to entity",
+			because: "no entity-schema-name was provided, so the message must not reference entity binding");
+	}
+
+	[Test]
+	[Description("Propagates the server error message when a new-object (no entity-schema-name) insert is rejected, without referencing entity binding in the diagnostic hint.")]
+	public void CreateSection_Should_Propagate_Server_Message_When_Insert_Fails_For_New_Object() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Duplicate section code violation"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected new-object insert must surface the server message").Which;
+		exception.Message.Should().Contain("Duplicate section code violation",
+			because: "the server error text must be propagated for new-object failures as well");
+		exception.Message.Should().NotContain("bound to entity",
+			because: "no entity-schema-name was provided, so entity-binding language must not appear");
+	}
+
+	[Test]
+	[Description("Appends exactly one period after the server message when the message lacks terminal punctuation.")]
+	public void CreateSection_Should_Append_Period_When_Server_Message_Has_No_Terminal_Punctuation() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Access denied"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message").Which;
+		exception.Message.Should().Contain("Access denied.",
+			because: "a single period should be appended when the server message lacks terminal punctuation");
+		exception.Message.Should().NotContain("Access denied..",
+			because: "exactly one period should be appended, not two");
+	}
+
+	[Test]
+	[Description("Does not append a period when the server message already ends with a period.")]
+	public void CreateSection_Should_Not_Double_Period_When_Server_Message_Ends_With_Period() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Constraint violation."}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message").Which;
+		exception.Message.Should().NotContain("Constraint violation..",
+			because: "a period must not be appended when the server message already ends with one");
+	}
+
+	[Test]
+	[Description("Uses the fallback message and omits 'Server error:' when the server returns an empty error message.")]
+	public void CreateSection_Should_Use_Fallback_When_Server_Returns_Empty_Error_Message() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":""}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert with an empty error message should use the fallback text").Which;
+		exception.Message.Should().Contain("The server rejected the section insert",
+			because: "the fallback message should appear when errorInfo.message is empty");
+		exception.Message.Should().NotContain("Server error:",
+			because: "the 'Server error:' prefix must only appear when there is a non-empty server message");
+	}
+
+	[Test]
+	[Description("Does not append a period after a server message that ends with '!' or '?'.")]
+	[TestCase("Access denied!")]
+	[TestCase("Are you authorized?")]
+	public void CreateSection_Should_Not_Append_Period_After_Terminal_Punctuation(string serverMessage) {
+		// Arrange
+		SetUpInsertFailureMocks($$$"""{"success":false,"errorInfo":{"message":"{{{serverMessage}}}"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message without modification").Which;
+		exception.Message.Should().Contain(serverMessage,
+			because: "the server message should appear verbatim in the exception");
+		exception.Message.Should().NotContain(serverMessage + ".",
+			because: "a period must not be appended after '!' or '?'");
+	}
+
+	private void SetUpInsertFailureMocks(string insertResponseJson) {
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns(insertResponseJson);
+	}
+
 	private void SetUpPrefixTestMocks(string expectedCode) {
 		ApplicationEntityInfoResult entity = new("entity-uid", expectedCode, "TestSection", []);
 		ApplicationInfoResult beforeInfo = new(

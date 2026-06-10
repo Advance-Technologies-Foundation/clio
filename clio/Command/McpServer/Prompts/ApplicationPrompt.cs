@@ -134,6 +134,7 @@ public static class ApplicationPrompt {
 		 Provide `caption` as a plain scalar string.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
+		 If creation fails with `Failed to create section ... is already bound to an existing section`, the chosen `entity-schema-name` already backs another section. Do not retry with the same entity; call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections, then reuse the existing section or choose a different entity.
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
