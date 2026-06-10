@@ -146,8 +146,8 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 	}
 
 	[Test]
-	[Description("FindApplications issues exactly two DataService queries regardless of application count, avoiding an N+1 per-application section scan.")]
-	public void FindApplications_IssuesExactlyTwoQueries_RegardlessOfApplicationCount() {
+	[Description("FindApplications issues one SysInstalledApp query and one ApplicationSection query per application — ApplicationSection returns nothing unfiltered, so sections are read per application inside the single command call.")]
+	public void FindApplications_IssuesOneAppQueryAndOneSectionQueryPerApplication() {
 		// Arrange
 		ArrangeApps([
 			new AppRow("11111111-1111-1111-1111-111111111111", "AppOne", "App One", null, "1.0.0"),
@@ -161,9 +161,29 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 		_command.FindApplications(options);
 
 		// Assert
-		_applicationClient.ReceivedWithAnyArgs(2).ExecutePostRequest(default, default);
 		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("SysInstalledApp")));
-		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")));
+		_applicationClient.Received(3).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")));
+	}
+
+	[Test]
+	[Description("FindApplications skips the section query for applications excluded by an exact code filter, loading sections only for the matched application.")]
+	public void FindApplications_SkipsSectionQueriesForUnmatchedApps_WhenCodeProvided() {
+		// Arrange
+		ArrangeApps([
+			new AppRow("11111111-1111-1111-1111-111111111111", "CrtCaseManagementApp", "Case Management", null, "1.0.0"),
+			new AppRow("22222222-2222-2222-2222-222222222222", "UsrSalesApp", "Sales", null, "2.0.0")
+		]);
+		ArrangeSections([]);
+		FindAppOptions options = new() { Code = "UsrSalesApp" };
+
+		// Act
+		_command.FindApplications(options);
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
+			body.Contains("ApplicationSection") && body.Contains("22222222-2222-2222-2222-222222222222")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
+			body.Contains("ApplicationSection") && body.Contains("11111111-1111-1111-1111-111111111111")));
 	}
 
 	[Test]
@@ -226,9 +246,18 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 	}
 
 	private void ArrangeSections(IEnumerable<SectionRow> rows) {
+		// ApplicationSection is queried per application (filtered by ApplicationId), so the default
+		// response is empty and each application's id-filtered query returns just that app's sections.
 		_applicationClient
 			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
-			.Returns(BuildSuccessJson(rows.Cast<object>()));
+			.Returns(BuildSuccessJson([]));
+		foreach (IGrouping<string, SectionRow> group in rows.GroupBy(section => section.ApplicationId)) {
+			string applicationId = group.Key;
+			_applicationClient
+				.ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
+					body.Contains("ApplicationSection") && body.Contains(applicationId)))
+				.Returns(BuildSuccessJson(group.Cast<object>()));
+		}
 	}
 
 	private static string BuildSuccessJson(IEnumerable<object> rows) =>

@@ -8,10 +8,10 @@ SYNOPSIS
     clio find-app [OPTIONS]
 
 DESCRIPTION
-    Finds installed applications AND their sections in a single environment round-trip.
-    Issues exactly two DataService SelectQuery calls (all SysInstalledApp rows and all
-    ApplicationSection rows), joins them in memory by application id, and returns every
-    matching application together with its sections.
+    Finds installed applications AND their sections behind a single call. Loads all applications
+    with one SysInstalledApp query, then loads each application's sections with a per-application
+    ApplicationSection query filtered by ApplicationId (ApplicationSection returns no rows for an
+    unfiltered query), and returns every matching application together with its sections.
 
     The optional --search-pattern is a case-insensitive substring matched across the
     application name, code, description, and the caption/code of each section. The optional
@@ -45,8 +45,9 @@ EXAMPLES
     clio find-app -e dev --json
 
 NOTES
-    - exactly two DataService queries are issued regardless of the number of applications -
-      no N+1 per-application section scan
+    - one SysInstalledApp query plus one ApplicationSection query per application are issued
+      inside the single call; the agent still makes ONE find-app call instead of list-apps
+      followed by a list-app-sections call per application
     - an empty search returns all applications (each with its sections)
     - the MCP find-app tool returns the same data as a structured { success, applications } envelope;
       MCP callers should use the structured fields instead of parsing the CLI text form

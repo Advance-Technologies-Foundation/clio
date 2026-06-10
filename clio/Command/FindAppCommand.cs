@@ -64,13 +64,16 @@ public sealed record AppSectionSearchResult(
 	[property: JsonPropertyName("description")] string? Description);
 
 /// <summary>
-/// Finds installed applications and their sections in a single environment round-trip.
-/// Issues exactly two DataService SelectQuery calls — all <c>SysInstalledApp</c> rows and all
-/// <c>ApplicationSection</c> rows — joins them in memory by application id, and filters by an
-/// optional case-insensitive pattern (matched across application name/code/description and section
-/// captions/codes) and/or an exact application code. An empty pattern returns every application
-/// (with its sections), removing the N+1 list-apps + per-app list-app-sections round-trips an agent
-/// would otherwise make to map an imprecise application name to its code.
+/// Finds installed applications and their sections within a single command invocation. Loads all
+/// applications with one <c>SysInstalledApp</c> query, then loads each application's sections with a
+/// per-application <c>ApplicationSection</c> query filtered by <c>ApplicationId</c> — the
+/// <c>ApplicationSection</c> object returns no rows for an unfiltered query, so sections must be read
+/// per application (the same path <c>list-app-sections</c> uses). Results are filtered by an optional
+/// case-insensitive pattern (matched across application name/code/description and section
+/// captions/codes) and/or an exact application code; an empty pattern returns every application with
+/// its sections. The whole sweep happens behind a single tool call, removing the N+1
+/// <c>list-apps</c> + per-app <c>list-app-sections</c> round-trips an agent would otherwise make to
+/// map an imprecise application name to its code.
 /// </summary>
 public class FindAppCommand : Command<FindAppOptions> {
 	private const string DescriptionColumn = "Description";
@@ -160,41 +163,60 @@ public class FindAppCommand : Command<FindAppOptions> {
 			_applicationClient,
 			_serviceUrlBuilder,
 			BuildSelectQuery("SysInstalledApp", AppColumns, NoFilters));
-		SectionsResponse sectionsResponse = ExecuteSelectQuery<SectionsResponse>(
-			_applicationClient,
-			_serviceUrlBuilder,
-			BuildSelectQuery("ApplicationSection", SectionColumns, NoFilters));
 
-		ILookup<string, AppSectionSearchResult> sectionsByApp = sectionsResponse.Rows
-			.Where(section => !string.IsNullOrWhiteSpace(section.ApplicationId))
-			.ToLookup(
-				section => section.ApplicationId,
-				section => new AppSectionSearchResult(
-					section.Code ?? string.Empty,
-					section.Caption ?? string.Empty,
-					string.IsNullOrWhiteSpace(section.EntitySchemaName) ? null : section.EntitySchemaName,
-					string.IsNullOrWhiteSpace(section.Description) ? null : section.Description),
-				StringComparer.OrdinalIgnoreCase);
+		List<AppSearchResult> results = [];
+		foreach (InstalledAppRowDto app in appsResponse.Rows) {
+			// An exact code filter lets us skip loading sections for every other application.
+			if (code is not null && !string.Equals(app.Code, code, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
 
-		return appsResponse.Rows
-			.Select(app => new AppSearchResult(
+			AppSearchResult result = new(
 				app.Id ?? string.Empty,
 				app.Code ?? string.Empty,
 				app.Name ?? string.Empty,
 				string.IsNullOrWhiteSpace(app.Version) ? null : app.Version,
 				string.IsNullOrWhiteSpace(app.Description) ? null : app.Description,
-				sectionsByApp[app.Id ?? string.Empty]
-					.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
-					.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
-					.ToList()))
-			.Where(app => MatchesCode(app, code) && MatchesPattern(app, pattern))
+				LoadSections(app.Id));
+			if (MatchesPattern(result, pattern)) {
+				results.Add(result);
+			}
+		}
+
+		return results
 			.OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
 			.ThenBy(app => app.Code, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 	}
 
-	private static bool MatchesCode(AppSearchResult app, string? code) =>
-		code is null || string.Equals(app.Code, code, StringComparison.OrdinalIgnoreCase);
+	/// <summary>
+	/// Loads the sections of a single installed application. <c>ApplicationSection</c> returns no rows
+	/// for an unfiltered query, so it is read per application filtered by <c>ApplicationId</c>.
+	/// </summary>
+	/// <param name="applicationId">Installed application identifier.</param>
+	/// <returns>The application's sections, ordered by caption then code.</returns>
+	private IReadOnlyList<AppSectionSearchResult> LoadSections(string? applicationId) {
+		if (string.IsNullOrWhiteSpace(applicationId)) {
+			return [];
+		}
+
+		SectionsResponse response = ExecuteSelectQuery<SectionsResponse>(
+			_applicationClient,
+			_serviceUrlBuilder,
+			BuildSelectQuery(
+				"ApplicationSection",
+				SectionColumns,
+				[new SelectQueryFilterDefinition("ApplicationId", applicationId.Trim(), GuidDataValueType)]));
+		return response.Rows
+			.Select(section => new AppSectionSearchResult(
+				section.Code ?? string.Empty,
+				section.Caption ?? string.Empty,
+				string.IsNullOrWhiteSpace(section.EntitySchemaName) ? null : section.EntitySchemaName,
+				string.IsNullOrWhiteSpace(section.Description) ? null : section.Description))
+			.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
+			.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
 
 	private static bool MatchesPattern(AppSearchResult app, string? pattern) {
 		if (pattern is null) {
