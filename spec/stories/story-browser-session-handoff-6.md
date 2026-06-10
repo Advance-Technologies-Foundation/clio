@@ -65,19 +65,20 @@ Test naming: `Execute_ShouldCallClearSessionAsync_WhenEnvironmentIsValid`, `Exec
 
 ## Definition of Done
 
-- [ ] Code compiles without `CLIO*` analyzer warnings
-- [ ] All CLI option names are kebab-case; CLIO001 passes
-- [ ] `ClearBrowserSessionCommand` registered in `BindingsModule.cs` and wired in `Program.cs`
-- [ ] Command is idempotent: no error if session file does not exist
-- [ ] **MCP review (AGENTS.md mandatory)**: `ClearBrowserSessionTool` (Story 8) reflects this command's final contract; state "MCP reviewed" in the PR
-- [ ] **Docs review (AGENTS.md mandatory)**: help/`docs/commands` slice tracked in Story 10; state "docs reviewed" in the PR
-- [ ] Unit tests use `BaseCommandTests<ClearBrowserSessionOptions>` and `[Category("Unit")]`
-- [ ] **Smart regression**: `dotnet test --filter "Category=Unit&Module=Command"`
-- [ ] PR description references this story file
+- [x] Code compiles without `CLIO*` analyzer warnings
+- [x] CLI options kebab-case (only inherited `-e/--environment`); CLIO001 passes
+- [x] `ClearBrowserSessionCommand` registered in `BindingsModule.cs` and wired in `Program.cs`
+- [x] Command is idempotent: `ClearSessionAsync` → cache `DeleteFileIfExists` (no error when absent)
+- [x] **MCP reviewed**: Story 8 adds `ClearBrowserSessionTool` aligned to this contract; stated here
+- [x] **Docs reviewed**: created with the verb (ReadmeChecker) — `help/en/clear-browser-session.txt`, `docs/commands/clear-browser-session.md`, `Commands.md`, `Wiki/WikiAnchors.txt`
+- [x] Unit tests use `BaseCommandTests<ClearBrowserSessionOptions>` and `[Category("Unit")]`
+- [x] **Smart regression**: full unit suite → 3518 passed, 0 new failures (3 pre-existing macOS)
+- [ ] PR description references this story file (single PR at the end)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: 3 `ClearBrowserSessionCommandTests` (valid env → 0 + ClearSessionAsync; unknown env → exit 1, no clear; inherited ReadmeChecker); full unit suite 3518 passed / 0 new failures
+- Files: `clio/Command/BrowserSession/ClearBrowserSessionCommand.cs`; `clio/BindingsModule.cs`; `clio/Program.cs`; docs: `clio/help/en/clear-browser-session.txt`, `clio/docs/commands/clear-browser-session.md`, `clio/Commands.md`, `clio/Wiki/WikiAnchors.txt`; `clio.tests/Command/ClearBrowserSessionCommandTests.cs`.
+- Notes: same `Command<TOptions>` + per-command-docs pattern as Story 5; idempotency comes from `IBrowserSessionCache.Delete` → `IFileSystem.DeleteFileIfExists`.

@@ -62,6 +62,7 @@ get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
 get-browser-session:get-browser-session,get-session
+clear-browser-session:clear-browser-session,clear-session
 find-entity-schema:find-entity-schema
 get-info:get-info,describe,describe-creatio,instance-info
 get-schema:get-schema,schema-get

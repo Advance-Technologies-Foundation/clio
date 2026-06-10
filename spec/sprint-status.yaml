@@ -94,8 +94,9 @@ stories:
     title: "ClearBrowserSessionCommand — CLI Verb"
     feature: "browser-session-handoff"
     size: S
-    status: ready-for-dev
+    status: in-progress
     depends_on: [story-browser-session-handoff-4]
+    note: "Implemented + verified 2026-06-10 (3 tests incl. ReadmeChecker; full suite 3518 pass, 0 new). Docs created with the verb."
     file: spec/stories/story-browser-session-handoff-6.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md

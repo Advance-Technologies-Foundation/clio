@@ -73,6 +73,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-browser-session"></a>
 <a id="get-session"></a>
 - [`get-browser-session`](docs/commands/get-browser-session.md) - Obtain an authenticated Creatio browser session (Playwright storageState), `get-session`
+<a id="clear-browser-session"></a>
+<a id="clear-session"></a>
+- [`clear-browser-session`](docs/commands/clear-browser-session.md) - Delete the cached Creatio browser session, `clear-session`
 <a id="ping-app"></a>
 <a id="ping"></a>
 - [`ping-app`](docs/commands/ping-app.md) - Verify connectivity to a Creatio environment, `ping`
