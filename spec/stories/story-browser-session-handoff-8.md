@@ -64,16 +64,17 @@ Test naming: `Execute_ShouldCallClearSessionAsync_WhenEnvironmentIsValid`, `Exec
 
 ## Definition of Done
 
-- [ ] Code compiles without Roslyn analyzer warnings (CLIO001-CLIO004)
-- [ ] Tool safety flags: `ReadOnly=false`, `Destructive=true`, `Idempotent=true`
-- [ ] Tool is idempotent: no error when session file does not exist
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] E2E test cases present in `clio.mcp.e2e/` with `[Category("E2E")]` and not-in-CI note
-- [ ] PR description references this story file
+- [x] Code compiles without `CLIO*` analyzer warnings
+- [x] Tool safety flags: `ReadOnly=false`, `Destructive=true`, `Idempotent=true` (asserted by a reflection test)
+- [x] Tool is idempotent: `ClearSessionAsync` → cache delete-if-exists (no error when absent)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] E2E test cases present in `clio.mcp.e2e/ClearBrowserSessionToolE2ETests.cs` (advertised-tool hermetic + reachable-env happy path; not in CI — `Assert.Ignore` without a sandbox)
+- [ ] PR description references this story file (single PR at the end)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: 3 `ClearBrowserSessionToolTests` (clear → success + ClearSessionAsync; Safe-env → structured error; safety-flags reflection); full unit suite 3526 passed / 0 new failures; `clio.mcp.e2e` builds (2 E2E tests).
+- Files: `clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs`; `clio.tests/Command/McpServer/ClearBrowserSessionToolTests.cs`; `clio.mcp.e2e/ClearBrowserSessionToolE2ETests.cs`.
+- Notes: same structured-response pattern as Story 7 (`SchemaNamePrefixTool`-style; resolve `IBrowserSessionService` + `EnvironmentSettings`, call `ClearSessionAsync`, return `ClearBrowserSessionResult`). `Destructive=true`/`Idempotent=true` per the deletion semantics. Safe-env resolution fails closed → structured error (no hang). MCP reviewed; capability-map entry is Story 10.

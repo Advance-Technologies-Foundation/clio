@@ -116,8 +116,9 @@ stories:
     title: "ClearBrowserSessionTool — MCP Tool"
     feature: "browser-session-handoff"
     size: S
-    status: ready-for-dev
+    status: in-progress
     depends_on: [story-browser-session-handoff-6]
+    note: "Implemented + verified 2026-06-10 (3 unit tests; full suite 3526 pass, 0 new; e2e builds). Destructive=true/Idempotent=true; structured-response pattern."
     file: spec/stories/story-browser-session-handoff-8.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md
