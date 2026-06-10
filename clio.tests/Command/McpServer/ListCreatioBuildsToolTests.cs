@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command.McpServer.Tools;
@@ -14,7 +15,8 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ListCreatioBuildsToolTests {
-	private const string ProductsFolder = @"F:\CreatioBuilds";
+	private static readonly string ProductsFolder =
+		Path.Combine(Path.GetPathRoot(Path.GetTempPath()), "MockCreatioBuilds");
 
 	[Test]
 	[Category("Unit")]
@@ -32,13 +34,13 @@ public sealed class ListCreatioBuildsToolTests {
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetCreatioProductsFolder().Returns(ProductsFolder);
 		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[@"F:\CreatioBuilds\8.1.5\older.zip"] = new MockFileData("a") {
+			[Path.Combine(ProductsFolder, "8.1.5", "older.zip")] = new MockFileData("a") {
 				LastWriteTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
 			},
-			[@"F:\CreatioBuilds\8.1.6\newer.zip"] = new MockFileData("bb") {
+			[Path.Combine(ProductsFolder, "8.1.6", "newer.zip")] = new MockFileData("bb") {
 				LastWriteTime = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc)
 			},
-			[@"F:\CreatioBuilds\readme.txt"] = new MockFileData("ignored")
+			[Path.Combine(ProductsFolder, "readme.txt")] = new MockFileData("ignored")
 		});
 		ListCreatioBuildsTool tool = new(settingsRepository, fileSystem);
 
@@ -56,7 +58,7 @@ public sealed class ListCreatioBuildsToolTests {
 			because: "only .zip build archives should be returned, not unrelated files");
 		result.Builds.Select(build => build.FileName).Should().Equal(["newer.zip", "older.zip"],
 			because: "builds should be ordered newest-first by last write time");
-		result.Builds[0].FullPath.Should().Be(@"F:\CreatioBuilds\8.1.6\newer.zip",
+		result.Builds[0].FullPath.Should().Be(Path.Combine(ProductsFolder, "8.1.6", "newer.zip"),
 			because: "the full path is what the caller passes to deploy-creatio as zip-file");
 	}
 
@@ -110,7 +112,7 @@ public sealed class ListCreatioBuildsToolTests {
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetCreatioProductsFolder().Returns(ProductsFolder);
 		MockFileSystem fileSystem = new(new Dictionary<string, MockFileData> {
-			[@"F:\CreatioBuilds\notes.txt"] = new MockFileData("no builds here")
+			[Path.Combine(ProductsFolder, "notes.txt")] = new MockFileData("no builds here")
 		});
 		ListCreatioBuildsTool tool = new(settingsRepository, fileSystem);
 
