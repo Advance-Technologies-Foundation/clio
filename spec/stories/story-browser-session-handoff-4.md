@@ -80,18 +80,22 @@ Test naming: `GetSessionPathAsync_ShouldReauthenticate_WhenCachedSessionReturnsL
 
 ## Definition of Done
 
-- [ ] Code compiles without `CLIO*` analyzer warnings
-- [ ] Cache access uses `BuildKey(env)` — no `env.Name`
-- [ ] Validation detects the 200-login-page (`ReauthExecutor.IsSessionExpiredResponse`), not status-only
-- [ ] Serialization ownership resolved (service owns `ToStorageStateJson`)
-- [ ] `IBrowserSessionService` registered in `BindingsModule.cs`; all collaborators constructor-injected (no `new`)
-- [ ] Unit tests `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] **Smart regression**: `dotnet test --filter "Category=Unit&Module=Common"`
-- [ ] PR description references this story file
+- [x] Code compiles without `CLIO*` analyzer warnings
+- [x] Cache access uses `BuildKey(env)` — no `env.Name`
+- [x] Validation detects the 200-login-page (`ReauthExecutor.IsSessionExpiredResponse`) AND 401/403, not status-only
+- [x] Serialization owned by the service (`StorageStateJson.Serialize`); `StorageStateJson.ToCookieHeader` rebuilds the validation cookie header
+- [x] `IBrowserSessionService` registered in `BindingsModule.cs`; all collaborators constructor-injected (no `new`)
+- [x] Unit tests `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] **Smart regression**: full unit suite (BindingsModule touched) → 3511 passed, 0 new failures (3 pre-existing macOS)
+- [ ] PR description references this story file (single PR at the end)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: 7 `BrowserSessionServiceTests` (cache hit/valid, miss→login, expired-via-login-page, expired-via-401, force-refresh skips cache read, clear, login-throws-propagates); full unit suite 3511 passed / 0 new failures
+- Files: `clio/Common/BrowserSession/{IBrowserSessionService,BrowserSessionService}.cs` (new); `clio/Common/BrowserSession/StorageStateJson.cs` (+`ToCookieHeader`); `clio/BindingsModule.cs` (1 registration); `clio.tests/Common/BrowserSession/BrowserSessionServiceTests.cs` (new).
 - Notes:
+  - **Validation**: reads the cached storageState, rebuilds a `Cookie` header (`StorageStateJson.ToCookieHeader`), GETs `env.Uri` via the dedicated `creatio-auth` client, and treats 401/403 OR `ReauthExecutor.IsSessionExpiredResponse(body)` (the 200-login-page case) as expired → delete + re-login.
+  - **Override path**: with `--output-path`, the fresh session is written to the validated override and that absolute path is returned; the default cache path is not populated (one-off export).
+  - MCP reviewed / docs reviewed: internal orchestration service, no MCP-tool or command-doc surface yet (Stories 5/7 add it).

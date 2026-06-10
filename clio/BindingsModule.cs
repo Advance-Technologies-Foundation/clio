@@ -202,6 +202,7 @@ public class BindingsModule {
 		services.AddSingleton<IServiceUrlBuilderFactory, ServiceUrlBuilderFactory>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()
