@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Package;
 using Terrasoft.Core.Entities;
 
@@ -50,18 +54,26 @@ public interface IRemoteEntitySchemaColumnManager
 
 internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColumnManager
 {
+	/// <summary>
+	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
+	/// </summary>
+	internal const string MergedSchemaPackageName = "(merged: all packages)";
+
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
+	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
+		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_logger = logger;
 	}
 
@@ -171,6 +183,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.Package)) {
+			return GetMergedSchemaProperties(options);
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
@@ -206,6 +221,99 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			columns);
 	}
 
+	/// <summary>
+	/// Builds the effective (merged) schema properties snapshot that unions columns from every package layer,
+	/// including customizations contributed by packages other than the one that originally defines the schema.
+	/// </summary>
+	/// <param name="options">Options that identify the schema and remote environment. <c>Package</c> is ignored here.</param>
+	/// <returns>
+	/// Structured schema properties whose <c>columns</c> reflect the full runtime column set. Most schema-level
+	/// metadata (title, description, extend-parent, db-view, track-changes, virtual, show-in-advanced-mode and the
+	/// administration flags) and the per-column <c>indexed</c> flag are mapped from the runtime payload. A few
+	/// fields are not exposed by the by-name runtime endpoint and are therefore reported as <c>null</c> in this
+	/// mode so a caller can distinguish "unavailable" from a genuine value: <c>parent-schema-name</c> (only the
+	/// parent UId is available), <c>indexes-count</c>, <c>ssp-available</c>, <c>use-record-deactivation</c>,
+	/// <c>use-deny-record-rights</c> and <c>use-live-editing</c>. Supply a package to read those authoritative
+	/// schema-level values from a single package layer.
+	/// Note that <c>own-column-count</c>/<c>inherited-column-count</c> and each column's <c>source</c> are derived
+	/// here from runtime parent-entity-schema inheritance (the <c>IsInherited</c> flag), whereas the single-package
+	/// path splits on package-layer ownership. The two splits are NOT comparable across modes.
+	/// </returns>
+	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new EntitySchemaDesignerException("Schema name is required.");
+		}
+		RuntimeEntitySchemaResult runtimeSchema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
+		List<EntitySchemaPropertyColumnInfo> columns = runtimeSchema.Columns
+			.Select(MapRuntimePropertyColumn)
+			.ToList();
+		int inheritedColumnCount = runtimeSchema.Columns.Count(column => column.IsInherited);
+		int ownColumnCount = runtimeSchema.Columns.Count - inheritedColumnCount;
+		string? primaryColumnName = runtimeSchema.Columns
+			.FirstOrDefault(column => column.UId == runtimeSchema.PrimaryColumnUId)?.Name;
+		return new EntitySchemaPropertiesInfo(
+			runtimeSchema.Name,
+			Title: runtimeSchema.Caption,
+			Description: runtimeSchema.Description,
+			PackageName: MergedSchemaPackageName,
+			ParentSchemaName: null,
+			ExtendParent: runtimeSchema.ExtendParent,
+			PrimaryColumnName: primaryColumnName,
+			PrimaryDisplayColumnName: runtimeSchema.PrimaryDisplayColumnName,
+			OwnColumnCount: ownColumnCount,
+			InheritedColumnCount: inheritedColumnCount,
+			// The by-name runtime endpoint does not expose these fields; emit null (not a default) so a machine
+			// consumer can distinguish "unavailable in merged mode" from a genuine value. Supply a package to read them.
+			IndexesCount: null,
+			TrackChangesInDb: runtimeSchema.IsTrackChangesInDB,
+			DbView: runtimeSchema.IsDBView,
+			SspAvailable: null,
+			Virtual: runtimeSchema.IsVirtual,
+			UseRecordDeactivation: null,
+			ShowInAdvancedMode: runtimeSchema.ShowInAdvancedMode,
+			AdministratedByOperations: runtimeSchema.AdministratedByOperations,
+			AdministratedByColumns: runtimeSchema.AdministratedByColumns,
+			AdministratedByRecords: runtimeSchema.AdministratedByRecords,
+			UseDenyRecordRights: null,
+			UseLiveEditing: null,
+			Columns: columns);
+	}
+
+	/// <summary>
+	/// Reads the runtime schema for the merged view, translating low-level reader failures into the domain
+	/// <see cref="EntitySchemaDesignerException"/> so both read paths surface a uniform exception type.
+	/// </summary>
+	/// <remarks>
+	/// The reader reaches <see cref="IApplicationClient"/> and <c>JsonSerializer</c>, so beyond the
+	/// <see cref="InvalidOperationException"/> it raises for an unsuccessful/HTML response it can surface transport
+	/// and parse faults (<see cref="HttpRequestException"/>, <see cref="TaskCanceledException"/>,
+	/// <see cref="JsonException"/>). The MCP <c>get-entity-schema-properties</c> tool calls this path directly
+	/// without the <c>BaseTool</c> catch-all, so all realistic failure types are normalized here.
+	/// </remarks>
+	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName) {
+		try {
+			return _runtimeEntitySchemaReader.GetByName(schemaName);
+		} catch (Exception exception) when (exception is InvalidOperationException
+			or HttpRequestException
+			or JsonException
+			or TaskCanceledException) {
+			throw new EntitySchemaDesignerException(exception.Message, exception);
+		}
+	}
+
+	private static EntitySchemaPropertyColumnInfo MapRuntimePropertyColumn(RuntimeEntitySchemaColumnResult column) {
+		return new EntitySchemaPropertyColumnInfo(
+			column.Name,
+			column.UId,
+			column.IsInherited ? "inherited" : "own",
+			column.Caption,
+			column.Description,
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
+			column.IsRequired,
+			column.IsIndexed,
+			column.ReferenceSchemaName);
+	}
+
 	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		EntitySchemaPropertiesInfo schema = GetSchemaProperties(options);
 		WriteInfo("Entity schema properties");
@@ -219,7 +327,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Primary display column: {FormatText(schema.PrimaryDisplayColumnName)}");
 		WriteInfo($"Own columns: {schema.OwnColumnCount}");
 		WriteInfo($"Inherited columns: {schema.InheritedColumnCount}");
-		WriteInfo($"Indexes: {schema.IndexesCount}");
+		WriteInfo($"Indexes: {FormatNullableCount(schema.IndexesCount)}");
 		WriteInfo($"Track changes in DB: {FormatBoolean(schema.TrackChangesInDb)}");
 		WriteInfo($"DB view: {FormatBoolean(schema.DbView)}");
 		WriteInfo($"SSP available: {FormatBoolean(schema.SspAvailable)}");
@@ -278,6 +386,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
 				options);
 			column.ReferenceSchema = CreateReferenceSchema(referenceSchema);
+		} else if (EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+			// ImageLookup ("Image link") is the reference type required by crt.ImageInput. It always points at the
+			// platform SysImage schema and is indexed, mirroring the server-side EntitySchemaDesigner behavior.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
 		}
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
@@ -362,6 +475,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		bool isLookupType = effectiveDataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
+		bool isImageLookupType = EntitySchemaDesignerSupport.IsImageLookupDataValueType(effectiveDataValueType);
 		if (isLookupType) {
 			if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)) {
 				ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
@@ -380,6 +494,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			if (options.DoNotControlIntegrity.HasValue) {
 				column.DoNotControlIntegrity = options.DoNotControlIntegrity.Value;
 			}
+		} else if (isImageLookupType) {
+			// ImageLookup ("Image link") always references SysImage and is indexed; never a simple lookup.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
+			column.List = false;
+			column.CascadeConnection = false;
+			column.DoNotControlIntegrity = false;
 		} else {
 			column.ReferenceSchema = null;
 			column.List = false;
@@ -424,7 +545,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		ValidateLookupOptions(options, isLookup, isAdd);
+		bool isImageLookup = EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType);
+		ValidateLookupOptions(options, isLookup, isImageLookup, isAdd);
 		ValidateTextOptions(options, dataValueType);
 		ValidateMaskedOption(options, dataValueType);
 		ValidateDateTimeOptions(options, dataValueType);
@@ -434,6 +556,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void ValidateLookupOptions(
 		ModifyEntitySchemaColumnOptions options,
 		bool isLookup,
+		bool isImageLookup,
 		bool isAdd) {
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
@@ -441,10 +564,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			}
 			return;
 		}
-		if (HasLookupSpecificOptions(options)) {
-			throw new EntitySchemaDesignerException(
-				"Lookup-specific options can be used only when the effective column type is Lookup.");
+		if (!HasLookupSpecificOptions(options)) {
+			return;
 		}
+		if (isImageLookup) {
+			throw new EntitySchemaDesignerException(
+				"ImageLookup ('Image link') columns reference the SysImage schema automatically; " +
+				"do not pass --reference-schema or other lookup-specific options.");
+		}
+		throw new EntitySchemaDesignerException(
+			"Lookup-specific options can be used only when the effective column type is Lookup.");
 	}
 
 	private static bool HasLookupSpecificOptions(ModifyEntitySchemaColumnOptions options) {
@@ -777,6 +906,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
+	}
+
+	private static string FormatNullableCount(int? value) {
+		return value.HasValue ? value.Value.ToString() : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

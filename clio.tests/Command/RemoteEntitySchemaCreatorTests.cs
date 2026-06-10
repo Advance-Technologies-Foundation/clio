@@ -135,6 +135,80 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema whose image/photo column is modeled as ImageLookup, auto-referencing the SysImage schema and indexed, so the generated crt.ImageInput field works.")]
+	public void Create_CreatesSchema_WithImageLookupColumn_ReferencingSysImage()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrPhoto:ImageLookup:Photo"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		JToken photoColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPhoto");
+		photoColumn["type"]!.Value<int>().Should().Be(16,
+			because: "ImageLookup ('Image link') must persist as the platform data value type 16, not the binary Image type");
+		photoColumn["referenceSchema"]!["name"]!.Value<string>().Should().Be("SysImage",
+			because: "an ImageLookup column references the platform SysImage image-storage schema");
+		Guid.Parse(photoColumn["referenceSchema"]!["uId"]!.Value<string>()!)
+			.Should().Be(Guid.Parse("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8"),
+				because: "the server persists ReferenceSchema.UId, so clio must supply the SysImage schema UId");
+		photoColumn["indexed"]!.Value<bool>().Should().BeTrue(
+			because: "ImageLookup columns are indexed, mirroring the platform entity designer");
+	}
+
+	[Test]
+	[Description("Rejects an ImageLookup column that supplies a reference schema, because the reference is always the implicit SysImage schema (mirrors modify-entity-schema-column).")]
+	public void Create_Throws_WhenImageLookupColumnSuppliesReferenceSchema()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrPhoto:ImageLookup:Photo:Contact"]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*references the SysImage schema automatically*",
+				because: "the create path must reject a caller-supplied reference schema for ImageLookup, aligning with the modify path");
+	}
+
+	[Test]
 	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
 	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
 	{
