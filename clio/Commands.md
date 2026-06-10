@@ -31,6 +31,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apps-list"></a>
 <a id="lia"></a>
 - [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
+<a id="find-app"></a>
+- [`find-app`](docs/commands/find-app.md) - Find installed applications and their sections by name, code, or pattern
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>

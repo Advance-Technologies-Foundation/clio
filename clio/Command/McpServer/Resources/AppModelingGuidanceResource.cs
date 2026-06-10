@@ -47,6 +47,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Use `update-app-section` when the workflow must change metadata of an existing section instead of creating a new one.
 			       - Prefer `sync-schemas` for multi-step schema work and `sync-pages` for multi-page saves.
 			       - Canonical new-app entity flow: `create-app` -> `sync-schemas` -> `get-app-info`.
+			       - Prefer `find-app` as the discovery front door for the existing-app flows below: it searches app name/code/description and section captions and returns matching apps WITH their sections in one call, so you can usually skip the separate `list-apps` and `list-app-sections` steps when mapping an imprecise name to a code.
 			       - Canonical existing-app section flow: `list-apps` -> `get-app-info` -> `create-app-section` -> `get-app-info`.
 			       - Canonical existing-section metadata update flow: `list-apps` -> `get-app-info` -> `update-app-section`.
 			       - Canonical section discovery flow: `list-apps` -> `get-app-info` -> `list-app-sections`.
