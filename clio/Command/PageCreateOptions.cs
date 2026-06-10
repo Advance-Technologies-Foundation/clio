@@ -64,7 +64,7 @@ namespace Clio.Command {
 			_captionCultureResolver = captionCultureResolver;
 		}
 
-		public bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
+		public virtual bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
 			if (options is null) {
 				response = new PageCreateResponse { Success = false, Error = "options is required" };
 				return false;
