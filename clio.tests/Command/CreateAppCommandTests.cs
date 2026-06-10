@@ -76,6 +76,79 @@ public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 	}
 
 	[Test]
+	[Description("Passes with-mobile-pages=true to the service by default so existing calls keep generating the full page set.")]
+	public void Execute_Should_Pass_WithMobilePages_True_By_Default()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a default create call should succeed");
+		// with-mobile-pages defaults to true to preserve the existing five-page behavior
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r => r.WithMobilePages));
+	}
+
+	[Test]
+	[Description("Passes with-mobile-pages=false to the service when the flag is explicitly set to false.")]
+	public void Execute_Should_Pass_WithMobilePages_False_When_Flag_Is_Disabled()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			WithMobilePagesValue = "false"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a web-only create call should succeed");
+		// --with-mobile-pages false must flow through to the create request so mobile pages are skipped
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r => !r.WithMobilePages));
+	}
+
+	[Test]
+	[Description("Returns failure exit code and logs an error when with-mobile-pages receives an unsupported value.")]
+	public void Execute_Should_Return_Failure_When_WithMobilePages_Value_Is_Invalid()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			WithMobilePagesValue = "maybe"
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an invalid with-mobile-pages value should yield a non-zero exit code");
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("with-mobile-pages")));
+	}
+
+	[Test]
 	[Description("Returns failure exit code and logs the error message when environment is missing.")]
 	public void Execute_Should_Return_Failure_When_Environment_Is_Missing()
 	{

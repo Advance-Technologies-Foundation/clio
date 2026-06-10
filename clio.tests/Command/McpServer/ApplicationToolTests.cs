@@ -880,6 +880,63 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps the with-mobile-pages MCP argument onto the create request so a web-only app skips mobile page generation.")]
+	public async Task ApplicationCreate_Should_Map_WithMobilePages_Onto_Request() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult(
+				PackageUId: "pkg-uid",
+				PackageName: "UsrCodexApp",
+				Entities: Array.Empty<ApplicationEntityInfoResult>(),
+				ApplicationId: "created-app-id"));
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(
+				Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Web Portal",
+			Code: "UsrWebPortal",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: null,
+			ClientTypeId: null,
+			WithMobilePages: false,
+			OptionalTemplateDataJson: null));
+
+		// Assert
+		// with-mobile-pages=false must be forwarded so the create flow suppresses the main entity mobile pages
+		applicationCreateService.Received(1).CreateApplication(
+			"sandbox",
+			Arg.Is<ApplicationCreateRequest>(request => !request.WithMobilePages));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Defaults the with-mobile-pages MCP argument to true so existing create-app callers keep the full page set.")]
+	public void ApplicationCreateArgs_Should_Default_WithMobilePages_To_True() {
+		// Arrange
+		ApplicationCreateArgs args = new(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp");
+
+		// Act
+		bool withMobilePages = args.WithMobilePages;
+
+		// Assert
+		withMobilePages.Should().BeTrue(
+			because: "omitting with-mobile-pages must preserve the existing mobile-enabled default");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Declares the core-aligned required attributes for the create-app fields while keeping description optional.")]
 	public void ApplicationCreateArgs_Should_Mark_Core_Required_Fields_As_Required() {
 		// Arrange
@@ -1542,6 +1599,10 @@ public sealed class ApplicationToolTests {
 			because: "the create prompt signature should stay in parity with the executable create-app contract");
 		createPrompt.Should().Contain("follow-up entity-schema tools",
 			because: "the create prompt should direct callers to schema tools when localized captions are needed");
+		createPrompt.Should().Contain("`with-mobile-pages`",
+			because: "the create prompt should keep the mobile-page toggle visible for create-app");
+		createPrompt.Should().Contain("web-only",
+			because: "the create prompt should tell the agent to proactively disable mobile pages for web-only plans");
 		sectionCreatePrompt.Should().Contain(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			because: "the section-create prompt should reference the exact production tool name");
 		sectionCreatePrompt.Should().Contain(ToolContractGetTool.ToolName,

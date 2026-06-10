@@ -75,8 +75,12 @@ public sealed record ApplicationCreateArgs(
 	string? IconId = null,
 
 	[property: JsonPropertyName("client-type-id")]
-	[property: Description("Optional client type identifier")]
+	[property: Description("Optional client type identifier. When provided it takes precedence over with-mobile-pages.")]
 	string? ClientTypeId = null,
+
+	[property: JsonPropertyName("with-mobile-pages")]
+	[property: Description("Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Default: true. Set to false for a web-only application to skip mobile page generation.")]
+	bool WithMobilePages = true,
 
 	[property: JsonPropertyName("optional-template-data-json")]
 	[property: Description(

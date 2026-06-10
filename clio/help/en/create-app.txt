@@ -24,6 +24,11 @@ DESCRIPTION
     a random icon. When --icon-background is omitted a random palette color is
     assigned automatically.
 
+    By default create-app generates the full set of five pages, including the
+    main entity _MobileFormPage and _MobileListPage. Pass
+    --with-mobile-pages false to create a web-only application; the two mobile
+    pages are then skipped.
+
 SYNOPSIS
     clio create-app [options]
 
@@ -48,6 +53,11 @@ OPTIONS
     --icon-id                        Application icon GUID or 'auto' to pick a
                                      random icon
 
+    --with-mobile-pages              Create mobile pages (_MobileFormPage,
+                                     _MobileListPage) for the main entity in
+                                     addition to web pages. Optional; defaults
+                                     to true. Pass false for a web-only app.
+
     --Environment            -e      Environment name. Required.
 
 EXAMPLE
@@ -56,6 +66,9 @@ EXAMPLE
 
     clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-background "#0058EF" -e dev
         create an empty application with a specific Freedom UI palette color
+
+    clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomUI --with-mobile-pages false -e dev
+        create a web-only application without the main entity mobile pages
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

@@ -26,12 +26,16 @@ DESCRIPTION
     - Text, ShortText, MediumText, LongText, MaxSizeText
     - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+    - ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no --reference-schema)
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+
+    For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
+    ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
 
 OPTIONS
     --package                      Target package name

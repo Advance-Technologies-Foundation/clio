@@ -102,7 +102,7 @@ public sealed class ApplicationCreateTool(
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id (optional)")]
+		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
 		[Required]
 		ApplicationCreateArgs args) {
 		try {
@@ -123,7 +123,8 @@ public sealed class ApplicationCreateTool(
 					args.IconId,
 					args.IconBackground,
 					args.ClientTypeId,
-					optionalTemplateData));
+					optionalTemplateData,
+					args.WithMobilePages));
 			return ApplicationToolHelper.CreateContextResponse(
 				ApplicationToolResultMapper.Map(result),
 				dataForge);

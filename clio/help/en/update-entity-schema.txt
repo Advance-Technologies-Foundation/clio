@@ -14,10 +14,14 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request. Supported operation types include Binary, Image, File,
-    SecureText, and Email. Blob is accepted as an alias for Binary.
+    request. Supported operation types include Binary, Image, ImageLookup,
+    File, SecureText, and Email. Blob is accepted as an alias for Binary.
+    ImageLink is accepted as an alias for ImageLookup.
     Encrypted and Password are accepted as aliases for SecureText.
     EmailAddress is accepted as aliases for Email.
+    For image/photo fields bound to the crt.ImageInput component, add an
+    ImageLookup ("Image link") column instead of the binary Image type;
+    ImageLookup references the SysImage schema automatically (no reference-schema-name).
 
 OPTIONS
     --package              Target package name

@@ -1,3 +1,4 @@
+using System;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NUnit.Framework;
@@ -76,5 +77,53 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		// Assert
 		typeName.Should().Be(expectedName,
 			because: "schema readback should normalize supported runtime ids into stable human-readable type names");
+	}
+
+	[TestCase("ImageLookup", 16)]
+	[TestCase("ImageLink", 16)]
+	[TestCase("Image link", 16)]
+	[Description("Resolves the canonical ImageLookup name, the ImageLink alias, and the 'Image link' display form through the shared entity-schema type registry.")]
+	public void TryResolveDataValueType_Should_Resolve_ImageLookup_Type_Names(string typeName, int expectedValue) {
+		// Arrange
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+		resolved.Should().BeTrue(
+			because: "ImageLookup and its ImageLink alias should resolve so crt.ImageInput fields can be modeled");
+		dataValueType.Should().Be(expectedValue,
+			because: "ImageLookup type names should map to the platform 'Image link' data value type 16");
+	}
+
+	[Description("Distinguishes the ImageLookup ('Image link') type from the binary Image type for crt.ImageInput modeling.")]
+	[Test]
+	public void IsImageLookupDataValueType_Should_Identify_Only_ImageLookup() {
+		// Arrange
+
+		// Act
+		bool imageLookupIsImageLookup = EntitySchemaDesignerSupport.IsImageLookupDataValueType(16);
+		bool binaryImageIsImageLookup = EntitySchemaDesignerSupport.IsImageLookupDataValueType(14);
+
+		// Assert
+		imageLookupIsImageLookup.Should().BeTrue(
+			because: "code 16 is the ImageLookup type that crt.ImageInput binds to");
+		binaryImageIsImageLookup.Should().BeFalse(
+			because: "the binary Image type (code 14) must not be treated as ImageLookup");
+	}
+
+	[Description("Builds the implicit SysImage reference schema that every ImageLookup column points at.")]
+	[Test]
+	public void CreateSysImageReferenceSchema_Should_Reference_SysImage_Schema() {
+		// Arrange
+
+		// Act
+		EntityDesignSchemaDto reference = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+
+		// Assert
+		reference.Name.Should().Be("SysImage",
+			because: "ImageLookup columns reference the platform SysImage image-storage schema by name");
+		reference.UId.Should().Be(new Guid("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8"),
+			because: "the SysImage reference UId must match the platform schema so the server persists the link");
 	}
 }

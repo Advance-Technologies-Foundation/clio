@@ -30,6 +30,11 @@ Target package name. Required.
 Entity schema name. Required.
 --operation <VALUE>
 Structured operation JSON. Repeat the option for multiple values. Required.
+Operation `type` accepts the same values as modify-entity-schema-column, including
+Binary, Image, ImageLookup (alias ImageLink), File, SecureText, and Email.
+For image/photo fields bound to the `crt.ImageInput` component, add an `ImageLookup`
+("Image link") column instead of the binary `Image` type; `ImageLookup` references the
+`SysImage` schema automatically (no reference-schema-name).
 ```
 
 ## Environment Options

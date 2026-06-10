@@ -1140,6 +1140,10 @@ public sealed class ToolContractGetToolTests {
 			because: "canonical-main-entity-name description should guide the agent to use sync-schemas and warn against create-app-section");
 		contract.PreferredFlow.Notes.Should().Contain("create-app-section",
 			because: "the preferred-flow notes should explicitly warn against calling create-app-section for a single-section app");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "with-mobile-pages" &&
+				defaultValue.Value == "true",
+			because: "create-app should document its mobile-enabled default explicitly so the MCP surface stays consistent with create-app-section");
 	}
 
 	[Test]

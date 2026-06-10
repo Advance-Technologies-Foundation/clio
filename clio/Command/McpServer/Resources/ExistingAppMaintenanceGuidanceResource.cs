@@ -64,7 +64,8 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Absence of a tab, detail, or grid on the page does not prove the backing entity is missing. Resolve the backing schema from runtime app context before planning new schema work.
 
 			       Inspect schema before editing
-			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation.
+			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation. Call it WITHOUT `package-name` to read the merged/effective schema (columns from ALL packages). Custom columns are frequently added in a package other than the one that defines the schema, so the merged view is the reliable way to discover them.
+			       - Do NOT treat an empty column list (or `own-column-count: 0`) from a single-package read as proof a column is missing. If you queried with a `package-name`, re-read without it, or use `find-entity-schema` to find the package that customizes the schema, before concluding a field must be created.
 			       - Use `get-entity-schema-column-properties` when the change is scoped to one existing column and you need current metadata first.
 
 			       Preferred minimal mutations
