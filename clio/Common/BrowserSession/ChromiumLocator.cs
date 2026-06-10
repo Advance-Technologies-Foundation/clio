@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace Clio.Common.BrowserSession;
@@ -21,15 +22,11 @@ public sealed class ChromiumLocator : IChromiumLocator {
 			return fromEnv;
 		}
 
-		foreach (string candidate in CandidatePaths()) {
-			if (!string.IsNullOrWhiteSpace(candidate) && _fileSystem.ExistsFile(candidate)) {
-				return candidate;
-			}
-		}
-
-		throw new ChromiumNotFoundException(
-			"Error: Chromium binary not found — ensure a Chromium-based browser is installed " +
-			$"(or set the {ChromePathEnvVar} environment variable to its executable).");
+		return CandidatePaths()
+			.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c) && _fileSystem.ExistsFile(c))
+			?? throw new ChromiumNotFoundException(
+				"Error: Chromium binary not found — ensure a Chromium-based browser is installed " +
+				$"(or set the {ChromePathEnvVar} environment variable to its executable).");
 	}
 
 	// Standard install locations per OS. The macOS `open` indirection cannot be used here because it

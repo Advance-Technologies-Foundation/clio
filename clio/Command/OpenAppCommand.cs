@@ -53,7 +53,7 @@ public class OpenAppCommand(
 			}
 
 			if (options.Authenticated) {
-				return OpenAuthenticated(env, options);
+				return OpenAuthenticated(env);
 			}
 
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
@@ -88,7 +88,7 @@ public class OpenAppCommand(
 	// freshly launched browser via CDP, so the user never sees the login form. On a missing browser or an
 	// authentication failure it prints an actionable error and exits non-zero — it never silently falls
 	// back to an unauthenticated launch.
-	private int OpenAuthenticated(EnvironmentSettings env, OpenAppOptions options) {
+	private int OpenAuthenticated(EnvironmentSettings env) {
 		try {
 			string sessionPath = browserSessionService.GetSessionPathAsync(env)
 				.ConfigureAwait(false).GetAwaiter().GetResult();

@@ -147,13 +147,11 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		int id = 1;
 		await CdpSendAsync(ws, id++, "Network.enable", new { }, ct).ConfigureAwait(false);
 		foreach (BrowserCookie cookie in cookies) {
-			// cookieFallbackUrl (the site origin) is only used for a cookie that carries no domain;
-			// harvested Creatio cookies always have one, preserving their original path.
 			await CdpSendAsync(ws, id++, "Network.setCookie", BuildSetCookieParams(cookie, cookieFallbackUrl), ct)
 				.ConfigureAwait(false);
 		}
 		await CdpSendAsync(ws, id++, "Page.enable", new { }, ct).ConfigureAwait(false);
-		await CdpSendAsync(ws, id++, "Page.navigate", new { url = navigateUrl }, ct).ConfigureAwait(false);
+		await CdpSendAsync(ws, id, "Page.navigate", new { url = navigateUrl }, ct).ConfigureAwait(false);
 
 		if (ws.State == WebSocketState.Open) {
 			await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", ct).ConfigureAwait(false);
@@ -211,7 +209,7 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		WebSocketReceiveResult result;
 		do {
 			result = await ws.ReceiveAsync(buffer, ct).ConfigureAwait(false);
-			stream.Write(buffer, 0, result.Count);
+			await stream.WriteAsync(buffer.AsMemory(0, result.Count), ct).ConfigureAwait(false);
 		} while (!result.EndOfMessage);
 		return Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
 	}
