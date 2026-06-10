@@ -199,7 +199,6 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
-		services.AddSingleton<IServiceUrlBuilderFactory, ServiceUrlBuilderFactory>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();

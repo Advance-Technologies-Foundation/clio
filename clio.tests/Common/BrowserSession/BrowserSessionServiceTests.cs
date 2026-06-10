@@ -49,7 +49,7 @@ public sealed class BrowserSessionServiceTests {
 			StorageStateJson.Serialize(new StorageStateResult([
 				new BrowserCookie(".ASPXAUTH", "v", "dev.creatio.com", "/", true, false, "Lax", -1)
 			])));
-		_sut = new BrowserSessionService(_auth, _cache, _fileSystem, _httpClientFactory, Substitute.For<ILogger>());
+		_sut = new BrowserSessionService(_auth, _cache, _fileSystem, _httpClientFactory);
 	}
 
 	[TearDown]

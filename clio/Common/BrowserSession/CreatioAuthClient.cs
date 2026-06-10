@@ -17,17 +17,13 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 	internal const string HttpClientName = "creatio-auth";
 
 	private readonly IHttpClientFactory _httpClientFactory;
-	private readonly IServiceUrlBuilderFactory _urlBuilderFactory;
 	private readonly ILogger _logger;
 
 	/// <summary>Initializes the auth client.</summary>
 	/// <param name="httpClientFactory">Factory for the dedicated auth HTTP client (see <see cref="HttpClientName"/>).</param>
-	/// <param name="urlBuilderFactory">Builds the IsNetCore-aware login URL per environment.</param>
 	/// <param name="logger">Optional logger (cookie NAMES only are ever logged — never values).</param>
-	public CreatioAuthClient(IHttpClientFactory httpClientFactory, IServiceUrlBuilderFactory urlBuilderFactory,
-		ILogger logger = null) {
+	public CreatioAuthClient(IHttpClientFactory httpClientFactory, ILogger logger = null) {
 		_httpClientFactory = httpClientFactory;
-		_urlBuilderFactory = urlBuilderFactory;
 		_logger = logger;
 	}
 
@@ -42,9 +38,11 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 			throw CreatioAuthenticationException.MissingFormsCredentials(env.Uri);
 		}
 
-		// IsNetCore-aware login URL: ServiceUrlBuilder prepends the "0/" WebAppAlias for NetFW and
-		// omits it for NetCore (KnownRoute.AuthServiceLogin), so the prefix split stays centralized.
-		string loginUrl = _urlBuilderFactory.Create(env).Build(ServiceUrlBuilder.KnownRoute.AuthServiceLogin);
+		// AuthService.svc/Login is served at the SITE ROOT — NO "0/" WebAppAlias prefix — on BOTH
+		// NetFW and NetCore. Live-confirmed 2026-06-10 against a NetFW studio instance:
+		// POST {Uri}/0/ServiceModel/AuthService.svc/Login -> 401, but {Uri}/ServiceModel/AuthService.svc/Login
+		// -> 200 {Code:0} + Set-Cookie. The "0/" alias is only for the Shell/data services, not auth.
+		string loginUrl = $"{env.Uri.TrimEnd('/')}/ServiceModel/AuthService.svc/Login";
 
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 		string requestJson = JsonSerializer.Serialize(new { UserName = env.Login, UserPassword = env.Password });
