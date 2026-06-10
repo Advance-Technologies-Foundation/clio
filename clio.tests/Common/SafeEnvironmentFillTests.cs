@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Clio;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -54,8 +55,10 @@ public sealed class SafeEnvironmentFillTests {
 	[Test]
 	[Description("RealInteractiveConsole.Prompt returns true when stdin is a terminal and the user presses 'y'.")]
 	public void Prompt_ShouldReturnTrue_WhenInteractiveAndUserConfirms() {
-		// Arrange
-		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'y');
+		// Arrange — use TextWriter.Null to avoid writing to the global Console.Out, which other
+		// test fixtures running in parallel may have redirected to a StringWriter that gets disposed.
+		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'y',
+			output: TextWriter.Null);
 
 		// Act
 		bool result = sut.Prompt("Continue?");
@@ -67,8 +70,10 @@ public sealed class SafeEnvironmentFillTests {
 	[Test]
 	[Description("RealInteractiveConsole.Prompt returns false when stdin is a terminal and the user presses a key other than 'y'.")]
 	public void Prompt_ShouldReturnFalse_WhenInteractiveAndUserDeclines() {
-		// Arrange
-		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'n');
+		// Arrange — use TextWriter.Null to avoid writing to the global Console.Out, which other
+		// test fixtures running in parallel may have redirected to a StringWriter that gets disposed.
+		var sut = new RealInteractiveConsole(isInputRedirected: () => false, readKey: () => 'n',
+			output: TextWriter.Null);
 
 		// Act
 		bool result = sut.Prompt("Continue?");

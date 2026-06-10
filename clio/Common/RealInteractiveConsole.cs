@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 
 namespace Clio.Common;
 
@@ -17,16 +18,20 @@ public sealed class RealInteractiveConsole : IInteractiveConsole {
 
 	private readonly Func<bool> _isInputRedirected;
 	private readonly Func<char> _readKey;
+	private readonly TextWriter _output;
 
 	/// <summary>Initializes a console bound to the real <see cref="Console"/>.</summary>
 	public RealInteractiveConsole()
-		: this(() => Console.IsInputRedirected, () => Console.ReadKey().KeyChar) { }
+		: this(() => Console.IsInputRedirected, () => Console.ReadKey().KeyChar, null) { }
 
-	// Test seam: inject the input-redirected probe and the keypress source so the confirmation
-	// logic is unit-testable without a real terminal or redirected stdin.
-	internal RealInteractiveConsole(Func<bool> isInputRedirected, Func<char> readKey) {
+	// Test seam: inject the input-redirected probe, the keypress source, and the output writer so
+	// the confirmation logic is unit-testable without a real terminal, redirected stdin, or a
+	// dependency on the global Console.Out (which is manipulated by other test fixtures in parallel).
+	internal RealInteractiveConsole(Func<bool> isInputRedirected, Func<char> readKey,
+		TextWriter output = null) {
 		_isInputRedirected = isInputRedirected;
 		_readKey = readKey;
+		_output = output;
 	}
 
 	/// <inheritdoc />
@@ -40,10 +45,11 @@ public sealed class RealInteractiveConsole : IInteractiveConsole {
 		// ILogger (which may be buffered or redirected) would decouple it from the keypress it
 		// guards. Direct Console use is correct here and mirrors the original Fill() behavior.
 #pragma warning disable CLIO002
-		Console.WriteLine(message);
-		Console.Write("Do you want to continue? [Y/N]: ");
+		TextWriter output = _output ?? Console.Out;
+		output.WriteLine(message);
+		output.Write("Do you want to continue? [Y/N]: ");
 		char answer = _readKey();
-		Console.WriteLine();
+		output.WriteLine();
 #pragma warning restore CLIO002
 		return answer is 'y' or 'Y';
 	}

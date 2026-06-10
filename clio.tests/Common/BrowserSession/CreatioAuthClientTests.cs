@@ -51,7 +51,7 @@ public sealed class CreatioAuthClientTests {
 		var factory = Substitute.For<IHttpClientFactory>();
 		factory.CreateClient(CreatioAuthClient.HttpClientName).Returns(_ => new HttpClient(handler));
 		var logger = Substitute.For<ILogger>();
-		var sut = new CreatioAuthClient(factory, new ServiceUrlBuilderFactory(), logger);
+		var sut = new CreatioAuthClient(factory, logger);
 		return (sut, handler, logger);
 	}
 
@@ -74,8 +74,8 @@ public sealed class CreatioAuthClientTests {
 	}
 
 	[Test]
-	[Description("On a NetFW environment the login POST targets {Uri}/0/ServiceModel/AuthService.svc/Login (with the 0/ WebAppAlias).")]
-	public void LoginAsync_ShouldPostToZeroPrefixedUrl_WhenNetFwEnvironment() {
+	[Description("On a NetFW environment the login POST also targets the site root {Uri}/ServiceModel/AuthService.svc/Login (NO 0/ prefix). Live-confirmed 2026-06-10: the 0/-prefixed login path returns 401; the root path returns 200 + Set-Cookie.")]
+	public void LoginAsync_ShouldPostToSiteRootUrl_WhenNetFwEnvironment() {
 		// Arrange
 		(CreatioAuthClient sut, StubHandler handler, _) = BuildSut(_ => Ok("{\"Code\":0}", ".ASPXAUTH=a; path=/"));
 
@@ -83,8 +83,8 @@ public sealed class CreatioAuthClientTests {
 		_ = sut.LoginAsync(Env("https://prod.creatio.com", isNetCore: false)).GetAwaiter().GetResult();
 
 		// Assert
-		handler.CapturedUri.ToString().Should().Be("https://prod.creatio.com/0/ServiceModel/AuthService.svc/Login",
-			"because NetFW environments require the 0/ WebAppAlias prefix — omitting it is the BL-1 silent-failure bug");
+		handler.CapturedUri.ToString().Should().Be("https://prod.creatio.com/ServiceModel/AuthService.svc/Login",
+			"because AuthService.svc/Login is served at the site root on BOTH hosts — the 0/ alias is only for the Shell/data services");
 	}
 
 	[Test]
@@ -173,9 +173,10 @@ public sealed class CreatioAuthClientTests {
 		(CreatioAuthClient sut, _, ILogger logger) = BuildSut(_ => Ok("{\"Code\":0}", $".ASPXAUTH={sentinel}; path=/"));
 
 		// Act
-		_ = sut.LoginAsync(Env("https://dev.creatio.com", isNetCore: true)).GetAwaiter().GetResult();
+		StorageStateResult loginResult = sut.LoginAsync(Env("https://dev.creatio.com", isNetCore: true)).GetAwaiter().GetResult();
 
 		// Assert
+		loginResult.Should().NotBeNull("because a successful login must produce a storage-state result");
 		logger.DidNotReceive().WriteDebug(Arg.Is<string>(s => s.Contains(sentinel)));
 		logger.DidNotReceive().WriteInfo(Arg.Is<string>(s => s.Contains(sentinel)));
 		logger.DidNotReceive().WriteWarning(Arg.Is<string>(s => s.Contains(sentinel)));

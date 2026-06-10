@@ -192,44 +192,33 @@ namespace Clio
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? this.WorkspacePathes : options.WorkspacePathes;
 
-			bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if (isUri) {
+			ApplyDbServerOptions(result, options);
+			return result;
+		}
 
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
+			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
+				result.DbServer ??= new DbServer();
 				result.DbServer.Uri = uri;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.WorkingFolder = options.DbWorknigFolder;
-
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Login = options.DbUser;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Password = options.DbPassword;
 			}
-
 			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
 				result.BackupFilePath = options.BackUpFilePath;
 			}
 			if (!string.IsNullOrEmpty(options.DbName)) {
 				result.DbName = options.DbName;
 			}
-			return result;
 		}
 	}
 

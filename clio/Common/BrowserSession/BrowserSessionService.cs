@@ -12,16 +12,14 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 	private readonly IBrowserSessionCache _cache;
 	private readonly IFileSystem _fileSystem;
 	private readonly IHttpClientFactory _httpClientFactory;
-	private readonly ILogger _logger;
 
 	/// <summary>Initializes the orchestration service.</summary>
 	public BrowserSessionService(ICreatioAuthClient authClient, IBrowserSessionCache cache,
-		IFileSystem fileSystem, IHttpClientFactory httpClientFactory, ILogger logger = null) {
+		IFileSystem fileSystem, IHttpClientFactory httpClientFactory) {
 		_authClient = authClient;
 		_cache = cache;
 		_fileSystem = fileSystem;
 		_httpClientFactory = httpClientFactory;
-		_logger = logger;
 	}
 
 	/// <inheritdoc />
