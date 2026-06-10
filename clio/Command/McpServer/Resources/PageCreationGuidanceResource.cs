@@ -39,7 +39,8 @@ public sealed class PageCreationGuidanceResource {
 			         * `PageWithTopAreaAndTabsFreedomTemplate` — Tabbed page with area on top
 			         * `BaseMiniPageTemplate` — Mini page
 			         * `PageWithAreaFreedomTemplate` — Grid page
-			         * `BaseHomePage` — Dashboard / homepage
+			         * `BaseHomePage` — Home page
+			         * `BaseDashboardTemplate` — Dashboard
 			         * `BaseSidebarTemplate` — Sidebar page (feature-flagged)
 			         * `ListPageV3Template` or `ListPageV2Template` — List page (feature-flagged)
 			         * `BlankPageTemplate` — Blank page
