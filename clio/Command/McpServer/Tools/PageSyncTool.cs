@@ -46,13 +46,25 @@ public sealed class PageSyncTool(
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
-		// Pre-pass: deterministic JavaScript syntax check (ENG-89796) for every web
-		// body before invoking the LLM sampling service. A syntactically broken body
-		// would otherwise spend tokens on a sampling review whose verdict the syntax
-		// gate immediately throws away. Mobile bodies are JSON and skip this gate
-		// — they're validated by the mobile catalog later inside the lock block.
+		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures = BuildSyntaxFailures(args.Pages);
+		Dictionary<string, PageSamplingReview> samplingResults = await RunSamplingPrePassAsync(
+			server, args, syntaxFailures, cancellationToken);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, syntaxFailures, samplingResults);
+		return new PageSyncResponse {
+			Success = results.Count > 0 && results.All(r => r.Success),
+			Pages = results
+		};
+	}
+
+	// Pre-pass: deterministic JavaScript syntax check (ENG-89796) for every web body
+	// before invoking the LLM sampling service. A syntactically broken body would
+	// otherwise spend tokens on a sampling review whose verdict the syntax gate
+	// immediately throws away. Mobile bodies are JSON and skip this gate — they're
+	// validated by the mobile catalog later inside the lock block.
+	private static Dictionary<string, PageBodySyntaxValidationResult> BuildSyntaxFailures(
+		IEnumerable<PageSyncPageInput> pages) {
 		var syntaxFailures = new Dictionary<string, PageBodySyntaxValidationResult>(StringComparer.Ordinal);
-		foreach (PageSyncPageInput page in args.Pages) {
+		foreach (PageSyncPageInput page in pages) {
 			if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
 				continue;
 			}
@@ -61,64 +73,96 @@ public sealed class PageSyncTool(
 				syntaxFailures[page.SchemaName] = syntaxResult;
 			}
 		}
+		return syntaxFailures;
+	}
+
+	private static async Task<Dictionary<string, PageSamplingReview>> RunSamplingPrePassAsync(
+		McpServerLib.McpServer server,
+		PageSyncArgs args,
+		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures,
+		CancellationToken cancellationToken) {
 		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
-		if (args.SkipSampling != true) {
-			foreach (PageSyncPageInput page in args.Pages) {
-				if (syntaxFailures.ContainsKey(page.SchemaName)) {
-					// Skip sampling for pages already known to be syntactically broken.
-					// The per-page result is materialised below as a fail-fast failure
-					// without ever calling out to the LLM for them.
-					continue;
-				}
-				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
-					server, page.SchemaName, page.Body, page.Resources, cancellationToken);
-			}
+		if (args.SkipSampling == true) {
+			return samplingResults;
 		}
+		foreach (PageSyncPageInput page in args.Pages) {
+			// Skip sampling for pages already known to be syntactically broken — the
+			// per-page result is materialised below as a fail-fast failure without
+			// ever calling out to the LLM for them.
+			if (syntaxFailures.ContainsKey(page.SchemaName)) {
+				continue;
+			}
+			samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
+				server, page.SchemaName, page.Body, page.Resources, cancellationToken);
+		}
+		return samplingResults;
+	}
+
+	private List<PageSyncPageResult> ExecuteSyncBatch(
+		PageSyncArgs args,
+		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures,
+		Dictionary<string, PageSamplingReview> samplingResults) {
 		var results = new List<PageSyncPageResult>();
 		bool validate = args.Validate ?? true;
 		bool verify = args.Verify ?? false;
 		lock (McpToolExecutionLock.SyncRoot) {
 			try {
-				PageUpdateOptions envOptions = new() { Environment = args.EnvironmentName };
-				PageUpdateCommand updateCommand = commandResolver.Resolve<PageUpdateCommand>(envOptions);
+				PageUpdateCommand updateCommand = commandResolver.Resolve<PageUpdateCommand>(
+					new PageUpdateOptions { Environment = args.EnvironmentName });
 				PageGetCommand getCommand = verify
 					? commandResolver.Resolve<PageGetCommand>(
 						new PageGetOptions { Environment = args.EnvironmentName })
 					: null;
 				foreach (PageSyncPageInput page in args.Pages) {
-					if (syntaxFailures.TryGetValue(page.SchemaName, out PageBodySyntaxValidationResult failure)) {
-						// Materialise the pre-sampling syntax-gate failure as the page's
-						// final result. No PageUpdateCommand.TryUpdatePage call is issued
-						// for this page — the broken body never reaches Creatio.
-						results.Add(new PageSyncPageResult {
-							SchemaName = page.SchemaName,
-							Success = false,
-							Error = PageBodySyntaxValidator.FormatError(failure)
-						});
-						continue;
-					}
-					samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
-					PageSyncPageResult pageResult = SyncSinglePage(
-						page, updateCommand, getCommand, validate, verify, samplingReview, args.OutputDirectory);
-					results.Add(pageResult);
+					results.Add(ProcessSinglePage(
+						page, syntaxFailures, samplingResults, updateCommand, getCommand,
+						validate, verify, args.OutputDirectory));
 				}
 				Thread.Sleep(500);
 			} catch (Exception ex) {
-				foreach (PageSyncPageInput page in args.Pages) {
-					if (results.All(r => r.SchemaName != page.SchemaName)) {
-						results.Add(new PageSyncPageResult {
-							SchemaName = page.SchemaName,
-							Success = false,
-							Error = ex.Message
-						});
-					}
-				}
+				AddRemainingFailures(args.Pages, results, ex.Message);
 			}
 		}
-		return new PageSyncResponse {
-			Success = results.Count > 0 && results.All(r => r.Success),
-			Pages = results
-		};
+		return results;
+	}
+
+	private PageSyncPageResult ProcessSinglePage(
+		PageSyncPageInput page,
+		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures,
+		Dictionary<string, PageSamplingReview> samplingResults,
+		PageUpdateCommand updateCommand,
+		PageGetCommand getCommand,
+		bool validate,
+		bool verify,
+		string? outputDirectory) {
+		if (syntaxFailures.TryGetValue(page.SchemaName, out PageBodySyntaxValidationResult failure)) {
+			// Materialise the pre-sampling syntax-gate failure as the page's final
+			// result — no PageUpdateCommand.TryUpdatePage call is issued for this
+			// page, the broken body never reaches Creatio.
+			return new PageSyncPageResult {
+				SchemaName = page.SchemaName,
+				Success = false,
+				Error = PageBodySyntaxValidator.FormatError(failure)
+			};
+		}
+		samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
+		return SyncSinglePage(
+			page, updateCommand, getCommand, validate, verify, samplingReview, outputDirectory);
+	}
+
+	private static void AddRemainingFailures(
+		IEnumerable<PageSyncPageInput> pages,
+		List<PageSyncPageResult> results,
+		string errorMessage) {
+		foreach (PageSyncPageInput page in pages) {
+			if (results.All(r => r.SchemaName != page.SchemaName)) {
+				results.Add(new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Error = errorMessage
+				});
+			}
+		}
 	}
 
 	private PageSyncPageResult TryValidatePage(
