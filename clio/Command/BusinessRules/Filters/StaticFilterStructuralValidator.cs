@@ -152,7 +152,7 @@ internal static class StaticFilterStructuralValidator {
 					$"{path}.value: datePart '{leaf.DatePart}' expects a JSON integer (e.g. 2021 for Year, 14 for Day, 11 for Hour).");
 			case DatePartCatalog.DatePartValueKind.Time when value.ValueKind != JsonValueKind.String:
 				throw new ArgumentException(
-					$"{path}.value: datePart '{leaf.DatePart}' expects a JSON time-of-day string (e.g. \"11:06\" or \"11:06:00\").");
+					$"{path}.value: datePart '{leaf.DatePart}' expects a JSON time-of-day string (e.g. \"09:30\" or \"09:30:00\").");
 			default:
 				return;
 		}

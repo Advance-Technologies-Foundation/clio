@@ -693,7 +693,9 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "HourMinute", "value": "11:06:00" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		// Fixed clock at UTC+3 so the emitted local/UTC datetime carriers are deterministic.
+		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null,
+			nowProvider: () => new DateTimeOffset(2026, 6, 10, 0, 0, 0, TimeSpan.FromHours(3)));
 
 		string json = builder.Build(group, "Contact");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -713,7 +715,10 @@ public sealed class LocalEsqFilterBuilderTests {
 
 		JsonElement param = filter0.GetProperty("rightExpression").GetProperty("parameter");
 		param.GetProperty("dataValueType").GetInt32().Should().Be(9, because: "a time-of-day value is Time (9)");
-		param.GetProperty("value").GetString().Should().Be("11:06:00");
+		param.GetProperty("value").GetString().Should().Be("\"2026-06-10T11:06:00.000\"",
+			because: "the Freedom UI control needs the local datetime carrier as a quote-wrapped ISO string, not a bare HH:mm that renders as a placeholder");
+		param.GetProperty("dateValue").GetString().Should().Be("2026-06-10T08:06:00.000Z",
+			because: "dateValue carries the same instant in UTC (11:06 at +3 = 08:06Z)");
 	}
 
 	[Test]

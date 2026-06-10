@@ -320,6 +320,15 @@ internal sealed class EsqParameterDto {
 	[JsonPropertyName("dataValueType")]
 	public int DataValueType { get; set; }
 
+	/// <summary>
+	/// UTC-instant carrier for a Time / DateTime parameter (e.g. "2026-06-10T08:06:00.000Z"). The Freedom UI
+	/// lookup control needs both a UTC <c>dateValue</c> and a local <c>value</c> to render a time-of-day filter;
+	/// a bare "HH:mm" value renders as a placeholder. Omitted (null) for non-temporal parameters.
+	/// </summary>
+	[JsonPropertyName("dateValue")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DateValue { get; set; }
+
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 
