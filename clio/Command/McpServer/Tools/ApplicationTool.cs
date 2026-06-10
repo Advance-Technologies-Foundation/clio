@@ -186,7 +186,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		OpenWorld = false)]
 	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
-		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional)")]
+		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional). entity-schema-name must not already be bound to another section; if it is, creation fails with a 'Failed to create section ... is already bound to an existing section' error — inspect existing sections with list-app-sections instead of retrying.")]
 		[Required]
 		ApplicationSectionCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
