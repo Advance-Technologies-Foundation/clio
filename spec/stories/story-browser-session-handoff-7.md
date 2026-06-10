@@ -71,19 +71,23 @@ Test naming: `Execute_ShouldReturnSessionFilePath_WhenEnvironmentIsValid`, `Exec
 
 ## Definition of Done
 
-- [ ] Code compiles without `CLIO*` analyzer warnings
-- [ ] Inherits `BaseTool<GetBrowserSessionOptions>` (generic base)
-- [ ] Tool safety flags: `ReadOnly=false`, `Destructive=false`, `Idempotent=false`
-- [ ] MCP param set is `{environment, forceRefresh}` only — `outputPath` not exposed
-- [ ] Response JSON never contains cookie values; error messages sanitized
-- [ ] `SafeEnvironmentConfirmationRequiredException` yields a structured error result (no hang) — verified by test
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] E2E test stub added in `clio.mcp.e2e/` with `[Category("E2E")]` and a note that it is not in CI
-- [ ] PR description references this story file
+- [x] Code compiles without `CLIO*` analyzer warnings
+- [x] Returns a structured typed response (`GetBrowserSessionResult`) — see Notes for why the `SchemaNamePrefixTool` pattern is used instead of `BaseTool<T>` (which returns `CommandExecutionResult`)
+- [x] Tool safety flags: `ReadOnly=false`, `Destructive=false`, `Idempotent=false`
+- [x] MCP param set is `{environment-name, force-refresh}` only — `output-path` not exposed (CLI-only)
+- [x] Response carries `session-file-path` and never a cookie value; error messages sanitized
+- [x] `SafeEnvironmentConfirmationRequiredException` yields a structured error result (no hang) — verified by test
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] E2E coverage added in `clio.mcp.e2e/GetBrowserSessionToolE2ETests.cs` (advertised-tool hermetic test + reachable-env happy path; not in CI — `Assert.Ignore` without a sandbox)
+- [ ] PR description references this story file (single PR at the end)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: 5 `GetBrowserSessionToolTests` (path returned; force-refresh forwarded; Safe-env → structured error; auth failure → error; args expose no output-path); full unit suite 3523 passed / 0 new failures; `clio.mcp.e2e` builds (2 E2E tests).
+- Files: `clio/Command/McpServer/Tools/GetBrowserSessionTool.cs` (tool + args + result records); `clio.tests/Command/McpServer/GetBrowserSessionToolTests.cs`; `clio.mcp.e2e/GetBrowserSessionToolE2ETests.cs`.
 - Notes:
+  - **Pattern choice (deviation from the story's `BaseTool<T>` line, justified):** `BaseTool<T>.InternalExecute` returns a `CommandExecutionResult` (exit code + flushed log lines), which cannot express the story's required `{ session-file-path }` payload. The tool therefore follows the established **`SchemaNamePrefixTool` structured-response pattern** — inject `IToolCommandResolver`, `Resolve<IBrowserSessionService>(env)` + `Resolve<EnvironmentSettings>(env)` from the per-env container, call the service, and return a typed `GetBrowserSessionResult`. No explicit DI registration is needed (auto-discovered by `WithToolsFromAssembly`, constructed via `ActivatorUtilities`, exactly like `SchemaNamePrefixTool`).
+  - **Safe-env fail-closed**: the `Resolve` call runs `Fill` → the Story-1 console fails closed on the MCP stdio path → `SafeEnvironmentConfirmationRequiredException` is caught and returned as a structured error (no hang). This is the in-tool counterpart of SM-03 (the automated stdio CI guard remains a follow-up — test-plan TC-I-05).
+  - **MCP reviewed**: `output-path` deliberately omitted from the MCP surface (CLI-only) so an agent cannot redirect a bearer-token file. The capability-map entry (`docs/McpCapabilityMap.md`) is Story 10. No existing MCP prompt/resource enumerates per-tool, so none needed updating.

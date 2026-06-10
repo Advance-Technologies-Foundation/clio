@@ -105,8 +105,9 @@ stories:
     title: "GetBrowserSessionTool — MCP Tool"
     feature: "browser-session-handoff"
     size: M
-    status: ready-for-dev
+    status: in-progress
     depends_on: [story-browser-session-handoff-1, story-browser-session-handoff-5]
+    note: "Implemented + verified 2026-06-10 (5 unit tests; full suite 3523 pass, 0 new; e2e builds). Structured-response pattern (SchemaNamePrefixTool), not BaseTool<T> — see story Notes. output-path not on MCP surface."
     file: spec/stories/story-browser-session-handoff-7.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md
