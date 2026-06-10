@@ -59,12 +59,14 @@ internal static class StaticFilterDeserializer {
 					? m.GetString()
 					: null;
 			int? valueMacrosArgument = ReadOptionalInt(leafElement, "valueMacrosArgument", leafPath);
+			string? datePart = ReadOptionalString(leafElement, "datePart");
 			result.Add(new StaticFilterLeaf {
 				ColumnPath = columnPath,
 				ComparisonType = comparisonType,
 				Value = value,
 				ValueMacros = valueMacros,
-				ValueMacrosArgument = valueMacrosArgument
+				ValueMacrosArgument = valueMacrosArgument,
+				DatePart = datePart
 			});
 			index++;
 		}
