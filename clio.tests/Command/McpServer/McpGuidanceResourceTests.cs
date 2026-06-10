@@ -1108,8 +1108,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish branching rules between new-app and existing-app flows");
 		article.Text.Should().Contain("Schema sync recovery patterns",
 			because: "the guide should cover schema-sync recovery patterns owned by clio");
-		article.Text.Should().Contain("InsertQuery failed",
-			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("Failed to create section",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions using the current section-create error marker");
 		article.Text.Should().Contain("metadata readback timeout",
 			because: "the guide should describe the section readback timeout recovery path");
 		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",

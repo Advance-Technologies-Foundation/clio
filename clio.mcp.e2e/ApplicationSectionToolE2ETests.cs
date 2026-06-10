@@ -330,6 +330,83 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("Reuses a system entity that is already bound to an out-of-the-box section and verifies create-app-section returns a descriptive failure instead of the opaque 'InsertQuery failed.' message. Covers ENG-90943: the agent received a bare InsertQuery failure with no hint that the entity was already used by an existing section.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create reports a descriptive failure when the entity is already bound to a section")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section reusing the Contact entity (already bound to the OOB Contacts section) and verifies the failure names the reused entity instead of returning the opaque InsertQuery fallback.")]
+	public async Task ApplicationSectionCreate_WithEntityAlreadyBoundToSection_Should_Report_Descriptive_Failure() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		const string alreadyBoundEntitySchemaName = "Contact";
+		string caption = $"E2E Dup {Guid.NewGuid():N}"[..22];
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		string? createdSectionCode = null;
+		try {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["caption"] = caption,
+						["entity-schema-name"] = alreadyBoundEntitySchemaName
+					}
+				},
+				cancellationTokenSource.Token);
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: $"structured create-app-section failures should stay in the payload, not surface as MCP-level errors. Actual: {DescribeCallResult(callResult)}");
+			if (response.Success) {
+				createdSectionCode = response.Section?.Code;
+				Assert.Ignore(
+					$"Environment '{environmentName}' allowed binding entity '{alreadyBoundEntitySchemaName}' to a new section, " +
+					"so the duplicate-binding failure path could not be exercised here.");
+			}
+
+			response.Error.Should().NotBeNullOrWhiteSpace(
+				because: "a failed create-app-section must carry an error message");
+			response.Error.Should().NotBe("InsertQuery failed.",
+				because: "the opaque legacy fallback must be replaced with a diagnostic message");
+			response.Error.Should().MatchRegex(
+				$"(?is)(already bound to an existing section|{alreadyBoundEntitySchemaName})",
+				because: "the failure should explain that the reused entity is already bound to an existing section");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
+				try {
+					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+					await session.CallToolAsync(
+						SectionDeleteToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = ApplicationCode,
+								["section-code"] = createdSectionCode
+							}
+						},
+						cleanupCts.Token);
+				} catch (Exception ex) {
+					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+				}
+			}
+		}
+	}
+
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
