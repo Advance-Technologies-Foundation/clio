@@ -121,7 +121,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Generates source code for schemas that require it.
 		/// </summary>
-		GenerateRequiredSchemasSources = 41
+		GenerateRequiredSchemasSources = 41,
+
+		/// <summary>
+		///     Forms-auth login endpoint. IsNetCore-aware: <see cref="Build(KnownRoute)"/> prepends the
+		///     <c>0/</c> WebAppAlias for .NET Framework environments and omits it for .NET Core.
+		/// </summary>
+		AuthServiceLogin = 42
 
 	}
 
@@ -176,6 +182,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.AuthServiceLogin, "ServiceModel/AuthService.svc/Login"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

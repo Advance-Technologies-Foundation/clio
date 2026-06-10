@@ -112,10 +112,24 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
+		// Dedicated forms-auth client for browser-session harvesting. UseCookies=false keeps the
+		// Set-Cookie response headers readable (the cookie jar would otherwise consume them), and
+		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
+		// rather than a followed login-page redirect.
+		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
-		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService);
+		// RealInteractiveConsole fails closed on redirected stdin (MCP stdio / CI), so this single
+		// composition-root binding is correct for both the interactive CLI and the per-environment
+		// MCP containers that ToolCommandResolver builds from BindingsModule.
+		IInteractiveConsole interactiveConsole = new RealInteractiveConsole();
+		services.AddSingleton<IInteractiveConsole>(interactiveConsole);
+		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService, interactiveConsole);
 		services.AddSingleton<ISettingsBootstrapService>(settingsBootstrapService);
 		services.AddSingleton<ISettingsRepository>(settingsRepository);
 		LogBootstrapDiagnostics(registrationProfile, bootstrapResult.Report);
@@ -184,6 +198,10 @@ public class BindingsModule {
 		}
 
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
+		services.AddSingleton<IServiceUrlBuilderFactory, ServiceUrlBuilderFactory>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
+		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()

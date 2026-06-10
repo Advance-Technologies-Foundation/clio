@@ -2,6 +2,7 @@ using System;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -32,7 +33,7 @@ public class ToolCommandResolverTests {
 			true,
 			true));
 		settingsRepository.IsEnvironmentExists("missing-env").Returns(false);
-		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService);
+		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService, new NonInteractiveConsole());
 		EnvironmentOptions options = new() {
 			Environment = "missing-env"
 		};
@@ -66,7 +67,7 @@ public class ToolCommandResolverTests {
 			[],
 			true,
 			false));
-		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService);
+		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService, new NonInteractiveConsole());
 		EnvironmentOptions options = new() {
 			Uri = "http://localhost",
 			Login = "Supervisor",
@@ -96,7 +97,7 @@ public class ToolCommandResolverTests {
 		SettingsRepository.FileSystem = fileSystem;
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
-		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService);
+		ToolCommandResolver resolver = new(settingsRepository, settingsBootstrapService, new NonInteractiveConsole());
 		EnvironmentOptions options = new();
 
 		try {
