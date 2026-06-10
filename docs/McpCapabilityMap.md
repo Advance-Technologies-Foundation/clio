@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-03-26`
+Snapshot date: `2026-06-10`
 
 ## One-sentence summary
 
@@ -195,6 +195,14 @@ This area gives the AI a clean application-level view of the platform.
   Return application context, packages, and related metadata for a single installed app.
 - `create-app`
   Create a Creatio application and return its structured context.
+- `create-app-section`
+  Add a section to an existing installed application; returns the created section, entity, and page readback.
+- `update-app-section`
+  Update metadata (caption, description, icon) of an existing section; returns before/after readback.
+- `delete-app-section`
+  Remove a section from an existing application; returns the deleted-section readback.
+- `list-app-sections`
+  List the sections of an existing installed application.
 - `delete-app`
   Uninstall an application by name or code.
 - `install-application`
@@ -205,10 +213,20 @@ What an external AI can practically do here:
 - enumerate installed apps
 - inspect one app precisely before modifying or replacing it
 - create new apps from a template
+- add, update, list, and remove sections inside an existing app
 - remove apps
 - install packaged apps into an environment
 
 The AI sees this as a higher abstraction layer than package-level commands.
+
+**Long-running / progress contract.** `create-app`, `create-app-section`,
+`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
+call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
+overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
+clients reset their inactivity timeout. A progress notification means the server is
+still working — the AI must await completion and must not retry or fall back to raw SQL
+or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 

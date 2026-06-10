@@ -1776,4 +1776,92 @@ public sealed class ApplicationToolTests {
 			because: "unrecognised free-form names must not smuggle invalid colors into SaveSchema");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Invokes list-app-sections through the full MCP heartbeat-enabled signature (the server and request context the SDK injects) and verifies the progress wrapper is transparent: the backend service is called exactly once and the structured success envelope is returned unchanged.")]
+	public async Task ApplicationSectionGetList_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
+		// Arrange
+		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
+		applicationSectionGetListService.GetSections("sandbox", Arg.Any<ApplicationSectionGetListRequest>())
+			.Returns(new ApplicationSectionGetListResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				[
+					new ApplicationSectionInfoResult(
+						"section-id", "UsrOrders", "Orders", "Order workspace", "UsrOrder",
+						"pkg-uid", "section-schema-uid", "icon-id", "#A6DE00", null)
+				]));
+		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+
+		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
+		ApplicationSectionListContextResponse result = await tool.ApplicationSectionGetList(
+			new ApplicationSectionGetListArgs(EnvironmentName: "sandbox", ApplicationCode: "UsrOrdersApp"),
+			server: null,
+			requestContext: null,
+			cancellationToken: default);
+
+		// Assert
+		applicationSectionGetListService.Received(1).GetSections(
+			"sandbox",
+			Arg.Is<ApplicationSectionGetListRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
+		result.Success.Should().BeTrue(
+			because: "the heartbeat wrapper must be transparent and must not alter a successful section-list response");
+		result.Sections.Should().ContainSingle(
+			because: "the wrapper must surface the backend section collection unchanged");
+		result.Error.Should().BeNull(
+			because: "wrapping the call in a heartbeat must not introduce an error payload on success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Invokes create-app-section through the full MCP heartbeat-enabled signature and verifies the progress wrapper is transparent: the backend service is called exactly once and the structured section readback is returned unchanged.")]
+	public async Task ApplicationSectionCreate_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(new ApplicationSectionCreateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id", "UsrOrders", "Orders", "Order workspace", "UsrOrder",
+					"pkg-uid", "section-schema-uid", "icon-id", "#A6DE00", null),
+				new ApplicationEntityInfoResult("entity-uid", "UsrOrder", "Order", []),
+				[
+					new PageListItem {
+						SchemaName = "UsrOrders_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrOrdersApp",
+						ParentSchemaName = "BasePage"
+					}
+				]));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
+		ApplicationSectionContextResponse result = await tool.ApplicationSectionCreate(
+			new ApplicationSectionCreateArgs(
+				EnvironmentName: "sandbox",
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"),
+			server: null,
+			requestContext: null,
+			cancellationToken: default);
+
+		// Assert
+		applicationSectionCreateService.Received(1).CreateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
+		result.Success.Should().BeTrue(
+			because: "the heartbeat wrapper must be transparent and must not alter a successful section-create response");
+		result.Section!.Code.Should().Be("UsrOrders",
+			because: "the wrapper must surface the created section readback unchanged");
+	}
+
 }

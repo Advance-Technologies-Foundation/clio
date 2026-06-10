@@ -27,6 +27,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
+			       - The application tools (`create-app-section`, `update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`) are long-running backend calls that stream `notifications/progress`. Await completion; a progress notification is not a stall, so do not cancel/retry or fall back to raw SQL or manual UI on a perceived client timeout.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For seeding, listing, or updating Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
