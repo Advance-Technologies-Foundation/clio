@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using Acornima;
+using Acornima.Ast;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -62,12 +63,25 @@ internal static class PageBodySyntaxValidator {
 	/// &lt;1 ms). The shared parser instance amortises allocation across calls.
 	/// </para>
 	/// </remarks>
-	public static PageBodySyntaxValidationResult Validate(string body) {
+	public static PageBodySyntaxValidationResult Validate(string body) =>
+		ValidateAndParse(body, out _);
+
+	/// <summary>
+	/// Same contract as <see cref="Validate"/> but additionally yields the parsed
+	/// <see cref="Script"/> AST on success so that downstream consumers (e.g.
+	/// <see cref="PageBodyAstLinter"/>) can reuse it without re-parsing the body.
+	/// </summary>
+	/// <remarks>
+	/// On failure <paramref name="ast"/> is set to <c>null</c>. On success it carries
+	/// the AST root returned by <see cref="Parser.ParseScript(string,bool,string?)"/>.
+	/// </remarks>
+	public static PageBodySyntaxValidationResult ValidateAndParse(string body, out Script ast) {
+		ast = null;
 		if (body is null) {
 			return PageBodySyntaxValidationResult.Valid;
 		}
 		try {
-			ParserSlot.Value!.ParseScript(body);
+			ast = ParserSlot.Value!.ParseScript(body);
 			return PageBodySyntaxValidationResult.Valid;
 		} catch (SyntaxErrorException ex) {
 			// Acornima reports 1-based line and 0-based column. Normalise the column

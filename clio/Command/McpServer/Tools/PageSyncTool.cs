@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Acornima.Ast;
 using Clio.Command;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
@@ -46,50 +47,57 @@ public sealed class PageSyncTool(
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
-		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures = BuildSyntaxFailures(args.Pages);
+		PageSyncPrePassResults prePass = BuildPrePassResults(args.Pages);
 		Dictionary<string, PageSamplingReview> samplingResults = await RunSamplingPrePassAsync(
-			server, args, syntaxFailures, cancellationToken);
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, syntaxFailures, samplingResults);
+			server, args, prePass, cancellationToken);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, prePass, samplingResults);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
 		};
 	}
 
-	// Pre-pass: deterministic JavaScript syntax check (ENG-89796) for every web body
-	// before invoking the LLM sampling service. A syntactically broken body would
-	// otherwise spend tokens on a sampling review whose verdict the syntax gate
-	// immediately throws away. Mobile bodies are JSON and skip this gate — they're
-	// validated by the mobile catalog later inside the lock block.
-	private static Dictionary<string, PageBodySyntaxValidationResult> BuildSyntaxFailures(
-		IEnumerable<PageSyncPageInput> pages) {
-		var syntaxFailures = new Dictionary<string, PageBodySyntaxValidationResult>(StringComparer.Ordinal);
+	// Pre-pass: deterministic JavaScript syntax check (ENG-89796) for every web
+	// body before invoking the LLM sampling service. A syntactically broken body
+	// would otherwise spend tokens on a sampling review whose verdict the syntax
+	// gate immediately throws away. The AST is also captured here so the AST
+	// linter (PageBodyAstLinter) can reuse it later inside SyncSinglePage
+	// without re-parsing — it runs AFTER the existing regex content validators
+	// so overlapping detections still surface with their established wording.
+	// Mobile bodies are JSON and skip this gate — they're validated by the
+	// mobile catalog later inside the lock block.
+	private static PageSyncPrePassResults BuildPrePassResults(IEnumerable<PageSyncPageInput> pages) {
+		var failures = new Dictionary<string, string>(StringComparer.Ordinal);
+		var asts = new Dictionary<string, Script>(StringComparer.Ordinal);
 		foreach (PageSyncPageInput page in pages) {
 			if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
 				continue;
 			}
-			PageBodySyntaxValidationResult syntaxResult = PageBodySyntaxValidator.Validate(page.Body);
+			PageBodySyntaxValidationResult syntaxResult =
+				PageBodySyntaxValidator.ValidateAndParse(page.Body, out Script ast);
 			if (!syntaxResult.IsValid) {
-				syntaxFailures[page.SchemaName] = syntaxResult;
+				failures[page.SchemaName] = PageBodySyntaxValidator.FormatError(syntaxResult);
+				continue;
 			}
+			asts[page.SchemaName] = ast;
 		}
-		return syntaxFailures;
+		return new PageSyncPrePassResults(failures, asts);
 	}
 
 	private static async Task<Dictionary<string, PageSamplingReview>> RunSamplingPrePassAsync(
 		McpServerLib.McpServer server,
 		PageSyncArgs args,
-		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures,
+		PageSyncPrePassResults prePass,
 		CancellationToken cancellationToken) {
 		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
 		if (args.SkipSampling == true) {
 			return samplingResults;
 		}
 		foreach (PageSyncPageInput page in args.Pages) {
-			// Skip sampling for pages already known to be syntactically broken — the
-			// per-page result is materialised below as a fail-fast failure without
-			// ever calling out to the LLM for them.
-			if (syntaxFailures.ContainsKey(page.SchemaName)) {
+			// Skip sampling for pages already known to be syntactically broken —
+			// the per-page result is materialised below as a fail-fast failure
+			// without ever calling out to the LLM for them.
+			if (prePass.SyntaxFailures.ContainsKey(page.SchemaName)) {
 				continue;
 			}
 			samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
@@ -100,7 +108,7 @@ public sealed class PageSyncTool(
 
 	private List<PageSyncPageResult> ExecuteSyncBatch(
 		PageSyncArgs args,
-		Dictionary<string, PageBodySyntaxValidationResult> syntaxFailures,
+		PageSyncPrePassResults prePass,
 		Dictionary<string, PageSamplingReview> samplingResults) {
 		var results = new List<PageSyncPageResult>();
 		bool verify = args.Verify ?? false;
@@ -116,7 +124,7 @@ public sealed class PageSyncTool(
 					args.Validate ?? true,
 					verify,
 					args.OutputDirectory,
-					syntaxFailures,
+					prePass,
 					samplingResults);
 				foreach (PageSyncPageInput page in args.Pages) {
 					results.Add(ProcessSinglePage(page, ctx));
@@ -130,19 +138,36 @@ public sealed class PageSyncTool(
 	}
 
 	private PageSyncPageResult ProcessSinglePage(PageSyncPageInput page, PageSyncBatchContext ctx) {
-		if (ctx.SyntaxFailures.TryGetValue(page.SchemaName, out PageBodySyntaxValidationResult failure)) {
-			// Materialise the pre-sampling syntax-gate failure as the page's final
+		if (ctx.PrePass.SyntaxFailures.TryGetValue(page.SchemaName, out string failureMessage)) {
+			// Materialise the pre-write syntax-gate failure as the page's final
 			// result — no PageUpdateCommand.TryUpdatePage call is issued for this
-			// page, the broken body never reaches Creatio.
+			// page; the broken body never reaches Creatio. The Validation envelope
+			// carries the same failure message under Errors[] so callers that key
+			// on the validation result get a coherent shape regardless of which
+			// gate rejected the body.
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
 				Success = false,
-				Error = PageBodySyntaxValidator.FormatError(failure)
+				Error = failureMessage,
+				Validation = new PageSyncValidationResult {
+					MarkersOk = true,
+					JsSyntaxOk = false,
+					ContentOk = true,
+					Errors = [failureMessage]
+				}
 			};
 		}
 		ctx.SamplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
-		return SyncSinglePage(
-			page, ctx.UpdateCommand, ctx.GetCommand, ctx.Validate, ctx.Verify, samplingReview, ctx.OutputDirectory);
+		ctx.PrePass.ParsedAsts.TryGetValue(page.SchemaName, out Script? parsedAst);
+		PageSyncOperationOptions opOptions = new(
+			ctx.UpdateCommand,
+			ctx.GetCommand,
+			ctx.Validate,
+			ctx.Verify,
+			samplingReview,
+			ctx.OutputDirectory,
+			parsedAst);
+		return SyncSinglePage(page, opOptions);
 	}
 
 	private static void AddRemainingFailures(
@@ -165,8 +190,24 @@ public sealed class PageSyncTool(
 		bool Validate,
 		bool Verify,
 		string? OutputDirectory,
-		Dictionary<string, PageBodySyntaxValidationResult> SyntaxFailures,
+		PageSyncPrePassResults PrePass,
 		Dictionary<string, PageSamplingReview> SamplingResults);
+
+	private sealed record PageSyncPrePassResults(
+		Dictionary<string, string> SyntaxFailures,
+		Dictionary<string, Script> ParsedAsts);
+
+	// Per-page execution options for SyncSinglePage. Bundled into a record so
+	// the method stays under Sonar S107's 7-parameter limit after the AST
+	// (parsedAst) was added on the lint follow-up.
+	private sealed record PageSyncOperationOptions(
+		PageUpdateCommand UpdateCommand,
+		PageGetCommand GetCommand,
+		bool Validate,
+		bool Verify,
+		PageSamplingReview SamplingReview,
+		string? OutputDirectory,
+		Script? ParsedAst);
 
 	private PageSyncPageResult TryValidatePage(
 		PageSyncPageInput page,
@@ -206,32 +247,56 @@ public sealed class PageSyncTool(
 		return null;
 	}
 
-	private PageSyncPageResult SyncSinglePage(
-		PageSyncPageInput page,
-		PageUpdateCommand updateCommand,
-		PageGetCommand getCommand,
-		bool validate,
-		bool verify,
-		PageSamplingReview samplingReview,
-		string? outputDirectory) {
+	private PageSyncPageResult SyncSinglePage(PageSyncPageInput page, PageSyncOperationOptions opOptions) {
 		try {
-			// Note: the deterministic JavaScript syntax check (ENG-89796) ran in the
-			// pre-pass at the top of SyncPages BEFORE sampling, so any syntactically
-			// broken body never reaches this method — it is materialised directly as
-			// a fail-fast PageSyncPageResult in the foreach above.
+			// Note: the deterministic JavaScript syntax check (ENG-89796) ran in
+			// the pre-pass at the top of SyncPages BEFORE sampling, so any
+			// syntactically broken body never reaches this method — it is
+			// materialised directly as a fail-fast PageSyncPageResult in the
+			// foreach above. The AST captured by the syntax pre-pass is then
+			// reused below for the AST lint pass after the regex validators ran.
 			PageSyncValidationResult validationResult = null;
-			if (validate) {
-				PageSyncPageResult validationFailure = TryValidatePage(page, samplingReview, out validationResult);
+			if (opOptions.Validate) {
+				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}
-			if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			// AST lint pass runs after the regex content validators so the
+			// established regex error wording wins on overlapping detections;
+			// lint findings only ADD detections.
+			IReadOnlyList<string> lintWarnings = Array.Empty<string>();
+			if (opOptions.ParsedAst is not null) {
+				IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(opOptions.ParsedAst);
+				IReadOnlyList<PageBodyLintFinding> lintErrors =
+					findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+				if (lintErrors.Count > 0) {
+					string lintError = PageBodyAstLinter.FormatErrors(lintErrors);
+					return new PageSyncPageResult {
+						SchemaName = page.SchemaName,
+						Success = false,
+						Validation = new PageSyncValidationResult {
+							MarkersOk = validationResult?.MarkersOk ?? true,
+							JsSyntaxOk = validationResult?.JsSyntaxOk ?? true,
+							ContentOk = false,
+							Errors = [lintError]
+						},
+						SamplingReview = opOptions.SamplingReview,
+						Error = lintError
+					};
+				}
+				lintWarnings = findings
+					.Where(f => f.Severity == LintSeverity.Warning)
+					.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+					.ToArray();
+			}
+			validationResult = AppendCommandWarnings(validationResult, lintWarnings);
+			if (opOptions.SamplingReview is { Ok: false, Skipped: false } && opOptions.SamplingReview.Issues?.Count > 0) {
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
 					Validation = validationResult,
-					SamplingReview = samplingReview,
-					Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+					SamplingReview = opOptions.SamplingReview,
+					Error = "Sampling review found issues: " + string.Join("; ", opOptions.SamplingReview.Issues)
 						+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
 				};
 			}
@@ -242,7 +307,7 @@ public sealed class PageSyncTool(
 				Resources = page.Resources,
 				OptionalProperties = page.OptionalProperties
 			};
-			updateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
+			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
@@ -252,9 +317,9 @@ public sealed class PageSyncTool(
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
-			if (verify && getCommand != null) {
+			if (opOptions.Verify && opOptions.GetCommand != null) {
 				PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
-				getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
+				opOptions.GetCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
 				if (!getResponse.Success) {
 					return new PageSyncPageResult {
 						SchemaName = page.SchemaName,
@@ -271,7 +336,7 @@ public sealed class PageSyncTool(
 						fileSystem.Directory.GetCurrentDirectory(),
 						Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 						ClioRuntimePaths.Home,
-						outputDirectory);
+						opOptions.OutputDirectory);
 					string schemaDir = fileSystem.Path.Combine(
 						anchor, ".clio-pages", page.SchemaName);
 					fileSystem.Directory.CreateDirectory(schemaDir);
@@ -284,7 +349,7 @@ public sealed class PageSyncTool(
 					Success = true,
 					BodyLength = updateResponse.BodyLength,
 					Validation = validationResult,
-					SamplingReview = samplingReview,
+					SamplingReview = opOptions.SamplingReview,
 					ResourcesRegistered = updateResponse.ResourcesRegistered,
 					Page = getResponse.Page,
 					VerifiedBodyFile = verifiedBodyFile
@@ -295,7 +360,7 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				SamplingReview = samplingReview,
+				SamplingReview = opOptions.SamplingReview,
 				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {

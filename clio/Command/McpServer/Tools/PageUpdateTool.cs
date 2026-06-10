@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Acornima.Ast;
 using Clio.Common;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
@@ -51,15 +53,20 @@ public sealed class PageUpdateTool(
 				Success = false,
 				Error = "Either 'body' or 'body-file' must provide page body content."
 			};
-		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are JSON
-		// and are handled by their own validator below; for web bodies we parse the
-		// body with Acornima BEFORE invoking semantic validators or the sampling
-		// service. A syntax error here means the page would not load in the
-		// browser — failing fast surfaces the precise {line, column, message} to
-		// the operator without sinking time into model-side review or persisting
-		// a broken body to Creatio.
+		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
+		// JSON and are handled by their own validator below; for web bodies we
+		// parse the body with Acornima BEFORE invoking the regex-based content
+		// validators or the sampling service. A syntax error means the page
+		// would not load in the browser — failing fast surfaces the precise
+		// {line, column, message} to the operator without sinking time into
+		// model-side review or persisting a broken body. The parsed AST is
+		// then fed into PageBodyAstLinter further down (AFTER the regex
+		// validators ran) so the established regex error messages still win
+		// on overlapping detections; lint findings only ADD detections.
+		Script parsedAst = null;
 		if (PageSchemaTypeExtensions.FromBody(options.Body) != PageSchemaType.Mobile) {
-			PageBodySyntaxValidationResult syntaxResult = PageBodySyntaxValidator.Validate(options.Body);
+			PageBodySyntaxValidationResult syntaxResult =
+				PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
 			if (!syntaxResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
@@ -70,6 +77,26 @@ public sealed class PageUpdateTool(
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return validationFailure;
+		// AST lint pass: runs on the success path of the regex validators so
+		// the regex messages (which existing tests and operator habits depend on)
+		// remain authoritative for overlapping detections. Lint findings cover
+		// only what the regex layer does not.
+		IReadOnlyList<string> lintWarnings = Array.Empty<string>();
+		if (parsedAst is not null) {
+			IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
+			IReadOnlyList<PageBodyLintFinding> lintErrors =
+				findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+			if (lintErrors.Count > 0) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = PageBodyAstLinter.FormatErrors(lintErrors)
+				};
+			}
+			lintWarnings = findings
+				.Where(f => f.Severity == LintSeverity.Warning)
+				.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+				.ToArray();
+		}
 		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		if (samplingFailure != null)
@@ -87,7 +114,9 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		response.SamplingReview = samplingReview;
-		IReadOnlyList<string> mergedWarnings = MergeWarnings(validationWarnings, response.Warnings);
+		IReadOnlyList<string> mergedWarnings = MergeWarnings(
+			MergeWarnings(validationWarnings, response.Warnings),
+			lintWarnings);
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
 	}

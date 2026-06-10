@@ -99,11 +99,70 @@ orders of magnitude headroom).
 - AMD `define(...)` wrapper must parse cleanly via `ParseScript`. Confirmed by
   the Day-0 probe; documented as the chosen parse mode in the validator code.
 
-### Out of scope (deferred follow-up per the task description)
+### In-scope addendum: AST lint pass (added on review feedback)
 
-A lint pass over the resulting AST for known agent hallucinations
-(`await X = Y`, direct `$context.<Attr> = …` assignment, handlers as object,
-validators / converters as array) is **out of scope** for ENG-89796. The
-syntax-only check is the deterministic floor; the lint pass is an optional
-quality layer to be filed as a separate ticket once the AST plumbing is in
-place.
+After the initial review the scope was expanded to ship — alongside the
+syntactic floor — a small **AST lint pass** that catches the most-impactful
+semantic anti-patterns described in the existing guidance resources:
+`PageSchemaHandlersGuidanceResource`, `PageSchemaValidatorsGuidanceResource`,
+`PageSchemaConvertersGuidanceResource`, and `PageModificationGuidanceResource`.
+Rationale: the syntax floor + reordering the lint pass to run **after** the
+existing regex validators in `SchemaValidationService` meant adding the
+checks here cost almost nothing in incremental review surface (the AST is
+already in hand from the syntax parse), and shipping them now closes the
+"follow-up that never happens" gap.
+
+#### Rule catalogue
+
+`Tools/PageBodyAstLinter.cs` ships these rules (rule id → severity):
+
+| Rule id | Severity | Anti-pattern |
+|---|---|---|
+| `handlers-must-be-array` | Error | `handlers: { ... }` (object literal) instead of `[ ... ]` |
+| `validators-must-be-object` | Error | `validators: [ ... ]` (array) instead of `{ }` |
+| `converters-must-be-object` | Error | `converters: [ ... ]` (array) instead of `{ }` |
+| `validator-params-empty` | Error | `params: []` inside a custom validator declaration |
+| `validator-bad-return-literal` | Error | Validator return is `true` / `false` / empty `{}` / hardcoded string |
+| `converter-crt-prefix-reserved` | Error | Custom converter key uses the reserved `crt.*` namespace |
+| `handler-uses-deprecated-context-api` | Warning | `request.viewModel` / `.sender` / `.$get` / `.$set` / `.$context.get` |
+| `handler-uses-handler-chain-service-instance` | Warning | `sdk.HandlerChainService.instance.process(...)` |
+| `converter-fetch-call` | Warning | Direct `fetch(...)` call (cost is per-render if the call site is inside a converter) |
+
+`Error` findings block the write (the body is NOT sent to Creatio).
+`Warning` findings are appended to the validation warnings list and the
+write proceeds — symmetric with the existing `ValidateContextAccessAwait`
+soft-warning behaviour.
+
+#### Architectural choices
+
+1. **Lint runs AFTER the regex validators in `SchemaValidationService`.**
+   Existing regex validators catch many of the same patterns with their
+   own (older, established) error wording. To avoid changing the error
+   messages every test and every operator memorised, lint runs on the
+   regex layer's success path: lint findings **only add** detections that
+   the regex layer does not cover. On overlap, the regex message wins.
+
+2. **The same Acornima AST is reused.** `PageBodySyntaxValidator` exposes
+   `ValidateAndParse(body, out Script ast)` so the lint pass does not
+   double-parse. A 50 KB body still parses in <1 ms.
+
+3. **Context-dependent rules use a `VisitContext` flag carried through the
+   recursive walker.** Rules that should only fire inside the `validators`
+   schema section (e.g. `validator-bad-return-literal`) or the `converters`
+   section (e.g. `converter-crt-prefix-reserved`) inherit a per-subtree
+   flag rather than walking up parent pointers (Acornima nodes do not
+   expose a `Parent` accessor).
+
+4. **The `request-type-missing-Request-suffix` rule was intentionally NOT
+   shipped.** A naive form misfires on Freedom UI **component** types in
+   `viewConfigDiff` entries (`"type": "crt.ComboBox"`, `"crt.Input"`,
+   `"crt.MaxLength"` — UI element types, not request dispatch payloads).
+   A correct form requires bounding the rule to `ObjectExpression`s that
+   are the argument to `request.$context.executeRequest(...)` or
+   `sdk.HandlerChainService.instance.process(...)`. That bounded variant
+   is deferred to a follow-up.
+
+5. **Migration of existing regex validators to AST is OUT of scope.**
+   The regex layer is well-trodden, tested, and works. Replacing it would
+   add re-test risk without functional gain. Lint complements; it does
+   not replace.

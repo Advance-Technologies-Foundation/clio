@@ -99,6 +99,53 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("ENG-89796 follow-up: update-page fails fast at the AST lint gate when SCHEMA_VALIDATORS ships as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page fails fast on validators-must-be-object lint error before any remote call")]
+	[AllureDescription("Starts the real clio MCP server and submits a syntactically valid body where SCHEMA_VALIDATORS is an array literal rather than an object map. The existing regex validators do NOT cover this anti-pattern; verifying the structured response carries `Page body lint failed` confirms the AST lint pass surfaces through the real MCP wire.")]
+	public async Task PageUpdateTool_Should_FailFast_When_Validators_Section_Is_Array_Literal() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		// Body is syntactically valid AND passes the existing regex content
+		// validators — the failure only emerges at the AST lint stage. Mobile
+		// is intentionally avoided (it skips the JS gate).
+		string validatorsAsArrayBody =
+			"define(\"Bad_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/[]/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrLintValidatorsShape_FormPage",
+					["body"] = validatorsAsArrayBody,
+					["dry-run"] = true
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the lint failure is a structured tool response, not an MCP transport error");
+		response.Success.Should().BeFalse(
+			because: "validators-as-array is rejected by the Freedom UI page contract; the lint gate must catch it end-to-end via the real MCP transport per AGENTS.md MCP rule");
+		response.Error.Should().Contain("Page body lint failed",
+			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
+		response.Error.Should().Contain("validators-must-be-object",
+			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
+	}
+
+	[Test]
 	[Description("Reports readable failures when update-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page reports invalid environment failures")]
