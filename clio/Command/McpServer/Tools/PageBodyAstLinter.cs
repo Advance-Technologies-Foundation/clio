@@ -145,53 +145,47 @@ internal static class PageBodyAstLinter {
 	// covers all locations without requiring a structural pre-pass.
 	private static void CheckSchemaSectionShapes(ObjectExpression obj, List<PageBodyLintFinding> findings) {
 		foreach (Node element in obj.Properties) {
-			if (element is not Property prop) {
-				continue;
-			}
-			// Skip shorthand methods (`handlers() { ... }`) and accessors
-			// (`get handlers() { ... }`). The rules only target plain init
-			// properties — declaring a section as a method is unusual but the
-			// "must be array literal" message would be misleading for it.
-			if (prop.Method || prop.Kind != PropertyKind.Init) {
-				continue;
-			}
-			string key = TryGetStaticPropertyName(prop);
-			if (key is null) {
-				continue;
-			}
-			switch (key) {
-				case "handlers":
-					if (prop.Value is not ArrayExpression && !IsNullOrUndefined(prop.Value)) {
-						findings.Add(new PageBodyLintFinding(
-							Rule: RuleHandlersMustBeArray,
-							Severity: LintSeverity.Error,
-							Line: prop.Location.Start.Line,
-							Column: prop.Location.Start.Column + 1,
-							Message: "`handlers` must be an array literal; an object literal here is rejected by the Freedom UI page contract"));
-					}
-					break;
-				case "validators":
-					if (prop.Value is not ObjectExpression && !IsNullOrUndefined(prop.Value)) {
-						findings.Add(new PageBodyLintFinding(
-							Rule: RuleValidatorsMustBeObject,
-							Severity: LintSeverity.Error,
-							Line: prop.Location.Start.Line,
-							Column: prop.Location.Start.Column + 1,
-							Message: "`validators` must be an object literal keyed by validator name; an array is rejected by the Freedom UI page contract"));
-					}
-					break;
-				case "converters":
-					if (prop.Value is not ObjectExpression && !IsNullOrUndefined(prop.Value)) {
-						findings.Add(new PageBodyLintFinding(
-							Rule: RuleConvertersMustBeObject,
-							Severity: LintSeverity.Error,
-							Line: prop.Location.Start.Line,
-							Column: prop.Location.Start.Column + 1,
-							Message: "`converters` must be an object literal keyed by converter name; an array is rejected by the Freedom UI page contract"));
-					}
-					break;
+			if (TryGetInitProperty(element, out Property prop, out string key)) {
+				CheckSchemaSectionShape(prop, key, findings);
 			}
 		}
+	}
+
+	// Match plain init properties carrying a static key. Skips shorthand
+	// methods (`handlers() { ... }`), accessors (`get handlers() { ... }`),
+	// spread elements, and computed-key properties — rules 1-3 only target
+	// authored static keys on init properties.
+	private static bool TryGetInitProperty(Node node, out Property prop, out string key) {
+		prop = null;
+		key = null;
+		if (node is not Property candidate || candidate.Method || candidate.Kind != PropertyKind.Init) {
+			return false;
+		}
+		string staticKey = TryGetStaticPropertyName(candidate);
+		if (staticKey is null) {
+			return false;
+		}
+		prop = candidate;
+		key = staticKey;
+		return true;
+	}
+
+	private static void CheckSchemaSectionShape(Property prop, string key, List<PageBodyLintFinding> findings) {
+		(string rule, string message, bool expectedShape) = key switch {
+			"handlers" => (RuleHandlersMustBeArray, "`handlers` must be an array literal; an object literal here is rejected by the Freedom UI page contract", prop.Value is ArrayExpression),
+			"validators" => (RuleValidatorsMustBeObject, "`validators` must be an object literal keyed by validator name; an array is rejected by the Freedom UI page contract", prop.Value is ObjectExpression),
+			"converters" => (RuleConvertersMustBeObject, "`converters` must be an object literal keyed by converter name; an array is rejected by the Freedom UI page contract", prop.Value is ObjectExpression),
+			_ => (null, null, true)
+		};
+		if (rule is null || expectedShape || IsNullOrUndefined(prop.Value)) {
+			return;
+		}
+		findings.Add(new PageBodyLintFinding(
+			Rule: rule,
+			Severity: LintSeverity.Error,
+			Line: prop.Location.Start.Line,
+			Column: prop.Location.Start.Column + 1,
+			Message: message));
 	}
 
 	private static void CheckProperty(Property prop, VisitContext ctx, List<PageBodyLintFinding> findings) {

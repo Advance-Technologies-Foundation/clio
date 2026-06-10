@@ -77,26 +77,9 @@ public sealed class PageUpdateTool(
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return validationFailure;
-		// AST lint pass: runs on the success path of the regex validators so
-		// the regex messages (which existing tests and operator habits depend on)
-		// remain authoritative for overlapping detections. Lint findings cover
-		// only what the regex layer does not.
-		IReadOnlyList<string> lintWarnings = Array.Empty<string>();
-		if (parsedAst is not null) {
-			IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
-			IReadOnlyList<PageBodyLintFinding> lintErrors =
-				findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
-			if (lintErrors.Count > 0) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = PageBodyAstLinter.FormatErrors(lintErrors)
-				};
-			}
-			lintWarnings = findings
-				.Where(f => f.Severity == LintSeverity.Warning)
-				.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
-				.ToArray();
-		}
+		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
+		if (lintFailure != null)
+			return lintFailure;
 		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		if (samplingFailure != null)
@@ -119,6 +102,32 @@ public sealed class PageUpdateTool(
 			lintWarnings);
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
+	}
+
+	// AST lint pass: runs on the success path of the regex validators so the
+	// regex messages (which existing tests and operator habits depend on)
+	// remain authoritative for overlapping detections. Lint findings cover
+	// only what the regex layer does not. Returns (failure, warnings) tuple:
+	// failure non-null means at least one Error-severity finding triggered;
+	// warnings carries any Warning-severity findings on the success path.
+	private static (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) RunAstLintPass(Script parsedAst) {
+		if (parsedAst is null) {
+			return (null, Array.Empty<string>());
+		}
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
+		IReadOnlyList<PageBodyLintFinding> errors =
+			findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+		if (errors.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = PageBodyAstLinter.FormatErrors(errors)
+			}, Array.Empty<string>());
+		}
+		string[] warnings = findings
+			.Where(f => f.Severity == LintSeverity.Warning)
+			.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+			.ToArray();
+		return (null, warnings);
 	}
 
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {

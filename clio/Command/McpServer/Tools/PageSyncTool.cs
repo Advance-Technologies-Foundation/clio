@@ -264,31 +264,10 @@ public sealed class PageSyncTool(
 			// AST lint pass runs after the regex content validators so the
 			// established regex error wording wins on overlapping detections;
 			// lint findings only ADD detections.
-			IReadOnlyList<string> lintWarnings = Array.Empty<string>();
-			if (opOptions.ParsedAst is not null) {
-				IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(opOptions.ParsedAst);
-				IReadOnlyList<PageBodyLintFinding> lintErrors =
-					findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
-				if (lintErrors.Count > 0) {
-					string lintError = PageBodyAstLinter.FormatErrors(lintErrors);
-					return new PageSyncPageResult {
-						SchemaName = page.SchemaName,
-						Success = false,
-						Validation = new PageSyncValidationResult {
-							MarkersOk = validationResult?.MarkersOk ?? true,
-							JsSyntaxOk = validationResult?.JsSyntaxOk ?? true,
-							ContentOk = false,
-							Errors = [lintError]
-						},
-						SamplingReview = opOptions.SamplingReview,
-						Error = lintError
-					};
-				}
-				lintWarnings = findings
-					.Where(f => f.Severity == LintSeverity.Warning)
-					.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
-					.ToArray();
-			}
+			(PageSyncPageResult lintFailure, IReadOnlyList<string> lintWarnings) =
+				RunAstLintPass(page, opOptions, validationResult);
+			if (lintFailure != null)
+				return lintFailure;
 			validationResult = AppendCommandWarnings(validationResult, lintWarnings);
 			if (opOptions.SamplingReview is { Ok: false, Skipped: false } && opOptions.SamplingReview.Issues?.Count > 0) {
 				return new PageSyncPageResult {
@@ -370,6 +349,42 @@ public sealed class PageSyncTool(
 				Error = ex.Message
 			};
 		}
+	}
+
+	// AST lint pass for a single page. Returns (failure, warnings) — failure
+	// non-null means at least one Error-severity finding triggered and the
+	// caller must surface the materialised PageSyncPageResult instead of
+	// proceeding to TryUpdatePage. Warnings carry the non-blocking findings.
+	private static (PageSyncPageResult Failure, IReadOnlyList<string> Warnings) RunAstLintPass(
+		PageSyncPageInput page,
+		PageSyncOperationOptions opOptions,
+		PageSyncValidationResult validationResult) {
+		if (opOptions.ParsedAst is null) {
+			return (null, Array.Empty<string>());
+		}
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(opOptions.ParsedAst);
+		IReadOnlyList<PageBodyLintFinding> errors =
+			findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+		if (errors.Count > 0) {
+			string lintError = PageBodyAstLinter.FormatErrors(errors);
+			return (new PageSyncPageResult {
+				SchemaName = page.SchemaName,
+				Success = false,
+				Validation = new PageSyncValidationResult {
+					MarkersOk = validationResult?.MarkersOk ?? true,
+					JsSyntaxOk = validationResult?.JsSyntaxOk ?? true,
+					ContentOk = false,
+					Errors = [lintError]
+				},
+				SamplingReview = opOptions.SamplingReview,
+				Error = lintError
+			}, Array.Empty<string>());
+		}
+		string[] warnings = findings
+			.Where(f => f.Severity == LintSeverity.Warning)
+			.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+			.ToArray();
+		return (null, warnings);
 	}
 
 	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
