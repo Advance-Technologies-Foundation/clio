@@ -513,6 +513,116 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "no entity-schema-name was provided, so the message must not reference entity binding");
 	}
 
+	[Test]
+	[Description("Propagates the server error message when a new-object (no entity-schema-name) insert is rejected, without referencing entity binding in the diagnostic hint.")]
+	public void CreateSection_Should_Propagate_Server_Message_When_Insert_Fails_For_New_Object() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Duplicate section code violation"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected new-object insert must surface the server message").Which;
+		exception.Message.Should().Contain("Duplicate section code violation",
+			because: "the server error text must be propagated for new-object failures as well");
+		exception.Message.Should().NotContain("bound to entity",
+			because: "no entity-schema-name was provided, so entity-binding language must not appear");
+	}
+
+	[Test]
+	[Description("Appends exactly one period after the server message when the message lacks terminal punctuation.")]
+	public void CreateSection_Should_Append_Period_When_Server_Message_Has_No_Terminal_Punctuation() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Access denied"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message").Which;
+		exception.Message.Should().Contain("Access denied.",
+			because: "a single period should be appended when the server message lacks terminal punctuation");
+		exception.Message.Should().NotContain("Access denied..",
+			because: "exactly one period should be appended, not two");
+	}
+
+	[Test]
+	[Description("Does not append a period when the server message already ends with a period.")]
+	public void CreateSection_Should_Not_Double_Period_When_Server_Message_Ends_With_Period() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Constraint violation."}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message").Which;
+		exception.Message.Should().NotContain("Constraint violation..",
+			because: "a period must not be appended when the server message already ends with one");
+	}
+
+	[Test]
+	[Description("Uses the fallback message and omits 'Server error:' when the server returns an empty error message.")]
+	public void CreateSection_Should_Use_Fallback_When_Server_Returns_Empty_Error_Message() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":""}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert with an empty error message should use the fallback text").Which;
+		exception.Message.Should().Contain("The server rejected the section insert",
+			because: "the fallback message should appear when errorInfo.message is empty");
+		exception.Message.Should().NotContain("Server error:",
+			because: "the 'Server error:' prefix must only appear when there is a non-empty server message");
+	}
+
+	[Test]
+	[Description("Does not append a period after a server message that ends with '!' or '?'.")]
+	[TestCase("Access denied!")]
+	[TestCase("Are you authorized?")]
+	public void CreateSection_Should_Not_Append_Period_After_Terminal_Punctuation(string serverMessage) {
+		// Arrange
+		SetUpInsertFailureMocks($$$"""{"success":false,"errorInfo":{"message":"{{{serverMessage}}}"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "a rejected insert must surface the server message without modification").Which;
+		exception.Message.Should().Contain(serverMessage,
+			because: "the server message should appear verbatim in the exception");
+		exception.Message.Should().NotContain(serverMessage + ".",
+			because: "a period must not be appended after '!' or '?'");
+	}
+
 	private void SetUpInsertFailureMocks(string insertResponseJson) {
 		ApplicationInfoResult beforeInfo = new(
 			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");

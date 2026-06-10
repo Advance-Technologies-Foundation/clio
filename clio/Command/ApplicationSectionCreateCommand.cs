@@ -252,7 +252,8 @@ public sealed class ApplicationSectionCreateService(
 		string trimmedServerMessage = serverMessage?.Trim() ?? string.Empty;
 		if (trimmedServerMessage.Length > 0) {
 			builder.Append(" Server error: ").Append(trimmedServerMessage);
-			if (!trimmedServerMessage.EndsWith('.')) {
+			char last = trimmedServerMessage[^1];
+			if (last is not ('.' or '!' or '?')) {
 				builder.Append('.');
 			}
 		} else {
