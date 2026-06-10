@@ -138,8 +138,9 @@ stories:
     title: "Documentation + MCP Capability Map"
     feature: "browser-session-handoff"
     size: M
-    status: ready-for-dev
+    status: in-progress
     depends_on: [story-browser-session-handoff-5, story-browser-session-handoff-6, story-browser-session-handoff-7, story-browser-session-handoff-8]
+    note: "Capability map updated 2026-06-10; per-command docs shipped with their verbs in stories 5/6 (ReadmeChecker gate). full suite 3526 pass, 0 new."
     note: "ReadmeChecker couples this to stories 5/6 — docs must land in/before the same PR."
     file: spec/stories/story-browser-session-handoff-10.md
     prd: spec/prd/prd-browser-session-handoff.md

@@ -3552,3 +3552,8 @@ Context: Story 7 done. Story 8 = clear-browser-session MCP tool (same structured
 Decision: clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs — Resolve<IBrowserSessionService>+<EnvironmentSettings>, ClearSessionAsync, return ClearBrowserSessionResult { success, message?, error? }. Destructive=true, Idempotent=true, ReadOnly=false. Safe-env → structured error. Args = environment-name only.
 Files: clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs; clio.tests/Command/McpServer/ClearBrowserSessionToolTests.cs (3, incl. safety-flags reflection); clio.mcp.e2e/ClearBrowserSessionToolE2ETests.cs (2, manual).
 Impact: Story 8 done + verified (3 unit; full suite 3526 pass, 0 new; e2e builds). All command/tool stories (1-8) done. Next + LAST: Story 10 (MCP capability map docs/McpCapabilityMap.md + final cross-cutting docs polish). Then ONE PR. Story 9 (Mode A) stays deferred.
+
+## 2026-06-10 — ENG-91234 Story 10 implemented (docs + MCP capability map)
+Context: Stories 1-8 done. Story 10 = final docs.
+Decision: docs/McpCapabilityMap.md — new "### 10. Browser Session Handoff" domain section (get-browser-session + clear-browser-session with safety flags, args, cookie-never-returned/output-path-CLI-only/forms-auth-only/Safe-fail-closed notes); Discovery Snapshot counts bumped 60→62 tools, 53→55 with safety metadata, snapshot date → 2026-06-10. Per-command docs (help/en, docs/commands, Commands.md, WikiAnchors) already shipped in stories 5/6 (ReadmeChecker gate). open-web-app --authenticated docs deferred with Mode A.
+Impact: Story 10 done + verified (full suite 3526 pass, 0 new). ALL stories complete: 1-8 + 10 implemented, 11/12 spikes done, 9 (Mode A) deferred. Ready for the single PR.

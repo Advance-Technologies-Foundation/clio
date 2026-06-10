@@ -74,18 +74,19 @@ No automated tests for documentation files. Verification is manual:
 
 ## Definition of Done
 
-- [ ] `help/en/get-browser-session.txt` and `help/en/clear-browser-session.txt` created
-- [ ] `docs/commands/get-browser-session.md` and `docs/commands/clear-browser-session.md` created
-- [ ] `Commands.md` updated with new command entries
-- [ ] `docs/McpCapabilityMap.md` updated; `get-browser-session` MCP params are `environment`, `forceRefresh` only (no `outputPath`)
-- [ ] `Wiki/WikiAnchors.txt` updated with both verbs
-- [ ] `open-web-app --authenticated` docs explicitly deferred (Mode A follow-up) — not added now
-- [ ] All flag names in docs match kebab-case names in options classes
-- [ ] PR description references this story file
+- [x] `help/en/get-browser-session.txt` and `help/en/clear-browser-session.txt` created (in Stories 5/6 — ReadmeChecker requires them with the verb)
+- [x] `docs/commands/get-browser-session.md` and `docs/commands/clear-browser-session.md` created (Stories 5/6)
+- [x] `Commands.md` updated with both command index entries (Stories 5/6)
+- [x] `docs/McpCapabilityMap.md` updated — new "Browser Session Handoff" domain; `get-browser-session` MCP params are `environment-name`, `force-refresh` only (no `output-path`); counts bumped 60→62 tools, 53→55 with safety metadata; snapshot date refreshed
+- [x] `Wiki/WikiAnchors.txt` updated with both verbs (Stories 5/6)
+- [x] `open-web-app --authenticated` docs explicitly deferred (Mode A follow-up) — not added
+- [x] All flag names in docs match the kebab-case option names
+- [ ] PR description references this story file (single PR)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: docs verified by the inherited `ReadmeChecker` test on both command fixtures (Stories 5/6); full unit suite 3526 passed / 0 new failures
+- Files: `docs/McpCapabilityMap.md` (this story); per-command docs were created with their verbs in Stories 5/6 (`help/en/*.txt`, `docs/commands/*.md`, `Commands.md`, `Wiki/WikiAnchors.txt`).
+- Notes: the `BaseCommandTests<T>.Command_ShouldHave_DescriptionBlock_InReadmeFile` gate forced the per-command docs to ship in Stories 5/6, so Story 10 reduced to the MCP capability map + the documented Mode-A deferral. The capability map is a narrative doc (no automated count test); the +2 tool count is consistent with the prior baseline.
