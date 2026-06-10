@@ -63,13 +63,24 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 				$"Error: failed to launch the browser at '{browserPath}'. {launch.ErrorMessage}".TrimEnd());
 		}
 
+		string shellUrl = BuildShellUrl(env);
 		int port = await ReadDevToolsPortAsync(userDataDir, ct).ConfigureAwait(false);
 		string pageWebSocketUrl = await FindPageTargetAsync(port, ct).ConfigureAwait(false);
-		await InjectCookiesAndNavigateAsync(pageWebSocketUrl, cookies, env.Uri, ct).ConfigureAwait(false);
+		await InjectCookiesAndNavigateAsync(pageWebSocketUrl, cookies, env.Uri, shellUrl, ct).ConfigureAwait(false);
 
 		// Cookie NAMES are safe to log; VALUES are bearer secrets and must never be logged.
-		_logger.WriteInfo($"Opened an authenticated browser session at {env.Uri} " +
+		_logger.WriteInfo($"Opened an authenticated browser session at {shellUrl} " +
 			$"(injected {cookies.Count} session cookie(s)).");
+	}
+
+	// The authenticated entry point is the Shell, NOT the bare site root: navigating to {Uri}/ can
+	// render the login form even with a valid session cookie, whereas {Uri}/0/Shell/ (NetFramework)
+	// or {Uri}/Shell/ (NetCore) honours the injected .ASPXAUTH cookie and lands on the workspace.
+	// Live-verified 2026-06-10. Mirrors EnvironmentSettings.SimpleloginUri's IsNetCore split, minus the
+	// ?simplelogin=true form (which would force the manual login form we are bypassing).
+	private static string BuildShellUrl(EnvironmentSettings env) {
+		string baseUri = env.Uri.TrimEnd('/');
+		return baseUri + (env.IsNetCore ? "/Shell/" : "/0/Shell/");
 	}
 
 	// Reads the port Chromium chose from the DevToolsActivePort handshake file (line 1). Polls because
@@ -127,7 +138,7 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 	// Drives the page-level CDP session: enable Network, set every harvested cookie (HttpOnly included —
 	// the whole point, since document.cookie cannot), then navigate to the Creatio URI.
 	private static async Task InjectCookiesAndNavigateAsync(string pageWebSocketUrl,
-		IReadOnlyList<BrowserCookie> cookies, string navigateUrl, CancellationToken ct) {
+		IReadOnlyList<BrowserCookie> cookies, string cookieFallbackUrl, string navigateUrl, CancellationToken ct) {
 		// ClientWebSocket is a framework I/O transport (like Process/HttpClient), not a DI-managed
 		// behavior service, so it is constructed locally per connection.
 		using var ws = new ClientWebSocket();
@@ -136,7 +147,9 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		int id = 1;
 		await CdpSendAsync(ws, id++, "Network.enable", new { }, ct).ConfigureAwait(false);
 		foreach (BrowserCookie cookie in cookies) {
-			await CdpSendAsync(ws, id++, "Network.setCookie", BuildSetCookieParams(cookie, navigateUrl), ct)
+			// cookieFallbackUrl (the site origin) is only used for a cookie that carries no domain;
+			// harvested Creatio cookies always have one, preserving their original path.
+			await CdpSendAsync(ws, id++, "Network.setCookie", BuildSetCookieParams(cookie, cookieFallbackUrl), ct)
 				.ConfigureAwait(false);
 		}
 		await CdpSendAsync(ws, id++, "Page.enable", new { }, ct).ConfigureAwait(false);

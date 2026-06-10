@@ -82,6 +82,10 @@ I land on the Creatio home page without seeing the login form
   target's `webSocketDebuggerUrl` from `http://127.0.0.1:{port}/json` (not `/json/version`, which is
   the browser target — page-level Network/Page domains need a page target).
 - `Network.setCookie` (singular, once per cookie) over `ClientWebSocket` — matches the live demo.
+- Navigation target is the **IsNetCore-aware Shell entry** (`{Uri}/0/Shell/` on NetFramework,
+  `{Uri}/Shell/` on NetCore), **not** the bare `env.Uri`. Live testing showed the bare root renders
+  the login form even with a valid injected `.ASPXAUTH`, whereas the Shell URL honours it and lands
+  on the workspace. Mirrors `EnvironmentSettings.SimpleloginUri`'s split, minus `?simplelogin=true`.
 - Both new services auto-register via the `Clio.*` interface convention in `BindingsModule`
   (`RegisterAssemblyInterfaceTypes`); no explicit DI line needed. `OpenAppCommand`'s constructor
   gains `IBrowserSessionService` + `IAuthenticatedBrowserLauncher` (both injected, no `new`).
