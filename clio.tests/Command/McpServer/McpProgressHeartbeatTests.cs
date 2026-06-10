@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
@@ -20,19 +19,16 @@ public sealed class McpProgressHeartbeatTests {
 	[Description("Emits at least one progress beat while the synchronous work blocks longer than the heartbeat interval, then returns the work result.")]
 	public async Task RunWithBeatAsync_ShouldEmitBeats_WhenWorkExceedsInterval() {
 		// Arrange
+		using ManualResetEventSlim beatReceived = new ManualResetEventSlim(false);
 		int beatCount = 0;
 		Func<int, Task> beat = _ => {
 			Interlocked.Increment(ref beatCount);
+			beatReceived.Set();
 			return Task.CompletedTask;
 		};
-		// Work blocks until it has observed at least one beat (capped) so the assertion is
-		// deterministic on slow CI agents instead of relying on wall-clock timing.
+		// Work blocks until at least one beat has been received — deterministic on any agent speed.
 		Func<int> work = () => {
-			Stopwatch stopwatch = Stopwatch.StartNew();
-			while (Volatile.Read(ref beatCount) < 1 && stopwatch.Elapsed < StopGuard) {
-				Thread.Sleep(5);
-			}
-
+			beatReceived.Wait(StopGuard);
 			return 99;
 		};
 
@@ -93,18 +89,16 @@ public sealed class McpProgressHeartbeatTests {
 	[Description("Propagates the work exception unchanged and stops the heartbeat once the work delegate throws.")]
 	public async Task RunWithBeatAsync_ShouldPropagateException_AndStopHeartbeat_WhenWorkThrows() {
 		// Arrange
+		using ManualResetEventSlim beatReceived = new ManualResetEventSlim(false);
 		int beatCount = 0;
 		Func<int, Task> beat = _ => {
 			Interlocked.Increment(ref beatCount);
+			beatReceived.Set();
 			return Task.CompletedTask;
 		};
 		// Wait for at least one beat so the heartbeat is provably running before the throw.
 		Func<int> work = () => {
-			Stopwatch stopwatch = Stopwatch.StartNew();
-			while (Volatile.Read(ref beatCount) < 1 && stopwatch.Elapsed < StopGuard) {
-				Thread.Sleep(5);
-			}
-
+			beatReceived.Wait(StopGuard);
 			throw new InvalidOperationException("boom");
 		};
 
@@ -125,18 +119,16 @@ public sealed class McpProgressHeartbeatTests {
 	[Description("Swallows heartbeat sink failures so a broken progress channel never breaks the tool execution.")]
 	public async Task RunWithBeatAsync_ShouldSwallowBeatFailures_WhenBeatThrows() {
 		// Arrange
+		using ManualResetEventSlim beatAttempted = new ManualResetEventSlim(false);
 		int beatAttempts = 0;
 		Func<int, Task> throwingBeat = _ => {
 			Interlocked.Increment(ref beatAttempts);
+			beatAttempted.Set();
 			throw new InvalidOperationException("sink down");
 		};
-		// Work blocks until the sink has been attempted at least once (capped).
+		// Work blocks until the sink has been attempted at least once.
 		Func<bool> work = () => {
-			Stopwatch stopwatch = Stopwatch.StartNew();
-			while (Volatile.Read(ref beatAttempts) < 1 && stopwatch.Elapsed < StopGuard) {
-				Thread.Sleep(5);
-			}
-
+			beatAttempted.Wait(StopGuard);
 			return true;
 		};
 

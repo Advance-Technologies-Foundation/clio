@@ -112,7 +112,7 @@ internal static class McpProgressHeartbeat {
 			return work();
 		}
 		finally {
-			heartbeatCts.Cancel();
+			await heartbeatCts.CancelAsync().ConfigureAwait(false);
 			try {
 				await pump.ConfigureAwait(false);
 			}
