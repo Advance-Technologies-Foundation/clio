@@ -76,7 +76,7 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 	// through a planted link). The owner-only write itself is enforced by HardenFile in Write().
 	private static string ValidateOverridePath(string overridePath) {
 		bool hasTraversalSegment = overridePath
-			.Split('/', '\\')
+			.Split(new[] { '/', '\\' }, StringSplitOptions.None)
 			.Any(segment => segment == "..");
 		if (hasTraversalSegment) {
 			throw new ArgumentException(
