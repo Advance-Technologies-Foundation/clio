@@ -1823,7 +1823,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON")]
+	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON — the upstream ENG-89796 syntax gate catches this as a JavaScript syntax error and surfaces the exact line/column, which is more actionable than the legacy markers-only message")]
 	[Category("Unit")]
 	public void PageUpdateTool_UpdatePage_Rejects_Body_With_Malformed_Json_Marker() {
 		// Arrange
@@ -1845,10 +1845,55 @@ public class PageToolsTests
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "update-page must reject page bodies where JSON marker sections contain malformed JSON");
-		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
-			because: "the error message should identify which marker section is malformed");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the upstream syntax validator catches malformed marker content as a JS parse failure — this is the deterministic ENG-89796 gate that surfaces the exact line/column to the operator");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know that the broken body did not reach the server, without needing to inspect logs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "validation must fail before any remote call is made to Creatio");
+	}
+
+	[Test]
+	[Description("ENG-89796: update-page fails fast on the canonical incident body (`await request.$context.X = Y`) — pins the dedicated syntax gate symmetrically with the equivalent test on sync-pages")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_ShouldFailFast_WhenBodyHasJavaScriptSyntaxError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		// The actual broken body from the ENG-89796 production incident: `await X = Y`
+		// — `await` is an expression and cannot be an assignment target.
+		string incidentBody = "define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+		PageUpdateArgs args = new("UsrTest_FormPage", incidentBody, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the exact incident body that triggered ENG-89796 must NEVER pass — letting it through is a regression to the pre-fix behaviour update-page silently writing a broken page");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker / sampling issue when the parser rejected the body");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to inspect logs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax gate must short-circuit BEFORE any remote call — the entire point of the validator is to keep broken bodies off the wire");
 	}
 
 	[Test]
@@ -3881,8 +3926,8 @@ public class PageToolsTests
 			// Assert
 			response.Success.Should().BeFalse(
 				because: "validation must run against the body loaded from BodyFile, not be skipped because inline body is empty");
-			response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
-				because: "the marker that contains malformed JSON in the file must be reported");
+			response.Error.Should().Contain("JavaScript syntax error",
+				because: "the malformed marker JSON is caught by the upstream ENG-89796 syntax gate as a JS parse failure with the exact line/column from the resolved file content");
 			applicationClient.ReceivedCalls().Should().BeEmpty(
 				because: "no save attempt may be made when validation fails");
 		}

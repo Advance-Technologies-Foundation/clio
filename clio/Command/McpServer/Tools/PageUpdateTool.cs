@@ -51,6 +51,22 @@ public sealed class PageUpdateTool(
 				Success = false,
 				Error = "Either 'body' or 'body-file' must provide page body content."
 			};
+		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are JSON
+		// and are handled by their own validator below; for web bodies we parse the
+		// body with Acornima BEFORE invoking semantic validators or the sampling
+		// service. A syntax error here means the page would not load in the
+		// browser — failing fast surfaces the precise {line, column, message} to
+		// the operator without sinking time into model-side review or persisting
+		// a broken body to Creatio.
+		if (PageSchemaTypeExtensions.FromBody(options.Body) != PageSchemaType.Mobile) {
+			PageBodySyntaxValidationResult syntaxResult = PageBodySyntaxValidator.Validate(options.Body);
+			if (!syntaxResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = PageBodySyntaxValidator.FormatError(syntaxResult)
+				};
+			}
+		}
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return validationFailure;

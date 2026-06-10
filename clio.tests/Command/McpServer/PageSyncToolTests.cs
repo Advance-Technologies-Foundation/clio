@@ -156,16 +156,20 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation rejects page body with missing markers")]
+	[Description("Client-side validation rejects a page body whose schema markers are missing — the syntax check passes (the body parses as JS) so the test exercises the markers validator on its own, not the upstream Acornima gate")]
 	public async Task SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		// Body parses as valid JavaScript so the upstream PageBodySyntaxValidator
+		// gate (ENG-89796) passes; the markers validator then catches the missing
+		// SCHEMA_* envelope and reports the failure.
+		string bodyWithMissingMarkers = "define('BadPage', [], function() { return {}; });";
 		PageSyncArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			[new PageSyncPageInput("UsrBad_FormPage", bodyWithMissingMarkers)],
 			Validate: true,
 			SkipSampling: true);
 
@@ -183,6 +187,44 @@ public sealed class PageSyncToolTests {
 			because: "the body is missing required schema markers");
 		response.Pages[0].Error.Should().Contain("validation failed",
 			because: "the error should describe the validation failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-89796: a body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain and the body is NOT sent to Creatio — pins the new pre-write gate independent of the existing markers-only path")]
+	public async Task SyncPages_Should_FailFast_WhenBodyHasJavaScriptSyntaxError() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		// `define('BadPage', {})}` has a stray closing brace at the end → SyntaxError.
+		// The PageBodySyntaxValidator must surface this before the markers validator
+		// runs; no Resolve<PageUpdateCommand>() should be issued.
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a syntactically broken body must NEVER be persisted — this is the deterministic floor of ENG-89796");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the per-page result must mirror the overall failure");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker/sampling issue");
+		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to read the code");
+		// Sync-pages eagerly resolves the per-environment PageUpdateCommand once
+		// at the start of the lock block; the broken body still must not reach
+		// TryUpdatePage. The success=false response is the structural proof —
+		// the fail-fast path returns BEFORE TryUpdatePage is ever invoked, so
+		// asserting on success here is the strongest "no write happened" signal
+		// available at this seam without an extra mock for the command itself.
 	}
 
 	[Test]
@@ -324,12 +366,12 @@ public sealed class PageSyncToolTests {
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithParentMerge = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentMerge)],
@@ -355,12 +397,12 @@ public sealed class PageSyncToolTests {
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
@@ -416,12 +458,12 @@ public sealed class PageSyncToolTests {
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
@@ -593,23 +635,28 @@ public sealed class PageSyncToolTests {
 			because: "the per-page result must propagate the command's insert->merge downgrade warning");
 	}
 
+	// ENG-89796: every page-body fixture must be syntactically valid JavaScript.
+	// Earlier fixtures dropped the object-literal property keys (`viewConfigDiff:`,
+	// `handlers:`, …) before each SCHEMA_* marker pair because the brace-counter
+	// "syntax" check let them through. Acornima parses these fixtures for real
+	// now, so the keys are required.
 	private const string InsertUsrNamePriorBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	private const string MergeUsrNameBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithInsertPriorBody() {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -639,12 +686,12 @@ public sealed class PageSyncToolTests {
 
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();

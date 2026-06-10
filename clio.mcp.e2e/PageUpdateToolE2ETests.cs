@@ -50,6 +50,55 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("ENG-89796: update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page fails fast on JavaScript syntax error before any remote call")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page with the actual ENG-89796 incident body (`await request.$context.X = Y`), and verifies that the response carries success=false, a 'JavaScript syntax error at line N, column M' message, and the 'NOT sent to Creatio' assurance — the deterministic floor of the validator must surface through the real MCP transport before any remote call is even attempted.")]
+	public async Task PageUpdateTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		// The actual production incident body — `await` cannot be an assignment target.
+		// No environment-name is set on purpose: the syntax gate must short-circuit
+		// before any environment resolution, so an invalid (missing) environment
+		// must not change the outcome.
+		string incidentBody =
+			"define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrSyntaxIncident_FormPage",
+					["body"] = incidentBody,
+					["dry-run"] = true
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the syntax failure is a structured tool response, not an MCP transport error");
+		response.Success.Should().BeFalse(
+			because: "the ENG-89796 incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
+	}
+
+	[Test]
 	[Description("Reports readable failures when update-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page reports invalid environment failures")]

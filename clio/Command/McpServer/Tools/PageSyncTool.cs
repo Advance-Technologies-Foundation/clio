@@ -46,9 +46,30 @@ public sealed class PageSyncTool(
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
+		// Pre-pass: deterministic JavaScript syntax check (ENG-89796) for every web
+		// body before invoking the LLM sampling service. A syntactically broken body
+		// would otherwise spend tokens on a sampling review whose verdict the syntax
+		// gate immediately throws away. Mobile bodies are JSON and skip this gate
+		// — they're validated by the mobile catalog later inside the lock block.
+		var syntaxFailures = new Dictionary<string, PageBodySyntaxValidationResult>(StringComparer.Ordinal);
+		foreach (PageSyncPageInput page in args.Pages) {
+			if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+				continue;
+			}
+			PageBodySyntaxValidationResult syntaxResult = PageBodySyntaxValidator.Validate(page.Body);
+			if (!syntaxResult.IsValid) {
+				syntaxFailures[page.SchemaName] = syntaxResult;
+			}
+		}
 		var samplingResults = new Dictionary<string, PageSamplingReview>(StringComparer.Ordinal);
 		if (args.SkipSampling != true) {
 			foreach (PageSyncPageInput page in args.Pages) {
+				if (syntaxFailures.ContainsKey(page.SchemaName)) {
+					// Skip sampling for pages already known to be syntactically broken.
+					// The per-page result is materialised below as a fail-fast failure
+					// without ever calling out to the LLM for them.
+					continue;
+				}
 				samplingResults[page.SchemaName] = await PageBodySamplingService.TrySamplingReviewAsync(
 					server, page.SchemaName, page.Body, page.Resources, cancellationToken);
 			}
@@ -65,6 +86,17 @@ public sealed class PageSyncTool(
 						new PageGetOptions { Environment = args.EnvironmentName })
 					: null;
 				foreach (PageSyncPageInput page in args.Pages) {
+					if (syntaxFailures.TryGetValue(page.SchemaName, out PageBodySyntaxValidationResult failure)) {
+						// Materialise the pre-sampling syntax-gate failure as the page's
+						// final result. No PageUpdateCommand.TryUpdatePage call is issued
+						// for this page — the broken body never reaches Creatio.
+						results.Add(new PageSyncPageResult {
+							SchemaName = page.SchemaName,
+							Success = false,
+							Error = PageBodySyntaxValidator.FormatError(failure)
+						});
+						continue;
+					}
 					samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
 					PageSyncPageResult pageResult = SyncSinglePage(
 						page, updateCommand, getCommand, validate, verify, samplingReview, args.OutputDirectory);
@@ -136,6 +168,10 @@ public sealed class PageSyncTool(
 		PageSamplingReview samplingReview,
 		string? outputDirectory) {
 		try {
+			// Note: the deterministic JavaScript syntax check (ENG-89796) ran in the
+			// pre-pass at the top of SyncPages BEFORE sampling, so any syntactically
+			// broken body never reaches this method — it is materialised directly as
+			// a fail-fast PageSyncPageResult in the foreach above.
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
 				PageSyncPageResult validationFailure = TryValidatePage(page, samplingReview, out validationResult);

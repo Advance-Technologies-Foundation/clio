@@ -98,10 +98,10 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects an invalid page body through the real MCP server before any remote save is attempted.")]
+	[Description("Rejects a page body with missing schema markers through the real MCP server before any remote save is attempted. Body is syntactically valid JavaScript so the ENG-89796 syntax gate passes — the markers validator catches the missing SCHEMA_* envelope.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages rejects invalid body during client-side validation")]
-	[AllureDescription("Uses any reachable environment, sends an invalid page body through sync-pages, and verifies that validation fails without requiring a real page save.")]
+	[AllureName("sync-pages rejects body with missing markers during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a syntactically valid page body whose SCHEMA_* markers are missing through sync-pages, and verifies that the markers validator (not the upstream syntax gate) fails the call without requiring a real page save.")]
 	public async Task PageSyncTool_Should_Reject_Invalid_Page_Body_When_Validation_Is_Enabled() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -116,7 +116,10 @@ public sealed class PageSyncToolE2ETests {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = $"UsrValidationOnly_{Guid.NewGuid():N}",
-							["body"] = "define('BadPage', {})}"
+							// Syntactically valid JavaScript — the ENG-89796 syntax gate
+							// passes — but the SCHEMA_* marker envelope is absent so the
+							// markers validator catches the missing structure.
+							["body"] = "define('BadPage', [], function() { return {}; });"
 						}
 					},
 					["validate"] = true
@@ -128,17 +131,70 @@ public sealed class PageSyncToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "validation failures should be reported as structured tool results");
 		response.Success.Should().BeFalse(
-			because: "client-side validation should reject malformed page bodies");
+			because: "client-side validation should reject page bodies with missing schema markers");
 		response.Pages.Should().ContainSingle(
 			because: "one page was submitted for validation");
 		response.Pages[0].Success.Should().BeFalse(
-			because: "the malformed body should fail validation");
+			because: "the body without markers should fail validation");
 		response.Pages[0].Validation.Should().NotBeNull(
 			because: "validation details should be returned when validation is enabled");
 		response.Pages[0].Validation!.MarkersOk.Should().BeFalse(
-			because: "the malformed body is missing required schema markers");
+			because: "the body is missing the required SCHEMA_* marker envelope");
 		response.Pages[0].Error.Should().Contain("validation failed",
 			because: "the response should explain that client-side validation blocked the save");
+	}
+
+	[Test]
+	[Description("ENG-89796: sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains the actual production incident shape (`await X = Y`). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]
+	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the actual ENG-89796 incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without sampling tokens spent and without any remote save attempted.")]
+	public async Task PageSyncTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
+		await using ArrangeContext context = await ArrangeAsync();
+		// The actual ENG-89796 incident body — `await` cannot be an assignment target.
+		// No environment-name (the syntax gate must short-circuit before environment
+		// resolution; an invalid / missing environment must not change the outcome).
+		string incidentBody =
+			"define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrSyntaxIncident_{Guid.NewGuid():N}",
+							["body"] = incidentBody
+						}
+					},
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "the syntax failure is a structured tool response, not an MCP transport error");
+		response.Success.Should().BeFalse(
+			because: "the ENG-89796 incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the per-page result must mirror the overall failure");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
 	}
 
 	[Test]
