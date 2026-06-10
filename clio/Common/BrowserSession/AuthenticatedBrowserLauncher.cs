@@ -12,7 +12,12 @@ namespace Clio.Common.BrowserSession;
 
 /// <inheritdoc cref="IAuthenticatedBrowserLauncher" />
 public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher {
-	private const int PollAttempts = 80;
+	private const string ProfilePrefix = "clio-auth-profile-";
+	// ~20s: a cold Chromium start can take a while to write DevToolsActivePort.
+	private const int PortFilePollAttempts = 80;
+	// ~4s: once the port file exists the DevTools /json endpoint answers almost immediately, so a
+	// short budget here fails fast on a broken launch instead of hanging for another 20s.
+	private const int PageTargetPollAttempts = 16;
 	private const int PollDelayMs = 250;
 
 	private readonly IChromiumLocator _chromiumLocator;
@@ -45,9 +50,14 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		string browserPath = _chromiumLocator.Locate();
 		IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(_fileSystem.ReadAllText(storageStatePath));
 
+		// Best-effort: remove profiles left behind by earlier runs before creating a new one, so these
+		// temp directories do not accumulate unbounded. Profiles still locked by a browser that is open
+		// from a previous run are skipped (deletion throws) and cleaned up on a later run.
+		CleanupStaleProfiles();
+
 		// Isolated profile so this debugging session never collides with the user's everyday browser
 		// profile; also where Chromium writes the DevToolsActivePort handshake file we read below.
-		string userDataDir = Path.Combine(Path.GetTempPath(), "clio-auth-profile-" + Guid.NewGuid().ToString("N"));
+		string userDataDir = Path.Combine(Path.GetTempPath(), ProfilePrefix + Guid.NewGuid().ToString("N"));
 
 		// --remote-debugging-port=0 lets Chromium pick a free loopback port (avoids collisions) and
 		// write it to <user-data-dir>/DevToolsActivePort; binding defaults to 127.0.0.1 (the endpoint
@@ -83,11 +93,33 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		return baseUri + (env.IsNetCore ? "/Shell/" : "/0/Shell/");
 	}
 
+	// Best-effort removal of profile directories from earlier --authenticated runs. Failures (a profile
+	// still locked by an open browser on Windows, or a permissions issue) are swallowed per directory so
+	// cleanup never blocks the launch; such a profile is simply retried on a future run.
+	private void CleanupStaleProfiles() {
+		try {
+			foreach (string dir in _fileSystem.GetDirectories(
+				Path.GetTempPath(), ProfilePrefix + "*", SearchOption.TopDirectoryOnly)) {
+				try {
+					_fileSystem.DeleteDirectory(dir, recursive: true);
+				} catch (IOException) {
+					// In use by a browser still open from a previous run — leave it for next time.
+				} catch (UnauthorizedAccessException) {
+					// Locked / insufficient permissions — leave it.
+				}
+			}
+		} catch (IOException) {
+			// Temp directory not enumerable — skip cleanup entirely.
+		} catch (UnauthorizedAccessException) {
+			// No access to the temp directory — skip cleanup entirely.
+		}
+	}
+
 	// Reads the port Chromium chose from the DevToolsActivePort handshake file (line 1). Polls because
 	// the file appears a moment after process start.
 	private async Task<int> ReadDevToolsPortAsync(string userDataDir, CancellationToken ct) {
 		string portFile = Path.Combine(userDataDir, "DevToolsActivePort");
-		for (int attempt = 0; attempt < PollAttempts; attempt++) {
+		for (int attempt = 0; attempt < PortFilePollAttempts; attempt++) {
 			ct.ThrowIfCancellationRequested();
 			if (_fileSystem.ExistsFile(portFile)) {
 				string firstLine = _fileSystem.ReadAllText(portFile)
@@ -110,7 +142,7 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 	private async Task<string> FindPageTargetAsync(int port, CancellationToken ct) {
 		using HttpClient http = _httpClientFactory.CreateClient();
 		string listUrl = $"http://127.0.0.1:{port}/json";
-		for (int attempt = 0; attempt < PollAttempts; attempt++) {
+		for (int attempt = 0; attempt < PageTargetPollAttempts; attempt++) {
 			ct.ThrowIfCancellationRequested();
 			try {
 				string body = await http.GetStringAsync(listUrl, ct).ConfigureAwait(false);
