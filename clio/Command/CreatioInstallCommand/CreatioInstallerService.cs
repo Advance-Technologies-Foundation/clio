@@ -413,7 +413,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	bool useFs = false;
-	string dest = _msFileSystem.Path.Join("\\\\\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure",
+	string dest = _msFileSystem.Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "clio-infrastructure",
 		"mssql", "data",
 		$"{siteName}.bak");
 	if (_msFileSystem.FileInfo.New(src).Length < int.MaxValue) {
