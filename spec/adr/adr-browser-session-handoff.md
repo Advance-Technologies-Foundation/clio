@@ -5,7 +5,7 @@
 **PRD**: [prd-browser-session-handoff.md](../prd/prd-browser-session-handoff.md)
 **Review**: [review-adr-browser-session-handoff-2026-06-10.md](../reviews/review-adr-browser-session-handoff-2026-06-10.md)
 **Created**: 2026-06-10
-**Revised**: 2026-06-10 — corrects BL-1 (`0/` prefix), BL-2 (`Fill()` callers), BL-3 (cache key), BL-4 (cookie harvesting), BL-5/6 (at-rest security), BL-7 (OAuth trigger); defers Mode A
+**Revised**: 2026-06-10 — corrects BL-1 (`0/` prefix), BL-2 (`Fill()` callers), BL-3 (cache key), BL-4 (cookie harvesting), BL-5/6 (at-rest security), BL-7 (OAuth trigger); **Mode A implemented** (Decision 6 — CDP spike resolved + live-verified, no longer deferred)
 **stepsCompleted**: [1, 2, 3, 4]
 
 ---
@@ -37,27 +37,21 @@ Implement two new `Command<TOptions>` classes (`GetBrowserSessionCommand`, `Clea
 
 This is host-independent: OAuth-only environments are unsupported for browser-session handoff (a deliberate, documented limitation), not a NetFW-specific gap.
 
-### Decision 2 — Login URL construction (corrects BL-1 — was INVERTED)
+### Decision 2 — Login URL construction (FINAL — live-verified 2026-06-10)
 
-The previous revision instructed building the URL **without** the `0/` prefix. That is **wrong for NetFW** and is corrected here.
+`AuthService.svc/Login` is served at the **site root, with NO `0/` `WebAppAlias` prefix, on BOTH NetFW and NetCore.** The `0/` alias applies only to the Shell and data-service routes, NOT the auth endpoint.
 
-Verified in code:
-- `ServiceUrlBuilder.Build()` (`clio/Common/ServiceUrlBuilder.cs:215-221`): `IsNetCore == true` → no prefix; `IsNetCore == false` (NetFW) → prepends `WebAppAlias = "0/"`.
-- `EnvironmentSettings.SimpleloginUri` (`clio/Environment/ConfigurationOptions.cs:105`): same split — `IsNetCore ? "/Shell/…" : "/0/Shell/…"`.
-- `EnvironmentManagerTests.cs:110-111`: asserts the NetFW auth URL **is** `https://…/0/ServiceModel/AuthService.svc/Login` (with prefix).
+> **Round-2 correction was wrong; this is the corrected-corrected decision.** Round 1 said "no prefix" (right). The round-2 review "fixed" it to "`0/` on NetFW" based on `ServiceUrlBuilder.Build()`, `SimpleloginUri`, and `EnvironmentManagerTests.cs:110-111` — but that test asserts a **manifest-literal `AuthAppUri`**, not real server behavior (the re-review itself flagged this as NEW-RISK 1). **Live test against a NetFW studio instance settled it:**
+> - `POST {Uri}/0/ServiceModel/AuthService.svc/Login` → **HTTP 401** "Authentication failed."
+> - `POST {Uri}/ServiceModel/AuthService.svc/Login` (root) → **HTTP 200 `{"Code":0}` + `Set-Cookie: .ASPXAUTH=…; BPMCSRF=…; UserType=…`** ✓
+>
+> This matches the original `@creatio/playwright-testkit` behavior (POST to site root, no prefix) — that fact was right all along for the auth endpoint.
 
-| Option | Pros | Cons | Status |
-|--------|------|------|--------|
-| A: Naive concat `env.Uri + "/ServiceModel/AuthService.svc/Login"` (no prefix) | Simple | **Breaks NetFW** — POST hits a non-existent path, returns login HTML, never a `Set-Cookie` | **Rejected (was the bug)** |
-| B: `IsNetCore`-aware build via `ServiceUrlBuilder` (or its prefix branch) | Correct for both hosts; reuses the proven, test-covered prefix logic | Login endpoint differs from data routes; may warrant a `KnownRoute` entry | **Chosen** |
-| C: Reuse `EnvironmentSettings.AuthAppUri` verbatim | Already a per-env auth URL, settable via manifest `authappurl` | **Overloaded**: its default-computed value for `.creatio.com` is the OAuth `connect/token` identity endpoint (`ConfigurationOptions.cs:76-88`), not forms-login — using it blindly is wrong | Use only when explicitly set to a login URL; otherwise prefer B |
-
-**Chosen**: build the login URL **`IsNetCore`-aware**:
+**Chosen**: build the login URL at the **site root on both hosts**, inline in `CreatioAuthClient` (do **not** route through `ServiceUrlBuilder`, which would add the `0/` for NetFW):
 ```
-NetCore (IsNetCore == true):  {env.Uri.TrimEnd('/')}/ServiceModel/AuthService.svc/Login
-NetFW   (IsNetCore == false): {env.Uri.TrimEnd('/')}/0/ServiceModel/AuthService.svc/Login
+{env.Uri.TrimEnd('/')}/ServiceModel/AuthService.svc/Login   // both NetFW and NetCore
 ```
-Prefer routing through `ServiceUrlBuilder` (add `AuthServiceLogin` to `KnownRoute` so the `0/` split is applied centrally and stays test-covered). A unit test must assert the exact URL for **both** `IsNetCore` values. The earlier "ServiceUrlBuilder breaks NetFW" justification was factually backwards and is removed so it is not reintroduced.
+`KnownRoute.AuthServiceLogin` was removed (it encoded the wrong prefixing assumption). A unit test asserts this exact URL for **both** `IsNetCore` values (both → root). The session-validation probe (Decision: session validation) hits the Shell, which DOES use `0/` — that is unaffected.
 
 ### Decision 3 — Session cache key & storage location (corrects BL-3)
 
@@ -93,11 +87,18 @@ Prefer routing through `ServiceUrlBuilder` (add `AuthServiceLogin` to `KnownRout
 
 **Chosen**: Mode B only. Returns the absolute file path; cookie values never serialized into any log or MCP field.
 
-### Decision 6 — Mode A (`open-web-app --authenticated`) — DEFERRED (corrects H-E)
+### Decision 6 — Mode A (`open-web-app --authenticated`) — IMPLEMENTED (spike resolved 2026-06-10; supersedes the earlier H-E deferral)
 
-clio has **zero** browser-automation code today (verified: no Playwright/Puppeteer/CDP in source). Mode A would introduce Chromium discovery across three OSes plus CDP transport (`Network.setCookies` is a WebSocket command on a target session, not an HTTP `Fetch`; `--remote-debugging-port=0` requires scraping the chosen port from `DevToolsActivePort`). It is **not required** for the agent use case (Mode B fully satisfies it) and brushes the PRD non-goal ("no general-purpose Playwright wrapper").
+clio had **zero** browser-automation code; Mode A introduces Chromium discovery across three OSes plus a minimal CDP transport. The CDP spike was resolved by a live end-to-end demo against `ts1-core-dev04` and then ported to C# — all four spike risks are now closed in source:
 
-**Chosen**: **Defer Mode A** to a separate follow-up feature/ADR gated behind a CDP spike (port discovery, CDP transport, cross-platform Chromium launch, loopback-only DevTools binding for token safety). FR-06 is downgraded to Could. This iteration ships Mode B + the deadlock fix.
+- **`Network.setCookie` is a WebSocket command on a page target, not an HTTP `Fetch`** — confirmed. The launcher connects to the page-level `webSocketDebuggerUrl` and drives `Network.enable` → `Network.setCookie` (per cookie) → `Page.navigate` over `System.Net.WebSockets.ClientWebSocket` (no external dependency, no Playwright/Puppeteer).
+- **`--remote-debugging-port=0` requires scraping the chosen port** — the launcher reads line 1 of `<user-data-dir>/DevToolsActivePort`, then resolves the page target's WebSocket URL via the local `http://127.0.0.1:{port}/json` endpoint.
+- **Loopback-only DevTools binding** — port `0` binds 127.0.0.1 by default and the launcher never widens it; the unauthenticated DevTools endpoint stays local-only.
+- **macOS `open` yields no CDP handle** — `IChromiumLocator` resolves a concrete Chromium/Chrome/Edge/Brave executable (via `CHROME_PATH` or standard OS paths) and launches it directly.
+
+The agent use case is still fully served by Mode B; Mode A is the **human/CLI** convenience that lands the user on an authenticated page. The PRD non-goal ("no general-purpose Playwright wrapper") is respected — this is a single-purpose cookie-injection launch, not a Playwright wrapper.
+
+**Chosen**: **Implement Mode A** as `open-web-app --authenticated`, behind a dedicated `IAuthenticatedBrowserLauncher` (process launch + CDP) and `IChromiumLocator` (discovery). When `--authenticated` is absent, `open-web-app` is byte-for-byte unchanged. On a missing browser or an auth failure it fails closed (no silent unauthenticated fallback). The live DevTools-socket navigation is covered as a **manual E2E** gate (needs a real browser + live Creatio); unit tests cover the command orchestration and discovery logic up to the process-launch boundary.
 
 ### Decision 7 — Cookie harvesting (corrects BL-4; re-review: the "reuse the existing session" path is likely infeasible)
 
@@ -313,4 +314,4 @@ On each `GetSessionPathAsync` (unless `forceRefresh`):
 - [ ] `docs/McpCapabilityMap.md`, `help/en/*.txt`, `docs/commands/*.md`, `Commands.md`, `Wiki/WikiAnchors.txt` updated
 - [ ] OQ-01 (Story 11) and OQ-06 (Story 12) spikes resolved — done 2026-06-10 (no OAuth token→cookie; dedicated `HttpClient` for cookies)
 - [ ] A-06 security sign-off obtained before any story enters `in-progress`
-- [ ] Mode A (`open-web-app --authenticated`) confirmed deferred to a follow-up ADR
+- [x] Mode A (`open-web-app --authenticated`) implemented — CDP spike resolved + live-verified 2026-06-10 (Decision 6); `IAuthenticatedBrowserLauncher` + `IChromiumLocator`, fails closed, unauthenticated path unchanged

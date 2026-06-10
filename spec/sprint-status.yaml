@@ -7,7 +7,7 @@
 #   - OQ-01 (story 11) — RESOLVED 2026-06-10: NO-GO, no OAuth token->cookie; forms-auth only, OAuth-only fails closed
 #   - OQ-06 (story 12) — RESOLVED 2026-06-10: NuGet cookie store is internal; dedicated HttpClient (Decision 7 Option A)
 # Spike outcome simplified Story 2: OAuth branch removed (forms-auth sole path).
-# Recommended order: 1, 3 (parallel) -> 2 -> 4 -> 5, 6, 7, 8 -> 10. Stories 11/12 done. Story 9 deferred.
+# Recommended order: 1, 3 (parallel) -> 2 -> 4 -> 5, 6, 7, 8 -> 10 -> 9 (Mode A). Stories 11/12 done.
 # Note: story 7 also needs story 1. Dependency graph is acyclic.
 # PR (single, all stories): https://github.com/Advance-Technologies-Foundation/clio/pull/691
 
@@ -125,12 +125,12 @@ stories:
     adr: spec/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-9
-    title: "open-web-app --authenticated — CDP Cookie Injection (DEFERRED)"
+    title: "open-web-app --authenticated — CDP Cookie Injection (Mode A)"
     feature: "browser-session-handoff"
     size: L
-    status: deferred
+    status: review
     depends_on: [story-browser-session-handoff-4]
-    note: "Deferred per review H-E. Needs a CDP spike + separate follow-up ADR. Mode B (stories 1-8) covers the agent use case."
+    note: "Implemented + live-verified 2026-06-10. CDP spike resolved (WebSocket Network.setCookie on a page target, DevToolsActivePort port discovery, loopback-only binding, direct Chromium launch). IAuthenticatedBrowserLauncher + IChromiumLocator; OpenAppCommand gains --authenticated; fails closed, unauthenticated path unchanged. 4 command unit tests + 4 ChromiumLocator unit tests; live DevTools navigation is a manual E2E gate. Validated: dotnet test --filter Category=Unit&(Module=Command|Module=Common)."
     file: spec/stories/story-browser-session-handoff-9.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md

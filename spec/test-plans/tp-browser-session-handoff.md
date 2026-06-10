@@ -2,13 +2,13 @@
 
 **Feature**: browser-session-handoff
 **Jira**: ENG-91234 (continuation of ENG-90846)
-**Stories**: [story-1](../stories/story-browser-session-handoff-1.md) … [story-12](../stories/story-browser-session-handoff-12.md) (12 = cookie-surface spike; 11 = OAuth spike; 9 = Mode A, deferred)
+**Stories**: [story-1](../stories/story-browser-session-handoff-1.md) … [story-12](../stories/story-browser-session-handoff-12.md) (12 = cookie-surface spike; 11 = OAuth spike; 9 = Mode A, implemented 2026-06-10)
 **PRD**: [prd-browser-session-handoff.md](../prd/prd-browser-session-handoff.md)
 **ADR**: [adr-browser-session-handoff.md](../adr/adr-browser-session-handoff.md)
 **Author**: QA Planner Agent
 **Status**: Revised (post adversarial review 2026-06-10)
 **Created**: 2026-06-10
-**Revised**: 2026-06-10 — corrects the inverted `0/` URL assertions (R-02, TC-U-06, TC-I-03, DoD), `SafeEnvironmentConfirmationRequiredException`, cache key (`BuildKey`, not `env.Name`), `BaseTool<T>`; Story 9 deferred
+**Revised**: 2026-06-10 — corrects the inverted `0/` URL assertions (R-02, TC-U-06, TC-I-03, DoD), `SafeEnvironmentConfirmationRequiredException`, cache key (`BuildKey`, not `env.Name`), `BaseTool<T>`; **Story 9 (Mode A) implemented** (CDP spike resolved + live-verified)
 
 ---
 
@@ -17,14 +17,14 @@
 ### In scope
 
 - **Safe-env deadlock fix** (`IInteractiveConsole`, `RealInteractiveConsole`, `NonInteractiveConsole`, refactored `EnvironmentSettings.Fill()`) — Story 1 / FR-09.
-- **`ICreatioAuthClient`** forms-auth only (no OAuth branch — Story-11 NO-GO; OAuth-only fails closed), **IsNetCore-aware** login-URL construction (`0/` prefix on NetFW, none on NetCore), cookie harvesting via a dedicated `IHttpClientFactory` client (Story-12 — NuGet cookie store is internal), cookie redaction (logs + exceptions) — Story 2 / FR-07, FR-08, FR-10, FR-14.
+- **`ICreatioAuthClient`** forms-auth only (no OAuth branch — Story-11 NO-GO; OAuth-only fails closed), **site-root login URL on both hosts** (`{Uri}/ServiceModel/AuthService.svc/Login`, no `0/` — live-verified), cookie harvesting via a dedicated `IHttpClientFactory` client (Story-12 — NuGet cookie store is internal), cookie redaction (logs + exceptions) — Story 2 / FR-07, FR-08, FR-10, FR-14.
 - **`IBrowserSessionCache`** on-disk storageState read/write/delete/path, stable `BuildKey` (env.Uri + credential hash), owner-only file perms, `--output-path` validation — Story 3 / FR-03, FR-11, FR-11a, FR-12.
 - **`IBrowserSessionService`** check-validate-login orchestration, cache hit/miss, 401 invalidation, force-refresh, clear — Story 4 / FR-03, FR-07.
 - **`GetBrowserSessionCommand`** CLI verb, `--output-path`, `--force-refresh`, kebab-case, error exit — Story 5 / FR-01, FR-11, FR-12.
 - **`ClearBrowserSessionCommand`** CLI verb, idempotency — Story 6 / FR-02, FR-12.
 - **`GetBrowserSessionTool`** MCP tool, `{ sessionFilePath }` payload, no cookie leakage, `SafeEnvironmentConfirmationRequiredException` → structured error — Story 7 / FR-04, FR-10, FR-14.
 - **`ClearBrowserSessionTool`** MCP tool, `Destructive=true`/`Idempotent=true` — Story 8 / FR-05, FR-14.
-- **`open-web-app --authenticated`** (Story 9, Mode A) — **DEFERRED**; out of scope for this iteration. Only retained as the target spec behind a CDP spike.
+- **`open-web-app --authenticated`** (Story 9, Mode A) — **IMPLEMENTED** 2026-06-10 (CDP spike resolved + live-verified). Command orchestration + Chromium discovery covered by unit tests; live DevTools-socket navigation is a manual E2E gate.
 - **Cookie-leak guard** across MCP JSON payload and all log sinks — cross-cutting (FR-10, AC-06).
 - **Regression guard** for every caller of `EnvironmentSettings.Fill()`.
 
@@ -43,11 +43,11 @@
 | ID | Risk | Likelihood | Impact | Mitigation |
 |----|------|-----------|--------|-----------|
 | R-01 | **Cookie leakage** into MCP JSON payload, CLI stdout, or any log sink (`.ASPXAUTH`, `BPMCSRF`, `UserType` values) | Med | **High** (security) | Dedicated redaction unit tests at every layer: TC-U-09 (auth-client log), TC-U-10 (service/cache never logs values), TC-U-21 (MCP payload), TC-U-16 (CLI command prints path only). Cross-layer assertion: a single sentinel cookie value string must never appear in captured log/stdout/MCP output. |
-| R-02 | **`0/` prefix bug on NetFW** — OMITTING the `0/` `WebAppAlias` prefix on a NetFW (`IsNetCore=false`) env points the login POST at a non-existent path → login HTML, no `Set-Cookie`, silent auth failure. (Verified: `ServiceUrlBuilder.cs:215-221`, `SimpleloginUri` `ConfigurationOptions.cs:105`, `EnvironmentManagerTests.cs:110-111`.) | High | **High** | TC-U-05 asserts NetCore URL `…/ServiceModel/AuthService.svc/Login` (no prefix); TC-U-06 asserts NetFW URL `…/0/ServiceModel/AuthService.svc/Login` (**with** prefix). URL built via `ServiceUrlBuilder` so the split stays centralized. |
+| R-02 | **Login-URL prefix bug** — the login endpoint is at the **site root on BOTH hosts**; ADDING the `0/` `WebAppAlias` prefix (the round-2 "fix") makes the NetFW POST 401. **Live-verified 2026-06-10:** `/0/…/AuthService.svc/Login` → 401; `/…/AuthService.svc/Login` (root) → 200 + Set-Cookie. | High | **High** | TC-U-05 (NetCore) and TC-U-06 (NetFW) both assert the **site-root** URL `{Uri}/ServiceModel/AuthService.svc/Login` (no `0/`). URL built inline, NOT via `ServiceUrlBuilder` (which would add `0/`). |
 | R-03 | **Safe-env deadlock regression** — the Safe-confirmation seam (moved OUT of `Fill()` to the execution boundary, Decision 4) breaks the interactive CLI Safe prompt OR a path re-introduces `Console.ReadKey()`/`Environment.Exit()` non-interactively | Med | High | TC-U-01..04 (console abstractions + seam behavior), plus regression re-run of `SettingsRepositoryGetEnvironmentTests` and `ToolCommandResolverTests` (the four former `Fill()` call sites). TC-U-04b asserts the non-interactive path fails closed without `Environment.Exit`. |
 | R-04 | ~~OAuthTokenLogin NetFW equivalent unconfirmed (OQ-01)~~ — **RESOLVED 2026-06-10 (Story 11 spike): NO-GO.** `OAuthTokenLogin` accepts only an external-access token, not clio's, on both hosts → no OAuth token→cookie path. | — | — | No longer a test gap: there is no OAuth branch to test. OAuth-only envs fail closed (TC-U-07). Forms-auth is the sole path. |
 | R-05 | **`Fill()` required-param change** — adding the required `IInteractiveConsole` param to `Fill()` misses one of the 4 call sites, OR reads the wrong `Safe` source | Med | Med | Compiler enforces all 4 sites pass a console; regression re-run of all `Fill()` callers; TC-U-22 asserts CLI resolves `RealInteractiveConsole` and MCP resolves `NonInteractiveConsole`; TC-U-02 asserts `Fill(options, NonInteractiveConsole)` fails closed; AC-08 regression asserts an ordinary CLI command still prompts. |
-| R-06 | **`open-web-app` regression** — adding `--authenticated` changes the existing unauthenticated path | Low | High | TC-U-23 asserts `IBrowserSessionService` is NOT called when flag absent; full re-run of existing `OpenAppCommandTests` (12 tests) as regression guard. |
+| R-06 | **`open-web-app` regression** — adding `--authenticated` changes the existing unauthenticated path | Low | High | **ACTIVE 2026-06-10 (Mode A shipped).** `Execute_ShouldNotCallBrowserSession_WhenAuthenticatedFlagAbsent` asserts `IBrowserSessionService` is NOT called when the flag is absent; the full existing `OpenAppCommandTests` fixture re-runs green as the regression guard. |
 | R-07 | **MCP E2E not in CI** — `get-browser-session` / `clear-browser-session` E2E never runs automatically | High | Med | TC-E-01..03 documented as **manual execution required**; added to PR checklist as a manual gate. |
 | R-08 | **Cross-platform path/key collisions** in `BrowserSessionCache` (Windows vs macOS/Linux separators, mixed-case env names) | Med | Low | TC-U-11..15 use `Path.Combine` expectations and lowercased keys; integration TC-I-01 runs on a real temp dir (must pass on all three OSes per AGENTS.md). |
 
@@ -153,10 +153,10 @@ public void LoginAsync_ShouldBuildUrlWithoutPrefix_WhenNetCoreEnvironment() {
 }
 ```
 
-#### TC-U-06: forms-auth builds the `0/`-prefixed URL on NetFW env
+#### TC-U-06: forms-auth builds the site-root URL on NetFW env too (no `0/`)
 - Maps: Story 2 AC-01; FR-08; PRD AC-07; **R-02** (the critical NetFW case).
-- Name: `LoginAsync_ShouldPrependZeroAlias_WhenNetFwEnvironment`
-- Arrange `IsNetCore = false`, `Uri = "https://prod.creatio.com/"`; assert the POST URL is `https://prod.creatio.com/0/ServiceModel/AuthService.svc/Login` (**with** the `0/` `WebAppAlias` prefix). This is the corrected behavior — omitting `0/` on NetFW was the inverted bug. The URL is produced via `ServiceUrlBuilder` (`KnownRoute.AuthServiceLogin`), which applies the prefix for `IsNetCore=false`.
+- Name: `LoginAsync_ShouldPostToSiteRootUrl_WhenNetFwEnvironment`
+- Arrange `IsNetCore = false`, `Uri = "https://prod.creatio.com"`; assert the POST URL is `https://prod.creatio.com/ServiceModel/AuthService.svc/Login` (**site root, NO `0/`**). Live-verified 2026-06-10: the `0/`-prefixed login path 401s; the root path returns 200 + Set-Cookie. The URL is built inline (NOT via `ServiceUrlBuilder`).
 
 #### TC-U-06b: POST body contains `UserName` + `UserPassword`
 - Maps: Story 2 AC-01; PRD A-01.
@@ -462,45 +462,46 @@ File: `clio.tests/Command/McpServer/ClearBrowserSessionToolTests.cs`
 - Name: `Execute_ShouldReturnError_WhenEnvironmentNotFound`
 - Assert error result contains `environment '<env>' not found`.
 
-### Story 9 — `open-web-app --authenticated` (`Module = "Command"`) — DEFERRED (NOT this iteration)
-File: `clio.tests/Command/OpenAppCommandTests.cs` (extend the existing fixture) — **when Mode A ships**
+### Story 9 — `open-web-app --authenticated` (`Module = "Command"`) — IMPLEMENTED 2026-06-10
+File: `clio.tests/Command/OpenAppCommandTests.cs` (extended) + `clio.tests/Common/BrowserSession/ChromiumLocatorTests.cs` (new)
 
-> **DEFERRED with Story 9 (Mode A).** TC-U-28..32 below are the target spec for the follow-up feature and are **excluded from this iteration's coverage counts and DoD**. They are retained here so the follow-up author inherits them. Because Mode A is deferred, the existing `OpenAppCommandTests` are **not** modified this iteration (no `IBrowserSessionService` is added to `OpenAppCommand`), so the R-06 "open-web-app regression" surface does not apply now. The PRD AC-05 these referenced was removed (Mode A criterion); do not map to it.
+> **IMPLEMENTED with Story 9 (Mode A), 2026-06-10.** The cases below are realised by 4 command tests
+> in `OpenAppCommandTests` plus 4 discovery tests in `ChromiumLocatorTests`. The CDP injection +
+> Chromium launch live behind `IAuthenticatedBrowserLauncher`; the command orchestration and the
+> discovery logic are unit-tested, and the live DevTools-socket navigation (AC-01 end-to-end) is a
+> **manual E2E** gate (real browser + live Creatio, not in CI). The implemented test names differ
+> slightly from the original TC ids — the mapping is noted on each case.
 
-#### TC-U-28: `--authenticated` absent → `IBrowserSessionService` NOT called (regression guard)
+#### TC-U-28: `--authenticated` absent → `IBrowserSessionService` NOT called (regression guard) ✅
 - Maps: Story 9 AC-02; **R-06**.
-- Name: `Execute_ShouldNotCallGetSessionPathAsync_WhenAuthenticatedFlagAbsent`
-```csharp
-[Test]
-[Description("With --authenticated absent, open-web-app behaves exactly as before and never touches IBrowserSessionService.")]
-public void Execute_ShouldNotCallGetSessionPathAsync_WhenAuthenticatedFlagAbsent() {
-    // Arrange
-    var options = new OpenAppOptions { Environment = "test-env" /* Authenticated defaults false */ };
-    _settingsRepository.GetEnvironment(options).Returns(new EnvironmentSettings { Uri = "https://test.creatio.com", Login = "a", Password = "p" });
+- Implemented as: `Execute_ShouldNotCallBrowserSession_WhenAuthenticatedFlagAbsent`
+- Asserts result `0`, `IBrowserSessionService` and `IAuthenticatedBrowserLauncher` both `DidNotReceiveWithAnyArgs`, so the unauthenticated path is byte-for-byte unchanged.
 
-    // Act
-    _command.Execute(options);
+#### TC-U-29: `--authenticated` present → `GetSessionPathAsync` called before launch ✅
+- Maps: Story 9 AC-01.
+- Implemented as: `Execute_ShouldCallGetSessionPathAsync_WhenAuthenticatedFlagIsSet`
+- Asserts ordering via `Received.InOrder` (`GetSessionPathAsync` → `LaunchAsync`), result `0`, and `IWebBrowser.OpenUrl` not called. (The end-to-end browser navigation itself is the manual E2E gate.)
 
-    // Assert
-    _sessionService.DidNotReceive().GetSessionPathAsync(
-        Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
-}
-```
-
-#### TC-U-29: `--authenticated` present → `GetSessionPathAsync` called before process launch *(deferred)*
-- Maps: Story 9 AC-01; FR-06 (Could, deferred).
-- Name: `Execute_ShouldCallGetSessionPathAsync_WhenAuthenticatedFlagIsSet`
-- Assert `_sessionService.Received(1).GetSessionPathAsync(...)` and that it occurs before the Chromium launch (verify ordering via `Received.InOrder`).
-
-#### TC-U-30: `GetSessionPathAsync` throws → error printed, Chromium NOT launched
+#### TC-U-30: `GetSessionPathAsync` throws → error printed, browser NOT launched ✅
 - Maps: Story 9 AC-05, AC-ERR.
-- Name: `Execute_ShouldNotLaunchChromium_WhenGetSessionThrows`
-- Assert error printed, `exit != 0`, and `_processExecutor.DidNotReceiveWithAnyArgs().FireAndForgetAsync(...)`.
+- Implemented as: `Execute_ShouldNotLaunchChromium_WhenGetSessionThrows`
+- Stubs `GetSessionPathAsync` to return a faulted task (`CreatioAuthenticationException.InvalidCredentials`); asserts result `1`, `LaunchAsync` not called, and `WriteError` received.
 
-#### TC-U-31: Chromium binary not found → clear error, non-zero, no silent fallback
+#### TC-U-31: Chromium binary not found → clear error, non-zero, no silent fallback ✅
 - Maps: Story 9 AC-04.
-- Name: `Execute_ShouldExitNonZero_WhenChromiumBinaryNotFound`
-- Arrange Chromium discovery returns nothing (control via the `CHROME_PATH`/OS-path helper boundary — mock or override); assert message `Error: Chromium binary not found — ensure a Chromium-based browser is installed` and that it does NOT fall back to `IWebBrowser.OpenUrl` (unauthenticated mode).
+- Implemented as: `Execute_ShouldReturnError_WhenChromiumNotFound` (command level) + `ChromiumLocatorTests.Locate_ShouldThrowChromiumNotFound_WhenNoBrowserExists` (discovery level).
+- Command test stubs `LaunchAsync` to fault with `ChromiumNotFoundException`; asserts result `1` and a `WriteError` containing `Chromium binary not found`. The locator test drives the real discovery logic with a mocked `IFileSystem`.
+
+#### TC-U-32: `--authenticated` option is kebab-case ✅
+- Maps: Story 9 AC-03.
+- Satisfied by the analyzer: `[Option("authenticated", …)]` is a single kebab-case token; the build is clean of CLIO001 (analyzer-as-error in CI). No dedicated reflection test was added — a CLIO001 violation would fail the build.
+
+#### Discovery — `ChromiumLocatorTests` (`Module = "Common"`) ✅
+- Maps: Story 9 AC-04 (discovery branch).
+- `Locate_ShouldReturnChromePathEnvValue_WhenSetAndFileExists` (CHROME_PATH precedence),
+  `Locate_ShouldReturnStandardInstallPath_WhenChromePathUnsetButBrowserExists` (OS-path fallback),
+  `Locate_ShouldThrowChromiumNotFound_WhenNoBrowserExists` (fail-closed),
+  `Locate_ShouldIgnoreChromePath_WhenItPointsAtMissingFile` (stale override ignored).
 
 #### TC-U-32: `--authenticated` option is kebab-case
 - Maps: Story 9 AC-03.
@@ -552,7 +553,7 @@ File: `clio.tests/Environment/ConfigurationOptionsTests.cs` or a DI-focused fixt
 - **Steps**:
   1. `GetSessionPathAsync(env)` (cold cache).
   2. Open the written file.
-- **Expected**: file exists; JSON contains the expected Creatio cookie NAMES (`.ASPXAUTH`, `BPMCSRF`); login URL used was IsNetCore-aware — `0/`-prefixed on a NetFW stand, no prefix on NetCore (assert via HTTP capture if the harness allows); exit/return is success.
+- **Expected**: file exists; JSON contains the expected Creatio cookie NAMES (`.ASPXAUTH`, `BPMCSRF`); login URL used was the site root `{Uri}/ServiceModel/AuthService.svc/Login` with **no `0/` prefix on either host** (assert via HTTP capture if the harness allows) — live-verified 2026-06-10: the `0/`-prefixed login path returns 401, the root path returns 200 + Set-Cookie; exit/return is success.
 - **Teardown**: `ClearSessionAsync(env)`.
 - Name: `GetSessionPathAsync_ShouldWriteValidStorageState_WhenAuthenticatingAgainstLocalCreatio`
 
@@ -640,11 +641,11 @@ dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"
 
 | Layer | New tests | Modified tests | Notes |
 |-------|-----------|---------------|-------|
-| Unit | ~41 (this iteration; **excludes** the 5 deferred Story-9 cases TC-U-28..32) | 0 (Mode A deferred → `OpenAppCommandTests` not modified this iteration) | Counts include redaction, kebab-case, DI, file-perms, OAuth-trigger and safety-flag guards. |
+| Unit | ~49 (this iteration; includes Mode A: 4 command + 4 `ChromiumLocatorTests`) | 1 (`OpenAppCommandTests` extended with the 4 Mode-A cases + 2 new ctor deps) | Counts include redaction, kebab-case, DI, file-perms, OAuth-trigger, safety-flag and Mode-A guards. |
 | Integration | 5 (TC-I-01..05; TC-I-05 = SM-03 CI guard) | 0 | TC-I-02/03 require a local Creatio (PR-merge tier). TC-I-01/05 are filesystem/stdio-only. |
 | E2E | 3 (TC-E-01..03) | 0 | **Manual only — not in CI.** |
 
-Mapping summary: every active Story AC and every PRD AC (AC-01..AC-04, AC-06..AC-13, AC-ERR) is covered by at least one TC-U/TC-I/TC-E case. Mode A (Story 9) is **deferred** — its criteria and TC-U-28..32 are out of scope this iteration (the old PRD AC-05 / Mode-A criterion was removed). **AC-08 is now "OAuth-only env fails closed"** (TC-U-07) — the OAuth token→cookie branch was removed after the Story-11 spike (NO-GO). Cookie harvesting is finalized to a dedicated `HttpClient` (Story-12 spike resolved OQ-06). AC-12/AC-13 (file permissions, `--output-path` validation) are covered by TC-U-11a/11b and the TC-I-01 owner-only assert.
+Mapping summary: every active Story AC and every PRD AC (AC-01..AC-04, AC-06..AC-13, AC-ERR) is covered by at least one TC-U/TC-I/TC-E case. Mode A (Story 9) is **implemented** 2026-06-10 — TC-U-28..32 + the `ChromiumLocatorTests` cover the command orchestration and discovery; the live DevTools-socket navigation (AC-01 end-to-end) is the only Mode-A item left as a manual E2E gate. **AC-08 is now "OAuth-only env fails closed"** (TC-U-07) — the OAuth token→cookie branch was removed after the Story-11 spike (NO-GO). Cookie harvesting is finalized to a dedicated `HttpClient` (Story-12 spike resolved OQ-06). AC-12/AC-13 (file permissions, `--output-path` validation) are covered by TC-U-11a/11b and the TC-I-01 owner-only assert.
 
 ---
 
@@ -654,7 +655,7 @@ Mapping summary: every active Story AC and every PRD AC (AC-01..AC-04, AC-06..AC
 - [ ] Every test method has AAA structure, a `because` on every assertion, and a `[Description]` attribute (AGENTS.md test-style policy).
 - [ ] Command-class tests use `BaseCommandTests<TOptions>`, register doubles in `AdditionalRegistrations`, resolve the SUT from the container, and `ClearReceivedCalls` in teardown.
 - [ ] Cookie-redaction cases (TC-U-09, TC-U-15c, TC-U-16cmd, TC-U-21) assert a sentinel cookie VALUE never reaches any log sink, CLI stdout, or MCP payload (FR-10 / AC-06).
-- [ ] Login-URL cases assert IsNetCore-aware URLs: TC-U-05 → NetCore has **no** `0/` prefix; TC-U-06 → NetFW **has** the `0/` prefix; built via `ServiceUrlBuilder` (FR-08 / AC-07 / R-02).
+- [ ] Login-URL cases assert the **site-root** URL on BOTH hosts: TC-U-05 (NetCore) and TC-U-06 (NetFW) both target `{Uri}/ServiceModel/AuthService.svc/Login` with **no `0/` prefix**, built inline (NOT via `ServiceUrlBuilder`) — live-verified 2026-06-10 (FR-08 / AC-07 / R-02).
 - [ ] Safe-env cases (TC-U-02, TC-U-24, TC-E-03) prove no `Console.ReadKey`/`Environment.Exit` and no hang in non-interactive context (FR-09 / AC-09 / R-03).
 - [ ] All TC-I-* implemented with `[Category("Integration")]`; TC-I-02/TC-I-03 documented as requiring a local Creatio.
 - [ ] All TC-E-* implemented with `[Category("E2E")]` and a not-in-CI header note; the three E2E cases (incl. the Safe-env no-hang check) are added to the PR checklist as **manual** gates.

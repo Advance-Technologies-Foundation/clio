@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -55,6 +56,42 @@ public static class StorageStateJson {
 			return string.Empty;
 		} catch (InvalidOperationException) {
 			return string.Empty;
+		}
+	}
+
+	/// <summary>
+	/// Parses the <c>cookies</c> array of a storageState JSON document back into <see cref="BrowserCookie"/>
+	/// records, for re-injecting a cached session into a live browser via CDP. Returns an empty list for a
+	/// corrupt or cookie-less document. Missing optional fields default to a session cookie at path <c>/</c>.
+	/// </summary>
+	/// <param name="storageStateJson">A storageState JSON string previously produced by <see cref="Serialize"/>.</param>
+	/// <returns>The harvested cookies, or an empty list when none are present.</returns>
+	public static IReadOnlyList<BrowserCookie> ParseCookies(string storageStateJson) {
+		if (string.IsNullOrWhiteSpace(storageStateJson)) {
+			return [];
+		}
+		try {
+			if (JsonNode.Parse(storageStateJson)?["cookies"] is not JsonArray cookies) {
+				return [];
+			}
+			return cookies
+				.Where(c => !string.IsNullOrEmpty(c?["name"]?.GetValue<string>()))
+				.Select(c => new BrowserCookie(
+					Name: c["name"].GetValue<string>(),
+					Value: c["value"]?.GetValue<string>() ?? string.Empty,
+					Domain: c["domain"]?.GetValue<string>() ?? string.Empty,
+					Path: c["path"]?.GetValue<string>() ?? "/",
+					HttpOnly: c["httpOnly"]?.GetValue<bool>() ?? false,
+					Secure: c["secure"]?.GetValue<bool>() ?? false,
+					SameSite: c["sameSite"]?.GetValue<string>() ?? "Lax",
+					Expires: c["expires"]?.GetValue<double>() ?? -1))
+				.ToList();
+		} catch (JsonException) {
+			return [];
+		} catch (InvalidOperationException) {
+			return [];
+		} catch (FormatException) {
+			return [];
 		}
 	}
 }

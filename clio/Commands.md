@@ -69,7 +69,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`install-application`](docs/commands/install-application.md) - Install an application package into Creatio, `install-app`, `push-app`
 <a id="open-web-app"></a>
 <a id="open"></a>
-- [`open-web-app`](docs/commands/open-web-app.md) - Open a registered Creatio environment in the browser, `open`
+- [`open-web-app`](docs/commands/open-web-app.md) - Open a registered Creatio environment in the browser (use `--authenticated` to land already signed in, no login form), `open`
 <a id="get-browser-session"></a>
 <a id="get-session"></a>
 - [`get-browser-session`](docs/commands/get-browser-session.md) - Obtain an authenticated Creatio browser session (Playwright storageState), `get-session`

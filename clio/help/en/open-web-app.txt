@@ -18,6 +18,11 @@ SYNOPSIS
 OPTIONS
     --Environment           -e          Environment name to open
                                         (uses stored environment settings from reg-web-app)
+    --authenticated                     Open the browser already signed in. clio obtains a
+                                        session and injects it via the Chrome DevTools Protocol
+                                        before navigating, so no login form is shown. Requires a
+                                        Chromium-based browser and forms-auth credentials in the
+                                        environment config.
 
 EXAMPLE
     clio open-web-app
@@ -25,16 +30,30 @@ EXAMPLE
 
     clio open my-dev-env
         opens environment named 'my-dev-env' in default web browser
-    
+
     clio open-web-app -e production
         opens the production environment in default web browser
+
+    clio open-web-app -e production --authenticated
+        opens the production environment already signed in (no login form)
 
 NOTES
     - The environment must be registered using 'reg-web-app' command first
     - Uses the stored environment URI from configuration
     - Opens browser to: {environment-uri}/Shell/?simplelogin=true
     - If environment URL is empty or invalid, an error message will be displayed
-    - User must login manually after browser opens
+    - Without --authenticated the user must login manually after browser opens
+
+    --authenticated (Mode A):
+    - Launches a Chromium-based browser (Chrome / Edge / Chromium / Brave) located via the
+      CHROME_PATH environment variable or standard OS install paths
+    - Injects the Creatio session cookies (including the HttpOnly auth cookie) over the Chrome
+      DevTools Protocol, then navigates to the environment URI already authenticated
+    - Reuses a cached session when one is still valid; otherwise signs in using the stored
+      forms-auth credentials (login + password)
+    - Fails with an actionable error (and does NOT open an unauthenticated window) when no
+      Chromium-based browser is found or when authentication fails
+    - OAuth-only environments are not supported by --authenticated (no forms-auth credentials)
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
