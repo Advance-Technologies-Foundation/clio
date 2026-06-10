@@ -1458,18 +1458,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
 		article.Text.Should().Contain("isCollection",
 			because: "the guide must teach the collection attribute that backs the child list");
-		article.Text.Should().Contain("filterAttributes",
-			because: "the guide must teach the separate filter attribute that scopes the list by page data");
-		article.Text.Should().Contain("DO NOT inline a `filter` object on the collection attribute",
-			because: "the guide must call out the exact mistake that leaves a detail showing all records");
-		article.Text.Should().Contain("crt.HandleViewModelInitRequest",
-			because: "the guide must teach the init handler that injects the real open-record id into the filter at runtime");
-		article.Text.Should().Contain("FormatException",
-			because: "the guide must warn that a static $Id parameter is sent as a literal string and 500s with a Guid FormatException");
-		article.Text.Should().Contain("00000000-0000-0000-0000-000000000000",
-			because: "the guide must show seeding the static filter with the empty Guid placeholder instead of $Id");
-		article.Text.Should().Contain("loadOnChange",
-			because: "the guide must keep loadOnChange so the init handler's filter update re-queries the grid");
+		article.Text.Should().Contain("modelConfig.dependencies",
+			because: "the guide must teach the declarative dependencies entry that scopes the list by the open record");
+		article.Text.Should().Contain("attributePath",
+			because: "the guide must name the child foreign-key column field of the dependency");
+		article.Text.Should().Contain("relationPath",
+			because: "the guide must name the master-id path field of the dependency");
+		article.Text.Should().Contain("\"relationPath\": \"PDS.Id\"",
+			because: "the guide must show the canonical relationPath pointing at the page primary data source id");
+		article.Text.Should().Contain("handlers: []",
+			because: "the guide must emphasize that the declarative dependency needs no handler");
+		article.Text.Should().Contain("Use `modelConfig.dependencies` instead",
+			because: "the guide must warn against the init-handler scoping anti-pattern and redirect to dependencies");
 		article.Text.Should().Contain("is not a container for other items",
 			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
 		article.Text.Should().Contain("\"items\": []",
