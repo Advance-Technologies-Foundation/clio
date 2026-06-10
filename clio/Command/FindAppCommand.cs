@@ -73,12 +73,14 @@ public sealed record AppSectionSearchResult(
 /// would otherwise make to map an imprecise application name to its code.
 /// </summary>
 public class FindAppCommand : Command<FindAppOptions> {
+	private const string DescriptionColumn = "Description";
+
 	private static readonly IReadOnlyList<SelectQueryColumnDefinition> AppColumns =
 	[
 		new("Id", "Id"),
 		new("Code", "Code"),
 		new("Name", "Name"),
-		new("Description", "Description"),
+		new(DescriptionColumn, DescriptionColumn),
 		new("Version", "Version")
 	];
 
@@ -88,7 +90,7 @@ public class FindAppCommand : Command<FindAppOptions> {
 		new("ApplicationId", "ApplicationId"),
 		new("Caption", "Caption"),
 		new("Code", "Code"),
-		new("Description", "Description"),
+		new(DescriptionColumn, DescriptionColumn),
 		new("EntitySchemaName", "EntitySchemaName")
 	];
 
