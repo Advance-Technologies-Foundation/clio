@@ -83,8 +83,9 @@ stories:
     title: "GetBrowserSessionCommand — CLI Verb"
     feature: "browser-session-handoff"
     size: M
-    status: ready-for-dev
+    status: in-progress
     depends_on: [story-browser-session-handoff-4]
+    note: "Implemented + verified 2026-06-10 (4 tests incl. ReadmeChecker; full suite 3515 pass, 0 new). Docs (help/docs/Commands.md/WikiAnchors) created with the verb."
     file: spec/stories/story-browser-session-handoff-5.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md

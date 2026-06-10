@@ -77,20 +77,23 @@ Test naming: `Execute_ShouldReturnFilePath_WhenEnvironmentIsValid`, `Execute_Sho
 
 ## Definition of Done
 
-- [ ] Code compiles without `CLIO*` analyzer warnings
-- [ ] All CLI option names are kebab-case; CLIO001 passes
-- [ ] `GetBrowserSessionCommand` registered in `BindingsModule.cs` and wired in `Program.cs`
-- [ ] Command does not print cookie values — only the file path
-- [ ] `--output-path` is **CLI-only** (it is NOT added to the MCP tool surface — see Story 7) and invalid paths surface an error from the cache layer (Story 3 FR-11a)
-- [ ] **MCP review (AGENTS.md mandatory)**: `GetBrowserSessionTool` (Story 7) reflects this command's final options/flags; state "MCP reviewed" in the PR
-- [ ] **Docs review (AGENTS.md mandatory)**: help/`docs/commands` slice for this verb is tracked in Story 10; state "docs reviewed" in the PR
-- [ ] Unit tests use `BaseCommandTests<GetBrowserSessionOptions>` and `[Category("Unit")]`
-- [ ] **Smart regression**: `dotnet test --filter "Category=Unit&Module=Command"`
-- [ ] PR description references this story file
+- [x] Code compiles without `CLIO*` analyzer warnings
+- [x] All CLI option names are kebab-case; CLIO001 passes (`--output-path`, `--force-refresh`)
+- [x] `GetBrowserSessionCommand` registered in `BindingsModule.cs` and wired in `Program.cs` (verb list + switch)
+- [x] Command does not print cookie values — only the file path (`logger.WriteInfo(path)`)
+- [x] `--output-path` is **CLI-only** (NOT on the MCP surface — Story 7) and invalid paths surface an error from the cache layer (Story 3 FR-11a)
+- [x] **MCP reviewed**: no MCP tool consumes this command yet — Story 7 adds `GetBrowserSessionTool` aligned to these options; stated here
+- [x] **Docs reviewed**: docs created with the command (ReadmeChecker requires them) — `help/en/get-browser-session.txt`, `docs/commands/get-browser-session.md`, `Commands.md` index entry, `Wiki/WikiAnchors.txt`
+- [x] Unit tests use `BaseCommandTests<GetBrowserSessionOptions>` and `[Category("Unit")]`
+- [x] **Smart regression**: full unit suite (BindingsModule + Program.cs touched) → 3515 passed, 0 new failures (3 pre-existing macOS)
+- [ ] PR description references this story file (single PR at the end)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-10
+- Implementation completed: 2026-06-10
+- Tests passing: 4 `GetBrowserSessionCommandTests` (valid env → 0 + delegates; `--output-path`/`--force-refresh` forwarded; auth failure → exit 1; inherited ReadmeChecker doc-block test); full unit suite 3515 passed / 0 new failures
+- Files: `clio/Command/BrowserSession/GetBrowserSessionCommand.cs` (options + command); `clio/BindingsModule.cs` (1 registration); `clio/Program.cs` (verb list + switch); docs: `clio/help/en/get-browser-session.txt`, `clio/docs/commands/get-browser-session.md`, `clio/Commands.md`, `clio/Wiki/WikiAnchors.txt`; `clio.tests/Command/GetBrowserSessionCommandTests.cs`.
 - Notes:
+  - **Docs pulled forward from Story 10**: `BaseCommandTests<T>.Command_ShouldHave_DescriptionBlock_InReadmeFile` requires ALL of `Commands.md` index link, `help/en/<verb>.txt`, `docs/commands/<verb>.md`, and a `Wiki/WikiAnchors.txt` line — so the per-command docs are created here (alongside the verb), not deferred. Story 10 keeps the MCP capability map + cross-cutting polish.
+  - `Command<GetBrowserSessionOptions>` resolves the env via `ISettingsRepository.GetEnvironment(options)` (Safe prompt fires via the Story-1 console) and prints only the path; sanitized `CreatioAuthenticationException` → exit 1.

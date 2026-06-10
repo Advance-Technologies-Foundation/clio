@@ -549,6 +549,7 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
+		services.AddTransient<GetBrowserSessionCommand>();
 		services.AddSingleton<ISystemServiceManager>(sp => {
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 				return new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>());

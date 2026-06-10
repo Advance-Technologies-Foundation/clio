@@ -62,6 +62,7 @@ internal class Program {
 		typeof(EnvManageUiOptions),
 		typeof(ClearLocalEnvironmentOptions),
 		typeof(OpenAppOptions),
+		typeof(GetBrowserSessionOptions),
 		// Package development
 		typeof(PkgListOptions),
 		typeof(CompileOptions),
@@ -288,6 +289,7 @@ internal class Program {
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 			OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
+			GetBrowserSessionOptions opts => Resolve<GetBrowserSessionCommand>(opts).Execute(opts),
 			PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 			ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
 			EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
