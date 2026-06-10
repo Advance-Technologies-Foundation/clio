@@ -117,6 +117,7 @@ public class BindingsModule {
 		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
 		// rather than a followed login-page redirect.
 		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
 			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
 				UseCookies = false,
 				AllowAutoRedirect = false

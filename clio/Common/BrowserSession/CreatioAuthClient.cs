@@ -47,21 +47,10 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 		string requestJson = JsonSerializer.Serialize(new { UserName = env.Login, UserPassword = env.Password });
 
-		HttpResponseMessage response;
-		string responseBody;
 		try {
 			using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
-			response = await http.PostAsync(loginUrl, content, ct).ConfigureAwait(false);
-			responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-		} catch (HttpRequestException) {
-			throw CreatioAuthenticationException.Connectivity(env.Uri);
-		} catch (TaskCanceledException) {
-			// HttpClient surfaces timeouts as TaskCanceledException; distinguish a real caller-cancel.
-			ct.ThrowIfCancellationRequested();
-			throw CreatioAuthenticationException.Connectivity(env.Uri);
-		}
-
-		using (response) {
+			using HttpResponseMessage response = await http.PostAsync(loginUrl, content, ct).ConfigureAwait(false);
+			string responseBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 			if (!response.IsSuccessStatusCode || ReadAuthCode(responseBody) != 0) {
 				throw CreatioAuthenticationException.InvalidCredentials(env.Uri);
 			}
@@ -73,6 +62,12 @@ public sealed class CreatioAuthClient : ICreatioAuthClient {
 			_logger?.WriteDebug(
 				$"Harvested {cookies.Count} Creatio session cookie(s): {string.Join(", ", cookies.Select(c => c.Name))}.");
 			return new StorageStateResult(cookies);
+		} catch (HttpRequestException) {
+			throw CreatioAuthenticationException.Connectivity(env.Uri);
+		} catch (TaskCanceledException) {
+			// HttpClient surfaces timeouts as TaskCanceledException; distinguish a real caller-cancel.
+			ct.ThrowIfCancellationRequested();
+			throw CreatioAuthenticationException.Connectivity(env.Uri);
 		}
 	}
 

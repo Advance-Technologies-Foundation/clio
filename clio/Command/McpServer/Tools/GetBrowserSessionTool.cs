@@ -46,8 +46,10 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 		} catch (InvalidOperationException ex) {
 			// Unknown environment / broken settings bootstrap — the message is safe to surface.
 			return new GetBrowserSessionResult(false, null, ex.Message);
-		} catch (Exception) {
-			return new GetBrowserSessionResult(false, null, "Failed to obtain the browser session.");
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception ex) {
+			return new GetBrowserSessionResult(false, null, $"Failed to obtain the browser session: {ex.Message}");
 		}
 	}
 }

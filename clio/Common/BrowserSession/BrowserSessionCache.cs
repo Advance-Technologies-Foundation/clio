@@ -62,7 +62,9 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 		string directory = System.IO.Path.GetDirectoryName(targetPath);
 		if (!string.IsNullOrEmpty(directory)) {
 			_fileSystem.CreateDirectoryIfNotExists(directory);
-			_fileSecurityHardening.HardenDirectory(directory);
+			if (directory.StartsWith(SessionsRoot, StringComparison.Ordinal)) {
+				_fileSecurityHardening.HardenDirectory(directory);
+			}
 		}
 		_fileSystem.WriteAllTextToFile(targetPath, storageStateJson);
 		_fileSecurityHardening.HardenFile(targetPath);

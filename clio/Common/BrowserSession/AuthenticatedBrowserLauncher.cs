@@ -227,6 +227,9 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		while (true) {
 			ct.ThrowIfCancellationRequested();
 			string response = await ReceiveTextAsync(ws, ct).ConfigureAwait(false);
+			if (string.IsNullOrEmpty(response) || ws.State != WebSocketState.Open) {
+				throw new InvalidOperationException($"WebSocket closed while waiting for CDP response id={id}.");
+			}
 			using JsonDocument doc = JsonDocument.Parse(response);
 			if (doc.RootElement.TryGetProperty("id", out JsonElement idElement)
 				&& idElement.TryGetInt32(out int responseId) && responseId == id) {
