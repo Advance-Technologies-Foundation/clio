@@ -29,6 +29,9 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	[Option("entity-schema-name", Required = false, HelpText = "Existing entity schema name")]
 	public string? EntitySchemaName { get; set; }
 
+	[Option("code", Required = false, HelpText = "Explicit section code (Latin identifier). When omitted, the code is generated from the caption; required when the caption has no Latin letters or digits (for example a non-Latin caption such as \"Контакти\").")]
+	public string? Code { get; set; }
+
 	[Option("icon-background", Required = false, HelpText = "Icon background color in #RRGGBB format, e.g. #1F5F8B. Defaults to a random color when omitted.")]
 	public string? IconBackground { get; set; }
 
@@ -87,6 +90,10 @@ public sealed class ApplicationSectionCreateService(
 		@"[^\p{L}\p{Nd}]+",
 		RegexOptions.None,
 		TimeSpan.FromSeconds(5));
+	private static readonly Regex SectionCodeRegex = new(
+		@"^[A-Za-z][A-Za-z0-9_]*$",
+		RegexOptions.None,
+		TimeSpan.FromSeconds(5));
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -125,6 +132,8 @@ public sealed class ApplicationSectionCreateService(
 		string requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
 		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
 			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+		} else {
+			CheckEntitySchemaExists(client, environmentSettings, resolvedRequest.EntitySchemaName, request.Caption);
 		}
 		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
 		string responseBody;
@@ -168,7 +177,7 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string schemaNamePrefix) {
-		string sectionCode = GenerateCodeFromCaption(request.Caption, schemaNamePrefix);
+		string sectionCode = ResolveSectionCode(request, schemaNamePrefix);
 		string iconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
 		? GenerateRandomHexColor()
 		: request.IconBackground.Trim();
@@ -218,10 +227,52 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
+	/// Verifies that an existing entity schema targeted by <c>--entity-schema-name</c> actually exists before the
+	/// section insert is attempted, so a missing object fails with a clear message instead of the opaque server
+	/// rejection ("InsertQuery failed.") that Creatio returns for a dangling entity reference. The probe is
+	/// best-effort: when the readback query cannot be executed the method proceeds and lets the insert run,
+	/// mirroring <see cref="CheckEntitySchemaDoesNotExist"/>. Multiple sections may target the same entity, so no
+	/// section-binding uniqueness is enforced here.
+	/// </summary>
+	/// <param name="client">Environment-scoped application client used for the readback query.</param>
+	/// <param name="environmentSettings">Resolved environment settings for the target environment.</param>
+	/// <param name="entitySchemaName">Existing entity schema name the section will be bound to.</param>
+	/// <param name="caption">Requested section caption, surfaced in the diagnostic message.</param>
+	private void CheckEntitySchemaExists(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string entitySchemaName,
+		string caption) {
+		int matchedSchemaCount;
+		try {
+			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
+				client,
+				serviceUrlBuilderFactory.Create(environmentSettings),
+				SelectQueryHelper.BuildSelectQuery(
+					"SysSchema",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
+					[new SelectQueryHelper.SelectQueryFilterDefinition("Name", entitySchemaName, SelectQueryHelper.TextDataValueType)]));
+			matchedSchemaCount = response.Rows.Count;
+		} catch {
+			// The existence probe is best-effort: when the readback query fails (permissions, transport,
+			// unexpected payloads) proceed and let the section insert surface the server error instead of
+			// blocking a potentially valid creation.
+			return;
+		}
+
+		if (matchedSchemaCount == 0) {
+			throw new InvalidOperationException(
+				$"Entity schema '{entitySchemaName}' does not exist in this environment, so section '{caption}' cannot be bound to it. "
+				+ "Verify the object name (names are case-sensitive), or omit --entity-schema-name to create a new object for the section.");
+		}
+	}
+
+	/// <summary>
 	/// Builds a human-readable failure message for a rejected ApplicationSection insert.
-	/// Propagates the server-supplied error when present and always appends the most common
-	/// cause (the target entity is already bound to a section, or the generated section code
-	/// collides with an existing section) plus an actionable next step.
+	/// Propagates the server-supplied error when present and appends an actionable next step. The most
+	/// common detail-less rejection is a section-code collision; the message does not assert entity-binding
+	/// uniqueness because Creatio allows several sections to target the same entity (missing entities and
+	/// invalid codes are already caught before the insert by the resolve/validation steps).
 	/// </summary>
 	/// <param name="request">Resolved section-create request used to surface the caption, code, entity, and application context.</param>
 	/// <param name="serverMessage">Optional error message returned by the InsertQuery response.</param>
@@ -260,18 +311,9 @@ public sealed class ApplicationSectionCreateService(
 			builder.Append(" The server rejected the section insert (InsertQuery failed) without returning a detailed message.");
 		}
 
-		builder.Append(' ');
-		if (!string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			builder.Append("This usually means entity '")
-				.Append(request.EntitySchemaName)
-				.Append("' is already bound to an existing section, or a section with code '")
-				.Append(request.SectionCode)
-				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, then reuse the existing section, pick a different entity, or change the caption to generate a new section code.");
-		} else {
-			builder.Append("This usually means a section with code '")
-				.Append(request.SectionCode)
-				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, or change the caption to generate a different section code.");
-		}
+		builder.Append(" A section with code '")
+			.Append(request.SectionCode)
+			.Append("' may already exist, or the server rejected the insert for a reason it did not detail. Run 'list-app-sections' to inspect existing sections, then change the caption or pass a different --code to use another section code.");
 
 		return builder.ToString();
 	}
@@ -611,13 +653,43 @@ public sealed class ApplicationSectionCreateService(
 			querySource = 0
 		};
 
+	/// <summary>
+	/// Resolves the section code to insert: uses the explicit caller-supplied code when provided
+	/// (ensuring the environment schema-name prefix and validating it is a Latin identifier), otherwise
+	/// generates one from the caption.
+	/// </summary>
+	/// <param name="request">Section creation request carrying the optional explicit code and the caption.</param>
+	/// <param name="schemaNamePrefix">Environment schema-name prefix (for example <c>Usr</c>).</param>
+	/// <returns>A valid Latin section code.</returns>
+	private static string ResolveSectionCode(ApplicationSectionCreateRequest request, string schemaNamePrefix) {
+		if (string.IsNullOrWhiteSpace(request.Code)) {
+			return GenerateCodeFromCaption(request.Caption, schemaNamePrefix);
+		}
+
+		string explicitCode = request.Code.Trim();
+		if (!string.IsNullOrEmpty(schemaNamePrefix)
+			&& !explicitCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)) {
+			explicitCode = schemaNamePrefix + explicitCode;
+		}
+
+		if (!SectionCodeRegex.IsMatch(explicitCode)) {
+			throw new ArgumentException(
+				$"Section code '{explicitCode}' is invalid. Section codes must start with a Latin letter and contain only "
+				+ "Latin letters, digits, or underscore.",
+				nameof(request));
+		}
+
+		return explicitCode;
+	}
+
 	private static string GenerateCodeFromCaption(string caption, string schemaNamePrefix) {
 		string[] words = CodeWordRegex.Split(caption.Trim())
 			.Where(item => !string.IsNullOrWhiteSpace(item))
 			.ToArray();
 		if (words.Length == 0) {
 			throw new ArgumentException(
-				$"Section caption '{caption}' contains no valid characters for code generation.",
+				$"Caption '{caption}' has no Latin letters or digits to generate a section code. "
+				+ "Provide an explicit code via --code (for example --code UsrContacts), or use a Latin caption.",
 				nameof(caption));
 		}
 
@@ -632,7 +704,8 @@ public sealed class ApplicationSectionCreateService(
 		int prefixLength = schemaNamePrefix.Length;
 		if (builder.Length == prefixLength) {
 			throw new ArgumentException(
-				$"Section caption '{caption}' contains no valid characters for code generation.",
+				$"Caption '{caption}' has no Latin letters or digits to generate a section code. "
+				+ "Provide an explicit code via --code (for example --code UsrContacts), or use a Latin caption.",
 				nameof(caption));
 		}
 
@@ -644,7 +717,11 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	private static string NormalizeWord(string value) {
-		string sanitizedValue = new(value.Where(char.IsLetterOrDigit).ToArray());
+		// Section codes must be Latin identifiers, so only ASCII letters/digits feed the generated code.
+		// Non-Latin captions (for example Cyrillic "Контакти") therefore yield no code and are reported as an
+		// actionable error that points the caller at --code, instead of producing an invalid code that the
+		// Creatio InsertQuery silently rejects.
+		string sanitizedValue = new(value.Where(char.IsAsciiLetterOrDigit).ToArray());
 		if (string.IsNullOrWhiteSpace(sanitizedValue)) {
 			return string.Empty;
 		}
@@ -750,7 +827,8 @@ public sealed class CreateAppSectionCommand(
 					options.Description,
 					options.EntitySchemaName,
 					options.WithMobilePages,
-					options.IconBackground));
+					options.IconBackground,
+					options.Code));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (Exception exception) {
@@ -769,13 +847,15 @@ public sealed class CreateAppSectionCommand(
 /// <param name="EntitySchemaName">Optional existing entity schema name. When provided, the section reuses that entity.</param>
 /// <param name="WithMobilePages">Whether to create mobile pages.</param>
 /// <param name="IconBackground">Optional icon background color in #RRGGBB format. Defaults to a random color when omitted.</param>
+/// <param name="Code">Optional explicit section code (Latin identifier). When omitted, the code is generated from the caption.</param>
 public sealed record ApplicationSectionCreateRequest(
 	string ApplicationCode,
 	string Caption,
 	string? Description = null,
 	string? EntitySchemaName = null,
 	bool WithMobilePages = true,
-	string? IconBackground = null);
+	string? IconBackground = null,
+	string? Code = null);
 
 /// <summary>
 /// Structured result for existing-app section creation.

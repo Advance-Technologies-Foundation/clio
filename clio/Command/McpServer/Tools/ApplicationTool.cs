@@ -186,7 +186,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		OpenWorld = false)]
 	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
-		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional). entity-schema-name must not already be bound to another section; if it is, creation fails with a 'Failed to create section ... is already bound to an existing section' error — inspect existing sections with list-app-sections instead of retrying.")]
+		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, code, icon-background, with-mobile-pages (optional). entity-schema-name must reference an existing object (validated before creation); several sections may target the same object, so reuse is allowed. The section code is generated from the caption; a non-Latin caption (for example 'Контакти') cannot produce a valid Latin code, so pass an explicit code such as code='Contacts'. If the object does not exist, creation fails with a 'does not exist' error; on a detail-less rejection a section with that code may already exist — inspect existing sections with list-app-sections.")]
 		[Required]
 		ApplicationSectionCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -206,7 +206,8 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 					args.Description,
 					args.EntitySchemaName,
 					args.WithMobilePages,
-					resolvedIconBackground));
+					resolvedIconBackground,
+					args.Code));
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
