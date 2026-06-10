@@ -3576,3 +3576,9 @@ Impact: Story 8 done + verified (3 unit; full suite 3526 pass, 0 new; e2e builds
 Context: Stories 1-8 done. Story 10 = final docs.
 Decision: docs/McpCapabilityMap.md — new "### 10. Browser Session Handoff" domain section (get-browser-session + clear-browser-session with safety flags, args, cookie-never-returned/output-path-CLI-only/forms-auth-only/Safe-fail-closed notes); Discovery Snapshot counts bumped 60→62 tools, 53→55 with safety metadata, snapshot date → 2026-06-10. Per-command docs (help/en, docs/commands, Commands.md, WikiAnchors) already shipped in stories 5/6 (ReadmeChecker gate). open-web-app --authenticated docs deferred with Mode A.
 Impact: Story 10 done + verified (full suite 3526 pass, 0 new). ALL stories complete: 1-8 + 10 implemented, 11/12 spikes done, 9 (Mode A) deferred. Ready for the single PR.
+
+## 2026-06-10 — ENG-91234 merged master + opened single PR #691
+Context: All stories implemented (1-8 + 10; spikes 11/12; 9 deferred). Branch was 10 behind origin/master.
+Decision: merge origin/master (only conflict = append-only workspace-diary.md, resolved keeping both sides — strip marker lines). Full unit suite post-merge: 3534 passed (+8 upstream tests), 0 new failures (3 pre-existing macOS path failures). Opened ONE PR for the whole feature.
+Files: merge commit + sprint-status.yaml (stories 1-8,10 → review; spikes done; story 9 deferred; PR link in header).
+Impact: ENG-91234 delivered as PR https://github.com/Advance-Technologies-Foundation/clio/pull/691 (master..HEAD = 9 commits + merge). CI runs on the PR. Story 9 (Mode A / open-web-app --authenticated) remains a deferred follow-up behind a CDP spike. To resume: `drive-pr-green` if reviewer/CI feedback needs addressing.
