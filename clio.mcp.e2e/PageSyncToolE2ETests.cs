@@ -98,7 +98,7 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects a page body with missing schema markers through the real MCP server before any remote save is attempted. Body is syntactically valid JavaScript so the ENG-89796 syntax gate passes — the markers validator catches the missing SCHEMA_* envelope.")]
+	[Description("Rejects a page body with missing schema markers through the real MCP server before any remote save is attempted. Body is syntactically valid JavaScript so the syntax gate passes — the markers validator catches the missing SCHEMA_* envelope.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages rejects body with missing markers during client-side validation")]
 	[AllureDescription("Uses any reachable environment, sends a syntactically valid page body whose SCHEMA_* markers are missing through sync-pages, and verifies that the markers validator (not the upstream syntax gate) fails the call without requiring a real page save.")]
@@ -116,9 +116,6 @@ public sealed class PageSyncToolE2ETests {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = $"UsrValidationOnly_{Guid.NewGuid():N}",
-							// Syntactically valid JavaScript — the ENG-89796 syntax gate
-							// passes — but the SCHEMA_* marker envelope is absent so the
-							// markers validator catches the missing structure.
 							["body"] = "define('BadPage', [], function() { return {}; });"
 						}
 					},
@@ -145,16 +142,15 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("ENG-89796: sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains the actual production incident shape (`await X = Y`). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
+	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]
-	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the actual ENG-89796 incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without sampling tokens spent and without any remote save attempted.")]
+	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without sampling tokens spent and without any remote save attempted.")]
 	public async Task PageSyncTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
 		await using ArrangeContext context = await ArrangeAsync();
-		// The actual ENG-89796 incident body — `await` cannot be an assignment target.
-		// No environment-name (the syntax gate must short-circuit before environment
-		// resolution; an invalid / missing environment must not change the outcome).
-		string incidentBody =
+		// `await` cannot be an assignment target; no environment-name because the
+		// syntax gate must short-circuit before environment resolution.
+		string nonValidBody =
 			"define(\"Bad_FormPage\", [], function() {\n" +
 			"    return {\n" +
 			"        handlers: [{\n" +
@@ -174,7 +170,7 @@ public sealed class PageSyncToolE2ETests {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = $"UsrSyntaxIncident_{Guid.NewGuid():N}",
-							["body"] = incidentBody
+							["body"] = nonValidBody
 						}
 					},
 					["skip-sampling"] = true
@@ -186,7 +182,7 @@ public sealed class PageSyncToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "the syntax failure is a structured tool response, not an MCP transport error");
 		response.Success.Should().BeFalse(
-			because: "the ENG-89796 incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
+			because: "the incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
 		response.Pages.Should().ContainSingle(
 			because: "one page was submitted");
 		response.Pages[0].Success.Should().BeFalse(
@@ -198,16 +194,13 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("ENG-89796 follow-up: sync-pages fails fast at the AST lint gate when a page ships SCHEMA_VALIDATORS as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport, no sampling and no remote save attempted.")]
+	[Description("sync-pages fails fast at the AST lint gate when a page ships SCHEMA_VALIDATORS as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport, no sampling and no remote save attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on validators-must-be-object lint error")]
 	[AllureDescription("Starts the real clio MCP server and submits a syntactically valid body whose SCHEMA_VALIDATORS is an array literal. Existing regex content validators do NOT cover this anti-pattern; verifying the per-page response carries `Page body lint failed` confirms the AST lint pass surfaces end-to-end through the real MCP wire.")]
 	public async Task PageSyncTool_Should_FailFast_When_Validators_Section_Is_Array_Literal() {
 		await using ArrangeContext context = await ArrangeAsync();
-		// Body is syntactically valid AND passes the regex content validators —
-		// the failure only emerges at the AST lint stage. No environment is set
-		// because the lint gate must short-circuit BEFORE any remote interaction.
-		string validatorsAsArrayBody =
+		string nonValidValidatorsSchemaBody =
 			"define(\"Bad_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -224,7 +217,7 @@ public sealed class PageSyncToolE2ETests {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = $"UsrLintValidatorsShape_{Guid.NewGuid():N}",
-							["body"] = validatorsAsArrayBody
+							["body"] = nonValidValidatorsSchemaBody
 						}
 					},
 					["skip-sampling"] = true

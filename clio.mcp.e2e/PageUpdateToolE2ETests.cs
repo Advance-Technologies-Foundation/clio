@@ -50,18 +50,16 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
-	[Description("ENG-89796: update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
+	[Description("update-page fails fast at the JavaScript-syntax gate before any remote call when the body contains an `await X = Y` (the actual production incident body), and the structured response carries the {line, column, message} per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on JavaScript syntax error before any remote call")]
-	[AllureDescription("Starts the real clio MCP server, invokes update-page with the actual ENG-89796 incident body (`await request.$context.X = Y`), and verifies that the response carries success=false, a 'JavaScript syntax error at line N, column M' message, and the 'NOT sent to Creatio' assurance — the deterministic floor of the validator must surface through the real MCP transport before any remote call is even attempted.")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page with the incident body (`await request.$context.X = Y`), and verifies that the response carries success=false, a 'JavaScript syntax error at line N, column M' message, and the 'NOT sent to Creatio' assurance — the deterministic floor of the validator must surface through the real MCP transport before any remote call is even attempted.")]
 	public async Task PageUpdateTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		// The actual production incident body — `await` cannot be an assignment target.
-		// No environment-name is set on purpose: the syntax gate must short-circuit
-		// before any environment resolution, so an invalid (missing) environment
-		// must not change the outcome.
-		string incidentBody =
+		// `await` cannot be an assignment target; no environment-name because the
+		// syntax gate must short-circuit before any environment resolution.
+		string nonValidBody =
 			"define(\"Bad_FormPage\", [], function() {\n" +
 			"    return {\n" +
 			"        handlers: [{\n" +
@@ -80,7 +78,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrSyntaxIncident_FormPage",
-					["body"] = incidentBody,
+					["body"] = nonValidBody,
 					["dry-run"] = true
 				}
 			},
@@ -91,7 +89,7 @@ public sealed class PageUpdateToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "the syntax failure is a structured tool response, not an MCP transport error");
 		response.Success.Should().BeFalse(
-			because: "the ENG-89796 incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
+			because: "the incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
 		response.Error.Should().Contain("JavaScript syntax error",
 			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
 		response.Error.Should().Contain("NOT sent to Creatio",
@@ -99,17 +97,14 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
-	[Description("ENG-89796 follow-up: update-page fails fast at the AST lint gate when SCHEMA_VALIDATORS ships as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport.")]
+	[Description("update-page fails fast at the AST lint gate when SCHEMA_VALIDATORS ships as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page fails fast on validators-must-be-object lint error before any remote call")]
 	[AllureDescription("Starts the real clio MCP server and submits a syntactically valid body where SCHEMA_VALIDATORS is an array literal rather than an object map. The existing regex validators do NOT cover this anti-pattern; verifying the structured response carries `Page body lint failed` confirms the AST lint pass surfaces through the real MCP wire.")]
 	public async Task PageUpdateTool_Should_FailFast_When_Validators_Section_Is_Array_Literal() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
-		// Body is syntactically valid AND passes the existing regex content
-		// validators — the failure only emerges at the AST lint stage. Mobile
-		// is intentionally avoided (it skips the JS gate).
-		string validatorsAsArrayBody =
+		string nonValidValidatorsSchemaBody =
 			"define(\"Bad_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -125,7 +120,7 @@ public sealed class PageUpdateToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = "UsrLintValidatorsShape_FormPage",
-					["body"] = validatorsAsArrayBody,
+					["body"] = nonValidValidatorsSchemaBody,
 					["dry-run"] = true
 				}
 			},

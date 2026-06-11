@@ -56,9 +56,9 @@ internal class PageBodySyntaxValidatorTests {
 		"}/**SCHEMA_VALIDATORS*/ " +
 		"}; });";
 
-	// Incident-reproducer body (ENG-89796): `await X = Y` — `await` is an expression
-	// and cannot be an assignment target. The actual broken body from the production
-	// incident that triggered this ticket.
+	// Incident-reproducer body: `await X = Y` — `await` is an expression and cannot
+	// be an assignment target. The actual broken body from the production incident
+	// that motivated the validator.
 	private const string IncidentBrokenBody =
 		"define(\"Bad_FormPage\", [], function() {\n" +
 		"    return {\n" +
@@ -153,14 +153,14 @@ internal class PageBodySyntaxValidatorTests {
 	#region Tests: negative (the incident + crafted invalid bodies)
 
 	[Test]
-	[Description("ENG-89796 incident reproducer: `await request.$context.X = Y` — `await` is an expression, not a valid assignment target. This is THE body that produced the production failure the ticket exists to prevent")]
+	[Description("Incident reproducer: `await request.$context.X = Y` — `await` is an expression, not a valid assignment target. This is THE body that produced the production failure the validator exists to prevent")]
 	public void Validate_ShouldReturnInvalid_WhenBodyContainsAwaitAsAssignmentTarget() {
 		// Arrange / Act
 		PageBodySyntaxValidationResult result = PageBodySyntaxValidator.Validate(IncidentBrokenBody);
 
 		// Assert
 		result.IsValid.Should().BeFalse(
-			because: "rejecting the exact incident body that triggered ENG-89796 is the validator's reason to exist — letting it through would be a regression to the pre-fix behaviour update-page silently writing a broken page");
+			because: "rejecting the exact incident body that motivated this validator is its reason to exist — letting it through would be a regression to the pre-fix behaviour update-page silently writing a broken page");
 		result.Line.Should().Be(6,
 			because: "the await-as-assignment-target sits on line 6 of the fixture and the parser must report the line accurately so the operator can jump to it in their editor");
 		result.Message.Should().NotBeNullOrEmpty(
