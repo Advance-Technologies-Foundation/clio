@@ -131,7 +131,7 @@ public sealed class AuthenticatedBrowserLauncherTests {
 
 	[Test]
 	[Description("LaunchAsync should throw when the browser process fails to start, not silently continue.")]
-	public void LaunchAsync_ShouldThrow_WhenProcessDoesNotStart() {
+	public async Task LaunchAsync_ShouldThrow_WhenProcessDoesNotStart() {
 		// Arrange
 		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
 		locator.Locate().Returns("/usr/bin/chromium");
@@ -148,13 +148,13 @@ public sealed class AuthenticatedBrowserLauncherTests {
 		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json");
 
 		// Assert
-		act.Should().ThrowAsync<InvalidOperationException>(
+		await act.Should().ThrowAsync<InvalidOperationException>(
 			"because a failed launch must be surfaced immediately rather than proceeding to CDP");
 	}
 
 	[Test]
 	[Description("LaunchAsync should throw when DevToolsActivePort never appears within the timeout budget.")]
-	public void LaunchAsync_ShouldThrow_WhenDevToolsPortFileNeverAppears() {
+	public async Task LaunchAsync_ShouldThrow_WhenDevToolsPortFileNeverAppears() {
 		// Arrange
 		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
 		locator.Locate().Returns("/usr/bin/chromium");
@@ -175,13 +175,13 @@ public sealed class AuthenticatedBrowserLauncherTests {
 		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json", cts.Token);
 
 		// Assert
-		act.Should().ThrowAsync<OperationCanceledException>(
+		await act.Should().ThrowAsync<OperationCanceledException>(
 			"because a cancelled token during port-file polling should propagate the cancellation");
 	}
 
 	[Test]
 	[Description("LaunchAsync should throw when no CDP page target is found within the timeout budget.")]
-	public void LaunchAsync_ShouldThrow_WhenPageTargetNeverAppears() {
+	public async Task LaunchAsync_ShouldThrow_WhenPageTargetNeverAppears() {
 		// Arrange
 		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
 		locator.Locate().Returns("/usr/bin/chromium");
@@ -210,7 +210,7 @@ public sealed class AuthenticatedBrowserLauncherTests {
 		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json", cts.Token);
 
 		// Assert
-		act.Should().ThrowAsync<OperationCanceledException>(
+		await act.Should().ThrowAsync<OperationCanceledException>(
 			"because a cancelled token while polling for a CDP page target should propagate the cancellation");
 	}
 
