@@ -75,6 +75,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"create-entity-schema should succeed for a valid sandbox environment and prepared package");
 		AssertIncludesInfoMessage(createResult,
 			"successful schema creation should emit progress output");
+		AssertIncludesPublishMessage(createResult,
+			"create-entity-schema must publish the configuration so the schema becomes visible to lookup pickers and sys-setting reference lists (ENG-90403)");
 		AssertSchemaProperties(schemaProperties, arrangeContext);
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
@@ -119,6 +121,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"create-lookup should succeed for a valid sandbox environment and prepared package");
 		AssertIncludesInfoMessage(createResult,
 			"successful lookup creation should emit progress output");
+		AssertIncludesPublishMessage(createResult,
+			"create-lookup must publish the configuration so the lookup becomes usable as a sys-setting Lookup reference (ENG-90403)");
 		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
 			because: "the created lookup should be readable through the structured schema properties tool");
 		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
@@ -1270,6 +1274,16 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.Output.Should().NotBeNullOrEmpty(
 			because: "successful command execution should emit human-readable diagnostics");
 		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+			because: because);
+	}
+
+	[AllureStep("Assert configuration publish progress message")]
+	private static void AssertIncludesPublishMessage(CommandExecutionEnvelope execution, string because) {
+		execution.Output.Should().NotBeNullOrEmpty(
+			because: "successful command execution should emit human-readable diagnostics");
+		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
+				&& message.Value != null
+				&& message.Value.Contains("published", StringComparison.OrdinalIgnoreCase),
 			because: because);
 	}
 

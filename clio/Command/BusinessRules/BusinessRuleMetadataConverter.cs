@@ -125,52 +125,100 @@ internal static class BusinessRuleMetadataConverter {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRuleCondition condition,
 		bool includeAttributeReferenceSchemaName) {
-		string leftPath = condition.LeftExpression.Path!;
-		BusinessRuleAttributeDescriptor leftDescriptor = attributeMap[leftPath];
-		string leftDataValueTypeName = leftDescriptor.DataValueTypeName;
+		bool hasRight = RequiresRightExpression(condition.ComparisonType);
+
+		// Each operand can be an AttributeValue, Const, or SysValue. The data value type and
+		// reference schema of a Const operand are inferred from the OTHER (typed) operand, so
+		// resolve both sides first.
+		OperandTypeContext? leftType = ResolveOperandTypeContext(attributeMap, condition.LeftExpression);
+		OperandTypeContext? rightType = hasRight
+			? ResolveOperandTypeContext(attributeMap, condition.RightExpression!)
+			: null;
+		OperandTypeContext fallback = leftType?.AsValueType() ?? rightType?.AsValueType() ?? OperandTypeContext.Text;
+
 		return new BusinessRuleConditionMetadataDto {
 			TypeName = BusinessRuleConditionTypeName,
 			UId = Guid.NewGuid().ToString(),
 			ComparisonType = MapComparisonType(condition.ComparisonType),
-			LeftExpression = BuildAttributeExpression(
-				leftDescriptor,
-				leftPath,
-				leftDataValueTypeName,
+			LeftExpression = BuildOperandExpression(
+				attributeMap,
+				condition.LeftExpression,
+				rightType?.AsValueType() ?? fallback,
 				includeAttributeReferenceSchemaName),
-			RightExpression = RequiresRightExpression(condition.ComparisonType)
-				? BuildRightExpression(
+			RightExpression = hasRight
+				? BuildOperandExpression(
 					attributeMap,
 					condition.RightExpression!,
-					leftDescriptor,
-					leftDataValueTypeName,
+					leftType?.AsValueType() ?? fallback,
 					includeAttributeReferenceSchemaName)
 				: null
 		};
 	}
 
-	private static BusinessRuleExpressionMetadataDto BuildRightExpression(
+	/// <summary>
+	/// Resolves the data value type and reference schema carried by a typed operand
+	/// (AttributeValue or SysValue). Returns <c>null</c> for a Const operand, which has no
+	/// intrinsic type and inherits its type from the operand it is compared against.
+	/// </summary>
+	private static OperandTypeContext? ResolveOperandTypeContext(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		BusinessRuleExpression right,
-		BusinessRuleAttributeDescriptor leftDescriptor,
-		string leftDataValueTypeName,
-		bool includeAttributeReferenceSchemaName) {
-		if (string.Equals(right.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			string rightPath = right.Path!;
-			BusinessRuleAttributeDescriptor rightDescriptor = attributeMap[rightPath];
-			return BuildAttributeExpression(
-				rightDescriptor,
-				rightPath,
-				includeAttributeReferenceSchemaName: includeAttributeReferenceSchemaName);
+		BusinessRuleExpression expression) {
+		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			BusinessRuleAttributeDescriptor descriptor = attributeMap[expression.Path!];
+			return new OperandTypeContext(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName);
 		}
 
-		object? value = ConvertJsonElement(right.Value!.Value, leftDataValueTypeName);
+		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)
+			&& SupportedSystemVariables.TryGetValue(expression.SysValueName!, out SystemVariableDescriptor? sysValue)) {
+			return new OperandTypeContext(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName);
+		}
 
+		return null;
+	}
+
+	private static BusinessRuleExpressionMetadataDto BuildOperandExpression(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		BusinessRuleExpression expression,
+		OperandTypeContext constValueType,
+		bool includeAttributeReferenceSchemaName) {
+		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			string path = expression.Path!;
+			BusinessRuleAttributeDescriptor descriptor = attributeMap[path];
+			return BuildAttributeExpression(
+				descriptor,
+				path,
+				descriptor.DataValueTypeName,
+				includeAttributeReferenceSchemaName);
+		}
+
+		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			// Persist the canonical catalog name rather than the caller-supplied casing: the
+			// validator accepts the name case-insensitively, but the platform resolves system
+			// variables by exact name at runtime, so a casing variant must be normalized here.
+			OperandTypeContext sysValueType =
+				ResolveOperandTypeContext(attributeMap, expression) ?? OperandTypeContext.Text;
+			string sysValueName =
+				SupportedSystemVariables.TryGetValue(expression.SysValueName!, out SystemVariableDescriptor? descriptor)
+					? descriptor.SysValueName
+					: expression.SysValueName;
+			return new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleSysValueExpressionTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Type = SysValueExpressionType,
+				DataValueTypeName = sysValueType.DataValueTypeName,
+				ReferenceSchemaName = sysValueType.ReferenceSchemaName,
+				SysValueName = sysValueName
+			};
+		}
+
+		// Const: inherit the data value type and reference schema from the compared operand.
+		object? value = ConvertJsonElement(expression.Value!.Value, constValueType.DataValueTypeName);
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleValueExpressionTypeName,
 			UId = Guid.NewGuid().ToString(),
-			Type = "Const",
-			DataValueTypeName = leftDataValueTypeName,
-			ReferenceSchemaName = leftDescriptor.ReferenceSchemaName,
+			Type = ConstExpressionType,
+			DataValueTypeName = constValueType.DataValueTypeName,
+			ReferenceSchemaName = constValueType.ReferenceSchemaName,
 			Value = value
 		};
 	}
@@ -579,13 +627,21 @@ internal static class BusinessRuleMetadataConverter {
 		string.IsNullOrWhiteSpace(sourceFilterPath) ? sourcePath : $"{sourcePath}.{sourceFilterPath}";
 
 	private static IEnumerable<string> EnumerateTriggerNames(BusinessRuleCondition condition) {
-		yield return condition.LeftExpression.Path!;
-		if (condition.RightExpression is not null
-			&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)
-			&& !string.IsNullOrWhiteSpace(condition.RightExpression.Path)) {
-			yield return condition.RightExpression.Path;
+		// Only attribute operands drive change triggers; Const and SysValue operands have no
+		// attribute path, so a condition with no attribute operand (for example
+		// CurrentUserRoles CONTAIN <role>) contributes only the DataLoaded trigger.
+		if (IsTriggerAttributeExpression(condition.LeftExpression)) {
+			yield return condition.LeftExpression.Path!;
+		}
+
+		if (condition.RightExpression is not null && IsTriggerAttributeExpression(condition.RightExpression)) {
+			yield return condition.RightExpression.Path!;
 		}
 	}
+
+	private static bool IsTriggerAttributeExpression(BusinessRuleExpression expression) =>
+		string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)
+		&& !string.IsNullOrWhiteSpace(expression.Path);
 
 	private static IEnumerable<string> EnumerateFormulaTriggerNames(
 		BusinessRuleAction action,
@@ -710,6 +766,26 @@ internal static class BusinessRuleMetadataConverter {
 
 		LocalEsqFilterBuilder builder = new(filterSchemaProvider, lookupValueResolver);
 		return builder.Build(filterGroup, rootSchemaName);
+	}
+
+	/// <summary>
+	/// Data value type and reference schema used to type a condition operand.
+	/// </summary>
+	/// <param name="DataValueTypeName">Resolved data value type name.</param>
+	/// <param name="ReferenceSchemaName">Reference schema for lookup-typed operands, otherwise <c>null</c>.</param>
+	private sealed record OperandTypeContext(string DataValueTypeName, string? ReferenceSchemaName) {
+		/// <summary>Default context for a comparison between two untyped (Const) operands.</summary>
+		public static readonly OperandTypeContext Text = new("Text", null);
+
+		/// <summary>
+		/// The type a constant/value uses when compared against this operand. An <c>ObjectList</c>
+		/// (for example <c>CurrentUserRoles</c>) is a collection of lookup records, so the value
+		/// compared against it is a single <c>Lookup</c> of the same reference schema.
+		/// </summary>
+		public OperandTypeContext AsValueType() =>
+			string.Equals(DataValueTypeName, "ObjectList", StringComparison.OrdinalIgnoreCase)
+				? new OperandTypeContext("Lookup", ReferenceSchemaName)
+				: this;
 	}
 }
 

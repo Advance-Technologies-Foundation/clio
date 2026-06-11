@@ -1,5 +1,6 @@
 using Clio.Mcp.E2E.Support.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -54,6 +55,18 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		IReadOnlyDictionary<string, object?> arguments,
 		CancellationToken cancellationToken) =>
 		await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+
+	/// <summary>
+	/// Invokes a tool while forwarding the server's <c>notifications/progress</c> to
+	/// <paramref name="progress"/>. The SDK generates a progress token for the request, so this
+	/// overload is the way E2E tests observe the long-running heartbeat (ENG-91274).
+	/// </summary>
+	public async Task<CallToolResult> CallToolAsync(
+		string toolName,
+		IReadOnlyDictionary<string, object?> arguments,
+		IProgress<ProgressNotificationValue> progress,
+		CancellationToken cancellationToken) =>
+		await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
 
 	public async ValueTask DisposeAsync() {
 		await Client.DisposeAsync();

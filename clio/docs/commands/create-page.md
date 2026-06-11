@@ -56,6 +56,11 @@ clio create-page [options]
 --entity-schema-name               Optional entity schema to record in the
                                    new page dependencies
 
+--caption-culture                  Override the culture for the generated page
+                                   caption (e.g. en-US, uk-UA). Precedence:
+                                   override > the connected user's profile
+                                   culture (see get-user-culture) > en-US.
+
 --uri                    -u       Application uri
 
 --Password               -p       User password

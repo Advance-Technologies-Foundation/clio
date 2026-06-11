@@ -12,7 +12,16 @@ DESCRIPTION
     Provide the target application through --application-code.
 
     By default clio creates a section with a new object. To bind the section
-    to an existing entity, provide --entity-schema-name.
+    to an existing entity, provide --entity-schema-name. The object must exist
+    (clio validates this before creating the section and returns a clear error
+    otherwise). Several sections may target the same object, so reusing an
+    object that already backs a section is allowed.
+
+    The section code is generated from the caption. Only ASCII letters and
+    digits contribute to the generated code: a fully non-Latin caption (for
+    example "Контакти") yields no code and requires an explicit --code. When a
+    caption mixes scripts (for example "Контакти 2024"), the ASCII fragment is
+    salvaged ("2024" gives "Usr_2024"); pass --code to override.
 
     By default clio creates web and mobile pages. Set --with-mobile-pages false
     when the new section must stay web-only.
@@ -29,6 +38,12 @@ OPTIONS
 
     --entity-schema-name             Existing entity schema name
 
+    --code                           Explicit section code (Latin identifier).
+                                     Generated from the caption when omitted;
+                                     required when the caption has no Latin
+                                     letters or digits (e.g. a non-Latin
+                                     caption such as "Контакти").
+
     --icon-background                Icon background color in #RRGGBB format,
                                      must be one of the Freedom UI palette
                                      values that the app manager renders
@@ -42,6 +57,13 @@ OPTIONS
     --with-mobile-pages              Create mobile pages in addition to web
                                      pages. Default: true
 
+    --caption-culture                Override the culture used when displaying
+                                     the created section caption (e.g. en-US,
+                                     uk-UA). Precedence: override > profile
+                                     culture > en-US. The stored caption is
+                                     localized server-side under the user's
+                                     profile.
+
     --Environment            -e      Environment name. Required.
 
 EXAMPLE
@@ -54,20 +76,57 @@ EXAMPLE
     clio create-app-section --application-code UsrSalesApp --caption "Visits" --with-mobile-pages false -e dev
         create a web-only section and let clio choose icon metadata automatically
 
-TROUBLESHOOTING
-    "Failed to create section ... is already bound to an existing section"
-        The entity passed via --entity-schema-name already backs another
-        section (an entity can back only one section). Reuse the existing
-        section, pick a different entity, or omit --entity-schema-name to
-        create a new object. Run "clio list-app-sections" to inspect the
-        sections already defined in the application. This commonly happens
-        when binding a system entity such as Contact, which the
-        out-of-the-box Contacts section already uses.
+TIMEOUT AND FAILURE DIAGNOSTICS
+    The section insert runs under a finite budget of 300 seconds. Set the
+    CLIO_CREATE_SECTION_TIMEOUT_SECONDS environment variable (whole seconds,
+    positive integer) to extend or shrink the budget.
 
-    "Failed to create section ... a section with code ... already exists"
-        The caption produced a section code that collides with an existing
-        section. Change the caption to generate a different code, or reuse
-        the existing section.
+    On failure clio classifies the outcome and prints an actionable next
+    step ("Next step: ..."):
+
+    transport         The request never reached the Creatio server (DNS,
+                      connect, or TLS failure). No section was created;
+                      retrying is safe once the environment is reachable.
+
+    creatio-timeout   The request was sent but Creatio produced no response
+                      within the budget. clio automatically checks whether
+                      the section appeared anyway: if it did, the command
+                      continues and succeeds; if not, do NOT retry blindly -
+                      the server may still be processing the insert. Wait a
+                      few minutes, run "clio list-app-sections", and retry
+                      only if the section is still absent.
+
+    server-error      Creatio rejected the operation (HTTP error, non-JSON
+                      response, or a rejected insert). Retrying the same
+                      arguments will most likely fail again; fix the inputs
+                      or the server state first.
+
+TROUBLESHOOTING
+    "Caption ... has no Latin letters or digits to generate a section code"
+        The caption is non-Latin (for example "Контакти"), so a valid Latin
+        section code cannot be generated. Pass an explicit code via --code
+        (for example --code Contacts), or use a Latin caption. The caption
+        stays as the localized display title. clio reports this before
+        creating the section.
+
+    "Entity schema ... does not exist ..."
+        The object passed via --entity-schema-name was not found in the
+        environment. Object names are case-sensitive. Verify the name, or
+        omit --entity-schema-name to create a new object. clio checks this
+        before creating the section.
+
+    "Section code ... is invalid ..."
+        The value passed via --code is not a Latin identifier. Section codes
+        must start with a Latin letter and contain only Latin letters, digits,
+        or underscore.
+
+    Detail-less "Failed to create section ..." rejection
+        The server rejected the insert without details. A section with the
+        generated or explicit code may already exist. Run "clio
+        list-app-sections" to inspect existing sections, then change the
+        caption or pass a different --code. Note: several sections may target
+        the same object, so reusing an object that already backs a section is
+        allowed.
 
     When the underlying Creatio insert returns its own error text, that
     message is surfaced after "Server error:" so the root cause is visible

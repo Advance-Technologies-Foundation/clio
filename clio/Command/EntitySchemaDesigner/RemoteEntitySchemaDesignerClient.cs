@@ -19,6 +19,16 @@ internal interface IRemoteEntitySchemaDesignerClient
 	DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
+
+	/// <summary>
+	/// Publishes pending configuration changes so saved entity schemas become visible to designer
+	/// surfaces (lookup pickers, sys-setting reference schema lists). Mirrors the platform designer UI:
+	/// sends a <c>SchemaDesignerRequest</c> with <c>buildWorkspace</c> and <c>buildChangedConfiguration</c>
+	/// flags, and the server picks the publication strategy for its runtime generation — a full workspace
+	/// build on legacy instances or an incremental configuration build plus an
+	/// <c>EntitySchemaManager</c> refresh on modern ones.
+	/// </summary>
+	BaseResponse PublishConfigurationChanges(RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
@@ -32,6 +42,11 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
+
+	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
+	// which is a compile-class operation. Use the same long timeout as compile-configuration
+	// so a slow-but-successful build is not mistaken for a failure.
+	internal static readonly int PublishConfigurationTimeoutMs = (int)TimeSpan.FromMinutes(60).TotalMilliseconds;
 
 	public RemoteEntitySchemaDesignerClient(IApplicationClient applicationClient, IJsonConverter jsonConverter,
 		IServiceUrlBuilder serviceUrlBuilder) {
@@ -101,6 +116,21 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			"SaveSchemaDbStructure");
 	}
 
+	public BaseResponse PublishConfigurationChanges(RemoteCommandOptions options) {
+		// Build POST is non-idempotent: retrying a timed-out build may stack concurrent full compiles.
+		// Use the build-class timeout and retryCount=0 regardless of the command-level defaults.
+		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
+			new SchemaDesignerRequestDto {
+				BuildWorkspace = true,
+				BuildChangedConfiguration = true
+			},
+			PublishConfigurationTimeoutMs,
+			retryCount: 0,
+			options.RetryDelay,
+			"PublishConfigurationChanges");
+	}
+
 	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {
 		return PostToUrl<RuntimeEntitySchemaRequestDto, RuntimeEntitySchemaResponse>(
 			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
@@ -157,9 +187,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string methodName)
 		where TRequest : class
 		where TResponse : BaseResponse {
+		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.RetryCount, options.RetryDelay,
+			methodName);
+	}
+
+	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int retryCount,
+		int retryDelay, string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
-			options.RetryDelay);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, retryCount, retryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
