@@ -64,7 +64,11 @@ Applies batch column mutations to an existing entity schema.
 |---|---|---|
 | `type` | Yes | `"update-entity"` |
 | `schema-name` | Yes | Target entity schema name |
-| `update-operations` | Yes | Column mutation operations (same format as `update-entity-schema`) |
+| `update-operations` | Conditionally | Column mutation operations (same format as `update-entity-schema`). Required unless `columns` is supplied. |
+| `columns` | Conditionally | Read/create-shape columns (no `action` verbs) treated as an implicit **add** batch. Use this to add columns without writing `update-operations`. |
+
+Supply either `update-operations` (for add/modify/remove) **or** `columns` (add-only shorthand). If both
+are present, `update-operations` wins.
 
 ### Seed Rows Format
 
@@ -153,6 +157,27 @@ Each seed row must have a `values` key containing column name-value pairs:
 - `update-operations` use `title-localizations` and `description-localizations`.
 - Every localization map must include a non-empty `en-US` value.
 - Legacy scalar `title`, `caption`, and `description` fields are rejected by the MCP contract.
+
+## Column Vocabulary (read-modify-write round trip)
+
+The column field names accepted here are unified with the shape that `get-app-info` returns, so a
+column read from `get-app-info` can be sent back without manual field translation. Canonical field
+names are accepted, and the legacy read-shape field names are accepted as aliases:
+
+| Concept | Canonical (write) | Read-shape alias (also accepted) |
+|---|---|---|
+| Column identity | `column-name` (in `update-operations`) / `name` (in `columns`) | `name` |
+| Column type | `type` | `data-value-type` |
+| Lookup reference | `reference-schema-name` | `reference-schema` |
+| Required flag | `required` | `is-required` |
+| Caption (add only) | `title-localizations` | `caption` (scalar; promoted to the `en-US` localization) |
+
+`get-app-info` returns each column with both the canonical (`name`, `type`, `reference-schema-name`,
+`required`) and the legacy (`data-value-type`, `reference-schema`) field names, plus a scalar `caption`.
+To modify or remove a column you read, send the same shape back inside an `update-operations` entry and
+add the `action` verb (`modify` or `remove`). To add columns, drop the read/create-shape objects into
+`columns` (no `action` needed) — the scalar `caption` is promoted to `title-localizations` automatically —
+or send explicit `update-operations` with `action: "add"`.
 
 ## Masking Behavior
 

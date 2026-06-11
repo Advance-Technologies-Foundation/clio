@@ -31,7 +31,8 @@ internal static class ApplicationToolResultMapper {
 							column.Name,
 							column.Caption,
 							column.DataValueType,
-							column.ReferenceSchema))
+							column.ReferenceSchema,
+							column.Required))
 						.ToList()))
 				.ToList(),
 			result.Pages?
@@ -76,7 +77,8 @@ internal static class ApplicationToolResultMapper {
 							column.Name,
 							column.Caption,
 							column.DataValueType,
-							column.ReferenceSchema))
+							column.ReferenceSchema,
+							column.Required))
 						.ToList()),
 			result.Pages
 				.Select(page => new PageListItem {

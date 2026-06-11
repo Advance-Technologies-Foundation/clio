@@ -46,6 +46,26 @@ The command prints:
 
 With --json the full JSON response is printed.
 
+### Column fields (round-trip with `sync-schemas`)
+
+Each entity column in the JSON response carries a vocabulary unified with the `sync-schemas`
+write surfaces, so a column read here can be sent back to `sync-schemas update-entity` without
+manual field translation:
+
+| Field | Meaning |
+|---|---|
+| `name` | Column identity (matches the write-side column name) |
+| `type` | Canonical column type |
+| `data-value-type` | Legacy alias of `type`, retained for backward compatibility |
+| `reference-schema-name` | Canonical lookup reference schema (omitted when not a lookup) |
+| `reference-schema` | Legacy alias of `reference-schema-name`, retained for backward compatibility |
+| `required` | Whether the column is required |
+| `caption` | Localized column caption |
+
+To modify or remove a column you read, send the same object back inside a `sync-schemas`
+`update-operations` entry and add the `action` verb (`modify`/`remove`). To add columns, place
+read/create-shape objects into the `columns` array.
+
 ## Example
 
 ```bash
