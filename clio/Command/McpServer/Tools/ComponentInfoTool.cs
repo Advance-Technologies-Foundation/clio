@@ -195,8 +195,9 @@ public sealed class ComponentInfoTool(
 	/// <see cref="ComponentInfoCommand"/>'s resolution order so the MCP tool and the CLI verb
 	/// stay in lockstep:
 	/// <list type="number">
-	/// <item>explicit <c>version</c> — authoritative (<see cref="ComponentInfoResolution.MapResolvedFrom"/>
-	/// downgrades it to <c>latest-fallback</c> automatically if the catalog ends up loading a different version);</item>
+	/// <item>explicit <c>version</c> — authoritative; if the CDN has no catalog for that version
+	/// <see cref="ComponentInfoResolution.MapResolvedFrom"/> maps to <c>environment-superset</c>
+	/// (known version, approximate catalog) rather than <c>latest-fallback</c>;</item>
 	/// <item><c>environment-name</c>/<c>uri</c> — probe cliogate <c>GetSysInfo</c> on that environment;</item>
 	/// <item>neither — <c>latest</c> with a non-authoritative source so the response carries <c>latest-fallback</c>.</item>
 	/// </list>
@@ -532,9 +533,18 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets or sets the resolver tier that produced <see cref="ResolvedTargetVersion"/>.
-	/// Permitted values: <c>"environment"</c> (resolved from cliogate GetSysInfo),
-	/// <c>"latest-fallback"</c> (env unknown, probe failed, or version unparseable). AI should
-	/// treat <c>"latest-fallback"</c> as a superset of the true target environment.
+	/// Permitted values:
+	/// <list type="bullet">
+	/// <item><c>"environment"</c> — version resolved from cliogate GetSysInfo and the catalog
+	/// matched that exact version; treat as authoritative.</item>
+	/// <item><c>"environment-superset"</c> — version resolved from the environment (known), but
+	/// the CDN had no catalog for that version so <c>latest</c> was served; a soft caveat is
+	/// emitted in <see cref="VersionWarning"/>. Verify that critical component types exist
+	/// before proceeding.</item>
+	/// <item><c>"latest-fallback"</c> — environment unknown, probe failed, or version
+	/// unparseable; <c>latest</c> is a superset of the true environment. Hard stop: confirm
+	/// version with the user before any modification.</item>
+	/// </list>
 	/// </summary>
 	[JsonPropertyName("resolvedFrom")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -542,12 +552,14 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets the human-readable caveat emitted whenever <see cref="ResolvedFrom"/> is
-	/// <c>latest-fallback</c>. Derived from <see cref="ResolvedFrom"/> so every response
-	/// shape (list / detail / not-found, web only) carries it without each branch having
-	/// to set it, and so the MCP tool and CLI verb stay in lockstep. Omitted from the wire
-	/// shape when the catalog matched the target version (<c>environment</c> tier) or when
-	/// the flavor reports no version markers (mobile). See
-	/// <see cref="ComponentInfoResolution.LatestFallbackWarning"/> for the rationale.
+	/// <c>"environment-superset"</c> (soft caveat: version known, catalog approximate) or
+	/// <c>"latest-fallback"</c> (hard stop: version unknown). Derived from
+	/// <see cref="ResolvedFrom"/> so every response shape (list / detail / not-found, web
+	/// only) carries it without each branch having to set it, and so the MCP tool and CLI
+	/// verb stay in lockstep. Omitted from the wire shape when <see cref="ResolvedFrom"/>
+	/// is <c>"environment"</c> (exact catalog match) or when the flavor reports no version
+	/// markers (mobile). See <see cref="ComponentInfoResolution.LatestFallbackWarning"/> and
+	/// <see cref="ComponentInfoResolution.EnvironmentSupersetWarning"/> for the warning text.
 	/// </summary>
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

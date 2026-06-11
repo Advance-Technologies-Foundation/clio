@@ -114,7 +114,7 @@ mapped to a 3-part SemVer (`SysInfo.CoreVersion` → `Major.Minor.Patch`), with
 a 5-minute in-process cache. Any failure class (HTTP error, missing CoreVersion,
 non-SemVer string, cliogate < `2.0.0.32`, no active environment) degrades softly
 to `latest`, and the MCP response carries the `resolvedFrom` marker
-(`"environment"` | `"latest-fallback"`) so AI can interpret the result correctly
+(`"environment"` | `"environment-superset"` | `"latest-fallback"`) so AI can interpret the result correctly
 (see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
 
 The soft degrade keeps the tool from erroring, but it does NOT license the agent
