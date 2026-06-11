@@ -213,6 +213,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		StubExistingEntitySchema("UsrTaskStatus");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
@@ -272,6 +273,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		StubExistingEntitySchema("Case");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
@@ -440,6 +442,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_With_Server_Message() {
 		// Arrange
 		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Cannot insert duplicate key row"}}""");
+		StubExistingEntitySchema("Contact");
 
 		// Act
 		Action action = () => _sut.CreateSection(
@@ -456,8 +459,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "the underlying Creatio server error must be propagated instead of swallowed");
 		exception.Message.Should().Contain("Contact",
 			because: "the failure should name the entity the section was being bound to");
-		exception.Message.Should().Contain("already bound to an existing section",
-			because: "the message should explain the most common cause for a reused-entity insert failure");
+		exception.Message.Should().NotContain("already bound to an existing section",
+			because: "Creatio allows several sections per entity, so the failure must not assert the false entity-binding cause");
 		exception.Message.Should().Contain("list-app-sections",
 			because: "the message should point the user at the recovery command");
 	}
@@ -467,6 +470,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_Without_Server_Message_For_Reused_Entity() {
 		// Arrange
 		SetUpInsertFailureMocks("""{"success":false}""");
+		StubExistingEntitySchema("Contact");
 
 		// Act
 		Action action = () => _sut.CreateSection(
@@ -485,8 +489,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "the message should clearly state the operation that failed");
 		exception.Message.Should().Contain("Contact",
 			because: "the message should name the reused entity even when the server returns no detail");
-		exception.Message.Should().Contain("already bound to an existing section",
-			because: "the message should explain the common cause when no server message is available");
+		exception.Message.Should().NotContain("already bound to an existing section",
+			because: "Creatio allows several sections per entity, so the message must not assert the false entity-binding cause");
+		exception.Message.Should().Contain("may already exist",
+			because: "the detail-less rejection should suggest the section-code collision recovery path");
 	}
 
 	[Test]
@@ -505,7 +511,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
 			because: "a rejected section insert must surface as a readable failure").Which;
-		exception.Message.Should().Contain("a section with code",
+		exception.Message.Should().Contain("section with code",
 			because: "the new-object path should attribute the failure to a duplicate section code");
 		exception.Message.Should().Contain("UsrOrders",
 			because: "the message should include the generated section code derived from the caption");
@@ -680,6 +686,233 @@ public sealed class ApplicationSectionCreateServiceTests {
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
 				body.Contains("\"filters\"", StringComparison.Ordinal)))
 			.Returns("""{"success":true}""");
+	}
+
+	[Test]
+	[Description("Fails fast with an actionable error pointing at --code when the caption has no Latin characters and no explicit code is supplied, instead of sending an invalid non-ASCII section code that Creatio silently rejects.")]
+	public void CreateSection_Should_Throw_Actionable_Error_When_Caption_Has_No_Latin_Characters_And_No_Code() {
+		// Arrange
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo);
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Контакти"));
+
+		// Assert
+		ArgumentException exception = action.Should().Throw<ArgumentException>(
+			because: "a non-Latin caption cannot produce a valid section code and must fail with guidance instead of an opaque server rejection").Which;
+		exception.Message.Should().Contain("--code",
+			because: "the message must tell the caller to provide an explicit code");
+		exception.Message.Should().Contain("Контакти",
+			because: "the message should name the caption that could not be converted to a code");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Uses the explicit code (with the environment prefix ensured) for the section code when the caption is non-Latin, so the section is created with a valid Latin code while the caption stays localized.")]
+	public void CreateSection_Should_Use_Explicit_Code_When_Caption_Is_Non_Latin() {
+		// Arrange
+		SetUpPrefixTestMocks("UsrContacts");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Контакти",
+				Code: "Contacts"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrContacts",
+			because: "the explicit code must be prefixed with the environment schema-name prefix and used verbatim for the section code");
+	}
+
+	[Test]
+	[Description("Rejects an explicit code that is not a valid Latin identifier before any remote call, so an invalid override fails clearly instead of being silently rejected by the server.")]
+	public void CreateSection_Should_Reject_Invalid_Explicit_Code() {
+		// Arrange
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo);
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				Code: "Контакти"));
+
+		// Assert
+		ArgumentException exception = action.Should().Throw<ArgumentException>(
+			because: "an explicit code that is not a Latin identifier must be rejected with a clear validation error").Which;
+		exception.Message.Should().Contain("invalid",
+			because: "the message must state that the supplied code is invalid");
+		exception.Message.Should().Contain("Latin",
+			because: "the message must explain that section codes must be Latin identifiers");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Throws a clear, non-silent error before any insert when --entity-schema-name targets an object that does not exist, instead of letting the section insert fail opaquely.")]
+	public void CreateSection_Should_Throw_When_Existing_Entity_Does_Not_Exist() {
+		// Arrange
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo);
+		StubRandomIcon();
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Ghosts",
+				EntitySchemaName: "UsrDoesNotExist"));
+
+		// Assert
+		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
+			because: "targeting a non-existent existing object must fail with a clear error instead of an opaque insert rejection").Which;
+		exception.Message.Should().Contain("does not exist",
+			because: "the message must state that the requested object was not found");
+		exception.Message.Should().Contain("UsrDoesNotExist",
+			because: "the message must name the missing object so the caller can correct the request");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Does not double-prefix an explicit code that already starts with the environment prefix in canonical casing.")]
+	public void CreateSection_Should_Not_Double_Prefix_When_Code_Already_Starts_With_Prefix() {
+		// Arrange
+		SetUpPrefixTestMocks("UsrContacts");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				Code: "UsrContacts"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrContacts",
+			because: "a code that already begins with the canonical prefix must not get the prefix prepended again");
+	}
+
+	[Test]
+	[Description("Re-canonicalizes prefix casing when the explicit code starts with the prefix in a different case, so --code usrContacts with prefix Usr yields UsrContacts.")]
+	public void CreateSection_Should_Canonicalize_Prefix_Casing_When_Code_Has_Lowercase_Prefix() {
+		// Arrange
+		SetUpPrefixTestMocks("UsrContacts");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				Code: "usrContacts"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrContacts",
+			because: "when the code starts with the prefix in the wrong case, the canonical casing from SchemaNamePrefix must be applied");
+	}
+
+	[Test]
+	[Description("Salvages the ASCII digit fragment from a mixed caption (e.g. 'Контакти 2024') to produce a valid code, inserting an underscore after the prefix so the identifier does not start with a digit.")]
+	public void CreateSection_Should_Salvage_ASCII_Digit_Fragment_From_Mixed_Caption() {
+		// Arrange
+		SetUpPrefixTestMocks("Usr_2024");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Контакти 2024"));
+
+		// Assert
+		result.Section.Code.Should().Be("Usr_2024",
+			because: "the non-Latin word is dropped and the digit fragment '2024' is salvaged; an underscore is inserted after the prefix because the generated code would otherwise start with a digit");
+	}
+
+	[Test]
+	[Description("Proceeds with the section insert when the entity existence probe throws unexpectedly, so a permissions or transport failure on the probe does not block creation.")]
+	public void CreateSection_Should_Proceed_With_Insert_When_EntityExistenceProbe_Throws() {
+		// Arrange
+		ApplicationEntityInfoResult existingEntity = new("entity-uid", "UsrTaskStatus", "Task statuses", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [existingEntity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [existingEntity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp").Returns(beforeInfo, afterInfo);
+		StubRandomIcon();
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)
+				&& body.Contains("\"value\":\"UsrTaskStatus\"", StringComparison.Ordinal)))
+			.Returns(_ => throw new InvalidOperationException("Simulated transport failure"));
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Task statuses","Code":"UsrTaskStatus","Description":null,"EntitySchemaName":"UsrTaskStatus","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Task statuses",
+				EntitySchemaName: "UsrTaskStatus"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrTaskStatus",
+			because: "a transport failure in the existence probe must not block creation; the probe is best-effort and the insert must proceed");
+	}
+
+	private void StubRandomIcon() {
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+	}
+
+	private void StubExistingEntitySchema(string entityName) {
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)
+				&& body.Contains($"\"value\":\"{entityName}\"", StringComparison.Ordinal)))
+			.Returns($$"""{"success":true,"rows":[{"Name":"{{entityName}}"}]}""");
 	}
 }
 
