@@ -30,6 +30,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
 	private readonly ISysSettingsManager _sysSettingsManager;
+	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
+	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 
 	#endregion
 
@@ -87,12 +89,46 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger,
-		ISysSettingsManager sysSettingsManager) {
+		ISysSettingsManager sysSettingsManager,
+		ICurrentUserCultureResolverFactory cultureResolverFactory,
+		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 		_sysSettingsManager = sysSettingsManager;
+		_cultureResolverFactory = cultureResolverFactory;
+		_settingsRepository = settingsRepository;
+	}
+
+	/// <summary>
+	/// Resolves the effective caption culture for a create-entity run: an explicit
+	/// <c>--caption-culture</c> override wins; otherwise the connected user's profile culture
+	/// (read once, cached); otherwise the <c>en-US</c> fallback. Never reads the host
+	/// <c>CultureInfo.CurrentCulture</c>. Resolution failure is non-fatal (M-4): it degrades to
+	/// <c>en-US</c> so scripted/CI entity creation keeps working.
+	/// </summary>
+	private string ResolveEffectiveCultureName(CreateEntitySchemaOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.CaptionCulture)) {
+			string overrideCulture = options.CaptionCulture.Trim();
+			try {
+				return System.Globalization.CultureInfo.GetCultureInfo(overrideCulture).Name;
+			} catch (System.Globalization.CultureNotFoundException) {
+				throw new EntitySchemaDesignerException(
+					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");
+			}
+		}
+
+		try {
+			EnvironmentSettings settings = _settingsRepository.GetEnvironment(options);
+			CultureResolution resolution = _cultureResolverFactory.Create(settings)
+				.ResolveAsync().GetAwaiter().GetResult();
+			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
+		} catch (Exception ex) {
+			_logger.WriteWarning(
+				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
+			return EntitySchemaDesignerSupport.DefaultCultureName;
+		}
 	}
 
 	#endregion
@@ -103,17 +139,19 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		EntityDesignSchemaDto schema,
 		CreateEntitySchemaOptions options,
 		IReadOnlyCollection<ParsedColumn> parsedColumns,
-		PackageInfo package) {
-		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		PackageInfo package,
+		string cultureName) {
 		TitleLocalizationNormalizationResult schemaTitleNormalization =
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
 				options.Title,
-				TitleLocalizationsArgumentName);
+				TitleLocalizationsArgumentName,
+				cultureName);
 		schema.Name = options.SchemaName;
 		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 			schemaTitleNormalization.Localizations,
-			schemaTitleNormalization.EffectiveTitle);
+			schemaTitleNormalization.EffectiveTitle,
+			cultureName);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -231,7 +269,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				parsedColumn.TitleLocalizations,
 				parsedColumn.Title,
-				TitleLocalizationsArgumentName);
+				TitleLocalizationsArgumentName,
+				cultureName);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
@@ -239,7 +278,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				titleNormalization.Localizations,
-				titleNormalization.EffectiveTitle),
+				titleNormalization.EffectiveTitle,
+				cultureName),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None,
@@ -525,7 +565,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			schema = AssignParentSchema(schema, options.ParentSchemaName, package.Descriptor.UId, options);
 		}
 
-		ApplySchemaMetadata(schema, options, parsedColumns, package);
+		string effectiveCultureName = ResolveEffectiveCultureName(options);
+		ApplySchemaMetadata(schema, options, parsedColumns, package, effectiveCultureName);
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
@@ -544,7 +585,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				Name = options.SchemaName,
 				PackageUId = package.Descriptor.UId,
 				UseFullHierarchy = false,
-				Cultures = [EntitySchemaDesignerSupport.GetCurrentCultureName()]
+				// Verification-only read (checks the reloaded schema name). Mi-2: this is a
+				// schema-level culture ARRAY, not a caption cultureName; use the effective creation
+				// culture rather than the host CultureInfo.CurrentCulture.
+				Cultures = [effectiveCultureName]
 			}, options);
 		if (designItemResponse != null) {
 			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema

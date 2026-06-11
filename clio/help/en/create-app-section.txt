@@ -57,6 +57,13 @@ OPTIONS
     --with-mobile-pages              Create mobile pages in addition to web
                                      pages. Default: true
 
+    --caption-culture                Override the culture used when displaying
+                                     the created section caption (e.g. en-US,
+                                     uk-UA). Precedence: override > profile
+                                     culture > en-US. The stored caption is
+                                     localized server-side under the user's
+                                     profile.
+
     --Environment            -e      Environment name. Required.
 
 EXAMPLE

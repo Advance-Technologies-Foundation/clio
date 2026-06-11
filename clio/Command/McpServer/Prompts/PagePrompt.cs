@@ -70,5 +70,6 @@ public static class PagePrompt {
 		 After a successful `{PageCreateTool.ToolName}`, read the page back with `{PageGetTool.ToolName}` with the same `schema-name` to confirm the created page loads and has the expected parent template.
 		 Known failure modes: duplicate schema-name, unknown template (call `{PageTemplatesListTool.ToolName}`), missing package. Each returns a readable `error` in the tool response.
 		 Keep created page bodies inherited from the template; add fields or columns by editing the `body.js` returned from `{PageGetTool.ToolName}`, validate with `validate-page`, and persist the body via `{PageSyncTool.ToolName}` only as a follow-up step.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the page caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 }

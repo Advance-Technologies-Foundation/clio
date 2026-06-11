@@ -58,7 +58,8 @@ public class SqlSchemaCreateToolTests {
 		public SqlSchemaCreateOptions CapturedOptions { get; private set; }
 
 		public FakeSqlSchemaCreateCommand()
-			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance) {
+			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance,
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
 		}
 
 		public override bool TryCreate(SqlSchemaCreateOptions options, out SqlSchemaCreateResponse response) {

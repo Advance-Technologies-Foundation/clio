@@ -72,6 +72,13 @@ clio create-app-section [options]
 --with-mobile-pages              Create mobile pages in addition to web
                                  pages. Default: true
 
+--caption-culture                Override the culture used when displaying the
+                                 created section caption (e.g. en-US, uk-UA).
+                                 Precedence: override > the connected user's
+                                 profile culture (see get-user-culture) > en-US.
+                                 The stored caption is localized server-side
+                                 under the connected user's profile.
+
 --Environment            -e      Environment name. Required.
 ```
 

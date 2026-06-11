@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -38,6 +40,9 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages in addition to web pages (default: true)")]
 	public string? WithMobilePagesValue { get; set; }
 
+	[Option("caption-culture", Required = false, HelpText = "Override the culture used when displaying the created section caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. The stored section caption itself is localized server-side under the connected user's profile.")]
+	public string? CaptionCulture { get; set; }
+
 	public bool WithMobilePages {
 		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
 		set => WithMobilePagesValue = value ? "true" : "false";
@@ -68,6 +73,8 @@ public interface IApplicationSectionCreateService {
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section creation.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Service composes its required collaborators (settings, client factory, URL builders, app info, sys-settings factory, logger, culture resolver) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
 public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
@@ -75,7 +82,8 @@ public sealed class ApplicationSectionCreateService(
 	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
-	ILogger logger)
+	ILogger logger,
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -116,6 +124,10 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		// The stored section caption is localized server-side under the connected user's profile.
+		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
+		string effectiveCultureName = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
@@ -154,7 +166,7 @@ public sealed class ApplicationSectionCreateService(
 		}
 		logger.EndSpinner(true);
 
-		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
+		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings, effectiveCultureName);
 	}
 
 	private static void ValidateRequest(ApplicationSectionCreateRequest request) {
@@ -332,7 +344,8 @@ public sealed class ApplicationSectionCreateService(
 		ApplicationInfoResult beforeInfo,
 		ResolvedApplicationSectionCreateRequest request,
 		IApplicationClient client,
-		EnvironmentSettings environmentSettings) {
+		EnvironmentSettings environmentSettings,
+		string effectiveCultureName) {
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
 			try {
@@ -363,7 +376,7 @@ public sealed class ApplicationSectionCreateService(
 					new ApplicationSectionInfoResult(
 						createdSection.Id,
 						createdSection.Code,
-						ResolveLocalizedCaption(createdSection.Caption, request.Caption),
+						ResolveLocalizedCaption(createdSection.Caption, request.Caption, effectiveCultureName),
 						createdSection.Description,
 						entitySchemaName,
 						createdSection.PackageId,
@@ -518,7 +531,7 @@ public sealed class ApplicationSectionCreateService(
 	private static string CreatePageIdentity(PageListItem page) =>
 		$"{page.SchemaName}|{page.UId}|{page.PackageName}";
 
-	private static string ResolveLocalizedCaption(string? value, string fallbackCaption) {
+	private static string ResolveLocalizedCaption(string? value, string fallbackCaption, string? effectiveCultureName = null) {
 		if (string.IsNullOrWhiteSpace(value)) {
 			return fallbackCaption;
 		}
@@ -529,6 +542,15 @@ public sealed class ApplicationSectionCreateService(
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 			if (localizedValues is null || localizedValues.Count == 0) {
 				return value;
+			}
+
+			// Show the readback caption in the effective culture when that culture key exists in the
+			// returned map. Otherwise prefer the en-US value, then any non-empty value. The host
+			// machine locale is never consulted here.
+			if (!string.IsNullOrWhiteSpace(effectiveCultureName)
+				&& localizedValues.TryGetValue(effectiveCultureName, out string? effectiveCaption)
+				&& !string.IsNullOrWhiteSpace(effectiveCaption)) {
+				return effectiveCaption;
 			}
 
 			if (localizedValues.TryGetValue("en-US", out string? enUsCaption) &&
@@ -841,6 +863,7 @@ public sealed class CreateAppSectionCommand(
 					options.EntitySchemaName,
 					options.WithMobilePages,
 					options.IconBackground,
+					options.CaptionCulture,
 					options.Code));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
@@ -868,6 +891,7 @@ public sealed record ApplicationSectionCreateRequest(
 	string? EntitySchemaName = null,
 	bool WithMobilePages = true,
 	string? IconBackground = null,
+	string? CaptionCulture = null,
 	string? Code = null);
 
 /// <summary>

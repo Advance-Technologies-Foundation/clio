@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -46,14 +47,11 @@ public sealed class ApplicationSectionCreateServiceTests {
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
-		_sut = new ApplicationSectionCreateService(
-			_settingsRepository,
-			_applicationClientFactory,
-			_serviceUrlBuilder,
-			serviceUrlBuilderFactory,
-			_applicationInfoService,
-			_ => _sysSettingsManager,
-			_logger);
+		ICaptionCultureResolver captionCultureResolver =
+			Substitute.For<ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string>())
+			.Returns("en-US");
+		_sut = CreateSutWithResolver(captionCultureResolver);
 	}
 
 	[Test]
@@ -435,6 +433,75 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.WithMessage("*#RRGGBB format*",
 				because: "non-hex strings are never valid palette values");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("When the culture resolver returns a non-en-US culture, ResolveLocalizedCaption returns the effective-culture value from the localized readback map.")]
+	public void CreateSection_ShouldSurfaceEffectiveCultureCaption_WhenResolverReturnsNonEnUSCulture() {
+		// Arrange
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
+
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity],
+			[new PageListItem { SchemaName = "UsrOrders_FormPage", UId = "page-new", PackageName = "UsrOrdersApp", ParentSchemaName = "BasePageV2" }],
+			"app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Orders\",\"uk-UA\":\"Замовлення\"}","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "Orders"));
+
+		// Assert
+		result.Section.Caption.Should().Be("Замовлення",
+			because: "when the resolver returns uk-UA and the readback map has a uk-UA entry, " +
+				"ResolveLocalizedCaption must return the effective-culture value, not the en-US fallback");
+	}
+
+	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			_logger,
+			resolver);
 	}
 
 	[Test]
