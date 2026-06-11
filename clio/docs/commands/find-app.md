@@ -12,19 +12,17 @@ clio find-app -e <env>
 
 ## Description
 
-Finds installed applications **and their sections** behind a single call. The command loads all
-applications with one `SysInstalledApp` query, then loads each application's sections with a
-per-application `ApplicationSection` query filtered by `ApplicationId`, and returns every matching
-application together with its sections.
-
-> `ApplicationSection` returns no rows for an unfiltered query, so sections are read per application
-> (the same path `list-app-sections` uses). The internal query count is therefore `1 + N`
-> (N = application count), or `1 + 1` when an exact `--code` is supplied.
+Finds installed applications **and their sections** behind a single call. Issues exactly **two**
+DataService queries: one `SysInstalledApp` query for all applications, then one batch
+`ApplicationSection` query with an OR-grouped `ApplicationId` filter that covers all candidate
+applications at once. Sections are grouped in memory by `ApplicationId` and attached to their
+application before filtering.
 
 The optional `--search-pattern` is a case-insensitive substring matched across the application
 name, code, description, and the caption/code of each section. The optional `--code` narrows the
-result to one application by exact code. Omit both filters to list every application with its
-sections in a single call.
+result to one application by exact code — and reduces the sections batch to that single app's ID.
+Omit both filters to list every application with its sections. When both are supplied, both
+conditions must hold (AND semantics).
 
 This lets an agent map an imprecise application name (for example `Customer Request Management`) to
 its real code (for example `CrtCaseManagementApp`) without the N+1 pattern of `list-apps` followed
@@ -85,9 +83,11 @@ for the full structured payload.
 ## Notes
 
 - The whole sweep runs behind a single tool call: the agent makes one `find-app` call instead of
-  `list-apps` followed by a `list-app-sections` call per application. Internally clio issues one
-  `SysInstalledApp` query plus one `ApplicationSection` query per application (because
-  `ApplicationSection` returns nothing unfiltered).
+  `list-apps` followed by a `list-app-sections` call per application. Internally clio issues exactly
+  two DataService queries regardless of the number of installed applications.
+- If the sections query fails, applications are returned without sections and a warning is logged —
+  the command never returns an error just because section data is unavailable.
+- When `--code` and `--search-pattern` are both supplied, both conditions must hold (AND semantics).
 - An empty search (no `--search-pattern` and no `--code`) returns every application, each with its
   sections — a superset of `list-apps`.
 - The MCP `find-app` tool returns the same data as a structured `{ success, applications }`

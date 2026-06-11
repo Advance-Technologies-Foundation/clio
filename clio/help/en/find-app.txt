@@ -8,15 +8,12 @@ SYNOPSIS
     clio find-app [OPTIONS]
 
 DESCRIPTION
-    Finds installed applications AND their sections behind a single call. Loads all applications
-    with one SysInstalledApp query, then loads each application's sections with a per-application
-    ApplicationSection query filtered by ApplicationId (ApplicationSection returns no rows for an
-    unfiltered query), and returns every matching application together with its sections.
-
-    The optional --search-pattern is a case-insensitive substring matched across the
-    application name, code, description, and the caption/code of each section. The optional
-    --code narrows results to one application by exact code. Omit both to list every
-    application with its sections in a single call.
+    Finds installed applications AND their sections behind a single call. Issues exactly two
+    DataService queries: one SysInstalledApp query for all applications, then one batch
+    ApplicationSection query with an OR-grouped ApplicationId filter that covers all candidate
+    applications at once. Results are filtered by the optional --search-pattern and/or --code;
+    sections are grouped in memory by ApplicationId. When both --code and --search-pattern are
+    supplied, both conditions must hold (AND semantics).
 
     Use this to map an imprecise application name (for example "Customer Request Management")
     to its real code (for example CrtCaseManagementApp) instead of calling list-apps and then
@@ -45,9 +42,9 @@ EXAMPLES
     clio find-app -e dev --json
 
 NOTES
-    - one SysInstalledApp query plus one ApplicationSection query per application are issued
-      inside the single call; the agent still makes ONE find-app call instead of list-apps
-      followed by a list-app-sections call per application
+    - exactly two DataService queries are issued regardless of the number of installed apps
+    - if the sections query fails, applications are returned without sections and a warning is logged
+    - when --code and --search-pattern are both supplied, both conditions must hold
     - an empty search returns all applications (each with its sections)
     - the MCP find-app tool returns the same data as a structured { success, applications } envelope;
       MCP callers should use the structured fields instead of parsing the CLI text form
