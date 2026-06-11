@@ -73,11 +73,11 @@ public sealed class ApplicationCreateService(
 
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		if (!IsConfiguredEnvironment(environmentSettings))
 		{
 			throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);

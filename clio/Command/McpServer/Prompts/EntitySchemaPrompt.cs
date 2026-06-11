@@ -64,6 +64,7 @@ public static class EntitySchemaPrompt {
 		 normalizes it to GUID before save.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the schema and column captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 
 	/// <summary>

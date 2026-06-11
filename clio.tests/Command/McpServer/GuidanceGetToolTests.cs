@@ -150,14 +150,14 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should preserve the canonical related-list guide URI in the response");
 		result.Article.Text.Should().Contain("clio MCP related list guide",
 			because: "the guidance tool should return the canonical related-list article text");
-		result.Article.Text.Should().Contain("filterAttributes",
-			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
+		result.Article.Text.Should().Contain("modelConfig.dependencies",
+			because: "the related-list guide must teach the declarative dependencies entry that scopes a list by the open record");
 		result.Article.Text.Should().Contain("get-component-info",
 			because: "the related-list guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
 		result.Article.Text.Should().Contain("is not a container for other items",
 			because: "the related-list guide must warn that an inserted container without an initialized items slot fails at runtime");
-		result.Article.Text.Should().Contain("crt.HandleViewModelInitRequest",
-			because: "the related-list guide must teach the init handler that scopes the list to the open record instead of a static $Id parameter");
+		result.Article.Text.Should().Contain("Use `modelConfig.dependencies` instead",
+			because: "the related-list guide must warn against the init-handler scoping anti-pattern and redirect to declarative dependencies");
 	}
 
 	[Test]

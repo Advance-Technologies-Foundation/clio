@@ -1,6 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -46,14 +51,17 @@ public sealed class ApplicationSectionCreateServiceTests {
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
-		_sut = new ApplicationSectionCreateService(
-			_settingsRepository,
-			_applicationClientFactory,
-			_serviceUrlBuilder,
-			serviceUrlBuilderFactory,
-			_applicationInfoService,
-			_ => _sysSettingsManager,
-			_logger);
+		ICaptionCultureResolver captionCultureResolver =
+			Substitute.For<ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string>())
+			.Returns("en-US");
+		_sut = CreateSutWithResolver(captionCultureResolver);
+	}
+
+	[TearDown]
+	public void TearDown() {
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
 	}
 
 	[Test]
@@ -120,7 +128,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 				body.Contains("\"ClientTypeId\"", StringComparison.Ordinal) &&
 				body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"EntitySchemaName\"", StringComparison.Ordinal)))
+				!body.Contains("\"EntitySchemaName\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns(callInfo => {
 				insertBody = callInfo.ArgAt<string>(1);
 				return """{"success":true}""";
@@ -220,7 +229,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 				body.Contains("\"EntitySchemaName\"", StringComparison.Ordinal) &&
 				body.Contains("\"LogoId\"", StringComparison.Ordinal) &&
 				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
-				!body.Contains("\"ClientTypeId\"", StringComparison.Ordinal)))
+				!body.Contains("\"ClientTypeId\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns("""{"success":true}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
@@ -279,7 +289,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
 				body.Contains("\"Code\"", StringComparison.Ordinal) &&
-				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns("""{"success":true}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
@@ -435,6 +446,76 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.WithMessage("*#RRGGBB format*",
 				because: "non-hex strings are never valid palette values");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("When the culture resolver returns a non-en-US culture, ResolveLocalizedCaption returns the effective-culture value from the localized readback map.")]
+	public void CreateSection_ShouldSurfaceEffectiveCultureCaption_WhenResolverReturnsNonEnUSCulture() {
+		// Arrange
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
+
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity],
+			[new PageListItem { SchemaName = "UsrOrders_FormPage", UId = "page-new", PackageName = "UsrOrdersApp", ParentSchemaName = "BasePageV2" }],
+			"app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"{\"en-US\":\"Orders\",\"uk-UA\":\"Замовлення\"}","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "Orders"));
+
+		// Assert
+		result.Section.Caption.Should().Be("Замовлення",
+			because: "when the resolver returns uk-UA and the readback map has a uk-UA entry, " +
+				"ResolveLocalizedCaption must return the effective-culture value, not the en-US fallback");
+	}
+
+	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			_logger,
+			resolver);
 	}
 
 	[Test]
@@ -629,6 +710,442 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "a period must not be appended after '!' or '?'");
 	}
 
+	[Test]
+	[Description("Passes the default 300-second budget to the ApplicationSection insert when no override is configured.")]
+	public void CreateSection_Should_Pass_Default_Insert_Timeout_When_EnvVar_Not_Set() {
+		// Arrange
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(300_000,
+			because: "the insert budget should default to 300 seconds when no env override is set");
+	}
+
+	[Test]
+	[Description("Passes the env-var-overridden budget to the ApplicationSection insert when CLIO_CREATE_SECTION_TIMEOUT_SECONDS is set.")]
+	public void CreateSection_Should_Pass_Overridden_Insert_Timeout_When_EnvVar_Set() {
+		// Arrange
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, "42");
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(42_000,
+			because: "the env-var override is expressed in whole seconds and converted to milliseconds");
+	}
+
+	[TestCase("abc")]
+	[TestCase("0")]
+	[TestCase("-5")]
+	[Description("Falls back to the default budget when CLIO_CREATE_SECTION_TIMEOUT_SECONDS is non-numeric or non-positive.")]
+	public void CreateSection_Should_Fall_Back_To_Default_Timeout_When_EnvVar_Invalid(string invalidValue) {
+		// Arrange
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, invalidValue);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(300_000,
+			because: "invalid override values must not silently disable or corrupt the insert budget");
+	}
+
+	[Test]
+	[Description("Classifies a connection-level WebException as a transport failure that never reached Creatio and is safe to retry.")]
+	public void CreateSection_Should_Throw_Transport_Classified_Failure_When_Connect_Fails() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("Connection refused", WebExceptionStatus.ConnectFailure));
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a connect failure is a classified transport failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Transport,
+			because: "a connect failure means the request never reached the Creatio server");
+		exception.SectionCreated.Should().BeFalse(
+			because: "no side effect is possible when the request never reached the server");
+		exception.RetryGuidance.Should().Contain("retrying is safe",
+			because: "transport failures must tell the agent that a retry cannot double-create the section");
+	}
+
+	[Test]
+	[Description("Classifies a network failure during the preparation reads (before the insert) as a side-effect-free failure that is safe to retry.")]
+	public void CreateSection_Should_Throw_Classified_Preparation_Failure_When_AppInfo_Read_Fails() {
+		// Arrange
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(_ => throw new WebException("Connection refused", WebExceptionStatus.ConnectFailure));
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "network failures during preparation reads should be classified too")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Transport,
+			because: "the connect failure happened before any request reached the DataService insert route");
+		exception.SectionCreated.Should().BeFalse(
+			because: "preparation reads run before the insert, so no side effect is possible");
+		exception.RetryGuidance.Should().Contain("retrying is safe",
+			because: "a failure before the insert is guaranteed side-effect-free");
+		exception.Message.Should().Contain("before the section insert was attempted",
+			because: "the message must make clear that the destructive step never ran");
+	}
+
+	[Test]
+	[Description("Recovers and returns the normal success result when the insert response times out but the section created by this call is already visible on verification readback.")]
+	public void CreateSection_Should_Return_Result_When_Insert_Times_Out_But_Section_Is_Visible() {
+		// Arrange
+		SetUpTimedOutInsertWithReadbackMocks();
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a timed-out insert whose section is already visible must be treated as a recovered success");
+	}
+
+	[Test]
+	[Description("Does not treat a pre-existing section bound to the same entity as proof of success when the insert times out: verification matches strictly by the generated section id.")]
+	public void CreateSection_Should_Not_Recover_When_Readback_Returns_Unrelated_Section_For_Same_Entity() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		SetUpSectionReadbackMock(
+			"""{"success":true,"rows":[{"Id":"00000000-aaaa-bbbb-cccc-000000000001","ApplicationId":"app-id","Caption":"Pre-existing","Code":"UsrPreExisting","Description":null,"EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a pre-existing section bound to the same entity must not be mistaken for the one this call attempted to create")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.CreatioTimeout,
+			because: "the insert outcome is still unknown — only an Id match proves this call created the section");
+		exception.SectionCreated.Should().BeFalse(
+			because: "the generated section id was not found, so this call's section is not visible");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("UpdateQuery", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Classifies a timed-out insert whose verification readback finds no section as creatio-timeout with section-created=false.")]
+	public void CreateSection_Should_Throw_CreatioTimeout_Failure_When_Insert_Times_Out_And_Section_Is_Absent() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		SetUpSectionReadbackMock("""{"success":true,"rows":[]}""");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a timed-out insert without a visible section is a classified creatio-timeout failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.CreatioTimeout,
+			because: "the request was sent but Creatio produced no response within the budget");
+		exception.SectionCreated.Should().BeFalse(
+			because: "the post-timeout verification readback did not find the section");
+		exception.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must verify the section state before deciding to retry");
+	}
+
+	[Test]
+	[Description("Reports section-created=unknown when the insert times out and the verification readback itself fails.")]
+	public void CreateSection_Should_Report_Unknown_Section_State_When_Verification_Readback_Fails() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		SetUpSectionReadbackMock("""{"success":false,"errorInfo":{"message":"Verification failed"}}""");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a timed-out insert is a classified creatio-timeout failure even when verification fails")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.CreatioTimeout,
+			because: "the verification outcome refines but does not change the timeout classification");
+		exception.SectionCreated.Should().BeNull(
+			because: "a failed verification readback leaves the section state unknown");
+		exception.RetryGuidance.Should().Contain("Do not retry blindly",
+			because: "an unknown section state makes a blind retry the most dangerous option");
+	}
+
+	private static IEnumerable<TestCaseData> InsertFailureClassificationCases() {
+		yield return new TestCaseData(
+				new TaskCanceledException("A task was canceled."),
+				ApplicationSectionCreateFailureClass.CreatioTimeout)
+			.SetName("CreateSection_Should_Classify_TaskCanceledException_As_CreatioTimeout");
+		yield return new TestCaseData(
+				new OperationCanceledException("The operation was canceled."),
+				ApplicationSectionCreateFailureClass.CreatioTimeout)
+			.SetName("CreateSection_Should_Classify_OperationCanceledException_As_CreatioTimeout");
+		yield return new TestCaseData(
+				new TimeoutException("The request timed out."),
+				ApplicationSectionCreateFailureClass.CreatioTimeout)
+			.SetName("CreateSection_Should_Classify_TimeoutException_As_CreatioTimeout");
+		yield return new TestCaseData(
+				new HttpRequestException("The connection could not be established."),
+				ApplicationSectionCreateFailureClass.Transport)
+			.SetName("CreateSection_Should_Classify_Bare_HttpRequestException_As_Transport");
+		yield return new TestCaseData(
+				new HttpRequestException("Internal server error.", null, HttpStatusCode.InternalServerError),
+				ApplicationSectionCreateFailureClass.ServerError)
+			.SetName("CreateSection_Should_Classify_HttpRequestException_500_As_ServerError");
+		yield return new TestCaseData(
+				new HttpRequestException("Service unavailable.", null, HttpStatusCode.ServiceUnavailable),
+				ApplicationSectionCreateFailureClass.CreatioTimeout)
+			.SetName("CreateSection_Should_Classify_Transient_HttpRequestException_503_As_CreatioTimeout");
+		yield return new TestCaseData(
+				new InvalidOperationException(
+					"Request execution failed.",
+					new WebException("The operation has timed out.", WebExceptionStatus.Timeout)),
+				ApplicationSectionCreateFailureClass.CreatioTimeout)
+			.SetName("CreateSection_Should_Classify_Wrapped_WebException_Timeout_Via_Chain_Walk");
+		yield return new TestCaseData(
+				new AggregateException(
+					new HttpRequestException(
+						"Send failed.",
+						new SocketException((int)SocketError.ConnectionRefused))),
+				ApplicationSectionCreateFailureClass.Transport)
+			.SetName("CreateSection_Should_Classify_AggregateException_With_Nested_SocketException_As_Transport");
+	}
+
+	[TestCaseSource(nameof(InsertFailureClassificationCases))]
+	[Description("Classifies the HttpClient-era and nested network failure shapes (.NET-Core transport) into the documented failure classes via the exception-chain walk.")]
+	public void CreateSection_Should_Classify_Insert_Failure_Shapes(
+		Exception insertException,
+		ApplicationSectionCreateFailureClass expectedClass) {
+		// Arrange
+		SetUpInsertThrowingMocks(insertException);
+		SetUpSectionReadbackMock("""{"success":true,"rows":[]}""");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+				because: "every network-shaped insert failure must surface as a classified failure")
+			.Which.FailureClass.Should().Be(expectedClass,
+				because: "the agent-facing retry decision depends on the exact failure class");
+	}
+
+	[Test]
+	[Description("Clamps an env override whose millisecond equivalent exceeds int.MaxValue instead of overflowing.")]
+	public void CreateSection_Should_Clamp_Insert_Timeout_When_EnvVar_Exceeds_Int_Range() {
+		// Arrange
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, "3000000");
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(int.MaxValue,
+			because: "3,000,000 seconds in milliseconds exceeds int.MaxValue and must clamp, not overflow");
+	}
+
+	[Test]
+	[Description("Classifies a JSON-null insert response as a server-error failure with an unknown section state instead of escaping unclassified with a dangling spinner.")]
+	public void CreateSection_Should_Classify_Empty_Insert_Response_As_ServerError() {
+		// Arrange
+		SetUpInsertFailureMocks("null");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateNewEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "an empty insert response is a classified server-error failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "the server replied, but not with the insert acknowledgement contract");
+		exception.SectionCreated.Should().BeNull(
+			because: "an empty response leaves the actual insert outcome unknown");
+		exception.Message.Should().Contain("empty",
+			because: "the message must explain that the server returned an empty payload");
+	}
+
+	[Test]
+	[Description("Classifies an HTTP protocol error from the insert as a server-error failure.")]
+	public void CreateSection_Should_Throw_ServerError_Classified_Failure_When_Protocol_Error_Occurs() {
+		// Arrange
+		SetUpInsertThrowingMocks(new WebException("The remote server returned an error: (500) Internal Server Error.",
+			WebExceptionStatus.ProtocolError));
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "an HTTP error response is a classified server-error failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "Creatio replied with an error, so retrying the same arguments will likely fail again");
+		exception.SectionCreated.Should().BeFalse(
+			because: "an HTTP-level rejection happens before the insert is processed");
+	}
+
+	[Test]
+	[Description("Classifies a non-JSON (HTML) insert response as a server-error failure with an unknown section state.")]
+	public void CreateSection_Should_Throw_ServerError_Classified_Failure_When_Response_Is_Html() {
+		// Arrange
+		SetUpInsertFailureMocks("<html><body>Server Error</body></html>");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateNewEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "an HTML body instead of the insert acknowledgement is a classified server-error failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "a non-JSON response means the server is misconfigured or in a broken state");
+		exception.SectionCreated.Should().BeNull(
+			because: "an unexpected response body leaves the actual insert outcome unknown");
+		exception.Message.Should().Contain("non-JSON",
+			because: "the message must explain that the server returned an unexpected payload");
+	}
+
+	[Test]
+	[Description("Classifies a rejected insert (success=false) as a server-error failure while preserving the actionable message.")]
+	public void CreateSection_Should_Classify_Rejected_Insert_As_ServerError() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Cannot insert duplicate key row"}}""");
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateNewEntityRequest());
+		// Assert
+		ApplicationSectionCreateException exception = act.Should().Throw<ApplicationSectionCreateException>(
+				because: "a rejected insert is a classified server-error failure")
+			.Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "Creatio explicitly rejected the insert");
+		exception.SectionCreated.Should().BeFalse(
+			because: "an explicit rejection guarantees the section was not created");
+		exception.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent should inspect existing sections instead of blind-retrying a rejected insert");
+	}
+
+	private int? _capturedInsertTimeout;
+
+	private static ApplicationSectionCreateRequest CreateReuseEntityRequest() =>
+		new(
+			"UsrOrdersApp",
+			"Orders",
+			"Order workspace",
+			"UsrOrders",
+			WithMobilePages: false);
+
+	private static ApplicationSectionCreateRequest CreateNewEntityRequest() =>
+		new(
+			"UsrOrdersApp",
+			"Orders",
+			"Order workspace",
+			EntitySchemaName: null,
+			WithMobilePages: false);
+
+	private static ApplicationInfoResult CreateBeforeInfo() =>
+		new(
+			"pkg-uid",
+			"UsrOrdersApp",
+			[],
+			[],
+			"app-id",
+			"Orders App",
+			"UsrOrdersApp",
+			"8.3.0");
+
+	private void SetUpCommonReadMocks() {
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		StubExistingEntitySchema("UsrOrders");
+	}
+
+	private void SetUpInsertTimeoutCaptureMocks() {
+		SetUpCommonReadMocks();
+		_capturedInsertTimeout = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertTimeout = callInfo.ArgAt<int>(2);
+				return """{"success":false,"errorInfo":{"message":"Rejected"}}""";
+			});
+	}
+
+	private string? _capturedInsertBody;
+
+	private void SetUpInsertThrowingMocks(Exception insertException) {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertBody = callInfo.ArgAt<string>(1);
+				throw insertException;
+			});
+	}
+
+	private string ExtractGeneratedSectionId() {
+		_capturedInsertBody.Should().NotBeNull(
+			because: "the insert stub must have captured the insert body before the readback is built");
+		using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(_capturedInsertBody!);
+		return document.RootElement
+			.GetProperty("columnValues")
+			.GetProperty("items")
+			.GetProperty("Id")
+			.GetProperty("parameter")
+			.GetProperty("value")
+			.GetString()!;
+	}
+
+	private void SetUpSectionReadbackMock(string responseJson) {
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(responseJson);
+	}
+
+	private void SetUpTimedOutInsertWithReadbackMocks() {
+		SetUpInsertThrowingMocks(new WebException("The operation has timed out.", WebExceptionStatus.Timeout));
+		// The readback row carries the section id generated inside the service for this call,
+		// captured from the insert body, so the Id-based verification can recognize it.
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ =>
+				$$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		// LoadCreatedSection re-reads the app info and persists the icon background after recovery;
+		// the recovery readback runs bounded, so the update stub must accept the explicit timeout.
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
 	private void SetUpInsertFailureMocks(string insertResponseJson) {
 		ApplicationInfoResult beforeInfo = new(
 			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
@@ -646,7 +1163,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
-				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns(insertResponseJson);
 	}
 
@@ -672,7 +1190,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"Code\"", StringComparison.Ordinal) &&
-				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns("""{"success":true}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),
@@ -872,7 +1391,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
-				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns("""{"success":true}""");
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),

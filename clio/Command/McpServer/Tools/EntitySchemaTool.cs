@@ -31,10 +31,13 @@ public sealed class CreateEntitySchemaTool(
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
-				 
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
@@ -88,7 +91,8 @@ public sealed class CreateEntitySchemaTool(
 			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName)) ? "BaseEntity" : parentSchemaName,
 			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns, context),
-			Environment = args.EnvironmentName
+			Environment = args.EnvironmentName,
+			CaptionCulture = args.CaptionCulture
 		};
 	}
 
@@ -152,10 +156,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
 				 not send them as custom columns.
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
@@ -506,7 +513,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				UseSeconds = args.UseSeconds,
 				SimpleLookup = args.SimpleLookup,
 				Cascade = args.Cascade,
-				DoNotControlIntegrity = args.DoNotControlIntegrity
+				DoNotControlIntegrity = args.DoNotControlIntegrity,
+				CaptionCulture = args.CaptionCulture
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
@@ -553,6 +561,10 @@ public abstract record EntitySchemaCreateArgsBase(
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for generated captions (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>
@@ -923,6 +935,10 @@ public abstract record ColumnModificationArgsBase(
 	/// </summary>
 	/// <returns>The canonical required flag, or the alias when the canonical field is absent.</returns>
 	public bool? ResolveRequired() => IsRequired ?? IsRequiredAlias;
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>

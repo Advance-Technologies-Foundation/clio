@@ -439,6 +439,95 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps a classified section-create failure onto the structured error envelope with error-class, section-created, and retry-guidance fields.")]
+	public void ApplicationSectionCreate_Should_Return_Classified_Error_Envelope_When_Service_Throws_Typed_Exception() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new ApplicationSectionCreateException(
+				"Creatio did not respond within 300s while creating section 'Orders' (code 'UsrOrders').",
+				ApplicationSectionCreateFailureClass.CreatioTimeout,
+				sectionCreated: false,
+				"Do not retry immediately. Run list-app-sections first."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a classified failure is still a failure envelope");
+		result.Error.Should().Contain("did not respond within",
+			because: "the human-readable message must survive in the error field");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the failure class must reach the agent as the kebab-case error-class field");
+		result.SectionCreated.Should().Be("false",
+			because: "the verified side-effect state must reach the agent as the section-created field");
+		result.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must receive the actionable next step in the retry-guidance field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps an unknown side-effect verification outcome onto section-created=unknown in the structured error envelope.")]
+	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new ApplicationSectionCreateException(
+				"Creatio did not respond and verification also failed.",
+				ApplicationSectionCreateFailureClass.CreatioTimeout,
+				sectionCreated: null,
+				"Check environment health before any retry."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.SectionCreated.Should().Be("unknown",
+			because: "a null verification outcome must surface as the explicit 'unknown' wire value");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the timeout classification is independent of the verification outcome");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the legacy error envelope shape (no classification fields) when the service throws a plain exception.")]
+	public void ApplicationSectionCreate_Should_Return_Plain_Error_Envelope_When_Service_Throws_Plain_Exception() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "unclassified failures keep the existing error envelope behavior");
+		result.Error.Should().Contain("Application id was not returned",
+			because: "the original message must be preserved for unclassified failures");
+		result.ErrorClass.Should().BeNull(
+			because: "unclassified failures must not fabricate an error class");
+		result.SectionCreated.Should().BeNull(
+			because: "unclassified failures carry no verified side-effect state");
+		result.RetryGuidance.Should().BeNull(
+			because: "unclassified failures carry no synthesized retry guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a structured error envelope when section-create receives forbidden localization maps.")]
 	public void ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
@@ -1787,6 +1876,94 @@ public sealed class ApplicationToolTests {
 		}
 		Clio.Command.McpServer.Tools.SectionIconPalette.TryNormalize("banana", out _).Should().BeFalse(
 			because: "unrecognised free-form names must not smuggle invalid colors into SaveSchema");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Invokes list-app-sections through the full MCP heartbeat-enabled signature (the server and request context the SDK injects) and verifies the progress wrapper is transparent: the backend service is called exactly once and the structured success envelope is returned unchanged.")]
+	public async Task ApplicationSectionGetList_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
+		// Arrange
+		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
+		applicationSectionGetListService.GetSections("sandbox", Arg.Any<ApplicationSectionGetListRequest>())
+			.Returns(new ApplicationSectionGetListResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				[
+					new ApplicationSectionInfoResult(
+						"section-id", "UsrOrders", "Orders", "Order workspace", "UsrOrder",
+						"pkg-uid", "section-schema-uid", "icon-id", "#A6DE00", null)
+				]));
+		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+
+		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
+		ApplicationSectionListContextResponse result = await tool.ApplicationSectionGetList(
+			new ApplicationSectionGetListArgs(EnvironmentName: "sandbox", ApplicationCode: "UsrOrdersApp"),
+			server: null,
+			requestContext: null,
+			cancellationToken: default);
+
+		// Assert
+		applicationSectionGetListService.Received(1).GetSections(
+			"sandbox",
+			Arg.Is<ApplicationSectionGetListRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
+		result.Success.Should().BeTrue(
+			because: "the heartbeat wrapper must be transparent and must not alter a successful section-list response");
+		result.Sections.Should().ContainSingle(
+			because: "the wrapper must surface the backend section collection unchanged");
+		result.Error.Should().BeNull(
+			because: "wrapping the call in a heartbeat must not introduce an error payload on success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Invokes create-app-section through the full MCP heartbeat-enabled signature and verifies the progress wrapper is transparent: the backend service is called exactly once and the structured section readback is returned unchanged.")]
+	public async Task ApplicationSectionCreate_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(new ApplicationSectionCreateResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0",
+				new ApplicationSectionInfoResult(
+					"section-id", "UsrOrders", "Orders", "Order workspace", "UsrOrder",
+					"pkg-uid", "section-schema-uid", "icon-id", "#A6DE00", null),
+				new ApplicationEntityInfoResult("entity-uid", "UsrOrder", "Order", []),
+				[
+					new PageListItem {
+						SchemaName = "UsrOrders_FormPage",
+						UId = "page-uid",
+						PackageName = "UsrOrdersApp",
+						ParentSchemaName = "BasePage"
+					}
+				]));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
+		ApplicationSectionContextResponse result = await tool.ApplicationSectionCreate(
+			new ApplicationSectionCreateArgs(
+				EnvironmentName: "sandbox",
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Orders"),
+			server: null,
+			requestContext: null,
+			cancellationToken: default);
+
+		// Assert
+		applicationSectionCreateService.Received(1).CreateSection(
+			"sandbox",
+			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
+		result.Success.Should().BeTrue(
+			because: "the heartbeat wrapper must be transparent and must not alter a successful section-create response");
+		result.Section!.Code.Should().Be("UsrOrders",
+			because: "the wrapper must surface the created section readback unchanged");
 	}
 
 }

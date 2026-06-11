@@ -42,6 +42,10 @@ public sealed record ApplicationContextResponse(
 
 /// <summary>
 /// Structured existing-app section creation envelope returned by application section MCP tools.
+/// On classified failures (ENG-90679) the envelope additionally carries
+/// <c>error-class</c> (<c>transport</c> | <c>creatio-timeout</c> | <c>server-error</c>),
+/// <c>section-created</c> (<c>true</c> | <c>false</c> | <c>unknown</c>), and <c>retry-guidance</c>
+/// so the calling agent can make a rational retry-vs-abandon decision.
 /// </summary>
 public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("success")] bool Success,
@@ -54,7 +58,10 @@ public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
 	[property: JsonPropertyName("entity")] ApplicationEntityResult? Entity = null,
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
+	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
 
 /// <summary>
 /// Structured existing-app section update envelope returned by application section update MCP tools.

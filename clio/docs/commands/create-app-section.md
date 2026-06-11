@@ -72,6 +72,13 @@ clio create-app-section [options]
 --with-mobile-pages              Create mobile pages in addition to web
                                  pages. Default: true
 
+--caption-culture                Override the culture used when displaying the
+                                 created section caption (e.g. en-US, uk-UA).
+                                 Precedence: override > the connected user's
+                                 profile culture (see get-user-culture) > en-US.
+                                 The stored caption is localized server-side
+                                 under the connected user's profile.
+
 --Environment            -e      Environment name. Required.
 ```
 
@@ -115,6 +122,28 @@ create a web-only section with automatically resolved icon metadata
   when it does not already start with it, and the prefix casing is always
   canonicalized (for example --code usrContacts with prefix Usr gives
   UsrContacts). The code must contain only Latin letters, digits, or underscore.
+
+## Timeout budget and failure classification
+
+The section insert runs under a finite budget of **300 seconds**. Set the
+`CLIO_CREATE_SECTION_TIMEOUT_SECONDS` environment variable (whole seconds,
+positive integer) to change the budget; invalid or non-positive values fall
+back to the default.
+
+On failure clio classifies the outcome (ENG-90679) and prints an actionable
+next step (`Next step: ...`). The MCP tool surfaces the same classification as
+structured fields: `error-class`, `section-created` (`true`/`false`/`unknown`),
+and `retry-guidance`.
+
+| `error-class` | Meaning | Retry decision |
+| --- | --- | --- |
+| `transport` | The request never reached the Creatio server (DNS, connect, or TLS failure). | No section was created; retrying is safe once the environment is reachable. |
+| `creatio-timeout` | The request was sent but Creatio produced no response within the budget. | clio automatically checks whether the section appeared anyway: if it did, the command continues and succeeds. If not, do **not** retry blindly — the server may still be processing the insert. Wait a few minutes, run `clio list-app-sections`, and retry only if the section is still absent. |
+| `server-error` | Creatio rejected the operation (HTTP error, non-JSON/HTML response, or a rejected insert). | Retrying the same arguments will most likely fail again; fix the inputs or the server state first. |
+
+Failures during the preparation reads (before the insert is attempted) are
+classified with the same rules but are always side-effect-free and safe to
+retry once the underlying issue is resolved.
 
 ## Troubleshooting
 

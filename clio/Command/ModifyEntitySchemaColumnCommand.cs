@@ -53,6 +53,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	public IReadOnlyDictionary<string, string>? DescriptionLocalizations { get; set; }
 
+	[Option("caption-culture", Required = false, HelpText = "Override the culture used for the written column caption/description (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; set; }
+
 	[Option("reference-schema", Required = false, HelpText = "Lookup reference schema name")]
 	public string ReferenceSchemaName { get; set; }
 
