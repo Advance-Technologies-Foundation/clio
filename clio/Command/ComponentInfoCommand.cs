@@ -144,9 +144,9 @@ public sealed class ComponentInfoCommand {
 		bool hasEnvironment,
 		CancellationToken cancellationToken) {
 		if (hasExplicitVersion) {
-			// Explicit user choice — treat as authoritative. MapResolvedFrom will downgrade
-			// to "latest-fallback" automatically if the catalog ends up loading a different
-			// version (CDN 404 → latest, etc.).
+			// Explicit user choice — treat as authoritative. MapResolvedFrom maps to
+			// "environment-superset" (soft caveat) if the CDN has no catalog for this version
+			// and falls back to latest; it does NOT downgrade to "latest-fallback".
 			return Task.FromResult(new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment));
 		}
 

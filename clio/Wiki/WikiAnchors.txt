@@ -65,6 +65,7 @@ get-entity-schema-properties:get-entity-schema-properties
 get-browser-session:get-browser-session,get-session
 clear-browser-session:clear-browser-session,clear-session
 find-entity-schema:find-entity-schema
+find-app:find-app
 get-info:get-info,describe,describe-creatio,instance-info
 get-schema:get-schema,schema-get
 get-sql-schema:get-sql-schema,sql-schema-get

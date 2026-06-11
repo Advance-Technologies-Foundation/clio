@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -105,20 +103,6 @@ public class ToolCommandResolver(
 		return $"{identity}:{Convert.ToHexString(hash)[..16]}";
 	}
 
-	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) {
-		string availableHint;
-		try {
-			var all = settingsRepository.GetAllEnvironments();
-			var names = all?.Keys?
-				.Where(name => !string.IsNullOrWhiteSpace(name))
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-				.ToList() ?? [];
-			availableHint = names.Count == 0
-				? " No environments are registered. Use `list-environments` or `reg-web-app` to configure one."
-				: $" Available environments: {string.Join(", ", names)}. Call `list-environments` to inspect them.";
-		} catch {
-			availableHint = " Use `list-environments` to see available environments.";
-		}
-		return $"Environment with key '{missingEnvironmentName}' not found." + availableHint;
-	}
+	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) =>
+		EnvironmentNotFoundError.Build(missingEnvironmentName, settingsRepository);
 }
