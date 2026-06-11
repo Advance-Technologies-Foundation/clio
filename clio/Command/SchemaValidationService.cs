@@ -2343,28 +2343,38 @@ public static class SchemaValidationService
 			return;
 		}
 		foreach (JsonProperty attr in attributesElement.EnumerateObject()) {
-			if (attr.Value.ValueKind != JsonValueKind.Object ||
-				!attr.Value.TryGetProperty(ValidatorsPropertyName, out JsonElement validators)) {
-				continue;
-			}
-			if (validators.ValueKind != JsonValueKind.Object) {
-				result.Errors.Add(
-					$"Attribute '{attr.Name}' has 'validators' declared as {DescribeJsonKindForValidatorError(validators.ValueKind)}; declare it as an object map keyed by validator name, e.g. \"validators\": {{ \"required\": {{ \"type\": \"usr.NotEmpty\" }} }}.");
-				continue;
-			}
-			foreach (JsonProperty entry in validators.EnumerateObject()) {
-				if (entry.Value.ValueKind != JsonValueKind.Object) {
-					result.Errors.Add(
-						$"Attribute '{attr.Name}' validator '{entry.Name}' is declared as {DescribeJsonKindForValidatorError(entry.Value.ValueKind)}; each named validator entry must be an object such as {{ \"type\": \"usr.NotEmpty\" }}.");
-					continue;
-				}
-				if (!entry.Value.TryGetProperty(TypePropertyName, out JsonElement typeEl) ||
-					typeEl.ValueKind != JsonValueKind.String ||
-					string.IsNullOrWhiteSpace(typeEl.GetString())) {
-					result.Errors.Add(
-						$"Attribute '{attr.Name}' validator '{entry.Name}' is missing a non-empty string 'type' property; declare it as {{ \"type\": \"<ValidatorType>\" }} pointing at a SCHEMA_VALIDATORS entry.");
-				}
-			}
+			CheckSingleAttributeValidatorBindingShape(attr, result);
+		}
+	}
+
+	private static void CheckSingleAttributeValidatorBindingShape(
+		JsonProperty attr, SchemaValidationResult result) {
+		if (attr.Value.ValueKind != JsonValueKind.Object ||
+			!attr.Value.TryGetProperty(ValidatorsPropertyName, out JsonElement validators)) {
+			return;
+		}
+		if (validators.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attr.Name}' has 'validators' declared as {DescribeJsonKindForValidatorError(validators.ValueKind)}; declare it as an object map keyed by validator name, e.g. \"validators\": {{ \"required\": {{ \"type\": \"usr.NotEmpty\" }} }}.");
+			return;
+		}
+		foreach (JsonProperty entry in validators.EnumerateObject()) {
+			CheckSingleValidatorEntryShape(attr.Name, entry, result);
+		}
+	}
+
+	private static void CheckSingleValidatorEntryShape(
+		string attributeName, JsonProperty entry, SchemaValidationResult result) {
+		if (entry.Value.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is declared as {DescribeJsonKindForValidatorError(entry.Value.ValueKind)}; each named validator entry must be an object such as {{ \"type\": \"usr.NotEmpty\" }}.");
+			return;
+		}
+		if (!entry.Value.TryGetProperty(TypePropertyName, out JsonElement typeEl) ||
+			typeEl.ValueKind != JsonValueKind.String ||
+			string.IsNullOrWhiteSpace(typeEl.GetString())) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is missing a non-empty string 'type' property; declare it as {{ \"type\": \"<ValidatorType>\" }} pointing at a SCHEMA_VALIDATORS entry.");
 		}
 	}
 
