@@ -33,22 +33,29 @@ public sealed class IndicatorWidgetGuidanceResource {
 
 		       Do NOT author or edit an indicator widget payload from memory or from this pointer alone — read
 		       the `get-component-info` documentation and its references first.
-		       
+
 		       ----
-		       
-		       ## Placement rules
-		        Never set `parentName` as code of dashboard component. 
-		        You may use `parentName`: "Main" only when working with Home pages.
-		        On any other page use next rule - if user asks to add widget but does not clarify where on the page, and you know there are other widgets - place it near existing ones (use same `parentName` as in another widget)
-		        
-		       
-		       ## Styling presets
-		       User can ask to create an indicator widget on different pages inside Creatio. Use next guidelines, as default, depending on which page you are working on.
-		       
-		       - For desktops, by default use `layout.color`: "transparent", `theme`: "glassmorphism". 
-		       - For List pages and Form Pages use `theme`: "without-fill". Never use transparent color, unless user asked for glassmorphism style.
-		       - For Home pages use `theme`: "full-fill" and try guess color by other components from schema. Never use transparent color, unless user asked for glassmorphism style.
-		       
+
+		       ## General
+
+		       ### Placement Rules
+		       - Never set `parentName` as code of a dashboard component.
+		       - You may use `parentName`: "Main" only when working with Home pages.
+		       - On any other page, if the user asks to add a widget but does not clarify where on the page, and
+		         you know there are other widgets, place it near the existing ones (use the same `parentName` as
+		         another widget).
+
+		       ## Page specific rules
+		       An indicator widget can be created on different surfaces inside Creatio. Use these defaults
+		       depending on which surface you are working on.
+
+		       - Dashboards: see the `dashboards` guidance for the band/grid layout and the plain-white card policy.
+		       - Desktops: by default use `layout.color`: "transparent", `theme`: "glassmorphism".
+		       - List pages and Form pages: use `theme`: "without-fill". Never use transparent color, unless the
+		         user asked for glassmorphism style.
+		       - Home pages: use `theme`: "full-fill" and try to guess the color from other components in the
+		         schema. Never use transparent color, unless the user asked for glassmorphism style.
+
 		       """
 	};
 
