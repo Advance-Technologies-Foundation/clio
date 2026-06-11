@@ -434,6 +434,95 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps a classified section-create failure onto the structured error envelope with error-class, section-created, and retry-guidance fields.")]
+	public void ApplicationSectionCreate_Should_Return_Classified_Error_Envelope_When_Service_Throws_Typed_Exception() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new ApplicationSectionCreateException(
+				"Creatio did not respond within 300s while creating section 'Orders' (code 'UsrOrders').",
+				ApplicationSectionCreateFailureClass.CreatioTimeout,
+				sectionCreated: false,
+				"Do not retry immediately. Run list-app-sections first."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a classified failure is still a failure envelope");
+		result.Error.Should().Contain("did not respond within",
+			because: "the human-readable message must survive in the error field");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the failure class must reach the agent as the kebab-case error-class field");
+		result.SectionCreated.Should().Be("false",
+			because: "the verified side-effect state must reach the agent as the section-created field");
+		result.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must receive the actionable next step in the retry-guidance field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps an unknown side-effect verification outcome onto section-created=unknown in the structured error envelope.")]
+	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new ApplicationSectionCreateException(
+				"Creatio did not respond and verification also failed.",
+				ApplicationSectionCreateFailureClass.CreatioTimeout,
+				sectionCreated: null,
+				"Check environment health before any retry."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.SectionCreated.Should().Be("unknown",
+			because: "a null verification outcome must surface as the explicit 'unknown' wire value");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the timeout classification is independent of the verification outcome");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the legacy error envelope shape (no classification fields) when the service throws a plain exception.")]
+	public void ApplicationSectionCreate_Should_Return_Plain_Error_Envelope_When_Service_Throws_Plain_Exception() {
+		// Arrange
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "unclassified failures keep the existing error envelope behavior");
+		result.Error.Should().Contain("Application id was not returned",
+			because: "the original message must be preserved for unclassified failures");
+		result.ErrorClass.Should().BeNull(
+			because: "unclassified failures must not fabricate an error class");
+		result.SectionCreated.Should().BeNull(
+			because: "unclassified failures carry no verified side-effect state");
+		result.RetryGuidance.Should().BeNull(
+			because: "unclassified failures carry no synthesized retry guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a structured error envelope when section-create receives forbidden localization maps.")]
 	public void ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
