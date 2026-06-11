@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -82,6 +86,43 @@ public sealed class ApplicationSectionCreateService(
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int SectionTypeNormal = 0;
 	private const int PollAttempts = 15;
+
+	/// <summary>
+	/// Environment variable that overrides the ApplicationSection insert budget, in whole seconds.
+	/// Non-numeric or non-positive values fall back to the 300-second default (ENG-90679).
+	/// </summary>
+	internal const string InsertTimeoutEnvironmentVariable = "CLIO_CREATE_SECTION_TIMEOUT_SECONDS";
+
+	private const int DefaultInsertTimeoutMs = 300_000;
+	private const int VerificationTimeoutMs = 30_000;
+
+	private const string TransportRetryGuidance =
+		"The request never reached Creatio, so no section was created and retrying is safe. "
+		+ "Verify the environment URL and connectivity first (clio ping -e <env> / clio get-info -e <env>), "
+		+ "then retry create-app-section.";
+
+	private const string ServerErrorRetryGuidance =
+		"Creatio rejected the operation, so retrying with the same arguments will most likely fail again. "
+		+ "Inspect the error, fix the inputs or the server state, and use list-app-sections to inspect "
+		+ "existing sections before retrying.";
+
+	private const string TimeoutNotCreatedRetryGuidance =
+		"Do not retry immediately: Creatio may still be processing the insert, and a retry can create a "
+		+ "duplicate section or fail with an 'already bound' error. Wait a few minutes, then run "
+		+ "list-app-sections; if the section appeared, the operation completed despite the timeout. "
+		+ "Retry only if the section is still absent and the environment is healthy (clio healthcheck -e <env>). "
+		+ "To extend the budget, set the CLIO_CREATE_SECTION_TIMEOUT_SECONDS environment variable.";
+
+	private const string TimeoutUnknownRetryGuidance =
+		"Do not retry blindly: the post-timeout verification readback also failed, so the section may or may "
+		+ "not have been created. Check environment health (clio healthcheck -e <env>), wait a few minutes, "
+		+ "then run list-app-sections to verify the section state before any retry.";
+
+	private const string PreparationRetryGuidance =
+		"No section insert was attempted, so no section was created and retrying is safe once the underlying "
+		+ "issue is resolved. Verify the environment first (clio ping -e <env> / clio healthcheck -e <env>), "
+		+ "then retry create-app-section.";
+
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
 	private static readonly Regex CodeWordRegex = new(
 		@"[^\p{L}\p{Nd}]+",
@@ -110,38 +151,89 @@ public sealed class ApplicationSectionCreateService(
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
-		string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
-		logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
-		ApplicationInfoResult beforeInfo = applicationInfoService.GetApplicationInfo(
-			environmentName,
-			null,
-			request.ApplicationCode);
-		ResolvedApplicationSectionCreateRequest resolvedRequest = ResolveRequest(
-			request,
-			beforeInfo,
-			client,
-			environmentSettings,
-			schemaNamePrefix);
-		string requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
-		if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
-			CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+		ApplicationInfoResult beforeInfo;
+		ResolvedApplicationSectionCreateRequest resolvedRequest;
+		string requestBody;
+		try {
+			string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
+			logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
+			beforeInfo = applicationInfoService.GetApplicationInfo(
+				environmentName,
+				null,
+				request.ApplicationCode);
+			resolvedRequest = ResolveRequest(
+				request,
+				beforeInfo,
+				client,
+				environmentSettings,
+				schemaNamePrefix);
+			requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
+			if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
+				CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+			}
+		} catch (Exception exception) {
+			// Preparation reads happen before the destructive insert, so any classified failure here
+			// is guaranteed side-effect-free and safe to retry.
+			ApplicationSectionCreateFailureClass? preparationFailureClass = ClassifyInsertFailure(exception);
+			if (preparationFailureClass is null) {
+				throw;
+			}
+
+			throw BuildPreparationFailure(request, preparationFailureClass.Value, exception);
 		}
 		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
+		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds();
 		string responseBody;
 		try {
 			responseBody = client.ExecutePostRequest(
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
-				requestBody);
-		} catch {
+				requestBody,
+				insertTimeoutMs);
+		} catch (Exception exception) {
+			ApplicationSectionCreateFailureClass? failureClass = ClassifyInsertFailure(exception);
+			if (failureClass is null) {
+				logger.EndSpinner(false);
+				throw;
+			}
+			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
+				bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
+				if (sectionVisible == true) {
+					logger.EndSpinner(true);
+					logger.WriteInfo(
+						$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
+						+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
+					return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
+				}
+				logger.EndSpinner(false);
+				throw BuildTimeoutFailure(resolvedRequest, insertTimeoutMs, sectionVisible, exception);
+			}
 			logger.EndSpinner(false);
-			throw;
+			throw failureClass == ApplicationSectionCreateFailureClass.Transport
+				? BuildTransportFailure(resolvedRequest, exception)
+				: BuildServerErrorFailure(resolvedRequest, exception);
 		}
-		InsertQueryResponseDto response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions)
-			?? throw new InvalidOperationException("InsertQuery returned an empty response.");
+		InsertQueryResponseDto response;
+		try {
+			response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions)
+				?? throw new InvalidOperationException("InsertQuery returned an empty response.");
+		} catch (JsonException jsonException) {
+			logger.EndSpinner(false);
+			throw new ApplicationSectionCreateException(
+				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
+				+ "Creatio returned a non-JSON response to the section insert (an HTML error page is the usual "
+				+ "cause), so the server is likely misconfigured or in a broken state.",
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: null,
+				ServerErrorRetryGuidance,
+				jsonException);
+		}
 		if (!response.Success) {
 			logger.EndSpinner(false);
-			throw new InvalidOperationException(
-				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message));
+			throw new ApplicationSectionCreateException(
+				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: false,
+				ServerErrorRetryGuidance);
 		}
 		logger.EndSpinner(true);
 
@@ -276,6 +368,168 @@ public sealed class ApplicationSectionCreateService(
 		return builder.ToString();
 	}
 
+	private static int ResolveInsertTimeoutMilliseconds() {
+		string? raw = Environment.GetEnvironmentVariable(InsertTimeoutEnvironmentVariable);
+		if (int.TryParse(raw, out int seconds) && seconds > 0) {
+			return (int)Math.Min(seconds * 1000L, int.MaxValue);
+		}
+
+		return DefaultInsertTimeoutMs;
+	}
+
+	/// <summary>
+	/// Classifies a failed ApplicationSection insert into transport / creatio-timeout / server-error,
+	/// or <c>null</c> when the failure is not network-shaped (preserving the original exception).
+	/// </summary>
+	private static ApplicationSectionCreateFailureClass? ClassifyInsertFailure(Exception exception) {
+		bool sawHttpRequestException = false;
+		foreach (Exception current in FlattenExceptionChain(exception)) {
+			switch (current) {
+				case WebException webException when ClassifyWebException(webException) is { } webClass:
+					return webClass;
+				case SocketException:
+					return ApplicationSectionCreateFailureClass.Transport;
+				case HttpRequestException { StatusCode: not null }:
+					return ApplicationSectionCreateFailureClass.ServerError;
+				case HttpRequestException:
+					// Keep walking the chain: an inner SocketException/TimeoutException is more precise.
+					sawHttpRequestException = true;
+					break;
+				case TimeoutException or TaskCanceledException or OperationCanceledException:
+					return ApplicationSectionCreateFailureClass.CreatioTimeout;
+			}
+		}
+
+		return sawHttpRequestException ? ApplicationSectionCreateFailureClass.Transport : null;
+	}
+
+	private static ApplicationSectionCreateFailureClass? ClassifyWebException(WebException exception) =>
+		exception.Status switch {
+			WebExceptionStatus.ConnectFailure
+				or WebExceptionStatus.NameResolutionFailure
+				or WebExceptionStatus.ProxyNameResolutionFailure
+				or WebExceptionStatus.SecureChannelFailure
+				or WebExceptionStatus.TrustFailure => ApplicationSectionCreateFailureClass.Transport,
+			WebExceptionStatus.Timeout
+				or WebExceptionStatus.RequestCanceled
+				or WebExceptionStatus.KeepAliveFailure
+				or WebExceptionStatus.ReceiveFailure
+				or WebExceptionStatus.ConnectionClosed
+				or WebExceptionStatus.PipelineFailure => ApplicationSectionCreateFailureClass.CreatioTimeout,
+			WebExceptionStatus.ProtocolError => ApplicationSectionCreateFailureClass.ServerError,
+			_ => null
+		};
+
+	private static IEnumerable<Exception> FlattenExceptionChain(Exception exception) {
+		Queue<Exception> pending = new();
+		pending.Enqueue(exception);
+		// The guard bounds pathological self-referencing chains.
+		int guard = 0;
+		while (pending.Count > 0 && guard++ < 32) {
+			Exception current = pending.Dequeue();
+			yield return current;
+			if (current is AggregateException aggregate) {
+				foreach (Exception inner in aggregate.InnerExceptions) {
+					pending.Enqueue(inner);
+				}
+			} else if (current.InnerException is not null) {
+				pending.Enqueue(current.InnerException);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Bounded post-timeout side-effect check: returns <c>true</c>/<c>false</c> when the
+	/// ApplicationSection readback answered, or <c>null</c> when verification itself failed.
+	/// </summary>
+	private bool? TryVerifySectionExists(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		ResolvedApplicationSectionCreateRequest request) {
+		try {
+			logger.WriteInfo(
+				$"Insert timed out — verifying whether section '{request.SectionCode}' was created anyway...");
+			ApplicationSectionSelectQueryResponseDto response =
+				SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
+					client,
+					serviceUrlBuilderFactory.Create(environmentSettings),
+					BuildSectionSelectQuery(request.ApplicationId),
+					VerificationTimeoutMs);
+			return response.Rows.Any(row =>
+				string.Equals(row.Code, request.SectionCode, StringComparison.OrdinalIgnoreCase)
+				|| (!string.IsNullOrWhiteSpace(request.EntitySchemaName)
+					&& string.Equals(row.EntitySchemaName, request.EntitySchemaName,
+						StringComparison.OrdinalIgnoreCase)));
+		} catch (Exception verificationError) {
+			// Verification is best-effort by design: its outcome only refines the diagnostic
+			// (`section-created: unknown` instead of true/false), so any failure is reported, not thrown.
+			logger.WriteInfo($"Post-timeout verification readback failed: {verificationError.Message}");
+			return null;
+		}
+	}
+
+	private static ApplicationSectionCreateException BuildPreparationFailure(
+		ApplicationSectionCreateRequest request,
+		ApplicationSectionCreateFailureClass failureClass,
+		Exception cause) =>
+		new(
+			$"Failed to create section '{request.Caption}' in application '{request.ApplicationCode}': a "
+			+ $"preparation step failed before the section insert was attempted ({RootCauseMessage(cause)}).",
+			failureClass,
+			sectionCreated: false,
+			PreparationRetryGuidance,
+			cause);
+
+	private static ApplicationSectionCreateException BuildTransportFailure(
+		ResolvedApplicationSectionCreateRequest request,
+		Exception cause) =>
+		new(
+			$"Failed to create section '{request.Caption}' (code '{request.SectionCode}'): the Creatio server "
+			+ $"could not be reached ({RootCauseMessage(cause)}). The request never reached the server, so no "
+			+ "section was created.",
+			ApplicationSectionCreateFailureClass.Transport,
+			sectionCreated: false,
+			TransportRetryGuidance,
+			cause);
+
+	private static ApplicationSectionCreateException BuildTimeoutFailure(
+		ResolvedApplicationSectionCreateRequest request,
+		int insertTimeoutMs,
+		bool? sectionVisible,
+		Exception cause) {
+		string verificationOutcome = sectionVisible is null
+			? "The post-timeout verification readback also failed, so it is unknown whether the section was created."
+			: $"A post-timeout check did not find section '{request.SectionCode}' yet — Creatio may still be "
+			+ "processing the insert.";
+		return new ApplicationSectionCreateException(
+			$"Creatio did not respond within {insertTimeoutMs / 1000}s while creating section "
+			+ $"'{request.Caption}' (code '{request.SectionCode}'). {verificationOutcome}",
+			ApplicationSectionCreateFailureClass.CreatioTimeout,
+			sectionVisible,
+			sectionVisible is null ? TimeoutUnknownRetryGuidance : TimeoutNotCreatedRetryGuidance,
+			cause);
+	}
+
+	private static ApplicationSectionCreateException BuildServerErrorFailure(
+		ResolvedApplicationSectionCreateRequest request,
+		Exception cause) =>
+		new(
+			$"Failed to create section '{request.Caption}' (code '{request.SectionCode}'): Creatio returned an "
+			+ $"error response ({RootCauseMessage(cause)}).",
+			ApplicationSectionCreateFailureClass.ServerError,
+			sectionCreated: false,
+			ServerErrorRetryGuidance,
+			cause);
+
+	private static string RootCauseMessage(Exception exception) {
+		Exception current = exception;
+		while (current.InnerException is not null) {
+			current = current.InnerException;
+		}
+
+		return current.Message;
+	}
+
 	private ApplicationSectionCreateResult LoadCreatedSection(
 		string environmentName,
 		ApplicationInfoResult beforeInfo,
@@ -395,6 +649,29 @@ public sealed class ApplicationSectionCreateService(
 		};
 	}
 
+	private static object BuildSectionSelectQuery(string applicationId) =>
+		SelectQueryHelper.BuildSelectQuery(
+			ApplicationSectionSchemaName,
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(ApplicationIdJsonField, ApplicationIdJsonField),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("EntitySchemaName", "EntitySchemaName"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(PackageIdField, PackageIdField),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SectionSchemaUId", "SectionSchemaUId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition(LogoIdField, LogoIdField),
+				new SelectQueryHelper.SelectQueryColumnDefinition("IconBackground", "IconBackground"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("ClientTypeId", "ClientTypeId")
+			],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition(
+					ApplicationIdJsonField,
+					applicationId,
+					SelectQueryHelper.GuidDataValueType)
+			]);
+
 	private ApplicationSectionRecord GetSectionRecord(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
@@ -404,27 +681,7 @@ public sealed class ApplicationSectionCreateService(
 		ApplicationSectionSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 			client,
 			serviceUrlBuilderFactory.Create(environmentSettings),
-			SelectQueryHelper.BuildSelectQuery(
-				ApplicationSectionSchemaName,
-				[
-					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-					new SelectQueryHelper.SelectQueryColumnDefinition(ApplicationIdJsonField, ApplicationIdJsonField),
-					new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("Description", "Description"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("EntitySchemaName", "EntitySchemaName"),
-					new SelectQueryHelper.SelectQueryColumnDefinition(PackageIdField, PackageIdField),
-					new SelectQueryHelper.SelectQueryColumnDefinition("SectionSchemaUId", "SectionSchemaUId"),
-					new SelectQueryHelper.SelectQueryColumnDefinition(LogoIdField, LogoIdField),
-					new SelectQueryHelper.SelectQueryColumnDefinition("IconBackground", "IconBackground"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("ClientTypeId", "ClientTypeId")
-				],
-				[
-					new SelectQueryHelper.SelectQueryFilterDefinition(
-						ApplicationIdJsonField,
-						applicationId,
-						SelectQueryHelper.GuidDataValueType)
-				]));
+			BuildSectionSelectQuery(applicationId));
 		string searchDescription = string.IsNullOrWhiteSpace(entitySchemaName)
 			? $"'{sectionCode}'"
 			: $"'{sectionCode}' or entity schema name '{entitySchemaName}'";
@@ -753,6 +1010,10 @@ public sealed class CreateAppSectionCommand(
 					options.IconBackground));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
+		} catch (ApplicationSectionCreateException exception) {
+			logger.WriteError(exception.Message);
+			logger.WriteError($"Next step: {exception.RetryGuidance}");
+			return 1;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;

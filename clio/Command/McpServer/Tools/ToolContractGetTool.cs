@@ -785,7 +785,10 @@ internal static class ToolContractCatalog {
 				Field("section", ObjectType, "Created section metadata."),
 				Field(EntityFieldName, ObjectType, "Created or targeted entity metadata when available."),
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'server-error' (Creatio rejected the operation — fix inputs or server state first)."),
+				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', or 'unknown'."),
+				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
 			),
 			CommonErrorContract,
 			[

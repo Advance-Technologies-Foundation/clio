@@ -54,6 +54,31 @@ EXAMPLE
     clio create-app-section --application-code UsrSalesApp --caption "Visits" --with-mobile-pages false -e dev
         create a web-only section and let clio choose icon metadata automatically
 
+TIMEOUT AND FAILURE DIAGNOSTICS
+    The section insert runs under a finite budget of 300 seconds. Set the
+    CLIO_CREATE_SECTION_TIMEOUT_SECONDS environment variable (whole seconds,
+    positive integer) to extend or shrink the budget.
+
+    On failure clio classifies the outcome and prints an actionable next
+    step ("Next step: ..."):
+
+    transport         The request never reached the Creatio server (DNS,
+                      connect, or TLS failure). No section was created;
+                      retrying is safe once the environment is reachable.
+
+    creatio-timeout   The request was sent but Creatio produced no response
+                      within the budget. clio automatically checks whether
+                      the section appeared anyway: if it did, the command
+                      continues and succeeds; if not, do NOT retry blindly -
+                      the server may still be processing the insert. Wait a
+                      few minutes, run "clio list-app-sections", and retry
+                      only if the section is still absent.
+
+    server-error      Creatio rejected the operation (HTTP error, non-JSON
+                      response, or a rejected insert). Retrying the same
+                      arguments will most likely fail again; fix the inputs
+                      or the server state first.
+
 TROUBLESHOOTING
     "Failed to create section ... is already bound to an existing section"
         The entity passed via --entity-schema-name already backs another

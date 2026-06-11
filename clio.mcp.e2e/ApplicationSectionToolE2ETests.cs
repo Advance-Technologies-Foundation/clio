@@ -83,6 +83,66 @@ public sealed class ApplicationSectionToolE2ETests {
 	}
 
 	[Test]
+	[Description("Starts the real clio MCP server with an isolated settings file pointing at an unreachable Creatio URI and verifies that create-app-section returns the classified transport error envelope.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create classifies unreachable environments as transport failures")]
+	[AllureDescription("Registers an environment whose URI cannot be reached, invokes create-app-section, and verifies the structured error-class/section-created/retry-guidance diagnostic fields from ENG-90679.")]
+	public async Task ApplicationSectionCreate_Should_Return_Transport_Classified_Error_For_Unreachable_Environment() {
+		// Arrange
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-transport-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "unreachable-e2e",
+			  "Environments": {
+			    "unreachable-e2e": {
+			      "Uri": "http://127.0.0.1:9",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "unreachable-e2e",
+					["application-code"] = "UsrMissingApp",
+					["caption"] = "Orders",
+					["entity-schema-name"] = "UsrOrders"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "classified failures must stay inside the structured payload instead of becoming MCP invocation errors");
+		response.Success.Should().BeFalse(
+			because: "create-app-section cannot succeed against an unreachable environment");
+		response.ErrorClass.Should().Be("transport",
+			because: "an unreachable URI means the request never reached Creatio (ENG-90679 classification)");
+		response.SectionCreated.Should().Be("false",
+			because: "no side effect is possible when the server is unreachable");
+		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "the agent needs an actionable next step instead of blind retries");
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
