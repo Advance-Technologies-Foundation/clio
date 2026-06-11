@@ -231,10 +231,10 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("clio MCP related list guide",
 			because: "the guidance tool should return the canonical related-list guide text");
-		response.Article.Text.Should().Contain("filterAttributes",
-			because: "the related-list guide must teach the separate master-detail filter attribute that scopes a list by page data");
-		response.Article.Text.Should().Contain("crt.HandleViewModelInitRequest",
-			because: "the related-list guide must teach the init handler that injects the open-record id into the filter at runtime");
+		response.Article.Text.Should().Contain("modelConfig.dependencies",
+			because: "the related-list guide must teach the declarative dependencies entry that scopes a list by the open record");
+		response.Article.Text.Should().Contain("\"relationPath\": \"PDS.Id\"",
+			because: "the related-list guide must show the canonical relationPath pointing at the page primary data source id");
 	}
 
 	[Test]

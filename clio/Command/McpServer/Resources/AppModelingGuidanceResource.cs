@@ -113,7 +113,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Pass `resources` as a JSON object string when edited bodies introduce `#ResourceString(key)#` macros.
 			       - For new apps or extended main entities, perform page edits after `sync-schemas` and `get-app-info` refresh so that page bindings reference materialized columns.
 			       - Example: if the app context already contains `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, add the Related Knowledge detail by wiring the page to that existing schema. Do not create `UsrSupportCaseKnowledgeBase`.
-			       - For adding a related/child list (a "detail") to a record page, or for filtering a list by the current page record (master-detail "filter by page data"), call `get-guidance` with `name` set to `related-list`. A detail is a composite (`crt.ExpansionPanel` + `crt.DataGrid`) and the page-data filter is a page-scoped `crt.EntityDataSource` + an `isCollection` attribute + a separate filter attribute referenced via `modelConfig.filterAttributes` — never an inline `filter` on the list attribute.
+			       - For adding a related/child list (a "detail") to a record page, or for filtering a list by the current page record (master-detail "filter by page data"), call `get-guidance` with `name` set to `related-list`. A detail is a composite (`crt.ExpansionPanel` + `crt.DataGrid`) and the page-data filter is declarative: a child `crt.EntityDataSource` + an `isCollection` attribute + a `modelConfig.dependencies` entry linking the child foreign-key column to the master record (`attributePath`/`relationPath`) — no handler. Never scope with an init handler or a seeded filter.
 			       """
 		};
 }
