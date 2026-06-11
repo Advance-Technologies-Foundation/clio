@@ -59,6 +59,11 @@ internal sealed class SchemaAwareFilterValidator {
 				$"{path}.comparisonType: '{comparison}' is supported only on text columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
 		}
 
+		if (!string.IsNullOrWhiteSpace(leaf.DatePart)) {
+			ValidateDatePartColumn(leaf, column, path);
+			return;
+		}
+
 		if (!string.IsNullOrWhiteSpace(leaf.ValueMacros)) {
 			ValidateMacrosDatatype(leaf, column, path);
 			return;
@@ -75,6 +80,14 @@ internal sealed class SchemaAwareFilterValidator {
 		}
 
 		ValidateScalarValueDatatype(value, column, leaf.ColumnPath, path);
+	}
+
+	private static void ValidateDatePartColumn(StaticFilterLeaf leaf, FilterSchemaColumn column, string path) {
+		bool isDateTimeColumn = column.DataValueTypeName is "Date" or "DateTime" or "Time";
+		if (!isDateTimeColumn) {
+			throw new ArgumentException(
+				$"{path}.datePart: '{leaf.DatePart}' applies only to Date/DateTime/Time columns. Column '{leaf.ColumnPath}' is {column.DataValueTypeName}.");
+		}
 	}
 
 	private static void ValidateMacrosDatatype(StaticFilterLeaf leaf, FilterSchemaColumn column, string path) {

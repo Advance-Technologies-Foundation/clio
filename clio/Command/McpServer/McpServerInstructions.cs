@@ -72,6 +72,17 @@ internal static class McpServerInstructions
 		3. Call `get-page schema-name=<matched schema-name>` to retrieve the editable body and bundle.
 		4. Call `update-page schema-name=<matched schema-name> body=<...>` to save. Do NOT pass `target-package-uid`: the backend's `GetDesignPackageUId` resolves the correct package automatically — it materializes a virtual package on first save (locked-source case) or reuses the existing replacing package (already-substituted case). Each platform package has a deterministic owning app, so there is no ambiguity to override.
 
+		## Profile language for created entities (detect once, reuse, ask on failure)
+		- Before creating ANY entity (application, object, page, section, lookup, column), call
+		  `get-user-culture` ONCE per session to detect the connected user's profile language, and
+		  reuse that result for all generated names, labels, and captions for the rest of the session.
+		- If `get-user-culture` returns `success:false`, ASK the user which language to use before
+		  proceeding. Do NOT silently fall back to the host machine locale or to `en-US`.
+		- Re-detect only when the active environment changes within the session (the result is keyed
+		  by environment). Do not re-detect per entity — the server caches it per environment.
+		- To force a specific language for a single creation, pass the `caption-culture` argument
+		  (precedence: `caption-culture` > detected profile culture > `en-US`).
+
 		## Error handling
 		- Every tool response includes a `correlation-id` for tracing.
 		- Errors include the full exception chain. Look at inner exceptions for root cause.

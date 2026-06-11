@@ -28,6 +28,10 @@ OPTIONS
     --schema-name          Entity schema name
     --operation            Structured operation JSON. Repeat the option for
                            multiple values
+    --caption-culture      Override the culture for written column captions/
+                           descriptions (e.g. en-US, uk-UA). Precedence:
+                           override > profile culture > en-US. Supplying it
+                           skips the profile-culture lookup.
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration
