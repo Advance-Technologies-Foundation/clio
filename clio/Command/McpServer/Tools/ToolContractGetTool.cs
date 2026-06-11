@@ -751,7 +751,8 @@ internal static class ToolContractCatalog {
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
-					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity."),
+					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity. The object must exist (validated before creation, with a clear error otherwise); several sections may target the same object, so reuse is allowed."),
+					Field("code", StringType, "Optional explicit section code (Latin identifier). When omitted, the code is generated from the caption; required when the caption has no Latin letters or digits — for a non-Latin caption such as 'Контакти' pass an English code like 'Contacts'."),
 					Field(WithMobilePagesFieldName, BooleanType, "Create mobile pages in addition to web pages.")
 				],
 				Validators: [
