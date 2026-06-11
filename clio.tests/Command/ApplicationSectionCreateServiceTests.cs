@@ -796,6 +796,110 @@ public sealed class ApplicationSectionCreateServiceTests {
 				!body.Contains("\"filters\"", StringComparison.Ordinal)));
 	}
 
+	[Test]
+	[Description("Does not double-prefix an explicit code that already starts with the environment prefix in canonical casing.")]
+	public void CreateSection_Should_Not_Double_Prefix_When_Code_Already_Starts_With_Prefix() {
+		// Arrange
+		SetUpPrefixTestMocks("UsrContacts");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				Code: "UsrContacts"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrContacts",
+			because: "a code that already begins with the canonical prefix must not get the prefix prepended again");
+	}
+
+	[Test]
+	[Description("Re-canonicalizes prefix casing when the explicit code starts with the prefix in a different case, so --code usrContacts with prefix Usr yields UsrContacts.")]
+	public void CreateSection_Should_Canonicalize_Prefix_Casing_When_Code_Has_Lowercase_Prefix() {
+		// Arrange
+		SetUpPrefixTestMocks("UsrContacts");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Contacts",
+				Code: "usrContacts"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrContacts",
+			because: "when the code starts with the prefix in the wrong case, the canonical casing from SchemaNamePrefix must be applied");
+	}
+
+	[Test]
+	[Description("Salvages the ASCII digit fragment from a mixed caption (e.g. 'Контакти 2024') to produce a valid code, inserting an underscore after the prefix so the identifier does not start with a digit.")]
+	public void CreateSection_Should_Salvage_ASCII_Digit_Fragment_From_Mixed_Caption() {
+		// Arrange
+		SetUpPrefixTestMocks("Usr_2024");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Контакти 2024"));
+
+		// Assert
+		result.Section.Code.Should().Be("Usr_2024",
+			because: "the non-Latin word is dropped and the digit fragment '2024' is salvaged; an underscore is inserted after the prefix because the generated code would otherwise start with a digit");
+	}
+
+	[Test]
+	[Description("Proceeds with the section insert when the entity existence probe throws unexpectedly, so a permissions or transport failure on the probe does not block creation.")]
+	public void CreateSection_Should_Proceed_With_Insert_When_EntityExistenceProbe_Throws() {
+		// Arrange
+		ApplicationEntityInfoResult existingEntity = new("entity-uid", "UsrTaskStatus", "Task statuses", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [existingEntity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [existingEntity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp").Returns(beforeInfo, afterInfo);
+		StubRandomIcon();
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)
+				&& body.Contains("\"value\":\"UsrTaskStatus\"", StringComparison.Ordinal)))
+			.Returns(_ => throw new InvalidOperationException("Simulated transport failure"));
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Task statuses","Code":"UsrTaskStatus","Description":null,"EntitySchemaName":"UsrTaskStatus","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(
+				ApplicationCode: "UsrOrdersApp",
+				Caption: "Task statuses",
+				EntitySchemaName: "UsrTaskStatus"));
+
+		// Assert
+		result.Section.Code.Should().Be("UsrTaskStatus",
+			because: "a transport failure in the existence probe must not block creation; the probe is best-effort and the insert must proceed");
+	}
+
 	private void StubRandomIcon() {
 		_applicationClient.ExecutePostRequest(
 			Arg.Any<string>(),

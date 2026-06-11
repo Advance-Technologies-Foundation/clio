@@ -169,6 +169,15 @@ public sealed class ApplicationSectionCreateService(
 		if (request.IconBackground is not null) {
 			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground);
 		}
+
+		if (!string.IsNullOrWhiteSpace(request.Code)) {
+			string trimmedCode = request.Code.Trim();
+			if (!trimmedCode.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')) {
+				throw new ArgumentException(
+					$"Section code '{trimmedCode}' is invalid. Codes must contain only Latin letters, digits, or underscore.",
+					nameof(request));
+			}
+		}
 	}
 
 	private ResolvedApplicationSectionCreateRequest ResolveRequest(
@@ -667,9 +676,13 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		string explicitCode = request.Code.Trim();
-		if (!string.IsNullOrEmpty(schemaNamePrefix)
-			&& !explicitCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)) {
-			explicitCode = schemaNamePrefix + explicitCode;
+		if (!string.IsNullOrEmpty(schemaNamePrefix)) {
+			if (explicitCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)) {
+				// Re-canonicalize casing: --code usrContacts with prefix Usr becomes UsrContacts.
+				explicitCode = schemaNamePrefix + explicitCode[schemaNamePrefix.Length..];
+			} else {
+				explicitCode = schemaNamePrefix + explicitCode;
+			}
 		}
 
 		if (!SectionCodeRegex.IsMatch(explicitCode)) {

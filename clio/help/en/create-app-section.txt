@@ -17,10 +17,11 @@ DESCRIPTION
     otherwise). Several sections may target the same object, so reusing an
     object that already backs a section is allowed.
 
-    The section code is generated from the caption. A non-Latin caption (for
-    example "Контакти") cannot produce a valid Latin code, so pass an explicit
-    code via --code (for example --code Contacts); the caption stays as the
-    localized display title.
+    The section code is generated from the caption. Only ASCII letters and
+    digits contribute to the generated code: a fully non-Latin caption (for
+    example "Контакти") yields no code and requires an explicit --code. When a
+    caption mixes scripts (for example "Контакти 2024"), the ASCII fragment is
+    salvaged ("2024" gives "Usr_2024"); pass --code to override.
 
     By default clio creates web and mobile pages. Set --with-mobile-pages false
     when the new section must stay web-only.

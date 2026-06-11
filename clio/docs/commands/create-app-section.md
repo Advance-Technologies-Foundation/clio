@@ -22,10 +22,12 @@ to an existing entity, provide --entity-schema-name. The object must exist
 actionable error otherwise). Several sections may target the same object, so
 reusing an object that already backs a section is allowed.
 
-The section code is generated from the caption. A non-Latin caption (for
-example "Контакти") cannot produce a valid Latin code, so pass an explicit
-code via --code (for example --code Contacts); the caption stays as the
-localized display title.
+The section code is generated from the caption. Only ASCII letters and
+digits contribute to the generated code: a fully non-Latin caption (for
+example "Контакти") yields no code and requires an explicit --code. When a
+caption mixes scripts (for example "Контакти 2024"), the ASCII fragment is
+salvaged ("2024" → "Usr_2024"); pass --code when the salvaged result is
+not what you want.
 
 By default clio creates web and mobile pages. Set --with-mobile-pages false
 when the new section must stay web-only.
@@ -104,12 +106,15 @@ create a web-only section with automatically resolved icon metadata
 - The section code is generated automatically from the caption and prefixed
   with the active SchemaNamePrefix system setting from the target environment
   (for example caption "Orders" produces "UsrOrders" when SchemaNamePrefix is
-  "Usr", or "Orders" when the setting is empty). Only Latin letters and digits
-  feed the generated code; a non-Latin caption (for example "Контакти") yields
-  no code and must be accompanied by an explicit --code.
+  "Usr", or "Orders" when the setting is empty). Only ASCII letters and digits
+  feed the generated code. A fully non-Latin caption (for example "Контакти")
+  yields no code and must be accompanied by an explicit --code. A mixed caption
+  (for example "Контакти 2024") salvages the ASCII fragment ("2024" →
+  "Usr_2024"); pass --code to override.
 - --code overrides the generated code. It is prefixed with the SchemaNamePrefix
-  when it does not already start with it, and must be a Latin identifier (start
-  with a letter; letters, digits, or underscore only).
+  when it does not already start with it, and the prefix casing is always
+  canonicalized (for example --code usrContacts with prefix Usr gives
+  UsrContacts). The code must contain only Latin letters, digits, or underscore.
 
 ## Troubleshooting
 
