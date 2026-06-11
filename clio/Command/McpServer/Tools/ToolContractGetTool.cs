@@ -275,6 +275,7 @@ internal static class ToolContractCatalog {
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
+	private const string WithMobilePagesFieldName = "with-mobile-pages";
 
 		private static readonly ToolErrorContract CommonErrorContract = new([
 			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
@@ -658,7 +659,8 @@ internal static class ToolContractCatalog {
 					Field(DescriptionFieldName, StringType, "Optional application description."),
 					Field(IconIdFieldName, StringType, "Optional icon GUID or 'auto'."),
 					Field("client-type-id", StringType, "Optional client type identifier."),
-					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration.")
+					Field("optional-template-data-json", StringType, "Optional JSON object for advanced template configuration."),
+					Field(WithMobilePagesFieldName, BooleanType, "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Set false for a web-only application.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -703,7 +705,8 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, IconBackgroundFieldName, "iconBackground", RejectedStatus, $"Use '{IconBackgroundFieldName}' instead of 'iconBackground'.")
 			],
 			[
-				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells.")
+				Default(TemplateCodeFieldName, "AppFreedomUI", "Default template for standard Freedom UI app shells."),
+				Default(WithMobilePagesFieldName, "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
 			],
 			[
 				Example("Create a new Freedom UI application with the minimal top-level payload", new Dictionary<string, object?> {
@@ -749,7 +752,7 @@ internal static class ToolContractCatalog {
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
 					Field("entity-schema-name", StringType, "Optional existing entity schema name. When provided, the section reuses that entity."),
-					Field("with-mobile-pages", BooleanType, "Create mobile pages in addition to web pages.")
+					Field(WithMobilePagesFieldName, BooleanType, "Create mobile pages in addition to web pages.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -792,7 +795,7 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "entity-schema-name", "use-existing-entity-schema", RejectedStatus, "Use 'entity-schema-name' alone to reuse an existing entity; the boolean flag is not supported.")
 			],
 			[
-				Default("with-mobile-pages", "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
+				Default(WithMobilePagesFieldName, "true", "Create both web and mobile pages unless the caller explicitly disables mobile pages.")
 			],
 			[
 				Example("Create a new-object section in an existing app", new Dictionary<string, object?> {
@@ -806,7 +809,7 @@ internal static class ToolContractCatalog {
 					[ApplicationCodeFieldName] = ExamplePackageName,
 					[CaptionFieldName] = "Task statuses",
 					["entity-schema-name"] = ExampleTaskStatusSchemaName,
-					["with-mobile-pages"] = true
+					[WithMobilePagesFieldName] = true
 				})
 			],
 			Flow(
@@ -1638,7 +1641,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
 					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
-						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
+						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
 						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 				]),
@@ -1745,14 +1748,14 @@ internal static class ToolContractCatalog {
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
-					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
+					"Apply a static filter limiting an Owner lookup to contacts that have an email address (IS_NOT_NULL on the column directly)",
 					ExampleTaskSchemaName,
-					"Limit owner to contacts with a mobile phone",
+					"Limit owner to contacts with an email",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
 						[LogicalOperationFieldName] = "AND",
 						[FiltersFieldName] = new object[] {
-							StaticFilterLeaf("MobilePhone", "IS_NOT_NULL")
+							StaticFilterLeaf("Email", "IS_NOT_NULL")
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
@@ -1808,9 +1811,9 @@ internal static class ToolContractCatalog {
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
-					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
+					"Apply a static filter limiting an Assignee lookup by a day-of-year anniversary match (DayOfYearTodayPlusDaysOffset macros)",
 					ExampleTaskSchemaName,
-					"Limit assignee to contacts with a birthday tomorrow",
+					"Limit assignee by a day-of-year anniversary",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
 						[LogicalOperationFieldName] = "AND",

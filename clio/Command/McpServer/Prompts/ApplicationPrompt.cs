@@ -77,6 +77,8 @@ public static class ApplicationPrompt {
 		string? iconId = null,
 		[Description("Optional client type identifier")]
 		string? clientTypeId = null,
+		[Description("Create mobile pages for the main entity (default true; set false for a web-only app)")]
+		bool withMobilePages = true,
 		[Description("Optional template data JSON")]
 		string? optionalTemplateDataJson = null) =>
 		$"""
@@ -96,7 +98,9 @@ public static class ApplicationPrompt {
 		 If the app needs localized entity or column captions, run follow-up entity-schema tools such as `sync-schemas` or `update-entity-schema` after `create-app`.
 		 Pass `description` only when the application needs one.
 		 Pass `icon-id` only when a specific icon identifier is required.
-		 Pass `client-type-id` only when a non-default Creatio client type is required.
+		 Pass `client-type-id` only when a non-default Creatio client type is required. When supplied it takes precedence over `with-mobile-pages`.
+		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`, generating the main entity `_MobileFormPage` and `_MobileListPage` alongside the web pages.
+		 When the user's plan is web-only (no mobile app target), proactively set `with-mobile-pages` to `false` before calling `create-app` so the mobile pages are not created and do not need manual cleanup afterwards.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
 		 """;
 
@@ -129,6 +133,7 @@ public static class ApplicationPrompt {
 		 Provide `caption` as a plain scalar string.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
+		 If creation fails with `Failed to create section ... is already bound to an existing section`, the chosen `entity-schema-name` already backs another section. Do not retry with the same entity; call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections, then reuse the existing section or choose a different entity.
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.

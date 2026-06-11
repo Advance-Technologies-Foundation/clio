@@ -36,18 +36,23 @@ New column name for rename operations
 Column type. Supported values:
 Guid, Integer, Float, Boolean, Date, DateTime,
 Time, Lookup,
+Binary, Image, ImageLookup, File, SecureText,
 Text, ShortText, MediumText, LongText, MaxSizeText,
 Text50,
 Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 Currency0,
-Currency1, Currency2, Currency3
+Currency1, Currency2, Currency3.
+ImageLink is accepted as an alias for ImageLookup.
+For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
+`ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
+`ImageLookup` references the `SysImage` schema automatically (no `--reference-schema`).
 --title <VALUE>
 Column title/caption
 --description <VALUE>
 Column description
 --reference-schema <VALUE>
-Lookup reference schema name
+Lookup reference schema name (not used for ImageLookup)
 --required
 Set required flag
 --indexed

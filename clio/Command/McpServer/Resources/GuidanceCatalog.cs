@@ -74,6 +74,10 @@ internal static class GuidanceCatalog {
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
 				IndicatorWidgetGuidanceResource.Guide),
+			["related-list"] = Create(
+				"related-list",
+				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the ExpansionPanel + DataGrid composite, the page-scoped EntityDataSource, the isCollection attribute, and the separate master-detail filter attribute that scopes the list by page data.",
+				RelatedListGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",

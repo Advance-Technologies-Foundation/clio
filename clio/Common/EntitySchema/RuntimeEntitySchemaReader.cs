@@ -27,13 +27,35 @@ public interface IRuntimeEntitySchemaReader {
 /// <param name="PrimaryDisplayColumnName">Resolved primary display column name.</param>
 /// <param name="PrimaryDisplayColumnUId">Primary display column identifier when exposed by the runtime schema.</param>
 /// <param name="Columns">Complete runtime column set without inherited filtering.</param>
+/// <param name="Caption">Resolved localized schema caption.</param>
+/// <param name="Description">Resolved localized schema description.</param>
+/// <param name="ParentUId">Parent schema identifier when the schema extends another schema.</param>
+/// <param name="ExtendParent">Whether the schema replaces (extends) its parent schema.</param>
+/// <param name="IsDBView">Whether the schema is materialized as a database view.</param>
+/// <param name="IsTrackChangesInDB">Whether DB change tracking is enabled for the schema.</param>
+/// <param name="IsVirtual">Whether the schema is virtual (not persisted to the database).</param>
+/// <param name="ShowInAdvancedMode">Whether the schema is shown only in advanced mode.</param>
+/// <param name="AdministratedByOperations">Whether the schema is administered by operations.</param>
+/// <param name="AdministratedByColumns">Whether the schema is administered by columns.</param>
+/// <param name="AdministratedByRecords">Whether the schema is administered by records.</param>
 public sealed record RuntimeEntitySchemaResult(
 	Guid UId,
 	string Name,
 	Guid PrimaryColumnUId,
 	string? PrimaryDisplayColumnName,
 	Guid? PrimaryDisplayColumnUId,
-	IReadOnlyList<RuntimeEntitySchemaColumnResult> Columns
+	IReadOnlyList<RuntimeEntitySchemaColumnResult> Columns,
+	string? Caption = null,
+	string? Description = null,
+	Guid? ParentUId = null,
+	bool ExtendParent = false,
+	bool IsDBView = false,
+	bool IsTrackChangesInDB = false,
+	bool IsVirtual = false,
+	bool ShowInAdvancedMode = false,
+	bool AdministratedByOperations = false,
+	bool AdministratedByColumns = false,
+	bool AdministratedByRecords = false
 );
 
 /// <summary>
@@ -47,6 +69,7 @@ public sealed record RuntimeEntitySchemaResult(
 /// <param name="IsRequired">Whether the runtime column is required.</param>
 /// <param name="IsInherited">Whether the runtime column is inherited from a parent schema.</param>
 /// <param name="ReferenceSchemaName">Optional lookup reference schema name.</param>
+/// <param name="IsIndexed">Whether the runtime column is indexed in the database.</param>
 public sealed record RuntimeEntitySchemaColumnResult(
 	Guid UId,
 	string Name,
@@ -55,7 +78,8 @@ public sealed record RuntimeEntitySchemaColumnResult(
 	int DataValueType,
 	bool IsRequired,
 	bool IsInherited,
-	string? ReferenceSchemaName
+	string? ReferenceSchemaName,
+	bool IsIndexed = false
 );
 
 internal sealed class RuntimeEntitySchemaReader(
@@ -93,7 +117,8 @@ internal sealed class RuntimeEntitySchemaReader(
 				column.DataValueType,
 				column.IsRequired,
 				column.IsInherited,
-				column.ReferenceSchemaName))
+				column.ReferenceSchemaName,
+				column.IsIndexed))
 			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList() ?? [];
 
@@ -103,7 +128,18 @@ internal sealed class RuntimeEntitySchemaReader(
 			schema.PrimaryColumnUId,
 			ResolvePrimaryDisplayColumnName(schema, columns),
 			schema.PrimaryDisplayColumnUId,
-			columns);
+			columns,
+			Caption: GetLocalizedValue(schema.Caption),
+			Description: GetLocalizedValue(schema.Description),
+			ParentUId: schema.ParentUId == Guid.Empty ? null : schema.ParentUId,
+			ExtendParent: schema.ExtendParent,
+			IsDBView: schema.IsDBView,
+			IsTrackChangesInDB: schema.IsTrackChangesInDB,
+			IsVirtual: schema.IsVirtual,
+			ShowInAdvancedMode: schema.ShowInAdvancedMode,
+			AdministratedByOperations: schema.AdministratedByOperations,
+			AdministratedByColumns: schema.AdministratedByColumns,
+			AdministratedByRecords: schema.AdministratedByRecords);
 	}
 
 	private static string? ResolvePrimaryDisplayColumnName(
@@ -184,6 +220,17 @@ internal sealed class RuntimeEntitySchemaReader(
 		Guid PrimaryColumnUId,
 		Guid UId,
 		string Name,
+		JsonElement Caption,
+		JsonElement Description,
+		Guid ParentUId,
+		bool ExtendParent,
+		bool IsDBView,
+		bool IsTrackChangesInDB,
+		bool IsVirtual,
+		bool ShowInAdvancedMode,
+		bool AdministratedByOperations,
+		bool AdministratedByColumns,
+		bool AdministratedByRecords,
 		string? PrimaryDisplayColumnName,
 		Guid? PrimaryDisplayColumnUId);
 
@@ -198,5 +245,6 @@ internal sealed class RuntimeEntitySchemaReader(
 		int DataValueType,
 		bool IsRequired,
 		bool IsInherited,
+		bool IsIndexed,
 		string? ReferenceSchemaName);
 }

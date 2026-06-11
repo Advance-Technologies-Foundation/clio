@@ -140,7 +140,8 @@ public sealed class ApplicationSectionCreateService(
 			?? throw new InvalidOperationException("InsertQuery returned an empty response.");
 		if (!response.Success) {
 			logger.EndSpinner(false);
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "InsertQuery failed.");
+			throw new InvalidOperationException(
+				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message));
 		}
 		logger.EndSpinner(true);
 
@@ -214,6 +215,65 @@ public sealed class ApplicationSectionCreateService(
 		} catch {
 			// schema existence check is best-effort; skip unexpected errors to avoid blocking section creation
 		}
+	}
+
+	/// <summary>
+	/// Builds a human-readable failure message for a rejected ApplicationSection insert.
+	/// Propagates the server-supplied error when present and always appends the most common
+	/// cause (the target entity is already bound to a section, or the generated section code
+	/// collides with an existing section) plus an actionable next step.
+	/// </summary>
+	/// <param name="request">Resolved section-create request used to surface the caption, code, entity, and application context.</param>
+	/// <param name="serverMessage">Optional error message returned by the InsertQuery response.</param>
+	/// <returns>A diagnostic message explaining the failure and how to recover from it.</returns>
+	private static string BuildSectionInsertFailureMessage(
+		ResolvedApplicationSectionCreateRequest request,
+		string? serverMessage) {
+		StringBuilder builder = new();
+		builder.Append("Failed to create section '")
+			.Append(request.Caption)
+			.Append("' (code '")
+			.Append(request.SectionCode)
+			.Append("')");
+		if (!string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
+			builder.Append(" bound to entity '")
+				.Append(request.EntitySchemaName)
+				.Append('\'');
+		}
+
+		if (!string.IsNullOrWhiteSpace(request.ApplicationCode)) {
+			builder.Append(" in application '")
+				.Append(request.ApplicationCode)
+				.Append('\'');
+		}
+
+		builder.Append('.');
+
+		string trimmedServerMessage = serverMessage?.Trim() ?? string.Empty;
+		if (trimmedServerMessage.Length > 0) {
+			builder.Append(" Server error: ").Append(trimmedServerMessage);
+			char last = trimmedServerMessage[^1];
+			if (last is not ('.' or '!' or '?')) {
+				builder.Append('.');
+			}
+		} else {
+			builder.Append(" The server rejected the section insert (InsertQuery failed) without returning a detailed message.");
+		}
+
+		builder.Append(' ');
+		if (!string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
+			builder.Append("This usually means entity '")
+				.Append(request.EntitySchemaName)
+				.Append("' is already bound to an existing section, or a section with code '")
+				.Append(request.SectionCode)
+				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, then reuse the existing section, pick a different entity, or change the caption to generate a new section code.");
+		} else {
+			builder.Append("This usually means a section with code '")
+				.Append(request.SectionCode)
+				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, or change the caption to generate a different section code.");
+		}
+
+		return builder.ToString();
 	}
 
 	private ApplicationSectionCreateResult LoadCreatedSection(
