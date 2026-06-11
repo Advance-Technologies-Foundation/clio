@@ -1410,6 +1410,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 		article.Text.Should().Contain("prefer `populateValue=true` by default",
 			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+		article.Text.Should().Contain("classify the requirement into one mechanism",
+			because: "the guide must teach lookup-restriction routing as a mechanism taxonomy, not a list of memorized business phrases");
+		article.Text.Should().Contain("never a handler/crt.InitRequest",
+			because: "the guide must steer every lookup-restriction mechanism away from handlers/crt.InitRequest");
 	}
 
 	[Test]
@@ -1641,6 +1645,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
 		article.Text.Should().Contain("discovery flow",
 			because: "the guide should keep the no-assumptions discovery flow");
+		article.Text.Should().Contain("validate before create (MANDATORY)",
+			because: "the guide must require an execute-esq dry-run of the filter before the rule is created");
+		article.Text.Should().Contain("DRY-RUN the same filter as an `execute-esq` SelectQuery",
+			because: "the guide must spell out the pre-save execute-esq validation discipline borrowed from the component widget recipe");
+		article.Text.Should().Contain("before-create checklist",
+			because: "the guide should end with a compact before-create checklist of the hard-won filter invariants");
 	}
 
 	[Test]

@@ -61,13 +61,19 @@ internal static class StaticFilterStructuralValidator {
 
 		bool hasValue = leaf.Value.HasValue && leaf.Value.Value.ValueKind != JsonValueKind.Null;
 		bool hasMacros = !string.IsNullOrWhiteSpace(leaf.ValueMacros);
+		bool hasDatePart = !string.IsNullOrWhiteSpace(leaf.DatePart);
 
 		bool isUnary = StaticFilterConstants.UnaryComparisons.Contains(comparison);
 		if (isUnary) {
-			if (hasValue || hasMacros) {
-				throw new ArgumentException($"{path}: value and valueMacros must be omitted when comparisonType is '{comparison}'.");
+			if (hasValue || hasMacros || hasDatePart) {
+				throw new ArgumentException($"{path}: value, valueMacros and datePart must be omitted when comparisonType is '{comparison}'.");
 			}
 
+			return;
+		}
+
+		if (hasDatePart) {
+			ValidateDatePart(leaf, comparison, hasValue, hasMacros, path);
 			return;
 		}
 
@@ -113,6 +119,42 @@ internal static class StaticFilterStructuralValidator {
 		if (leaf.ValueMacrosArgument is <= 0) {
 			throw new ArgumentException(
 				$"{path}.valueMacrosArgument: must be a positive integer.");
+		}
+	}
+
+	private static void ValidateDatePart(StaticFilterLeaf leaf, string comparison, bool hasValue, bool hasMacros, string path) {
+		if (hasMacros) {
+			throw new ArgumentException($"{path}: datePart and valueMacros are mutually exclusive.");
+		}
+
+		if (!hasValue) {
+			throw new ArgumentException($"{path}.value: required when datePart is set (the part is compared to a constant).");
+		}
+
+		if (StaticFilterConstants.TextComparisons.Contains(comparison)) {
+			throw new ArgumentException(
+				$"{path}: datePart supports only equality/relational comparisons (EQUAL, NOT_EQUAL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL); got '{comparison}'.");
+		}
+
+		if (!DatePartCatalog.TryResolve(leaf.DatePart!, out _, out DatePartCatalog.DatePartValueKind valueKind)) {
+			throw new ArgumentException(
+				$"{path}.datePart: unknown date part '{leaf.DatePart}'. Supported: {string.Join(", ", DatePartCatalog.KnownNames)}.");
+		}
+
+		JsonElement value = leaf.Value!.Value;
+		if (value.ValueKind == JsonValueKind.Array) {
+			throw new ArgumentException($"{path}.value: array values are not supported with datePart.");
+		}
+
+		switch (valueKind) {
+			case DatePartCatalog.DatePartValueKind.Integer when value.ValueKind != JsonValueKind.Number:
+				throw new ArgumentException(
+					$"{path}.value: datePart '{leaf.DatePart}' expects a JSON integer (e.g. 2021 for Year, 14 for Day, 11 for Hour).");
+			case DatePartCatalog.DatePartValueKind.Time when value.ValueKind != JsonValueKind.String:
+				throw new ArgumentException(
+					$"{path}.value: datePart '{leaf.DatePart}' expects a JSON time-of-day string (e.g. \"09:30\" or \"09:30:00\").");
+			default:
+				return;
 		}
 	}
 

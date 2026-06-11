@@ -1622,7 +1622,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. Relational comparisons only support numeric and date/time left attributes (Date, DateTime, Time). Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1641,7 +1641,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
 					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
-						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
+						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
 					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
 						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 				]),
@@ -1669,6 +1669,18 @@ internal static class ToolContractCatalog {
 				BusinessRuleExample("Create a readonly rule when reminder time is after a timezone-aware cutoff",
 					ExampleTaskSchemaName, "Lock reminder note after local noon", "ReminderTime", "greater-than",
 					MakeReadOnlyActionTypeName, ["ReminderNote"], "12:00:00+02:00"),
+				SysValueBusinessRuleExample("Create a required-field rule when owner equals the current user contact (SysValue)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Require status when owner is the current user",
+					ExampleOwnerAttributeName, ExampleEqualConditionComparison, "CurrentUserContact",
+					MakeRequiredActionTypeName, ["Status"]),
+				SysValueBusinessRuleExample("Create a readonly rule when due date is on or before the current date (SysValue)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Lock owner when due on or before today",
+					"DueDate", "less-than-or-equal", "CurrentDate",
+					MakeReadOnlyActionTypeName, [ExampleOwnerAttributeName]),
+				RoleGateBusinessRuleExample("Require a field only for users in a role (CurrentUserRoles CONTAIN role)",
+					EntitySchemaNameFieldName, ExampleTaskSchemaName, "Require status for administrators",
+					"CurrentUserRoles", "contain", ExampleLookupValueId,
+					MakeRequiredActionTypeName, ["Status"]),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
 					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
 					"set-values", [
@@ -1736,14 +1748,14 @@ internal static class ToolContractCatalog {
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
-					"Apply a static filter limiting an Owner lookup to contacts that have a mobile phone (IS_NOT_NULL on the column directly)",
+					"Apply a static filter limiting an Owner lookup to contacts that have an email address (IS_NOT_NULL on the column directly)",
 					ExampleTaskSchemaName,
-					"Limit owner to contacts with a mobile phone",
+					"Limit owner to contacts with an email",
 					ExampleOwnerAttributeName,
 					new Dictionary<string, object?> {
 						[LogicalOperationFieldName] = "AND",
 						[FiltersFieldName] = new object[] {
-							StaticFilterLeaf("MobilePhone", "IS_NOT_NULL")
+							StaticFilterLeaf("Email", "IS_NOT_NULL")
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
@@ -1799,9 +1811,9 @@ internal static class ToolContractCatalog {
 						}
 					}),
 				ApplyStaticFilterBusinessRuleExample(
-					"Apply a static filter limiting an Assignee lookup to contacts with a birthday tomorrow (DayOfYearTodayPlusDaysOffset macros)",
+					"Apply a static filter limiting an Assignee lookup by a day-of-year anniversary match (DayOfYearTodayPlusDaysOffset macros)",
 					ExampleTaskSchemaName,
-					"Limit assignee to contacts with a birthday tomorrow",
+					"Limit assignee by a day-of-year anniversary",
 					ExampleAssigneeAttributeName,
 					new Dictionary<string, object?> {
 						[LogicalOperationFieldName] = "AND",
@@ -1884,7 +1896,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -1955,6 +1967,22 @@ internal static class ToolContractCatalog {
 					"show-element",
 					["HighAmountWarningLabel"],
 					100000),
+				SysValueBusinessRuleExample("Hide a control when due date is on or before the current date (SysValue)",
+					PageSchemaNameFieldName, ExampleOrderPageSchemaName, "Hide reminder when due on or before today",
+					"PDS_UsrDueDate", "less-than-or-equal", "CurrentDate",
+					"hide-element", ["ReminderLabel"]),
+				RoleGateBusinessRuleExample("Show a control only for users in a role (CurrentUserRoles CONTAIN role)",
+					PageSchemaNameFieldName, "Cases_FormPage", "Show Resolved for administrators",
+					"CurrentUserRoles", "contain", ExampleLookupValueId,
+					"show-element", ["ResolvedCheckbox"]),
+				RoleGateBusinessRuleExample("Hide a control for users NOT in a role (inverse rule; CurrentUserRoles NOT_CONTAIN role)",
+					PageSchemaNameFieldName, "Cases_FormPage", "Hide Resolved for non-administrators",
+					"CurrentUserRoles", "not-contain", ExampleLookupValueId,
+					"hide-element", ["ResolvedCheckbox"]),
+				RoleGateBusinessRuleExample("Show a control only for a specific current user contact (CurrentUserContact EQUAL contact)",
+					PageSchemaNameFieldName, "Cases_FormPage", "Show Assignee group for the supervisor",
+					"CurrentUserContact", ExampleEqualConditionComparison, ExampleLookupValueId,
+					"show-element", ["AssigneeGroupInput"]),
 				PageBusinessRuleAttributeComparisonExample()
 			],
 			Flow(
@@ -2005,7 +2033,11 @@ internal static class ToolContractCatalog {
 			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
 			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
-				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
+			new ToolContractValidator("sys-value", "unsupported-system-variable", "rule.condition.conditions[*].leftExpression|rightExpression.sysValueName",
+				Context: $"A SysValue may be on EITHER side of a condition. sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. Types: CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount=Lookup, CurrentUserRoles=ObjectList (a collection of SysAdminUnit roles). Both operands must resolve to the same data value type and, for lookups, the same reference schema (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit). Role-based visibility: CurrentUserRoles on the left, comparisonType contain/not-contain, and a Const SysAdminUnit role id on the right."),
+			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rule.condition.conditions[*]",
+				Context: "Either side may be AttributeValue, Const, or SysValue, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
 		];
 
 	private static ToolContractExample BusinessRuleExample(
@@ -2235,6 +2267,94 @@ internal static class ToolContractCatalog {
 					new Dictionary<string, object?> {
 						["type"] = "hide-element",
 						["items"] = new object[] { "DateMismatchWarningLabel" }
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample SysValueBusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string leftPath,
+		string comparisonType,
+		string sysValueName,
+		string actionType,
+		object[] actionItems) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath
+			},
+			["comparisonType"] = comparisonType,
+			["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.SysValueExpressionType,
+				["sysValueName"] = sysValueName
+			}
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			}
+		});
+	}
+
+	private static ToolContractExample RoleGateBusinessRuleExample(
+		string summary,
+		string schemaFieldName,
+		string schemaName,
+		string caption,
+		string sysValueName,
+		string comparisonType,
+		string roleOrRecordId,
+		string actionType,
+		object[] actionItems) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = BusinessRuleConstants.SysValueExpressionType,
+				["sysValueName"] = sysValueName
+			},
+			["comparisonType"] = comparisonType,
+			["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				[ValueFieldName] = roleOrRecordId
+			}
+		};
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[schemaFieldName] = schemaName,
+			[RuleFieldName] = new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
 					}
 				}
 			}
