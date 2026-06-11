@@ -128,6 +128,7 @@ Structured domain responses:
 - `component-info`
 - `list-apps`
 - `get-app-info`
+- `find-app`
 - `create-app`
 - `delete-app`
 - `assert-infrastructure`
@@ -193,6 +194,8 @@ This area gives the AI a clean application-level view of the platform.
   Return installed applications as structured JSON.
 - `get-app-info`
   Return application context, packages, and related metadata for a single installed app.
+- `find-app`
+  Find applications and their sections in a single call by name, code, or substring pattern. Maps an imprecise app name to its real code without an N+1 `list-apps` + per-app `list-app-sections` scan.
 - `create-app`
   Create a Creatio application and return its structured context.
 - `delete-app`
@@ -203,6 +206,7 @@ This area gives the AI a clean application-level view of the platform.
 What an external AI can practically do here:
 
 - enumerate installed apps
+- map a fuzzy or partial app name to its real code (and see its sections) in a single call
 - inspect one app precisely before modifying or replacing it
 - create new apps from a template
 - remove apps

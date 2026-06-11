@@ -520,6 +520,7 @@ public class BindingsModule {
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
+		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();

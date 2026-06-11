@@ -21,6 +21,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Canonical flow
 			       - Prefer `discover -> inspect -> mutate -> verify` for minimal edits to an existing app.
+			       - To discover the target app, prefer `find-app` — it searches application name/code/description and section captions and returns the matching app(s) WITH their sections in a single call, replacing a `list-apps` + per-app `list-app-sections` scan. Fall back to `list-apps` only for a full unfiltered enumeration.
 			       - For section creation in an existing app, prefer `list-apps -> get-app-info -> create-app-section -> get-app-info`.
 			       - For section metadata updates in an existing app, prefer `list-apps -> get-app-info -> update-app-section`.
 			       - For listing sections of an existing app, prefer `list-apps -> get-app-info -> list-app-sections`.
@@ -32,6 +33,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
+			       - Prefer `find-app` with `search-pattern` to map an imprecise or partial app name (e.g. "Customer Request Management") to its real code (e.g. `CrtCaseManagementApp`) in a single call; it matches the application name, code, description, and section captions, and returns each match together with its sections. Omit the pattern to list all apps with their sections.
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
 			       - Wrap MCP tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "code": "..."}}`); do not flatten or rename canonical fields.
 			       - Use `get-app-info` after `list-apps` to confirm the primary package and entity context for the target app.
