@@ -72,6 +72,13 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) {
 				return false;
 			}
+			// On .NET Framework, an expired session commonly triggers a 302 redirect to the login page
+			// rather than a 200 with login HTML. With AllowAutoRedirect=false we see the raw 3xx with an
+			// empty body; ReauthExecutor.IsSessionExpiredResponse("") returns false, so we must handle
+			// the redirect case explicitly here.
+			if ((int)response.StatusCode is >= 300 and < 400) {
+				return false;
+			}
 			string body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 			return !ReauthExecutor.IsSessionExpiredResponse(body);
 		} catch (HttpRequestException) {

@@ -203,6 +203,8 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()

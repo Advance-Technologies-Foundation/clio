@@ -8,6 +8,7 @@ using Clio.Common.BrowserSession;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -438,6 +439,17 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 		// Assert
 		result.Should().Be(1, "because a missing browser must fail rather than open an unauthenticated window");
 		mockLogger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("Chromium binary not found")));
+	}
+
+	[Test]
+	[Description("OpenAppCommand should be resolvable from the DI composition root so that open-web-app never throws InvalidOperationException at runtime.")]
+	public void OpenAppCommand_ShouldBeResolvable_WhenCompositionRootIsBuilt() {
+		// Arrange & Act
+		Action act = () => Container.GetRequiredService<OpenAppCommand>();
+
+		// Assert
+		act.Should().NotThrow("because IChromiumLocator and IAuthenticatedBrowserLauncher must be " +
+			"registered so that open-web-app works for all invocations, not just --authenticated ones");
 	}
 
 	[SetUp]

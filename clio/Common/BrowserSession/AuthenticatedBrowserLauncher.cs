@@ -74,9 +74,40 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		}
 
 		string shellUrl = BuildShellUrl(env);
-		int port = await ReadDevToolsPortAsync(userDataDir, ct).ConfigureAwait(false);
-		string pageWebSocketUrl = await FindPageTargetAsync(port, ct).ConfigureAwait(false);
-		await InjectCookiesAndNavigateAsync(pageWebSocketUrl, cookies, env.Uri, shellUrl, ct).ConfigureAwait(false);
+
+		// If the CDP inject-and-navigate phase hangs (WebSocket never returns the expected id), the
+		// outer ct might be CancellationToken.None and ThrowIfCancellationRequested() would be a no-op,
+		// leaving the loop running indefinitely. Guard with a per-launch timeout linked to the caller's
+		// token so Ctrl-C is still honoured and the command always terminates.
+		using var cdpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+		cdpCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+		int? browserPid = launch.ProcessId;
+		try {
+			int port = await ReadDevToolsPortAsync(userDataDir, cdpCts.Token).ConfigureAwait(false);
+			string pageWebSocketUrl = await FindPageTargetAsync(port, cdpCts.Token).ConfigureAwait(false);
+			await InjectCookiesAndNavigateAsync(pageWebSocketUrl, cookies, env.Uri, shellUrl, cdpCts.Token)
+				.ConfigureAwait(false);
+		} catch {
+			// On any CDP-phase failure the browser window is already open but cookies were never injected,
+			// so the user would land on the login form — the exact outcome this command promises to avoid.
+			// Kill the orphaned process before re-throwing so no stale window is left behind.
+			if (browserPid.HasValue) {
+				try {
+					// Direct use of System.Diagnostics.Process is intentional: we are terminating a
+					// specific browser process that IProcessExecutor launched for us. IProcessExecutor
+					// handles launches and captures; it does not (and should not) own cleanup/kill.
+#pragma warning disable CLIO004
+					System.Diagnostics.Process.GetProcessById(browserPid.Value).Kill(entireProcessTree: true);
+#pragma warning restore CLIO004
+				} catch (ArgumentException) {
+					// Process already exited before we could kill it.
+				} catch (InvalidOperationException) {
+					// Process not accessible (e.g. cross-user on Windows) — best effort.
+				}
+			}
+			throw;
+		}
 
 		// Cookie NAMES are safe to log; VALUES are bearer secrets and must never be logged.
 		_logger.WriteInfo($"Opened an authenticated browser session at {shellUrl} " +
@@ -88,7 +119,7 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 	// or {Uri}/Shell/ (NetCore) honours the injected .ASPXAUTH cookie and lands on the workspace.
 	// Live-verified 2026-06-10. Mirrors EnvironmentSettings.SimpleloginUri's IsNetCore split, minus the
 	// ?simplelogin=true form (which would force the manual login form we are bypassing).
-	private static string BuildShellUrl(EnvironmentSettings env) {
+	internal static string BuildShellUrl(EnvironmentSettings env) {
 		string baseUri = env.Uri.TrimEnd('/');
 		return baseUri + (env.IsNetCore ? "/Shell/" : "/0/Shell/");
 	}
@@ -190,7 +221,7 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		}
 	}
 
-	private static Dictionary<string, object> BuildSetCookieParams(BrowserCookie cookie, string fallbackUrl) {
+	internal static Dictionary<string, object> BuildSetCookieParams(BrowserCookie cookie, string fallbackUrl) {
 		var param = new Dictionary<string, object> {
 			["name"] = cookie.Name,
 			["value"] = cookie.Value,

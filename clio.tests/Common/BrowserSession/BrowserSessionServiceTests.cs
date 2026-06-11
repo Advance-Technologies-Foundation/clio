@@ -164,6 +164,25 @@ public sealed class BrowserSessionServiceTests {
 	}
 
 	[Test]
+	[Description("A cached session that returns HTTP 302 is treated as expired: .NET Framework redirects to the login page rather than serving login HTML, and with AllowAutoRedirect=false the body is empty which would otherwise fool IsSessionExpiredResponse into returning false.")]
+	public void GetSessionPathAsync_ShouldReauthenticate_WhenValidationReturns302() {
+		// Arrange
+		StubCacheHit();
+		// Simulate NetFW 302 redirect (no body — empty string would fool IsSessionExpiredResponse).
+		var handler = new StubHandler(() => new HttpResponseMessage(HttpStatusCode.Found));
+		_httpClientFactory.CreateClient(CreatioAuthClient.HttpClientName).Returns(_ => new HttpClient(handler));
+		_auth.LoginAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<CancellationToken>())
+			.Returns(new StorageStateResult([new BrowserCookie(".ASPXAUTH", "v2", "d", "/", true, false, "Lax", -1)]));
+
+		// Act
+		_ = _sut.GetSessionPathAsync(Env()).GetAwaiter().GetResult();
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		_auth.Received(1).LoginAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
 	[Description("An authentication failure from the auth client propagates to the caller.")]
 	public void GetSessionPathAsync_ShouldPropagate_WhenLoginThrows() {
 		// Arrange
