@@ -325,12 +325,19 @@ This part is small but important because many other tools depend on it.
   Return registered local environments and settings as structured JSON.
 - `get-pkg-list`
   Read remote package inventory from the selected environment.
+- `get-user-culture`
+  Resolve the logged-in user's profile culture (e.g. `en-US`, `uk-UA`) from
+  `ApplicationInfoService.svc/GetApplicationInfo` (no cliogate). Read-only, non-destructive.
+  Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
+  entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
+  which language to use instead of silently defaulting.
 
 What an external AI can practically do here:
 
 - onboard a target environment into clio configuration
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
+- detect the profile language to apply to created entity names/labels/captions
 
 Important note:
 

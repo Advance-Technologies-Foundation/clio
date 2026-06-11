@@ -22,6 +22,7 @@ compile-configuration:compile-configuration,cc,compile-remote
 compile-package:compile-package,comp-pkg
 component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
+get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
 create-app:create-app
 create-app-section:create-app-section

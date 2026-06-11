@@ -10,9 +10,18 @@ Entity-level rule creation must:
 
 - create a new editable rule for the selected entity
 - conditions
-   - support left and right expression types:
+   - support left and right expression types on either side, in any pairing:
       - attribute
       - constant
+      - system variable
+   - support system variables on either side of a condition:
+      - `CurrentDate` (Date), `CurrentTime` (Time), `CurrentDateTime` (DateTime)
+      - `CurrentUser` (Lookup → `SysAdminUnit`), `CurrentUserContact` (Lookup → `Contact`), `CurrentUserAccount` (Lookup → `Account`), `CurrentUserRoles` (ObjectList of `SysAdminUnit` roles)
+      - role-based logic: `CurrentUserRoles` `contain`/`not-contain` a constant `SysAdminUnit` role id
+      - both operands must resolve to the same data value type (an `ObjectList` is compared element-wise to a `Lookup`)
+      - lookup operands must reference the same schema
+      - a constant operand inherits its data value type and reference schema from the operand it is compared against
+   - support comparison types `contain` and `not-contain` for collection (`ObjectList`) and text operands
    - support data value types for attributes and constants:
       - text
       - number
@@ -76,6 +85,9 @@ Entity-level rule creation must reject the request when:
 - a unary comparison includes `rightExpression`
 - a binary comparison omits `rightExpression`
 - a relational comparison targets a non-numeric and non-temporal left attribute
+- a right-side system variable name is unknown
+- a right-side system variable data value type does not match the left attribute data value type
+- a right-side lookup system variable references a different schema than the left lookup attribute
 - a referenced condition attribute does not exist in the target entity scope
 - a referenced action target does not exist in the target entity scope
 - a set value attribute source does not exist in the target entity scope

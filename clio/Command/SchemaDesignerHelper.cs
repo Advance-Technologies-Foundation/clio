@@ -127,12 +127,15 @@ internal static class SchemaDesignerHelper {
 	}
 
 	internal static void ApplySchemaMetadata(
-		JObject schema, string name, string caption, string description) {
+		JObject schema, string name, string caption, string description, string cultureName = null) {
+		// Anchor captions to the effective culture (override > profile > en-US). A null cultureName
+		// preserves the legacy en-US default; the host CultureInfo.CurrentCulture is never read.
+		string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
 		schema["name"] = name;
-		schema["caption"] = new JArray(new JObject { ["cultureName"] = "en-US", [ValueKey] = caption });
+		schema["caption"] = new JArray(new JObject { ["cultureName"] = effectiveCulture, [ValueKey] = caption });
 		if (!string.IsNullOrWhiteSpace(description))
 			schema["description"] = new JArray(
-				new JObject { ["cultureName"] = "en-US", [ValueKey] = description });
+				new JObject { ["cultureName"] = effectiveCulture, [ValueKey] = description });
 	}
 
 	internal static string ExtractCaption(JObject schema) {

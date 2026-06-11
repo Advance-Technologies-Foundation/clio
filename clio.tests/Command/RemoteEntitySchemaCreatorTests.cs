@@ -971,6 +971,78 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				because: "a name mismatch in runtime schema must still be reported as failure even when designer returns HTML");
 	}
 
+	[Test]
+	[Description("Anchors the schema caption to the explicit --caption-culture override when provided (override > profile > en-US).")]
+	public void Create_ShouldAnchorCaptionToOverrideCulture_WhenCaptionCultureProvided()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			CaptionCulture = "uk-UA",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("uk-UA",
+			because: "an explicit --caption-culture override must anchor the generated caption to that culture");
+	}
+
+	[Test]
+	[Description("Falls back to en-US for the caption culture when no override is supplied and the profile culture cannot be resolved (regression-safe; never host CurrentCulture).")]
+	public void Create_ShouldAnchorCaptionToEnUs_WhenNoOverrideAndProfileUnresolved()
+	{
+		// Arrange — no environment is configured in the unit context, so profile resolution fails
+		// and the effective culture must degrade to en-US (parity with the previous behavior), not
+		// to the host machine's CultureInfo.CurrentCulture.
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+
+		// Act
+		using (new CultureScope("uk-UA")) {
+			_creator.Create(new CreateEntitySchemaOptions {
+				Package = "UsrPkg",
+				SchemaName = "UsrVehicle",
+				Title = "Vehicle",
+				Columns = ["Name:Text:Vehicle name"]
+			});
+		}
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("en-US",
+			because: "with no override and no resolvable profile culture the caption must anchor to en-US, not the host uk-UA locale");
+	}
+
+	private void SetupStandardSchemaClient(Action<string> captureSaveBody)
+	{
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				captureSaveBody(body);
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			return "{\"success\":true}";
+		});
+	}
+
 	private void SetupApplicationClient(Func<string, string, string> handler)
 	{
 		_applicationClient.ExecutePostRequest(

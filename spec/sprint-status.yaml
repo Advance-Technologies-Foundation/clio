@@ -145,3 +145,114 @@ stories:
     file: spec/stories/story-browser-session-handoff-10.md
     prd: spec/prd/prd-browser-session-handoff.md
     adr: spec/adr/adr-browser-session-handoff.md
+
+  # --- user-profile-language-detection stories (from master) ---
+  - id: story-user-profile-language-detection-1
+    title: "Culture resolver service + singleton cache"
+    feature: "user-profile-language-detection"
+    size: M
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-1.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-01, FR-02, FR-10]
+    ac: [AC-01, AC-05, SM-01]
+    depends_on: []
+    blocks:
+      - story-user-profile-language-detection-2
+      - story-user-profile-language-detection-3
+      - story-user-profile-language-detection-4a
+      - story-user-profile-language-detection-4b
+      - story-user-profile-language-detection-5
+      - story-user-profile-language-detection-6
+
+  - id: story-user-profile-language-detection-2
+    title: "get-user-culture CLI verb"
+    feature: "user-profile-language-detection"
+    size: S
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-2.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-11]
+    ac: [AC-ERR]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: []
+
+  - id: story-user-profile-language-detection-3
+    title: "get-user-culture read-only MCP tool"
+    feature: "user-profile-language-detection"
+    size: M
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-3.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-12]
+    ac: [AC-04]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: [story-user-profile-language-detection-7]
+
+  - id: story-user-profile-language-detection-4a
+    title: "Entity-schema creator write path + Cultures array + NormalizeTitleLocalizations signature"
+    feature: "user-profile-language-detection"
+    size: L
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-4a.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-03, FR-04]
+    ac: [AC-02, AC-06, AC-08]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: []
+
+  - id: story-user-profile-language-detection-4b
+    title: "Column manager WRITE path; READ paths stay on host locale"
+    feature: "user-profile-language-detection"
+    size: M
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-4b.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-03]
+    ac: [AC-02, AC-08]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: []
+
+  - id: story-user-profile-language-detection-5
+    title: "Page / client-unit / resource / schema-designer-helper creation uses effective culture"
+    feature: "user-profile-language-detection"
+    size: L
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-5.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-03, FR-04]
+    ac: [AC-02, AC-06, AC-08]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: []
+
+  - id: story-user-profile-language-detection-6
+    title: "Section / application creation uses effective culture"
+    feature: "user-profile-language-detection"
+    size: M
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-6.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-03, FR-04]
+    ac: [AC-02, AC-06, AC-08]
+    depends_on: [story-user-profile-language-detection-1]
+    blocks: []
+
+  - id: story-user-profile-language-detection-7
+    title: "MCP guidance: detect-once / reuse / ask-on-failure"
+    feature: "user-profile-language-detection"
+    size: M
+    status: in-progress
+    file: spec/stories/story-user-profile-language-detection-7.md
+    prd: spec/prd/prd-user-profile-language-detection.md
+    adr: spec/adr/adr-user-profile-language-detection.md
+    fr: [FR-07, FR-08, FR-09]
+    ac: [AC-05, AC-07]
+    depends_on: [story-user-profile-language-detection-3]
+    blocks: []

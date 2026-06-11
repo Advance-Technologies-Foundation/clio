@@ -37,7 +37,8 @@ public sealed class SourceCodeSchemaCreateCommandTests {
 			.Returns(CreateNewSchemaUrl);
 		_serviceUrlBuilder.Build("ServiceModel/SourceCodeSchemaDesignerService.svc/SaveSchema")
 			.Returns(SaveSchemaUrl);
-		_command = new SourceCodeSchemaCreateCommand(_applicationClient, _serviceUrlBuilder, _logger);
+		_command = new SourceCodeSchemaCreateCommand(_applicationClient, _serviceUrlBuilder, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
 	}
 
 	[Test]
