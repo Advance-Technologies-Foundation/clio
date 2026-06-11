@@ -402,6 +402,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateValidatorControlBindings(body));
 		SchemaValidationResult validatorPlacementResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorBindingPlacement(body));
+		SchemaValidationResult validatorBindingShapeResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateValidatorBindingShape(body));
 		SchemaValidationResult validatorParamResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateValidatorParamResourceBindings(body));
 		SchemaValidationResult standardValidatorResult = RunContentValidation(
@@ -431,6 +433,7 @@ public sealed class PageSyncTool(
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
+			validatorBindingShapeResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,
@@ -446,6 +449,7 @@ public sealed class PageSyncTool(
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
+			validatorBindingShapeResult,
 			validatorParamResult,
 			standardValidatorResult,
 			validatorParamCompletenessResult,

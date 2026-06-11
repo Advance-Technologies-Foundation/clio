@@ -210,6 +210,7 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorBindingShape(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorFactoryShape(body), errors);
