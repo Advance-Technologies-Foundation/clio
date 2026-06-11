@@ -1,8 +1,152 @@
 # Clio Sprint Status
-# Updated by story-writer agent
-# Statuses: ready-for-dev | in-progress | review | done
+# Updated by story-writer agent; revised 2026-06-10 after adversarial review
+# Statuses: ready-for-dev | in-progress | review | done | deferred
+#
+# GATES before any story leaves ready-for-dev:
+#   - A-06 security sign-off (plaintext password + bearer cookie at rest) — ACCEPTED 2026-06-10 (Alex), gate CLEARED
+#   - OQ-01 (story 11) — RESOLVED 2026-06-10: NO-GO, no OAuth token->cookie; forms-auth only, OAuth-only fails closed
+#   - OQ-06 (story 12) — RESOLVED 2026-06-10: NuGet cookie store is internal; dedicated HttpClient (Decision 7 Option A)
+# Spike outcome simplified Story 2: OAuth branch removed (forms-auth sole path).
+# Recommended order: 1, 3 (parallel) -> 2 -> 4 -> 5, 6, 7, 8 -> 10 -> 9 (Mode A). Stories 11/12 done.
+# Note: story 7 also needs story 1. Dependency graph is acyclic.
+# PR (single, all stories): https://github.com/Advance-Technologies-Foundation/clio/pull/691
 
 stories:
+  - id: story-browser-session-handoff-1
+    title: "Safe-env Deadlock Fix — IInteractiveConsole Abstraction (fail-closed, all callers)"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: []
+    note: "Implemented + verified locally 2026-06-10 (8 new tests + full unit suite 3483 pass, 0 new failures). Not yet in a PR."
+    file: spec/stories/story-browser-session-handoff-1.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-11
+    title: "OAuthTokenLogin Spike (OQ-01) — confirm NetFW availability"
+    feature: "browser-session-handoff"
+    size: S
+    status: done
+    depends_on: []
+    blocks: [story-browser-session-handoff-2]
+    note: "RESOLVED 2026-06-10: NO-GO. OAuthTokenLogin needs an external-access token, not clio's client-credentials token, on both hosts. Forms-auth is the sole path; OAuth-only fails closed. OAuth branch removed from story 2."
+    file: spec/stories/story-browser-session-handoff-11.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-2
+    title: "ICreatioAuthClient — Forms-Auth (IsNetCore-aware) + OAuth branch"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: [story-browser-session-handoff-11, story-browser-session-handoff-12]
+    note: "Implemented + verified locally 2026-06-10 (10 unit tests; full unit suite 3504 pass, 0 new failures). Forms-auth sole path; dedicated IHttpClientFactory client; KnownRoute.AuthServiceLogin added. Not yet in a PR."
+    file: spec/stories/story-browser-session-handoff-2.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-12
+    title: "Cookie-Surface Spike (OQ-06) — does creatio.client expose its cookie jar?"
+    feature: "browser-session-handoff"
+    size: S
+    status: done
+    depends_on: []
+    blocks: [story-browser-session-handoff-2]
+    note: "RESOLVED 2026-06-10: Decision B. NuGet cookie store is internal CreatioClient.AuthCookie (no InternalsVisibleTo) — unreachable. Story 2 uses a dedicated IHttpClientFactory client; no ICreatioCookieProvider."
+    file: spec/stories/story-browser-session-handoff-12.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-3
+    title: "IBrowserSessionCache — On-Disk storageState Cache (owner-only, stable key)"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: []
+    note: "Implemented + verified locally 2026-06-10 (11 unit + 2 integration tests; full unit suite 3494 pass, 0 new failures). Windows owner-only ACL = documented limitation. Not yet in a PR."
+    file: spec/stories/story-browser-session-handoff-3.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-4
+    title: "IBrowserSessionService — Auth + Cache Orchestration"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: [story-browser-session-handoff-2, story-browser-session-handoff-3]
+    note: "Implemented + verified 2026-06-10 (7 unit tests; full suite 3511 pass, 0 new failures). Validation detects 200-login-page + 401."
+    file: spec/stories/story-browser-session-handoff-4.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-5
+    title: "GetBrowserSessionCommand — CLI Verb"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: [story-browser-session-handoff-4]
+    note: "Implemented + verified 2026-06-10 (4 tests incl. ReadmeChecker; full suite 3515 pass, 0 new). Docs (help/docs/Commands.md/WikiAnchors) created with the verb."
+    file: spec/stories/story-browser-session-handoff-5.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-6
+    title: "ClearBrowserSessionCommand — CLI Verb"
+    feature: "browser-session-handoff"
+    size: S
+    status: review
+    depends_on: [story-browser-session-handoff-4]
+    note: "Implemented + verified 2026-06-10 (3 tests incl. ReadmeChecker; full suite 3518 pass, 0 new). Docs created with the verb."
+    file: spec/stories/story-browser-session-handoff-6.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-7
+    title: "GetBrowserSessionTool — MCP Tool"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: [story-browser-session-handoff-1, story-browser-session-handoff-5]
+    note: "Implemented + verified 2026-06-10 (5 unit tests; full suite 3523 pass, 0 new; e2e builds). Structured-response pattern (SchemaNamePrefixTool), not BaseTool<T> — see story Notes. output-path not on MCP surface."
+    file: spec/stories/story-browser-session-handoff-7.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-8
+    title: "ClearBrowserSessionTool — MCP Tool"
+    feature: "browser-session-handoff"
+    size: S
+    status: review
+    depends_on: [story-browser-session-handoff-6]
+    note: "Implemented + verified 2026-06-10 (3 unit tests; full suite 3526 pass, 0 new; e2e builds). Destructive=true/Idempotent=true; structured-response pattern."
+    file: spec/stories/story-browser-session-handoff-8.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-9
+    title: "open-web-app --authenticated — CDP Cookie Injection (Mode A)"
+    feature: "browser-session-handoff"
+    size: L
+    status: review
+    depends_on: [story-browser-session-handoff-4]
+    note: "Implemented + live-verified 2026-06-10. CDP spike resolved (WebSocket Network.setCookie on a page target, DevToolsActivePort port discovery, loopback-only binding, direct Chromium launch). IAuthenticatedBrowserLauncher + IChromiumLocator; OpenAppCommand gains --authenticated; fails closed, unauthenticated path unchanged. 4 command unit tests + 4 ChromiumLocator unit tests; live DevTools navigation is a manual E2E gate. Validated: dotnet test --filter Category=Unit&(Module=Command|Module=Common)."
+    file: spec/stories/story-browser-session-handoff-9.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  - id: story-browser-session-handoff-10
+    title: "Documentation + MCP Capability Map"
+    feature: "browser-session-handoff"
+    size: M
+    status: review
+    depends_on: [story-browser-session-handoff-5, story-browser-session-handoff-6, story-browser-session-handoff-7, story-browser-session-handoff-8]
+    note: "Capability map updated 2026-06-10; per-command docs shipped with their verbs in stories 5/6 (ReadmeChecker gate, so docs landed in the same PR). full suite 3526 pass, 0 new."
+    file: spec/stories/story-browser-session-handoff-10.md
+    prd: spec/prd/prd-browser-session-handoff.md
+    adr: spec/adr/adr-browser-session-handoff.md
+
+  # --- user-profile-language-detection stories (from master) ---
   - id: story-user-profile-language-detection-1
     title: "Culture resolver service + singleton cache"
     feature: "user-profile-language-detection"

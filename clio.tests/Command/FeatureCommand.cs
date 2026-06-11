@@ -15,6 +15,7 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 [TestFixture]
 [Property("Module", "Command")]
+[NonParallelizable] // mutates Console.Out and starts ConsoleLogger._printThread
 internal class FeatureCommandCommandTests : BaseCommandTests<FeatureOptions> {
 
 	#region Setup/Teardown

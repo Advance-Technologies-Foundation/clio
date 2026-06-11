@@ -112,10 +112,25 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
+		// Dedicated forms-auth client for browser-session harvesting. UseCookies=false keeps the
+		// Set-Cookie response headers readable (the cookie jar would otherwise consume them), and
+		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
+		// rather than a followed login-page redirect.
+		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
-		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService);
+		// RealInteractiveConsole fails closed on redirected stdin (MCP stdio / CI), so this single
+		// composition-root binding is correct for both the interactive CLI and the per-environment
+		// MCP containers that ToolCommandResolver builds from BindingsModule.
+		IInteractiveConsole interactiveConsole = new RealInteractiveConsole();
+		services.AddSingleton<IInteractiveConsole>(interactiveConsole);
+		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService, interactiveConsole);
 		services.AddSingleton<ISettingsBootstrapService>(settingsBootstrapService);
 		services.AddSingleton<ISettingsRepository>(settingsRepository);
 		LogBootstrapDiagnostics(registrationProfile, bootstrapResult.Report);
@@ -184,6 +199,12 @@ public class BindingsModule {
 		}
 
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
+		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()
@@ -538,6 +559,8 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
+		services.AddTransient<GetBrowserSessionCommand>();
+		services.AddTransient<ClearBrowserSessionCommand>();
 		services.AddSingleton<ISystemServiceManager>(sp => {
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 				return new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>());

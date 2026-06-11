@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `61` tools
+- `62` tools
 - `50` prompts
 - `4` resources
-- `54` tools with explicit safety metadata
+- `55` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -419,6 +419,27 @@ What an external AI can practically do here:
 Special behavior:
 
 - `start-creatio` and `stop-creatio` are wired for MCP progress notifications
+
+### 10. Browser Session Handoff
+
+These tools let an external AI obtain an authenticated Creatio browser session so it can verify UI
+changes in a real browser without ever seeing the login page.
+
+- `get-browser-session` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`) — authenticates against a forms-auth environment and returns the absolute path to a Playwright-compatible `storageState` file in `session-file-path`. Args: `environment-name` (required), `force-refresh` (optional).
+- `clear-browser-session` (`ReadOnly=false`, `Destructive=true`, `Idempotent=true`) — deletes the cached session so the next call re-authenticates. Args: `environment-name` (required).
+
+What an external AI can practically do here:
+
+- get a `storageState` file path and feed it to Playwright's `storageState` option to open Creatio already logged in
+- force a fresh login or clear a stale session
+
+Important behavior and safety:
+
+- Cookie values are **never** returned over MCP — only the file path. The session file is written owner-only on disk.
+- `output-path` is intentionally CLI-only and not exposed on the MCP surface (an agent cannot redirect the bearer-token file).
+- Forms-auth environments only (login + password). OAuth-only environments return `success=false` with an error — there is no OAuth token-to-cookie exchange.
+- A Safe-flagged environment in the non-interactive MCP context fails closed with a structured error instead of hanging the stdio server.
+- `open-web-app --authenticated` (Mode A — launches a local desktop browser already signed in via CDP cookie injection) is intentionally **CLI-only and not an MCP tool**: it opens a GUI window on the operator's machine, which is meaningless for a headless/remote MCP server. The agent-facing surface for an authenticated session is `get-browser-session` (returns a `storageState` path); Mode A is a human convenience built on the same session machinery.
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

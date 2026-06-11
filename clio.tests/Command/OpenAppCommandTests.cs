@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
+using Clio.Common.BrowserSession;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -26,6 +29,8 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 	private ISettingsRepository _settingsRepository;
 	private IWebBrowser _webBrowser;
 	private ILogger _logger;
+	private IBrowserSessionService _browserSessionService;
+	private IAuthenticatedBrowserLauncher _authenticatedBrowserLauncher;
 
 	#endregion
 
@@ -345,6 +350,108 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 		_webBrowser.Received(1).OpenUrl(environment.Uri);
 	}
 
+	[Test]
+	[Description("Execute without --authenticated leaves existing behavior unchanged: the browser-session service is never consulted (AC-02).")]
+	public void Execute_ShouldNotCallBrowserSession_WhenAuthenticatedFlagAbsent() {
+		// Arrange
+		OpenAppOptions options = new() { Environment = "test-env", Authenticated = false };
+		EnvironmentSettings environment = new() {
+			Uri = "https://test.creatio.com", Login = "admin", Password = "password"
+		};
+		_settingsRepository.GetEnvironment(options).Returns(environment);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the unauthenticated path opens the browser as before");
+		_ = _browserSessionService.DidNotReceiveWithAnyArgs().GetSessionPathAsync(default, default, default, default);
+		_ = _authenticatedBrowserLauncher.DidNotReceiveWithAnyArgs().LaunchAsync(default, default, default);
+	}
+
+	[Test]
+	[Description("Execute with --authenticated obtains a session and injects it before launch: GetSessionPathAsync is called, then LaunchAsync, and the plain browser open is skipped (AC-01).")]
+	public void Execute_ShouldCallGetSessionPathAsync_WhenAuthenticatedFlagIsSet() {
+		// Arrange
+		OpenAppOptions options = new() { Environment = "test-env", Authenticated = true };
+		EnvironmentSettings environment = new() {
+			Uri = "https://test.creatio.com", Login = "admin", Password = "password"
+		};
+		_settingsRepository.GetEnvironment(options).Returns(environment);
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because a session was obtained and injected successfully");
+		Received.InOrder(() => {
+			_browserSessionService.GetSessionPathAsync(environment, Arg.Any<string>(), Arg.Any<bool>(),
+				Arg.Any<CancellationToken>());
+			_authenticatedBrowserLauncher.LaunchAsync(environment, Arg.Any<string>(), Arg.Any<CancellationToken>());
+		});
+		_webBrowser.DidNotReceiveWithAnyArgs().OpenUrl(default);
+	}
+
+	[Test]
+	[Description("Execute with --authenticated does not launch the browser when session retrieval fails: an auth exception is reported and LaunchAsync is never called (AC-05).")]
+	public void Execute_ShouldNotLaunchChromium_WhenGetSessionThrows() {
+		// Arrange
+		OpenAppOptions options = new() { Environment = "test-env", Authenticated = true };
+		EnvironmentSettings environment = new() {
+			Uri = "https://test.creatio.com", Login = "admin", Password = "password"
+		};
+		_settingsRepository.GetEnvironment(options).Returns(environment);
+		_browserSessionService.GetSessionPathAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(),
+				Arg.Any<bool>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<string>(
+				CreatioAuthenticationException.InvalidCredentials("https://test.creatio.com")));
+		ILogger mockLogger = Substitute.For<ILogger>();
+		_command.Logger = mockLogger;
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because authentication failed before any browser could be launched");
+		_ = _authenticatedBrowserLauncher.DidNotReceiveWithAnyArgs().LaunchAsync(default, default, default);
+		mockLogger.ReceivedWithAnyArgs(1).WriteError(default);
+	}
+
+	[Test]
+	[Description("Execute with --authenticated exits non-zero with an actionable error when no Chromium-based browser is found, instead of silently falling back (AC-04).")]
+	public void Execute_ShouldReturnError_WhenChromiumNotFound() {
+		// Arrange
+		OpenAppOptions options = new() { Environment = "test-env", Authenticated = true };
+		EnvironmentSettings environment = new() {
+			Uri = "https://test.creatio.com", Login = "admin", Password = "password"
+		};
+		_settingsRepository.GetEnvironment(options).Returns(environment);
+		_authenticatedBrowserLauncher.LaunchAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(),
+				Arg.Any<CancellationToken>())
+			.Returns(Task.FromException(new ChromiumNotFoundException(
+				"Error: Chromium binary not found — ensure a Chromium-based browser is installed")));
+		ILogger mockLogger = Substitute.For<ILogger>();
+		_command.Logger = mockLogger;
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, "because a missing browser must fail rather than open an unauthenticated window");
+		mockLogger.Received(1).WriteError(Arg.Is<string>(s => s.Contains("Chromium binary not found")));
+	}
+
+	[Test]
+	[Description("OpenAppCommand should be resolvable from the DI composition root so that open-web-app never throws InvalidOperationException at runtime.")]
+	public void OpenAppCommand_ShouldBeResolvable_WhenCompositionRootIsBuilt() {
+		// Arrange & Act
+		Action act = () => Container.GetRequiredService<OpenAppCommand>();
+
+		// Assert
+		act.Should().NotThrow("because IChromiumLocator and IAuthenticatedBrowserLauncher must be " +
+			"registered so that open-web-app works for all invocations, not just --authenticated ones");
+	}
+
 	[SetUp]
 	public override void Setup() {
 		base.Setup();
@@ -355,8 +462,16 @@ public class OpenAppCommandTests : BaseCommandTests<OpenAppOptions>{
 		_processExecutor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(Task.FromResult(new ProcessLaunchResult { Started = true }));
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_browserSessionService = Substitute.For<IBrowserSessionService>();
+		_browserSessionService.GetSessionPathAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(),
+				Arg.Any<bool>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult("/tmp/clio-session.storageState.json"));
+		_authenticatedBrowserLauncher = Substitute.For<IAuthenticatedBrowserLauncher>();
+		_authenticatedBrowserLauncher.LaunchAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(),
+				Arg.Any<CancellationToken>())
+			.Returns(Task.CompletedTask);
 		_command = new OpenAppCommand(_applicationClient, _environmentSettings, _webBrowser, _processExecutor,
-			_settingsRepository);
+			_settingsRepository, _browserSessionService, _authenticatedBrowserLauncher);
 	}
 
 	#endregion
