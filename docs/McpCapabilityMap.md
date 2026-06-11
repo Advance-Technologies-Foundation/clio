@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `60` tools
+- `61` tools
 - `50` prompts
 - `4` resources
-- `53` tools with explicit safety metadata
+- `54` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -128,6 +128,7 @@ Structured domain responses:
 - `component-info`
 - `list-apps`
 - `get-app-info`
+- `find-app`
 - `create-app`
 - `delete-app`
 - `assert-infrastructure`
@@ -193,6 +194,8 @@ This area gives the AI a clean application-level view of the platform.
   Return installed applications as structured JSON.
 - `get-app-info`
   Return application context, packages, and related metadata for a single installed app.
+- `find-app`
+  Find applications and their sections in a single call by name, code, or substring pattern. Maps an imprecise app name to its real code without an N+1 `list-apps` + per-app `list-app-sections` scan.
 - `create-app`
   Create a Creatio application and return its structured context.
 - `create-app-section`
@@ -211,6 +214,7 @@ This area gives the AI a clean application-level view of the platform.
 What an external AI can practically do here:
 
 - enumerate installed apps
+- map a fuzzy or partial app name to its real code (and see its sections) in a single call
 - inspect one app precisely before modifying or replacing it
 - create new apps from a template
 - add, update, list, and remove sections inside an existing app
@@ -343,12 +347,19 @@ This part is small but important because many other tools depend on it.
   Return registered local environments and settings as structured JSON.
 - `get-pkg-list`
   Read remote package inventory from the selected environment.
+- `get-user-culture`
+  Resolve the logged-in user's profile culture (e.g. `en-US`, `uk-UA`) from
+  `ApplicationInfoService.svc/GetApplicationInfo` (no cliogate). Read-only, non-destructive.
+  Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
+  entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
+  which language to use instead of silently defaulting.
 
 What an external AI can practically do here:
 
 - onboard a target environment into clio configuration
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
+- detect the profile language to apply to created entity names/labels/captions
 
 Important note:
 

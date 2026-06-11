@@ -65,9 +65,12 @@ public sealed class ComponentInfoTool(
 	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
+		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
+		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
+		"When resolvedFrom is 'latest-fallback' the version is unknown: do not silently assume the component set — tell the user and request confirmation before proceeding. " +
 		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
@@ -192,8 +195,9 @@ public sealed class ComponentInfoTool(
 	/// <see cref="ComponentInfoCommand"/>'s resolution order so the MCP tool and the CLI verb
 	/// stay in lockstep:
 	/// <list type="number">
-	/// <item>explicit <c>version</c> — authoritative (<see cref="ComponentInfoResolution.MapResolvedFrom"/>
-	/// downgrades it to <c>latest-fallback</c> automatically if the catalog ends up loading a different version);</item>
+	/// <item>explicit <c>version</c> — authoritative; if the CDN has no catalog for that version
+	/// <see cref="ComponentInfoResolution.MapResolvedFrom"/> maps to <c>environment-superset</c>
+	/// (known version, approximate catalog) rather than <c>latest-fallback</c>;</item>
 	/// <item><c>environment-name</c>/<c>uri</c> — probe cliogate <c>GetSysInfo</c> on that environment;</item>
 	/// <item>neither — <c>latest</c> with a non-authoritative source so the response carries <c>latest-fallback</c>.</item>
 	/// </list>
@@ -529,9 +533,18 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets or sets the resolver tier that produced <see cref="ResolvedTargetVersion"/>.
-	/// Permitted values: <c>"environment"</c> (resolved from cliogate GetSysInfo),
-	/// <c>"latest-fallback"</c> (env unknown, probe failed, or version unparseable). AI should
-	/// treat <c>"latest-fallback"</c> as a superset of the true target environment.
+	/// Permitted values:
+	/// <list type="bullet">
+	/// <item><c>"environment"</c> — version resolved from cliogate GetSysInfo and the catalog
+	/// matched that exact version; treat as authoritative.</item>
+	/// <item><c>"environment-superset"</c> — version resolved from the environment (known), but
+	/// the CDN had no catalog for that version so <c>latest</c> was served; a soft caveat is
+	/// emitted in <see cref="VersionWarning"/>. Verify that critical component types exist
+	/// before proceeding.</item>
+	/// <item><c>"latest-fallback"</c> — environment unknown, probe failed, or version
+	/// unparseable; <c>latest</c> is a superset of the true environment. Hard stop: confirm
+	/// version with the user before any modification.</item>
+	/// </list>
 	/// </summary>
 	[JsonPropertyName("resolvedFrom")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -539,12 +552,14 @@ public sealed class ComponentInfoResponse {
 
 	/// <summary>
 	/// Gets the human-readable caveat emitted whenever <see cref="ResolvedFrom"/> is
-	/// <c>latest-fallback</c>. Derived from <see cref="ResolvedFrom"/> so every response
-	/// shape (list / detail / not-found, web only) carries it without each branch having
-	/// to set it, and so the MCP tool and CLI verb stay in lockstep. Omitted from the wire
-	/// shape when the catalog matched the target version (<c>environment</c> tier) or when
-	/// the flavor reports no version markers (mobile). See
-	/// <see cref="ComponentInfoResolution.LatestFallbackWarning"/> for the rationale.
+	/// <c>"environment-superset"</c> (soft caveat: version known, catalog approximate) or
+	/// <c>"latest-fallback"</c> (hard stop: version unknown). Derived from
+	/// <see cref="ResolvedFrom"/> so every response shape (list / detail / not-found, web
+	/// only) carries it without each branch having to set it, and so the MCP tool and CLI
+	/// verb stay in lockstep. Omitted from the wire shape when <see cref="ResolvedFrom"/>
+	/// is <c>"environment"</c> (exact catalog match) or when the flavor reports no version
+	/// markers (mobile). See <see cref="ComponentInfoResolution.LatestFallbackWarning"/> and
+	/// <see cref="ComponentInfoResolution.EnvironmentSupersetWarning"/> for the warning text.
 	/// </summary>
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

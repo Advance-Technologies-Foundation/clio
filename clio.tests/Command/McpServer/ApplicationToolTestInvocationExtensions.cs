@@ -37,6 +37,12 @@ internal static class ApplicationToolTestInvocationExtensions {
 	public static Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		this ApplicationSectionCreateTool tool,
 		ApplicationSectionCreateArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionCreate(args, server, requestContext: null, cancellationToken: default);
+
+	public static Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
+		this ApplicationSectionCreateTool tool,
+		ApplicationSectionCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
 		CancellationToken cancellationToken) =>
 		tool.ApplicationSectionCreate(args, server, requestContext: null, cancellationToken: cancellationToken);

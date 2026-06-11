@@ -28,7 +28,7 @@ public sealed class DeleteAppSectionCommandTests : BaseCommandTests<DeleteAppSec
 	}
 
 	[TearDown]
-	public void TearDown() {
+	public override void TearDown() {
 		_sectionDeleteService.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}

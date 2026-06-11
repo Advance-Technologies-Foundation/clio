@@ -28,6 +28,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
 		 Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (the wire shape places `environment-name` inside the required `args` object).
 		 Do not pass application filters; this tool always returns the full installed application list for the selected environment.
+		 Prefer `{FindAppTool.FindAppToolName}` when you only have an imprecise or partial app name: it matches application name, code, description, and section captions and returns each matching app WITH its sections in a single call, so you usually do not need a separate per-app section lookup.
 		 Use this discovery step before `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` when the target app is not fully known.
 		 """;
 
@@ -51,7 +52,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass exactly one identifier: `id` when you already have the installed application GUID, or `code` when you have the installed application code.
 		 Do not include both identifiers in the same call.
-		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` when the target app is not fully known.
+		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` (or `{FindAppTool.FindAppToolName}`, which maps an imprecise app name to a code and returns its sections in one call) when the target app is not fully known.
 		 """;
 
 	/// <summary>
@@ -104,6 +105,7 @@ public static class ApplicationPrompt {
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`, generating the main entity `_MobileFormPage` and `_MobileListPage` alongside the web pages.
 		 When the user's plan is web-only (no mobile app target), proactively set `with-mobile-pages` to `false` before calling `create-app` so the mobile pages are not created and do not need manual cleanup afterwards.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the application name and captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`.
 		 """;
 
 	/// <summary>
@@ -136,10 +138,11 @@ public static class ApplicationPrompt {
 		 Provide `caption` as a plain scalar string.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
-		 If creation fails with `Failed to create section ... is already bound to an existing section`, the chosen `entity-schema-name` already backs another section. Do not retry with the same entity; call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections, then reuse the existing section or choose a different entity.
+		 The section `code` is generated from the caption; a non-Latin caption (for example `Контакти`) cannot produce a valid Latin code, so pass an explicit `code` such as `Contacts`. Several sections may target the same `entity-schema-name`, so reuse is allowed; the object must exist, and a missing object fails with a clear `does not exist` error. If creation reports that a section with that code already exists, change the caption or pass a different `code`, or call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections.
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the section caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 
 	/// </summary>

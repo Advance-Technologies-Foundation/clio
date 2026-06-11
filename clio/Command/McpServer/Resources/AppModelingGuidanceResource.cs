@@ -26,6 +26,12 @@ public sealed class AppModelingGuidanceResource {
 			Text = """
 			       clio MCP app modeling guide
 
+			       Profile language (detect once, reuse, ask on failure)
+			       - Before creating ANY entity (application, object, page, section, lookup, column), call `get-user-culture` ONCE per session to detect the connected user's profile language.
+			       - Reuse that detected culture for all generated names, labels, and captions for the rest of the session; do not re-detect per entity (the server caches it per environment). Re-detect only when the active environment changes.
+			       - If `get-user-culture` returns `success:false`, ASK the user which language to use before creating anything. Do NOT silently fall back to the host machine locale or to `en-US`.
+			       - To force a specific language for one creation, pass `caption-culture` (precedence: `caption-culture` > detected profile culture > `en-US`).
+
 			       Core contract
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.
@@ -48,6 +54,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Use `update-app-section` when the workflow must change metadata of an existing section instead of creating a new one.
 			       - Prefer `sync-schemas` for multi-step schema work and `sync-pages` for multi-page saves.
 			       - Canonical new-app entity flow: `create-app` -> `sync-schemas` -> `get-app-info`.
+			       - Prefer `find-app` as the discovery front door for the existing-app flows below: it searches app name/code/description and section captions and returns matching apps WITH their sections in one call, so you can usually skip the separate `list-apps` and `list-app-sections` steps when mapping an imprecise name to a code.
 			       - Canonical existing-app section flow: `list-apps` -> `get-app-info` -> `create-app-section` -> `get-app-info`.
 			       - Canonical existing-section metadata update flow: `list-apps` -> `get-app-info` -> `update-app-section`.
 			       - Canonical section discovery flow: `list-apps` -> `get-app-info` -> `list-app-sections`.

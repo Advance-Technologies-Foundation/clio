@@ -31,6 +31,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apps-list"></a>
 <a id="lia"></a>
 - [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
+<a id="find-app"></a>
+- [`find-app`](docs/commands/find-app.md) - Find installed applications and their sections by name, code, or pattern
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
@@ -554,6 +556,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-component-info"></a>
 <a id="component-info"></a>
 - [`get-component-info`](docs/commands/get-component-info.md) - Get curated Freedom UI component metadata by component type or list the catalog, `component-info`
+<a id="get-user-culture"></a>
+<a id="profile-language"></a>
+- [`get-user-culture`](docs/commands/get-user-culture.md) - Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, `profile-language`
 <a id="healthcheck"></a>
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`

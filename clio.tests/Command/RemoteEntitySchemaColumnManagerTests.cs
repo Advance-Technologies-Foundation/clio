@@ -30,6 +30,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private IRemoteEntitySchemaDesignerClient _designerClient;
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILogger _logger;
+	private ICurrentUserCultureResolverFactory _cultureResolverFactory;
+	private Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
 	private EntityDesignSchemaDto _savedSchema;
@@ -41,6 +43,16 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_runtimeEntitySchemaReader = Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>();
 		_logger = Substitute.For<ILogger>();
+		_cultureResolverFactory = Substitute.For<ICurrentUserCultureResolverFactory>();
+		ICurrentUserCultureResolver cultureResolver = Substitute.For<ICurrentUserCultureResolver>();
+		// Default: profile culture unresolved -> effective culture degrades to en-US (parity with
+		// the previous host-locale behavior on CI). Individual tests can re-stub for uk-UA.
+		cultureResolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
+			.Returns(System.Threading.Tasks.Task.FromResult(
+				CultureResolution.Failed(CurrentUserCultureResolver.ReasonUserCultureMissing)));
+		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(cultureResolver);
+		_settingsRepository = Substitute.For<Clio.UserEnvironment.ISettingsRepository>();
+		_settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -101,7 +113,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_defaultValueSourceResolver,
 			_designerClient,
 			_runtimeEntitySchemaReader,
-			_logger);
+			_logger,
+			_cultureResolverFactory,
+			_settingsRepository);
 	}
 
 	[Test]
@@ -335,6 +349,59 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "no uk-UA entry should be synthesized when only en-US was explicitly provided");
 		savedColumn.Caption.Select(item => item.CultureName).Should().OnlyHaveUniqueItems(
 			because: "caption must not contain duplicate culture entries");
+	}
+
+	[Test]
+	[Description("Anchors a written column caption to the resolved profile culture (uk-UA) when the resolver succeeds (AC-02, WRITE path).")]
+	public void SetLocalizableValue_ShouldUseEffectiveCulture_WhenProfileResolved() {
+		// Arrange — the profile culture resolves to uk-UA for this run.
+		ICurrentUserCultureResolver resolver = Substitute.For<ICurrentUserCultureResolver>();
+		resolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
+			.Returns(System.Threading.Tasks.Task.FromResult(CultureResolution.Resolved("uk-UA")));
+		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "UsrVehicleStatus",
+			Title = "Статус"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrVehicleStatus");
+		savedColumn.Caption.Should().Contain(item => item.CultureName == "uk-UA" && item.Value == "Статус",
+			because: "a resolved profile culture must anchor the written column caption (AC-02)");
+	}
+
+	[Test]
+	[Description("Reads/displays column captions using the host locale, not the resolved profile culture (Mi-3, READ path).")]
+	public void GetColumnProperties_ShouldUseHostLocale_WhenReadingColumns() {
+		// Arrange — column has both en-US and uk-UA captions; the host locale is uk-UA.
+		using CultureScope cultureScope = new("uk-UA");
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.Caption = [
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "en-US", Value = "Name EN" },
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "uk-UA", Value = "Імʼя" }
+		];
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Name"
+		});
+
+		// Assert
+		result.Title.Should().Be("Імʼя",
+			because: "READ/display paths format output for the operator's console using the host locale (Mi-3), not the profile culture");
 	}
 
 	[Test]

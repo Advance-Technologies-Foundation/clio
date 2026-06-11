@@ -98,10 +98,44 @@ public sealed class PageBusinessRuleToolE2ETests {
 	}
 
 	[Test]
-	[Description("Creates a page business rule for Contact_FormPage in the Custom package through the real MCP server and Creatio environment.")]
+	[Description("Binds a system-variable page condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds system-variable conditions")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-sys-value-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rule"] = CreateSysValueConditionRule()
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid system-variable page condition payloads should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue page payload");
+	}
+
+	[Test]
+	[Description("Creates a page business rule for Contacts_FormPage in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool creates a Contact page rule")]
-	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Reads Contact_FormPage, builds a valid page show/hide rule from its bundle, and verifies that Creatio command execution succeeds.")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Reads Contacts_FormPage, builds a valid page show/hide rule from its bundle, and verifies that Creatio command execution succeeds.")]
 	public async Task BusinessRuleCreate_Should_Create_Contact_Page_Rule_In_Creatio() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -116,7 +150,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			environmentName);
-		// Intentional destructive fixture: Contact_FormPage in Custom is the canonical sandbox target.
+		// Intentional destructive fixture: Contacts_FormPage in Custom is the canonical sandbox target.
 		// There is no business-rule delete action yet, so each run writes a uniquely captioned rule and verifies readback.
 		string caption = $"MCP E2E Contact page {Guid.NewGuid():N}";
 
@@ -148,7 +182,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			environmentName,
 			packageName,
 			target.RootSchemaUId,
-			caption,
+			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement",
 			[target.ElementName],
 			target.AttributeName,
@@ -199,7 +233,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		const string contactPageSchemaName = "Contact_FormPage";
+		const string contactPageSchemaName = "Contacts_FormPage";
 		CallToolResult callResult = await session.CallToolAsync(
 			PageGetTool.ToolName,
 			new Dictionary<string, object?> {
@@ -211,7 +245,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			cancellationToken);
 		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
 		response.Success.Should().BeTrue(
-			because: "the sandbox must expose Contact_FormPage so the destructive page business-rule test can build a valid rule from its bundle");
+			because: "the sandbox must expose Contacts_FormPage so the destructive page business-rule test can build a valid rule from its bundle");
 		response.Files.Should().NotBeNull(
 			because: "get-page should materialize the Contact page bundle for rule target discovery");
 		File.Exists(response.Files.BundleFile).Should().BeTrue(
@@ -239,7 +273,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 		PageAttributeCandidate? preferred = candidates.FirstOrDefault(candidate =>
 			string.Equals(candidate.ColumnName, "Name", StringComparison.OrdinalIgnoreCase));
 		(preferred ?? candidates.FirstOrDefault()).Should().NotBeNull(
-			because: "Contact_FormPage should expose at least one datasource-bound Contact attribute for page business-rule conditions");
+			because: "Contacts_FormPage should expose at least one datasource-bound Contact attribute for page business-rule conditions");
 		return (preferred ?? candidates.First()).AttributeName;
 	}
 
@@ -255,7 +289,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			.Select(obj => obj["name"]?.GetValue<string>())
 			.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
 		firstNamedElement.Should().NotBeNullOrWhiteSpace(
-			because: "Contact_FormPage viewConfig should expose at least one named element for show/hide actions");
+			because: "Contacts_FormPage viewConfig should expose at least one named element for show/hide actions");
 		return firstNamedElement!;
 	}
 
@@ -342,6 +376,30 @@ public sealed class PageBusinessRuleToolE2ETests {
 				new Dictionary<string, object?> {
 					["type"] = "show-element",
 					["items"] = new object[] { "EscalateButton" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateSysValueConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Hide reminder when due on or before today",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("PDS_UsrDueDate"),
+						["comparisonType"] = "less-than-or-equal",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "SysValue",
+							["sysValueName"] = "CurrentDate"
+						}
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "hide-element",
+					["items"] = new object[] { "ReminderLabel" }
 				}
 			}
 		};

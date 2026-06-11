@@ -105,8 +105,8 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
-	[Description("When the catalog returns a different version than what was requested the response says latest-fallback.")]
-	public async Task Reports_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the requested version is known but its exact catalog is unavailable, the client serves 'latest' and the response reports 'environment-superset' with a soft caveat — the version is not uncertain but the catalog is approximate.")]
+	public async Task Reports_EnvironmentSuperset_When_Version_Known_But_Catalog_Falls_Back() {
 		using CapturedLogger logger = new();
 		ComponentInfoCommand command = CreateCommand(logger, fallbackVersion: "latest");
 
@@ -115,8 +115,12 @@ public sealed class ComponentInfoCommandTests {
 
 		exit.Should().Be(0);
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
-		parsed.ResolvedTargetVersion.Should().Be("latest");
-		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromLatestFallback);
+		parsed.ResolvedTargetVersion.Should().Be("latest",
+			because: "the response must echo the catalog version actually loaded by the client");
+		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironmentSuperset,
+			because: "the version was known but the exact catalog was absent, so 'environment-superset' signals an approximate catalog");
+		parsed.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "a soft caveat must be surfaced so the agent checks critical components against the actual environment");
 	}
 
 	[Test]

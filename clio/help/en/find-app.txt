@@ -1,0 +1,59 @@
+COMMAND TYPE
+    Application commands
+
+NAME
+    find-app - Find installed applications and their sections in a Creatio environment by name, code, or pattern
+
+SYNOPSIS
+    clio find-app [OPTIONS]
+
+DESCRIPTION
+    Finds installed applications AND their sections behind a single call. Issues exactly two
+    DataService queries: one SysInstalledApp query for all applications, then one batch
+    ApplicationSection query with an OR-grouped ApplicationId filter that covers all candidate
+    applications at once. Results are filtered by the optional --search-pattern and/or --code;
+    sections are grouped in memory by ApplicationId. When both --code and --search-pattern are
+    supplied, both conditions must hold (AND semantics).
+
+    Use this to map an imprecise application name (for example "Customer Request Management")
+    to its real code (for example CrtCaseManagementApp) instead of calling list-apps and then
+    list-app-sections once per application.
+
+OPTIONS
+    --search-pattern       Case-insensitive substring matched against application
+                           name, code, description, and section captions/codes
+    --code                 Exact installed application code to match
+    --json                 Output as indented JSON instead of a table
+
+    Environment options are also available:
+    -e, --Environment      Environment name from the registered configuration
+    -u, --uri              Application URI
+    -l, --Login            User login
+    -p, --Password         User password
+
+EXAMPLES
+    # Find applications and sections matching a fuzzy term
+    clio find-app -e dev --search-pattern case
+
+    # Resolve a single application by exact code
+    clio find-app -e dev --code CrtCaseManagementApp
+
+    # List every application with its sections as JSON
+    clio find-app -e dev --json
+
+NOTES
+    - exactly two DataService queries are issued regardless of the number of installed apps
+    - if the sections query fails, applications are returned without sections and a warning is logged
+    - when --code and --search-pattern are both supplied, both conditions must hold
+    - an empty search returns all applications (each with its sections)
+    - the MCP find-app tool returns the same data as a structured { success, applications } envelope;
+      MCP callers should use the structured fields instead of parsing the CLI text form
+    - the returned application code and section code can be used directly for follow-up calls
+      such as get-app-info, list-app-sections, or create-app-section
+    - does not require cliogate
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    list-apps, get-app-info, list-app-sections, find-entity-schema
