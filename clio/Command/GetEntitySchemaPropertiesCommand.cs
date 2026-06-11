@@ -13,7 +13,9 @@ namespace Clio.Command;
 [Verb("get-entity-schema-properties", HelpText = "Get properties from a remote Creatio entity schema")]
 public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 {
-	[Option("package", Required = false, HelpText = "Target package name")]
+	[Option("package", Required = false, HelpText =
+		"Target package name. When omitted, returns the merged/effective schema with columns from ALL packages " +
+		"(including customizations made in other packages). When provided, returns only that package layer's slice.")]
 	public string Package { get; set; }
 
 	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
@@ -34,6 +36,8 @@ public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 
 /// <summary>
 /// Prints summary properties and grouped column listings for a remote entity schema.
+/// When <see cref="GetEntitySchemaPropertiesOptions.Package"/> is omitted, the merged/effective schema is
+/// returned (columns from every package layer); when supplied, only that package layer's slice is returned.
 /// </summary>
 public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertiesOptions>
 {
@@ -63,9 +67,6 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 
 	private static void Validate(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options.Package));
-		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
 		}
@@ -83,7 +84,7 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 		_logger.WriteInfo($"Primary display column: {FormatText(properties.PrimaryDisplayColumnName)}");
 		_logger.WriteInfo($"Own columns: {properties.OwnColumnCount}");
 		_logger.WriteInfo($"Inherited columns: {properties.InheritedColumnCount}");
-		_logger.WriteInfo($"Indexes: {properties.IndexesCount}");
+		_logger.WriteInfo($"Indexes: {FormatNullableCount(properties.IndexesCount)}");
 		_logger.WriteInfo($"Track changes in DB: {FormatBoolean(properties.TrackChangesInDb)}");
 		_logger.WriteInfo($"DB view: {FormatBoolean(properties.DbView)}");
 		_logger.WriteInfo($"SSP available: {FormatBoolean(properties.SspAvailable)}");
@@ -118,6 +119,14 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
+	}
+
+	private static string FormatNullableCount(int? value) {
+		return value.HasValue ? value.Value.ToString() : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

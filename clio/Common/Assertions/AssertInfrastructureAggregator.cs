@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading.Tasks;
 using Clio.Common.Kubernetes;
+using Clio.UserEnvironment;
 
 namespace Clio.Common.Assertions;
 
@@ -37,6 +38,8 @@ public sealed class AssertInfrastructureAggregator : IAssertInfrastructureAggreg
 	private readonly ILocalDatabaseAssertion _localDatabaseAssertion;
 	private readonly ILocalRedisAssertion _localRedisAssertion;
 	private readonly IKubernetesClient _kubernetesClient;
+	private readonly ISettingsRepository _settingsRepository;
+	private readonly System.IO.Abstractions.IFileSystem _fileSystem;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="AssertInfrastructureAggregator"/> class.
@@ -49,7 +52,9 @@ public sealed class AssertInfrastructureAggregator : IAssertInfrastructureAggreg
 		IFsPermissionAssertion fsPermissionAssertion,
 		ILocalDatabaseAssertion localDatabaseAssertion,
 		ILocalRedisAssertion localRedisAssertion,
-		IKubernetesClient kubernetesClient)
+		IKubernetesClient kubernetesClient,
+		ISettingsRepository settingsRepository,
+		System.IO.Abstractions.IFileSystem fileSystem)
 	{
 		_contextValidator = contextValidator ?? throw new ArgumentNullException(nameof(contextValidator));
 		_k8DatabaseAssertion = k8DatabaseAssertion ?? throw new ArgumentNullException(nameof(k8DatabaseAssertion));
@@ -59,6 +64,8 @@ public sealed class AssertInfrastructureAggregator : IAssertInfrastructureAggreg
 		_localDatabaseAssertion = localDatabaseAssertion ?? throw new ArgumentNullException(nameof(localDatabaseAssertion));
 		_localRedisAssertion = localRedisAssertion ?? throw new ArgumentNullException(nameof(localRedisAssertion));
 		_kubernetesClient = kubernetesClient ?? throw new ArgumentNullException(nameof(kubernetesClient));
+		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 	}
 
 	/// <inheritdoc />
@@ -73,13 +80,59 @@ public sealed class AssertInfrastructureAggregator : IAssertInfrastructureAggreg
 		string status = ComputeStatus(k8Result, localResult, filesystemResult, databaseCandidates);
 		int exitCode = status == "pass" ? 0 : 1;
 		string summary = BuildSummary(status, k8Result, localResult, filesystemResult, databaseCandidates.Count);
+		AssertInfrastructureProductsPath productsPath = BuildProductsPath();
 
 		return new AssertInfrastructureResult(
 			status,
 			exitCode,
 			summary,
 			new AssertInfrastructureSections(k8Result, localResult, filesystemResult),
-			databaseCandidates);
+			databaseCandidates,
+			productsPath);
+	}
+
+	private AssertInfrastructureProductsPath BuildProductsPath()
+	{
+		string productsFolder;
+		try
+		{
+			productsFolder = _settingsRepository.GetCreatioProductsFolder();
+		}
+		catch (Exception)
+		{
+			productsFolder = null;
+		}
+
+		if (string.IsNullOrWhiteSpace(productsFolder))
+		{
+			return new AssertInfrastructureProductsPath(
+				"not-configured",
+				productsFolder,
+				false,
+				"No 'creatio-products' folder is configured in clio appsettings.json. Set it to the directory that holds Creatio build archives before using deploy-creatio.");
+		}
+
+		bool exists;
+		try
+		{
+			exists = _fileSystem.Directory.Exists(productsFolder);
+		}
+		catch (Exception)
+		{
+			exists = false;
+		}
+
+		return exists
+			? new AssertInfrastructureProductsPath(
+				"ok",
+				productsFolder,
+				true,
+				$"Configured 'creatio-products' folder exists: {productsFolder}.")
+			: new AssertInfrastructureProductsPath(
+				"missing",
+				productsFolder,
+				false,
+				$"The configured 'creatio-products' folder does not exist: {productsFolder}. Fix the path in clio appsettings.json or place build archives there. Use list-creatio-builds to inspect available builds.");
 	}
 
 	private async Task<AssertionResult> ExecuteSectionAsync(

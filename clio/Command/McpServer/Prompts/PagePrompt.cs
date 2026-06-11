@@ -33,15 +33,16 @@ public static class PagePrompt {
 		 `{PageGetTool.ToolName}` writes three files to `.clio-pages/<schema-name>/`: `body.js` (editable body), `bundle.json` (merged hierarchy), `meta.json` (page metadata). Read them via `files.bodyFile`, `files.bundleFile`, `files.metaFile` in the response.
 		 Read layout and container hierarchy from `bundle.json` at `files.bundleFile`.
 		 When `bundle.json` contains unfamiliar `crt.*` types, call `{ComponentInfoTool.ToolName}` with `component-type` set to that type before editing nested config or children.
+		 Before inserting ANY new component, call `{ComponentInfoTool.ToolName}` with `component-type` set to the exact type you intend to use (and `environment-name` set to the page's environment) and confirm it exists: `{PageSyncTool.ToolName}`/`update-page` accept an unknown `crt.*` type and report success, but Freedom UI renders it as a broken placeholder box. Never invent or guess a component type from memory. If no existing component matches the requirement, stop and ask the user whether to use one of the existing components or build a custom one — do not silently substitute or fabricate a type.
 		 Read page metadata from `files.metaFile`, and treat `files.bodyFile` as the editable JavaScript source of truth.
 		 Do not send bundle data back to page tools; only the content of `body.js` is the writable payload.
 		 When you need to edit the page, read `files.bodyFile`, modify it, and send the updated body through `{PageSyncTool.ToolName}` as the canonical page write path.
 		 Keep `{PageSyncTool.ToolName}` `validate` at its default `true`, and enable `verify` only when the workflow needs explicit server read-back inside the same tool call.
 		 Before passing `resources`, you must call `{GuidanceGetTool.ToolName}` with `name` set to `page-schema-resources`. The body containing `$Resources.Strings.*` or `#ResourceString(...)#` is NOT sufficient justification. The guide specifies both the decision algorithm (when to register vs skip) and the required payload shape.
 		 Use `{PageUpdateTool.ToolName}` only as a fallback for single-page dry-run or legacy save workflows.
-		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions keyed by the entity column code,
-		 i.e. `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (e.g. `$Resources.Strings.UsrStatus` for path `PDS.UsrStatus`).
-		 The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided; on `operation:"insert"` it is rejected unless you register it explicitly via the `resources` parameter.
+		 For standard data-bound form fields, bind `control` or `value` to the declared view-model attribute from `viewModelConfig` / `viewModelConfigDiff` and prefer datasource captions keyed by the view-model attribute name,
+		 i.e. `$Resources.Strings.<bindingAttribute>` — the SAME attribute the control binds to, which must have a DS-bound `modelConfig.path` (e.g. `$Resources.Strings.PDS_UsrStatus` for a `$PDS_UsrStatus` control, or `$Resources.Strings.Name` for `$Name`).
+		 The platform auto-provides the caption from the bound column. The bare entity column code is NOT auto-provided unless it equals the attribute name; on `operation:"insert"` a label that is neither the binding-attribute key nor registered is rejected.
 		 If validator or handler logic moves to a different declared attribute for the same field, rebind the control to that same attribute. If the control is inherited from a parent schema and there is no local `viewConfigDiff` item for it yet, add one local `merge` for that control name.
 		 Do not infer correctness from naming patterns such as `$PDS_*`, and do not rely on `#ResourceString(Usr*_label)#` shortcuts for data-bound field captions.
 		 Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI that carries explicit `resources` entries.
@@ -69,5 +70,6 @@ public static class PagePrompt {
 		 After a successful `{PageCreateTool.ToolName}`, read the page back with `{PageGetTool.ToolName}` with the same `schema-name` to confirm the created page loads and has the expected parent template.
 		 Known failure modes: duplicate schema-name, unknown template (call `{PageTemplatesListTool.ToolName}`), missing package. Each returns a readable `error` in the tool response.
 		 Keep created page bodies inherited from the template; add fields or columns by editing the `body.js` returned from `{PageGetTool.ToolName}`, validate with `validate-page`, and persist the body via `{PageSyncTool.ToolName}` only as a follow-up step.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the page caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 }

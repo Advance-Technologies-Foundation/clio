@@ -122,6 +122,21 @@ internal enum EsqQueryMacrosType {
 }
 
 /// <summary>
+/// Numeric values mirror Terrasoft devkit ɵDatePartType. Used as the <c>datePartType</c> on a
+/// DatePart (functionType=3) left-expression that extracts a calendar/clock part from a Date/DateTime/Time column.
+/// </summary>
+internal enum EsqDatePartType {
+	None = 0,
+	Day = 1,
+	Week = 2,
+	Month = 3,
+	Year = 4,
+	Weekday = 5,
+	Hour = 6,
+	HourMinute = 7
+}
+
+/// <summary>
 /// Numeric values mirror Terrasoft.Common.DataValueType for the subset used by static-filter values.
 /// </summary>
 internal enum EsqDataValueType {

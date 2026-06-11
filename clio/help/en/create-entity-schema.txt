@@ -12,8 +12,10 @@ DESCRIPTION
     EntitySchemaDesignerService.
 
     The command creates a draft schema on the server, optionally assigns a
-    parent schema, applies the requested name, title, and initial columns, and
-    then saves the result.
+    parent schema, applies the requested name, title, and initial columns,
+    saves the result, applies the DB structure, and publishes the
+    configuration so the new schema is immediately visible to lookup pickers
+    and sys-setting reference schema lists. No separate compile is required.
 
     Current clio entity-schema commands are part of the canonical clio MCP
     contract. Keep using create-entity-schema / modify-entity-schema-column
@@ -24,12 +26,16 @@ DESCRIPTION
     - Text, ShortText, MediumText, LongText, MaxSizeText
     - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+    - ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no --reference-schema)
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+
+    For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
+    ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
 
 OPTIONS
     --package              Target package name
@@ -44,6 +50,10 @@ OPTIONS
                            legacy default-value-source/default-value or
                            structured default-value-config.
                            Repeat the option for multiple columns
+    --caption-culture      Override the culture used for the generated schema and
+                           column captions/labels (e.g. en-US, uk-UA). Precedence:
+                           this override > the connected user's profile culture >
+                           en-US. Supplying it skips the profile-culture lookup.
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration
@@ -93,6 +103,9 @@ NOTES
       validation error and requests explicit code/Guid input
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the schema cannot be read back
+    - After save, the configuration is published automatically; if publication
+      fails, the schema stays saved but invisible to lookup pickers and
+      sys-setting reference lists until the configuration is compiled
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

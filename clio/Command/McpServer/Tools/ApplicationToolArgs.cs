@@ -75,8 +75,12 @@ public sealed record ApplicationCreateArgs(
 	string? IconId = null,
 
 	[property: JsonPropertyName("client-type-id")]
-	[property: Description("Optional client type identifier")]
+	[property: Description("Optional client type identifier. When provided it takes precedence over with-mobile-pages.")]
 	string? ClientTypeId = null,
+
+	[property: JsonPropertyName("with-mobile-pages")]
+	[property: Description("Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages. Default: true. Set to false for a web-only application to skip mobile page generation.")]
+	bool WithMobilePages = true,
 
 	[property: JsonPropertyName("optional-template-data-json")]
 	[property: Description(
@@ -137,8 +141,12 @@ public sealed record ApplicationSectionCreateArgs(
 	string? Description = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Optional existing entity schema name. When provided, the section reuses that entity.")]
+	[property: Description("Optional existing entity schema name. When provided, the section reuses that entity; the object must exist (validated before creation). Several sections may target the same object.")]
 	string? EntitySchemaName = null,
+
+	[property: JsonPropertyName("code")]
+	[property: Description("Optional explicit section code (Latin identifier). When omitted, the code is generated from the caption; required when the caption has no Latin letters or digits — for a non-Latin caption such as 'Контакти' pass an English code like 'Contacts'.")]
+	string? Code = null,
 
 	[property: JsonPropertyName("icon-background")]
 	[property: Description("Optional icon background color in #RRGGBB format. Must be one of the Freedom UI palette values that render as gradient tiles: #A6DE00, #20A959, #22AC14, #FFAC07, #FF8800, #F9307F, #FF602E, #FF4013, #B87CCF, #7848EE, #247EE5, #0058EF, #009DE3, #4F43C2, #08857E, #00BFA5. Defaults to a random palette color when omitted.")]
@@ -147,6 +155,10 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("with-mobile-pages")]
 	[property: Description("Create mobile pages in addition to web pages. Default: true.")]
 	bool WithMobilePages = true,
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the section caption readback (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	string? CaptionCulture = null,
 
 	[property: JsonPropertyName("title-localizations")]
 	[property: Description("Rejected. create-app-section is scalar-only and does not accept localization maps.")]

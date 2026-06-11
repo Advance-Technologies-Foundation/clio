@@ -21,6 +21,27 @@ public static class ComponentInfoGrouping {
 	}
 
 	/// <summary>
+	/// Returns a bounded "did you mean" shortlist for an unknown component type, ordered by
+	/// closeness to the requested type (case-insensitive Levenshtein distance, ties broken
+	/// alphabetically). When <paramref name="search"/> is supplied the candidate pool is first
+	/// narrowed by the same keyword filter as list mode; otherwise every known entry is a
+	/// candidate. Either way the result is capped at <paramref name="max"/> so a not-found
+	/// response never echoes the full catalog as "suggestions".
+	/// </summary>
+	public static IReadOnlyList<ComponentRegistryEntry> SuggestForUnknown(
+		IReadOnlyList<ComponentRegistryEntry> entries, string? componentType, string? search, int max) {
+		IReadOnlyList<ComponentRegistryEntry> pool = string.IsNullOrWhiteSpace(search)
+			? entries
+			: FilterEntries(entries, search);
+		string target = (componentType ?? string.Empty).Trim();
+		return pool
+			.OrderBy(entry => McpToolArgumentSupport.LevenshteinDistance(entry.ComponentType, target))
+			.ThenBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
+			.Take(Math.Max(0, max))
+			.ToArray();
+	}
+
+	/// <summary>
 	/// Projects entries to compact list items ordered alphabetically by component type.
 	/// Description is null-coalesced so the response omits empty strings from the new
 	/// payload shape (which does not carry per-component descriptions).

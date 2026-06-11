@@ -67,10 +67,10 @@ public sealed class ApplicationSectionDeleteService(
 		ValidateRequest(request);
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		if (string.IsNullOrWhiteSpace(environmentSettings.Uri)) {
 			throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);

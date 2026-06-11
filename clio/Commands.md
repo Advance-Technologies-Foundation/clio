@@ -31,6 +31,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apps-list"></a>
 <a id="lia"></a>
 - [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
+<a id="find-app"></a>
+- [`find-app`](docs/commands/find-app.md) - Find installed applications and their sections by name, code, or pattern
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
@@ -340,7 +342,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
-- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema
+- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (omit `--package` for the merged all-packages view, including custom columns from other packages)
 <a id="get-schema"></a>
 <a id="schema-get"></a>
 - [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
@@ -522,8 +524,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
-<a id="delete-skill"></a>
-- [`delete-skill`](docs/commands/delete-skill.md) - Delete a managed skill
+<a id="delete-adac"></a>
+- [`delete-adac`](docs/commands/delete-adac.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
 <a id="far"></a>
 <a id="gui"></a>
@@ -533,16 +535,16 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
-<a id="install-skills"></a>
-- [`install-skills`](docs/commands/install-skills.md) - Install managed skills from a repository
+<a id="install-adac"></a>
+- [`install-adac`](docs/commands/install-adac.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
-<a id="update-skill"></a>
-- [`update-skill`](docs/commands/update-skill.md) - Update managed skills from a repository
+<a id="update-adac"></a>
+- [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
 
 ## General
 
@@ -554,6 +556,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-component-info"></a>
 <a id="component-info"></a>
 - [`get-component-info`](docs/commands/get-component-info.md) - Get curated Freedom UI component metadata by component type or list the catalog, `component-info`
+<a id="get-user-culture"></a>
+<a id="profile-language"></a>
+- [`get-user-culture`](docs/commands/get-user-culture.md) - Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, `profile-language`
 <a id="healthcheck"></a>
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`

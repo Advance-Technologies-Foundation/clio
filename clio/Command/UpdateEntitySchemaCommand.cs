@@ -31,6 +31,9 @@ public class UpdateEntitySchemaOptions : RemoteCommandOptions
 	[Option("operations", Required = false,
 		HelpText = "JSON array of operations, e.g. '[{\"action\":\"add\",...}]'. Alternative to repeating --operation.")]
 	public string? OperationsJson { get; set; }
+
+	[Option("caption-culture", Required = false, HelpText = "Override the culture used for written column captions/descriptions (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; set; }
 }
 
 internal sealed record UpdateEntitySchemaOperationDefinition
@@ -177,6 +180,7 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				Environment = options.Environment,
 				Package = options.Package,
 				SchemaName = options.SchemaName,
+				CaptionCulture = options.CaptionCulture,
 				Action = operation.Action,
 				ColumnName = operation.ColumnName,
 				NewName = operation.NewName,

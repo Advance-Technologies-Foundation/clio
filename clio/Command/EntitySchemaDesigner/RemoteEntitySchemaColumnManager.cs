@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using Clio.Package;
 using Terrasoft.Core.Entities;
 
@@ -50,19 +54,63 @@ public interface IRemoteEntitySchemaColumnManager
 
 internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColumnManager
 {
+	/// <summary>
+	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
+	/// </summary>
+	internal const string MergedSchemaPackageName = "(merged: all packages)";
+
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
+	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILogger _logger;
+	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
+	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
-		ILogger logger) {
+		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
+		ILogger logger,
+		ICurrentUserCultureResolverFactory cultureResolverFactory,
+		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
+		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_logger = logger;
+		_cultureResolverFactory = cultureResolverFactory;
+		_settingsRepository = settingsRepository;
+	}
+
+	/// <summary>
+	/// Resolves the effective caption culture for a column WRITE batch: an explicit
+	/// <c>--caption-culture</c> override wins; otherwise the connected user's profile culture
+	/// (cached); otherwise the <c>en-US</c> fallback. Never reads the host
+	/// <c>CultureInfo.CurrentCulture</c>. Resolution failure is non-fatal (M-4): it degrades to
+	/// <c>en-US</c> so scripted/CI column writes keep working.
+	/// </summary>
+	private string ResolveEffectiveCultureName(ModifyEntitySchemaColumnOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.CaptionCulture)) {
+			string overrideCulture = options.CaptionCulture.Trim();
+			try {
+				return System.Globalization.CultureInfo.GetCultureInfo(overrideCulture).Name;
+			} catch (System.Globalization.CultureNotFoundException) {
+				throw new EntitySchemaDesignerException(
+					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");
+			}
+		}
+
+		try {
+			EnvironmentSettings settings = _settingsRepository.GetEnvironment(options);
+			CultureResolution resolution = _cultureResolverFactory.Create(settings)
+				.ResolveAsync().GetAwaiter().GetResult();
+			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
+		} catch (Exception ex) {
+			_logger.WriteWarning(
+				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
+			return EntitySchemaDesignerSupport.DefaultCultureName;
+		}
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {
@@ -80,8 +128,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(rootOperation.Package);
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
-			ApplyColumnMutation(schema, package, operation);
+			ApplyColumnMutation(schema, package, operation, effectiveCultureName);
 		}
 
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, rootOperation);
@@ -171,6 +220,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (string.IsNullOrWhiteSpace(options.Package)) {
+			return GetMergedSchemaProperties(options);
+		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
@@ -206,6 +258,99 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			columns);
 	}
 
+	/// <summary>
+	/// Builds the effective (merged) schema properties snapshot that unions columns from every package layer,
+	/// including customizations contributed by packages other than the one that originally defines the schema.
+	/// </summary>
+	/// <param name="options">Options that identify the schema and remote environment. <c>Package</c> is ignored here.</param>
+	/// <returns>
+	/// Structured schema properties whose <c>columns</c> reflect the full runtime column set. Most schema-level
+	/// metadata (title, description, extend-parent, db-view, track-changes, virtual, show-in-advanced-mode and the
+	/// administration flags) and the per-column <c>indexed</c> flag are mapped from the runtime payload. A few
+	/// fields are not exposed by the by-name runtime endpoint and are therefore reported as <c>null</c> in this
+	/// mode so a caller can distinguish "unavailable" from a genuine value: <c>parent-schema-name</c> (only the
+	/// parent UId is available), <c>indexes-count</c>, <c>ssp-available</c>, <c>use-record-deactivation</c>,
+	/// <c>use-deny-record-rights</c> and <c>use-live-editing</c>. Supply a package to read those authoritative
+	/// schema-level values from a single package layer.
+	/// Note that <c>own-column-count</c>/<c>inherited-column-count</c> and each column's <c>source</c> are derived
+	/// here from runtime parent-entity-schema inheritance (the <c>IsInherited</c> flag), whereas the single-package
+	/// path splits on package-layer ownership. The two splits are NOT comparable across modes.
+	/// </returns>
+	private EntitySchemaPropertiesInfo GetMergedSchemaProperties(GetEntitySchemaPropertiesOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new EntitySchemaDesignerException("Schema name is required.");
+		}
+		RuntimeEntitySchemaResult runtimeSchema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
+		List<EntitySchemaPropertyColumnInfo> columns = runtimeSchema.Columns
+			.Select(MapRuntimePropertyColumn)
+			.ToList();
+		int inheritedColumnCount = runtimeSchema.Columns.Count(column => column.IsInherited);
+		int ownColumnCount = runtimeSchema.Columns.Count - inheritedColumnCount;
+		string? primaryColumnName = runtimeSchema.Columns
+			.FirstOrDefault(column => column.UId == runtimeSchema.PrimaryColumnUId)?.Name;
+		return new EntitySchemaPropertiesInfo(
+			runtimeSchema.Name,
+			Title: runtimeSchema.Caption,
+			Description: runtimeSchema.Description,
+			PackageName: MergedSchemaPackageName,
+			ParentSchemaName: null,
+			ExtendParent: runtimeSchema.ExtendParent,
+			PrimaryColumnName: primaryColumnName,
+			PrimaryDisplayColumnName: runtimeSchema.PrimaryDisplayColumnName,
+			OwnColumnCount: ownColumnCount,
+			InheritedColumnCount: inheritedColumnCount,
+			// The by-name runtime endpoint does not expose these fields; emit null (not a default) so a machine
+			// consumer can distinguish "unavailable in merged mode" from a genuine value. Supply a package to read them.
+			IndexesCount: null,
+			TrackChangesInDb: runtimeSchema.IsTrackChangesInDB,
+			DbView: runtimeSchema.IsDBView,
+			SspAvailable: null,
+			Virtual: runtimeSchema.IsVirtual,
+			UseRecordDeactivation: null,
+			ShowInAdvancedMode: runtimeSchema.ShowInAdvancedMode,
+			AdministratedByOperations: runtimeSchema.AdministratedByOperations,
+			AdministratedByColumns: runtimeSchema.AdministratedByColumns,
+			AdministratedByRecords: runtimeSchema.AdministratedByRecords,
+			UseDenyRecordRights: null,
+			UseLiveEditing: null,
+			Columns: columns);
+	}
+
+	/// <summary>
+	/// Reads the runtime schema for the merged view, translating low-level reader failures into the domain
+	/// <see cref="EntitySchemaDesignerException"/> so both read paths surface a uniform exception type.
+	/// </summary>
+	/// <remarks>
+	/// The reader reaches <see cref="IApplicationClient"/> and <c>JsonSerializer</c>, so beyond the
+	/// <see cref="InvalidOperationException"/> it raises for an unsuccessful/HTML response it can surface transport
+	/// and parse faults (<see cref="HttpRequestException"/>, <see cref="TaskCanceledException"/>,
+	/// <see cref="JsonException"/>). The MCP <c>get-entity-schema-properties</c> tool calls this path directly
+	/// without the <c>BaseTool</c> catch-all, so all realistic failure types are normalized here.
+	/// </remarks>
+	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName) {
+		try {
+			return _runtimeEntitySchemaReader.GetByName(schemaName);
+		} catch (Exception exception) when (exception is InvalidOperationException
+			or HttpRequestException
+			or JsonException
+			or TaskCanceledException) {
+			throw new EntitySchemaDesignerException(exception.Message, exception);
+		}
+	}
+
+	private static EntitySchemaPropertyColumnInfo MapRuntimePropertyColumn(RuntimeEntitySchemaColumnResult column) {
+		return new EntitySchemaPropertyColumnInfo(
+			column.Name,
+			column.UId,
+			column.IsInherited ? "inherited" : "own",
+			column.Caption,
+			column.Description,
+			EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType),
+			column.IsRequired,
+			column.IsIndexed,
+			column.ReferenceSchemaName);
+	}
+
 	public void PrintSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		EntitySchemaPropertiesInfo schema = GetSchemaProperties(options);
 		WriteInfo("Entity schema properties");
@@ -219,7 +364,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Primary display column: {FormatText(schema.PrimaryDisplayColumnName)}");
 		WriteInfo($"Own columns: {schema.OwnColumnCount}");
 		WriteInfo($"Inherited columns: {schema.InheritedColumnCount}");
-		WriteInfo($"Indexes: {schema.IndexesCount}");
+		WriteInfo($"Indexes: {FormatNullableCount(schema.IndexesCount)}");
 		WriteInfo($"Track changes in DB: {FormatBoolean(schema.TrackChangesInDb)}");
 		WriteInfo($"DB view: {FormatBoolean(schema.DbView)}");
 		WriteInfo($"SSP available: {FormatBoolean(schema.SspAvailable)}");
@@ -233,7 +378,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Use live editing: {FormatBoolean(schema.UseLiveEditing)}");
 	}
 
-	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
@@ -241,7 +387,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
 				ResolveEffectiveTitle(options.Title, options.ColumnName),
-				"title-localizations");
+				"title-localizations",
+				effectiveCultureName);
 		IReadOnlyDictionary<string, string>? descriptionLocalizations = options.DescriptionLocalizations == null
 			? null
 			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
@@ -253,10 +400,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				titleNormalization.Localizations,
-				titleNormalization.EffectiveTitle),
+				titleNormalization.EffectiveTitle,
+				effectiveCultureName),
 			Description = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				descriptionLocalizations,
-				options.Description),
+				options.Description,
+				effectiveCultureName),
 			RequirementType = MapRequirementType(options.Required),
 			Indexed = options.Indexed ?? false,
 			IsValueCloneable = options.Cloneable ?? false,
@@ -278,6 +427,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
 				options);
 			column.ReferenceSchema = CreateReferenceSchema(referenceSchema);
+		} else if (EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+			// ImageLookup ("Image link") is the reference type required by crt.ImageInput. It always points at the
+			// platform SysImage schema and is indexed, mirroring the server-side EntitySchemaDesigner behavior.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
 		}
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
@@ -288,7 +442,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private void ModifyColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void ModifyColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
 		EntitySchemaColumnDto column = FindOwnColumnForMutation(schema, options.ColumnName);
 		int effectiveDataValueType = options.Type == null
 			? column.DataValueType ?? 0
@@ -303,6 +458,17 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.DataValueType = effectiveDataValueType;
 		}
 
+		ApplyColumnCaptionAndDescription(column, options, effectiveCultureName);
+		ApplyColumnScalarOptions(column, options);
+
+		ApplyColumnTypeConfiguration(package, column, options, effectiveDataValueType);
+	}
+
+	/// <summary>
+	/// Writes the column caption and description using the effective culture (override &gt; profile &gt; en-US).
+	/// </summary>
+	private static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
 		if (options.TitleLocalizations != null) {
@@ -310,12 +476,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 					options.TitleLocalizations,
 					options.Title,
-					"title-localizations");
+					"title-localizations",
+					effectiveCultureName);
 			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
 				caption,
 				titleNormalization.Localizations!);
 		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
+			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim(), effectiveCultureName);
 		}
 		if (options.DescriptionLocalizations != null) {
 			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
@@ -324,10 +491,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 					options.DescriptionLocalizations,
 					"description-localizations")!);
 		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
+			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description, effectiveCultureName);
 		}
 		column.Caption = caption;
 		column.Description = description;
+	}
+
+	/// <summary>
+	/// Applies the optional scalar column flags and default value left unspecified-as-unchanged.
+	/// </summary>
+	private void ApplyColumnScalarOptions(EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options) {
 		if (options.Required.HasValue) {
 			column.RequirementType = MapRequirementType(options.Required);
 		}
@@ -360,8 +533,15 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.UseSeconds.HasValue) {
 			column.UseSeconds = options.UseSeconds.Value;
 		}
+	}
 
+	/// <summary>
+	/// Applies lookup / image-lookup reference configuration for the column based on its data value type.
+	/// </summary>
+	private void ApplyColumnTypeConfiguration(PackageInfo package, EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, int effectiveDataValueType) {
 		bool isLookupType = effectiveDataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
+		bool isImageLookupType = EntitySchemaDesignerSupport.IsImageLookupDataValueType(effectiveDataValueType);
 		if (isLookupType) {
 			if (!string.IsNullOrWhiteSpace(options.ReferenceSchemaName)) {
 				ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
@@ -380,6 +560,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			if (options.DoNotControlIntegrity.HasValue) {
 				column.DoNotControlIntegrity = options.DoNotControlIntegrity.Value;
 			}
+		} else if (isImageLookupType) {
+			// ImageLookup ("Image link") always references SysImage and is indexed; never a simple lookup.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
+			column.List = false;
+			column.CascadeConnection = false;
+			column.DoNotControlIntegrity = false;
 		} else {
 			column.ReferenceSchema = null;
 			column.List = false;
@@ -424,7 +611,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private void ValidateOptionsForType(ModifyEntitySchemaColumnOptions options, int dataValueType, bool isAdd) {
 		bool isLookup = dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
-		ValidateLookupOptions(options, isLookup, isAdd);
+		bool isImageLookup = EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType);
+		ValidateLookupOptions(options, isLookup, isImageLookup, isAdd);
 		ValidateTextOptions(options, dataValueType);
 		ValidateMaskedOption(options, dataValueType);
 		ValidateDateTimeOptions(options, dataValueType);
@@ -434,6 +622,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void ValidateLookupOptions(
 		ModifyEntitySchemaColumnOptions options,
 		bool isLookup,
+		bool isImageLookup,
 		bool isAdd) {
 		if (isLookup) {
 			if (string.IsNullOrWhiteSpace(options.ReferenceSchemaName) && isAdd) {
@@ -441,10 +630,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			}
 			return;
 		}
-		if (HasLookupSpecificOptions(options)) {
-			throw new EntitySchemaDesignerException(
-				"Lookup-specific options can be used only when the effective column type is Lookup.");
+		if (!HasLookupSpecificOptions(options)) {
+			return;
 		}
+		if (isImageLookup) {
+			throw new EntitySchemaDesignerException(
+				"ImageLookup ('Image link') columns reference the SysImage schema automatically; " +
+				"do not pass --reference-schema or other lookup-specific options.");
+		}
+		throw new EntitySchemaDesignerException(
+			"Lookup-specific options can be used only when the effective column type is Lookup.");
 	}
 
 	private static bool HasLookupSpecificOptions(ModifyEntitySchemaColumnOptions options) {
@@ -702,14 +897,15 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			$"Column '{options.ColumnName}'");
 	}
 
-	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
 		EntitySchemaColumnAction action = NormalizeAction(options.Action);
 		switch (action) {
 			case EntitySchemaColumnAction.Add:
-				AddColumn(schema, package, options);
+				AddColumn(schema, package, options, effectiveCultureName);
 				return;
 			case EntitySchemaColumnAction.Modify:
-				ModifyColumn(schema, package, options);
+				ModifyColumn(schema, package, options, effectiveCultureName);
 				return;
 			case EntitySchemaColumnAction.Remove:
 				RemoveColumn(schema, options.ColumnName);
@@ -777,6 +973,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
+	}
+
+	private static string FormatNullableCount(int? value) {
+		return value.HasValue ? value.Value.ToString() : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

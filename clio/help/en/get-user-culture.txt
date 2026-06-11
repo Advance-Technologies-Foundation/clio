@@ -1,0 +1,50 @@
+COMMAND TYPE
+    Information commands
+
+NAME
+    get-user-culture - Print the logged-in Creatio user's profile culture
+
+SYNOPSIS
+    get-user-culture [OPTIONS]
+
+ALIASES
+    profile-language
+
+DESCRIPTION
+    Resolves and prints the culture (e.g. en-US, uk-UA) set in the profile of
+    the user that clio is connected as on the target environment. This is the
+    culture clio uses for the names, labels, and captions of entities it
+    creates, so this verb is the observable, testable way to confirm which
+    language new entities will be generated in.
+
+    The culture is read from the standard Creatio service
+    ServiceModel/ApplicationInfoService.svc/GetApplicationInfo
+    (field applicationInfo.sysValues.userCulture.displayValue). It requires
+    only an authenticated session — cliogate is NOT required.
+
+    The value is cached per environment for a few minutes, so repeated calls
+    within a session do not re-probe the server.
+
+OPTIONS
+    -e, --environment
+        Name of the registered environment to query. When omitted, the default
+        registered environment is used.
+
+    -u, --uri / -l, --login / -p, --password / OAuth options
+        Standard direct-connection options, when targeting an unregistered site.
+
+EXIT CODES
+    0   The profile culture was resolved; the culture name is printed to stdout.
+    1   The culture could not be resolved (environment unreachable, not
+        authorized, or the user profile culture was not returned). A
+        user-friendly "Error: ..." message is printed to stderr.
+
+EXAMPLES
+    Print the profile culture of the default environment:
+        clio get-user-culture
+
+    Print the profile culture of a named environment:
+        clio get-user-culture -e production
+
+    Using the alias:
+        clio profile-language -e production

@@ -36,6 +36,11 @@ clio create-client-unit-schema [options]
 
 --description                      Optional schema description
 
+--caption-culture                  Override the culture for the generated schema
+                                   caption (e.g. en-US, uk-UA). Precedence:
+                                   override > the connected user's profile
+                                   culture (see get-user-culture) > en-US.
+
 --uri                    -u       Application uri
 
 --Password               -p       User password

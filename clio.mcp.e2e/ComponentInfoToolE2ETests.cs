@@ -63,7 +63,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse detailResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.MenuItem" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.MenuItem" });
 
 		// Assert
 		tabListResponse.Success.Should().BeTrue(
@@ -135,7 +135,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["schemaType"] = "mobile" });
+			new Dictionary<string, object?> { ["schema-type"] = "mobile" });
 
 		// Assert
 		mobileListResponse.Success.Should().BeTrue(
@@ -170,7 +170,7 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.DoesNotExist" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.DoesNotExist" });
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -179,6 +179,8 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the failure should identify the missing component type");
 		response.Items.Should().NotBeNullOrEmpty(
 			because: "the fallback response should still expose available types for discovery in the flat item list");
+		response.Items!.Count.Should().BeLessThan(20,
+			because: "an unknown type must return a bounded closest-match shortlist, not the full ~199-item catalog (acceptance #2)");
 	}
 
 	[Test]
@@ -196,11 +198,11 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse fieldResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.NumberInput" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.NumberInput" });
 		ComponentInfoResponse containerResponse = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.TabContainer" });
 
 		// Assert
 		fieldResponse.Success.Should().BeTrue(
@@ -209,8 +211,8 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "every standard field component must advertise the three-part inserted-field contract that update-page enforces");
 		fieldResponse.DataSourceBindingContract!.Should().Contain("viewModelConfigDiff",
 			because: "the contract must name the section where the binding attribute is declared");
-		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<columnCode>",
-			because: "the contract must describe the auto-provided label form that the strict IsAutoProvidedLabelResourceKey rule accepts");
+		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<bindingAttribute>",
+			because: "the contract must describe the auto-provided label form — keyed by the view-model attribute name — that the IsAutoProvidedLabelResourceKey rule accepts");
 		fieldResponse.DataSourceBindingContract.Should().Contain("operation:\"merge\"",
 			because: "the contract must clarify that merge operations are exempt from the new strict rule");
 		containerResponse.Success.Should().BeTrue(
@@ -236,13 +238,46 @@ public sealed class ComponentInfoToolE2ETests {
 		ComponentInfoResponse response = await CallComponentInfoAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			new Dictionary<string, object?> { ["componentType"] = "crt.TabContainer" });
+			new Dictionary<string, object?> { ["component-type"] ="crt.TabContainer" });
 
 		// Assert
 		response.ResolvedFrom.Should().Be("latest-fallback",
 			because: "with no environment-name/version the resolver cannot scope to a real version and must report latest-fallback");
 		response.VersionWarning.Should().NotBeNullOrWhiteSpace(
 			because: "a latest-fallback catalog is a superset of the target version and the caveat must warn AI the component may not exist there");
+		response.VersionWarning!.Should().Contain("do NOT silently assume",
+			because: "ENG-91134: when the version is unknown the agent must not silently assume a default component set");
+		response.VersionWarning.Should().Contain("request explicit",
+			because: "ENG-91134: the agent must inform the user and request confirmation before proceeding against 'latest'");
+	}
+
+	[Test]
+	[Description("List mode without a search term returns the full component catalog including non-obvious components like crt.Gallery, so the agent discovers them proactively without an explicit user prompt (ENG-91134).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info list mode surfaces crt.Gallery without an explicit search")]
+	[AllureDescription("Starts the real clio MCP server, lists the full web catalog with no search/component-type, and verifies crt.Gallery is present in the known component list.")]
+	public async Task ComponentInfoTool_List_Mode_Should_Surface_Gallery_Without_Explicit_Search() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act — no search, no component-type: the full catalog the agent sees on a proactive sweep.
+		ComponentInfoResponse listResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+
+		// Assert
+		listResponse.Success.Should().BeTrue(
+			because: "list mode must succeed so the agent can index every available component at the start of a session");
+		listResponse.Mode.Should().Be("list",
+			because: "omitting component-type and search returns the full catalog in list mode");
+		listResponse.Items.Should().NotBeNullOrEmpty(
+			because: "the full catalog must expose a flat item list to index");
+		listResponse.Items!.Select(item => item.ComponentType)
+			.Should().Contain("crt.Gallery",
+				because: "crt.Gallery is a non-obvious component that must appear in the known component list without the user asking to search for it (ENG-91134)");
 	}
 
 	[Test]
@@ -261,9 +296,9 @@ public sealed class ComponentInfoToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["componentType"] = "crt.TabContainer",
+				["component-type"] ="crt.TabContainer",
 				["version"] = "8.3.3",
-				["environmentName"] = "any-env"
+				["environment-name"] = "any-env"
 			});
 
 		// Assert
@@ -283,9 +318,12 @@ public sealed class ComponentInfoToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		IReadOnlyDictionary<string, object?> arguments) {
+		// get-component-info binds a single `args` record (kebab-case fields), like every other
+		// clio MCP tool — wrap the per-call fields so the real binding engages instead of dropping
+		// them as unknown top-level keys.
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
-			new Dictionary<string, object?>(arguments),
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>(arguments) },
 			cancellationToken);
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-component-info should return structured responses instead of top-level MCP failures");

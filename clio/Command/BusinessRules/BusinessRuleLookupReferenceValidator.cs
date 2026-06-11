@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Package;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -145,30 +147,40 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 	}
 
 	private void ValidateReferenceExists(BusinessRuleLookupReference reference) {
-		string query = BuildLookupExistsPath(reference.ReferenceSchemaName, reference.RecordId);
-		string url = serviceUrlBuilder.Build(query);
-		string responseJson = applicationClient.ExecuteGetRequest(url, RequestTimeoutMs);
-		if (!ResponseContainsRecord(responseJson)) {
+		// ESQ SelectQuery (DataService) is used here instead of OData because it resolves lookup records
+		// more reliably across schemas; mirrors the static-filter LookupValueResolver.
+		object query = SelectQueryHelper.BuildSelectQuery(
+			reference.ReferenceSchemaName,
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+			[new SelectQueryHelper.SelectQueryFilterDefinition(
+				"Id",
+				reference.RecordId.ToString("D"),
+				SelectQueryHelper.GuidDataValueType,
+				ComparisonType: 3)],
+			// Existence probe: an Id-equality filter yields at most one row, so cap the fetch at 1.
+			rowCount: 1);
+
+		LookupExistsResponseDto response;
+		try {
+			response = SelectQueryHelper.ExecuteSelectQuery<LookupExistsResponseDto>(
+				applicationClient, serviceUrlBuilder, query, RequestTimeoutMs);
+		} catch (InvalidOperationException exception) {
+			// Preserve the validator's ArgumentException contract: consumers (e.g. PageBusinessRuleValidator)
+			// catch only ArgumentException, so a transport/server SelectQuery failure must surface as one.
 			throw new ArgumentException(
-				$"{reference.SourcePath} references lookup attribute '{reference.AttributePath}', but record '{reference.RecordId:D}' was not found in lookup schema '{reference.ReferenceSchemaName}'. Use odata-read to find the lookup record Id before creating the business rule.");
+				$"{reference.SourcePath} references lookup attribute '{reference.AttributePath}', but record existence in lookup schema '{reference.ReferenceSchemaName}' could not be verified: {exception.Message}",
+				exception);
+		}
+
+		if ((response.Rows?.Count ?? 0) == 0) {
+			throw new ArgumentException(
+				$"{reference.SourcePath} references lookup attribute '{reference.AttributePath}', but record '{reference.RecordId:D}' was not found in lookup schema '{reference.ReferenceSchemaName}'. Use odata-read or execute-esq to find the lookup record Id before creating the business rule.");
 		}
 	}
 
-	internal static string BuildLookupExistsPath(string referenceSchemaName, Guid recordId) {
-		string filter = Uri.EscapeDataString($"Id eq {recordId:D}");
-		string select = Uri.EscapeDataString("Id");
-		return $"odata/{referenceSchemaName.Trim()}?$filter={filter}&$select={select}&$top=1";
-	}
-
-	private static bool ResponseContainsRecord(string responseJson) {
-		using JsonDocument document = JsonDocument.Parse(responseJson);
-		if (document.RootElement.TryGetProperty("value", out JsonElement value)
-			&& value.ValueKind == JsonValueKind.Array) {
-			return value.GetArrayLength() > 0;
-		}
-
-		return document.RootElement.ValueKind == JsonValueKind.Object
-			&& document.RootElement.TryGetProperty("Id", out _);
+	private sealed class LookupExistsResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<JsonElement>? Rows { get; set; }
 	}
 
 	private static bool IsConstExpression(BusinessRuleExpression expression) =>

@@ -31,6 +31,7 @@ public sealed class PageSyncTool(
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
+		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
 	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
@@ -66,7 +67,7 @@ public sealed class PageSyncTool(
 				foreach (PageSyncPageInput page in args.Pages) {
 					samplingResults.TryGetValue(page.SchemaName, out PageSamplingReview samplingReview);
 					PageSyncPageResult pageResult = SyncSinglePage(
-						page, updateCommand, getCommand, validate, verify, samplingReview);
+						page, updateCommand, getCommand, validate, verify, samplingReview, args.OutputDirectory);
 					results.Add(pageResult);
 				}
 				Thread.Sleep(500);
@@ -132,7 +133,8 @@ public sealed class PageSyncTool(
 		PageGetCommand getCommand,
 		bool validate,
 		bool verify,
-		PageSamplingReview samplingReview) {
+		PageSamplingReview samplingReview,
+		string? outputDirectory) {
 		try {
 			PageSyncValidationResult validationResult = null;
 			if (validate) {
@@ -166,6 +168,7 @@ public sealed class PageSyncTool(
 					Error = updateResponse.Error
 				};
 			}
+			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 			if (verify && getCommand != null) {
 				PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
 				getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -180,8 +183,14 @@ public sealed class PageSyncTool(
 				}
 				string? verifiedBodyFile = null;
 				if (getResponse.Raw?.Body is not null) {
+					string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+						fileSystem,
+						fileSystem.Directory.GetCurrentDirectory(),
+						Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+						ClioRuntimePaths.Home,
+						outputDirectory);
 					string schemaDir = fileSystem.Path.Combine(
-						fileSystem.Directory.GetCurrentDirectory(), ".clio-pages", page.SchemaName);
+						anchor, ".clio-pages", page.SchemaName);
 					fileSystem.Directory.CreateDirectory(schemaDir);
 					string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
 					fileSystem.File.WriteAllText(bodyFile, getResponse.Raw.Body);
@@ -222,6 +231,8 @@ public sealed class PageSyncTool(
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		SchemaValidationResult fieldResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
+		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
 		SchemaValidationResult handlerResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateHandlerStructure(body));
 		SchemaValidationResult validatorBindingResult = RunContentValidation(
@@ -246,11 +257,14 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateColumnBindings(body));
 		SchemaValidationResult schemaDepsResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
+		SchemaValidationResult contextAwaitResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateContextAccessAwait(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			syntaxResult,
 			contentResult,
 			fieldResult,
+			insertSelfConsistencyResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
@@ -261,10 +275,11 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
 		bool contentOk = IsContentValidationSuccessful(
 			contentResult,
 			fieldResult,
+			insertSelfConsistencyResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
@@ -325,7 +340,8 @@ public sealed class PageSyncTool(
 	private static List<string> CollectWarnings(
 		SchemaValidationResult fieldResult,
 		SchemaValidationResult bindingResult,
-		SchemaValidationResult schemaDepsResult) {
+		SchemaValidationResult schemaDepsResult,
+		SchemaValidationResult contextAwaitResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -339,7 +355,30 @@ public sealed class PageSyncTool(
 			warnings.AddRange(schemaDepsResult.Warnings);
 		}
 
+		if (contextAwaitResult.Warnings.Count > 0) {
+			warnings.AddRange(contextAwaitResult.Warnings);
+		}
+
 		return warnings;
+	}
+
+	private static PageSyncValidationResult AppendCommandWarnings(
+		PageSyncValidationResult validation, IReadOnlyList<string> commandWarnings) {
+		if (commandWarnings == null || commandWarnings.Count == 0) {
+			return validation;
+		}
+		var warnings = new List<string>();
+		if (validation?.Warnings != null) {
+			warnings.AddRange(validation.Warnings);
+		}
+		warnings.AddRange(commandWarnings);
+		return new PageSyncValidationResult {
+			MarkersOk = validation?.MarkersOk ?? true,
+			JsSyntaxOk = validation?.JsSyntaxOk ?? true,
+			ContentOk = validation?.ContentOk ?? true,
+			Errors = validation?.Errors,
+			Warnings = warnings
+		};
 	}
 
 	private static PageSyncValidationResult BuildValidationResult(
@@ -381,7 +420,11 @@ public sealed record PageSyncArgs(
 
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
-	bool? SkipSampling = null
+	bool? SkipSampling = null,
+
+	[property: JsonPropertyName("output-directory")]
+	[property: Description("Optional. Directory to anchor verified-page .clio-pages output under — typically your project/workspace root. When omitted, the workspace root is auto-detected by walking up for .clio/workspaceSettings.json; if running from the home directory with no workspace found, output falls back to the clio home root rather than $HOME. Only relevant when verify=true.")]
+	string? OutputDirectory = null
 );
 
 /// <summary>

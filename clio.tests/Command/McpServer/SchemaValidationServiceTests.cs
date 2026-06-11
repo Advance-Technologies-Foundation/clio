@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Clio.Command;
@@ -1296,7 +1296,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Label using a sibling DS-bound attribute name that does NOT match the column code warns — the platform auto-provides captions only when the resource key equals the entity column code (last segment of the DS path), not for arbitrary aliases sharing the same path.")]
+	[Description("Label using a DS-bound SIBLING attribute name that is not the field's own binding attribute warns — auto-provide is keyed by the control's binding attribute, and 'UsrNameAlias' is a different attribute than the bound 'UsrName' even though both share the same DS path.")]
 	public void ValidateStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1333,12 +1333,12 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because the missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
-			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
+			"because the label key is a different attribute than the control's binding attribute 'UsrName', so the platform does not auto-provide the caption under it");
 	}
 
 	[Test]
-	[Description("Label using a DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by column code, not by arbitrary attribute name. Production evidence: PDS_UsrCompleted attribute bound to PDS.UsrCompleted column does NOT auto-provide caption because resource key 'PDS_UsrCompleted' differs from column code 'UsrCompleted'.")]
-	public void ValidateStandardFieldBindings_LabelResourceKeyIsAttributeNameNotMatchingColumnCode_ReturnsWarning() {
+	[Description("Label keyed by a DS-bound attribute name whose column code differs is auto-provided — NO warning. Production evidence: in SsoSamlBase_FormPage the attribute 'PartnerIdentityName' is bound to 'SsoSamlProviderDS.EntityID' (column code 'EntityID') and ships with label '$Resources.Strings.PartnerIdentityName' and no explicit resource; the platform auto-provides the caption. Auto-provide is keyed by the attribute name, not the column code.")]
+	public void ValidateStandardFieldBindings_LabelResourceKeyIsDsBoundAttributeName_NoWarning() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1358,7 +1358,8 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrLabel":{"modelConfig":{"path":"PDS.UsrFullName"}}}
+						"path":[],
+						"values":{"attributes":{"UsrLabel":{"modelConfig":{"path":"PDS.UsrFullName"}}}}
 					}
 				]
 			""");
@@ -1367,10 +1368,10 @@ public sealed class SchemaValidationServiceTests
 			body,
 			new Dictionary<string, string> { ["SomeOtherKey"] = "Other" });
 
-		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
+		result.IsValid.Should().BeTrue("because the field binding is valid");
 		result.Errors.Should().BeEmpty();
-		result.Warnings.Should().ContainSingle(w => w.Contains("UsrLabel") && w.Contains("render blank"),
-			"because UsrLabel does not match the column code 'UsrFullName' so the platform does not auto-provide the caption");
+		result.Warnings.Should().NotContain(w => w.Contains("UsrLabel") && w.Contains("render blank"),
+			"because the label key 'UsrLabel' equals the DS-bound binding attribute, so the platform auto-provides the caption regardless of the column code 'UsrFullName'");
 	}
 
 	[Test]
@@ -1548,7 +1549,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Insert of a new field control with a label resource matching the DS-bound binding attribute name is accepted — the platform auto-provides the caption from the entity column.")]
+	[Description("Insert of a new field using the Designer format (path:[], values.attributes nesting) with the label resource keyed by the BINDING ATTRIBUTE NAME is accepted — the platform auto-provides the caption from the DS-bound entity column. This is the form the Designer emits (label key == control attribute name).")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithAutoProvidedLabel_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1559,8 +1560,8 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.NumberInput",
-								"label":"$Resources.Strings.UsrEstimatedMinutes",
-								"control":"$UsrEstimatedMinutes"
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
 							}
 					}
 				]
@@ -1569,20 +1570,79 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}}
 					}
 				]
 			""");
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeTrue("because the binding attribute is declared with a DS-bound model path and the label key matches the attribute name, so the platform auto-provides the caption");
+		result.IsValid.Should().BeTrue("because the label key equals the DS-bound binding attribute 'PDS_UsrEstimatedMinutes', so the platform auto-provides the caption from the entity column");
 		result.Errors.Should().BeEmpty();
 	}
 
 	[Test]
-	[Description("Insert of a new field whose binding attribute uses the path-with-underscores naming form (e.g. PDS_UsrCompleted bound to PDS.UsrCompleted) is rejected when the label resource is not registered. The platform auto-provides captions only when the resource key matches the entity column code (last segment of the DS path), so the path-with-underscores form is NOT auto-provided even when declared as a DS-bound attribute.")]
-	public void ValidateInsertedFieldSelfConsistency_InsertWithPdsUnderscoreAttributeAndNoResources_ReturnsInvalid() {
+	[Description("VERIFY: real Designer output uses the ATTRIBUTE-NAME label form ($Resources.Strings.AccountDS_Name_ud92nhf), not the column code, with NO explicit resource — the platform auto-provides it from the DS-bound column caption. This must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_AttributeNameLabelForm_AutoProvided_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.AccountDS_Name_ud92nhf","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the real Designer emits the attribute-name label form which the platform auto-provides from the DS-bound column caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Custom 'Title on page': when the user overrides a field's title, the Designer emits a #ResourceString({component}_label)# macro label and registers the resource explicitly. The macro form is not a reactive $Resources.Strings.* binding, so the auto-provide check does not apply — the inserted field with a properly-nested binding must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_CustomTitleMacroLabelForm_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"#ResourceString(Input_zl5k81v_label)#","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the custom-title macro label form is not a reactive binding subject to the auto-provide check, and the field binding is properly nested");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Insert whose label key does NOT match the binding attribute and is not registered is rejected — only '$Resources.Strings.{bindingAttribute}' is auto-provided for a DS-bound attribute, so a mismatched key would render blank.")]
+	public void ValidateInsertedFieldSelfConsistency_LabelKeyNotMatchingBindingAndNoResource_ReturnsInvalid() {
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1592,7 +1652,7 @@ public sealed class SchemaValidationServiceTests
 						"values":
 							{
 								"type":"crt.Checkbox",
-								"label":"$Resources.Strings.PDS_UsrCompleted",
+								"label":"$Resources.Strings.SomeUnrelatedCaption",
 								"control":"$PDS_UsrCompleted"
 							}
 					}
@@ -1602,23 +1662,23 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"PDS_UsrCompleted":{"modelConfig":{"path":"PDS.UsrCompleted"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrCompleted":{"modelConfig":{"path":"PDS.UsrCompleted"}}}}
 					}
 				]
 			""");
 
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
-		result.IsValid.Should().BeFalse("because the resource key 'PDS_UsrCompleted' does not match the column code 'UsrCompleted', so the platform does not auto-provide the caption");
+		result.IsValid.Should().BeFalse("because the label key 'SomeUnrelatedCaption' is neither the binding attribute 'PDS_UsrCompleted' (which would be auto-provided) nor registered in resources");
 		result.Errors.Should().ContainSingle(error =>
-			error.Contains("UsrCompleted") &&
-			error.Contains("PDS_UsrCompleted") &&
+			error.Contains("SomeUnrelatedCaption") &&
 			error.Contains("render blank"),
-			"because the diagnostic should name the field, the unregistered resource key, and what will go wrong at runtime");
+			"because the diagnostic should name the unresolved resource key and what will go wrong at runtime");
 	}
 
 	[Test]
-	[Description("Insert of a new field control with the label resource passed in 'resources' is accepted.")]
+	[Description("Insert of a new field control using Designer format with the label resource passed in 'resources' is accepted.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithExplicitLabelResource_ReturnsValid() {
 		string body = BuildDiffBackedPageBody(
 			"""
@@ -1630,7 +1690,7 @@ public sealed class SchemaValidationServiceTests
 							{
 								"type":"crt.PhoneInput",
 								"label":"$Resources.Strings.PDS_UsrContactPhone",
-								"control":"$UsrContactPhone"
+								"control":"$PDS_UsrContactPhone"
 							}
 					}
 				]
@@ -1639,7 +1699,8 @@ public sealed class SchemaValidationServiceTests
 				[
 					{
 						"operation":"merge",
-						"values":{"UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}
+						"path":[],
+						"values":{"attributes":{"PDS_UsrContactPhone":{"modelConfig":{"path":"PDS.UsrContactPhone"}}}}
 					}
 				]
 			""");
@@ -1771,6 +1832,67 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Real Designer output for an unbound input: control is an empty string and the label is a #ResourceString macro with an explicitly registered resource. The empty control means there is no binding to cross-check, so the field must be skipped (no false-positive) — even with no viewModelConfigDiff entry.")]
+	public void ValidateInsertedFieldSelfConsistency_UnboundInputEmptyControl_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_y4u48sv",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"#ResourceString(Input_y4u48sv_label)#",
+								"control":"",
+								"multiline":false
+							}
+					}
+				]
+			""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because an unbound input (empty control) has no data binding to validate and its macro label is not a reactive auto-provide candidate");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Legacy path:[\"attributes\"] DS-bound field with the attribute-name label form, mirroring real Designer output (Contact.Full name -> ContactDS_Name_xxx). Both the legacy nesting and the attribute-name auto-provide must be accepted.")]
+	public void ValidateInsertedFieldSelfConsistency_LegacyPathAttributes_DsBoundInput_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_8zo0uzp",
+						"values":
+							{
+								"type":"crt.Input",
+								"label":"$Resources.Strings.ContactDS_Name_dtjv2lx",
+								"control":"$ContactDS_Name_dtjv2lx"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes"],
+						"values":{"ContactDS_Name_dtjv2lx":{"modelConfig":{"path":"ContactDS.Name"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the legacy path:[\"attributes\"] form is properly nested and the label key equals the DS-bound binding attribute (auto-provided)");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
 	[Description("Empty body or whitespace-only body is tolerated — the validator returns valid without throwing so it can be chained behind earlier syntactic checks.")]
 	public void ValidateInsertedFieldSelfConsistency_EmptyBody_ReturnsValid() {
 		var emptyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(string.Empty);
@@ -1780,6 +1902,516 @@ public sealed class SchemaValidationServiceTests
 		emptyResult.Errors.Should().BeEmpty();
 		whitespaceResult.IsValid.Should().BeTrue("because a whitespace body has no inserts to validate");
 		whitespaceResult.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Flat viewModelConfigDiff (no path property, attribute directly in values) is rejected because the attribute lands at viewModelConfig root instead of viewModelConfig.attributes and the Freedom UI runtime ignores it — controls render but bind no data.")]
+	public void ValidateInsertedFieldSelfConsistency_FlatViewModelConfigDiff_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because the flat form (no 'path':[], attribute directly in values) passes the platform save but fails at runtime — the attribute lands at viewModelConfig root instead of viewModelConfig.attributes");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("PDS_UsrEstimatedMinutes") &&
+			error.Contains("required nesting") &&
+			error.Contains("read and write no data"),
+			"because the diagnostic should explain that the flat declaration form will not bind data at runtime");
+	}
+
+	[Test]
+	[Description("Designer format: viewModelConfigDiff entry uses path:[] with values.attributes nesting. The attribute must be recognised so validation passes for a correctly-declared field with an auto-provided label.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PathEmptyAttributesNested_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the attribute is declared in the Designer format (path:[], values.attributes nesting) and the label key 'UsrEstimatedMinutes' matches the column code so the platform auto-provides the caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format with full attribute name as resource key — must pass when the explicit resources parameter covers the key.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_ExplicitResourceForFullAttributeName_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body,
+			new Dictionary<string, string> { ["PDS_UsrEstimatedMinutes"] = "Estimated minutes" });
+
+		result.IsValid.Should().BeTrue("because 'PDS_UsrEstimatedMinutes' is explicitly registered in the resources parameter");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format with the label keyed by the full PDS_-prefixed attribute name and no explicit resource is accepted — the label key equals the DS-bound binding attribute, so the platform auto-provides the caption. (Auto-provide is keyed by attribute name, not column code.)")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_PdsUnderscoreLabelMatchingBinding_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrEstimatedMinutes":{
+									"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}
+								}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because the label key 'PDS_UsrEstimatedMinutes' equals the DS-bound binding attribute, so the platform auto-provides the caption");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Static viewModelConfig form (FormPage created by create-app, SCHEMA_VIEW_MODEL_CONFIG marker): attribute declared under viewModelConfig.attributes is accepted — this is the replace-mode path for such pages.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeUnderAttributes_ReturnsValid() {
+		// Static form uses viewModelConfig (not viewModelConfigDiff). Attribute must be under .attributes.
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":
+						{
+							"type":"crt.NumberInput",
+							"label":"$Resources.Strings.UsrEstimatedMinutes",
+							"control":"$UsrEstimatedMinutes"
+						}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {
+					"UsrEstimatedMinutes": {
+						"modelConfig": { "path": "PDS.UsrEstimatedMinutes" }
+					}
+				}
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because the attribute is declared in static viewModelConfig.attributes with a valid modelConfig.path, and the label key 'UsrEstimatedMinutes' matches the column code for auto-provide");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Static viewModelConfig form: a binding attribute placed at the viewModelConfig ROOT (a sibling of .attributes) instead of under .attributes is NOT recognised as declared, so the inserted field is rejected. This is the static-body analogue of the ENG-90846 runtime symptom where new attributes ended up at the viewModelConfig root (sibling of attributes) and the Freedom UI runtime ignored them — the controls rendered with no data.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeAtRootNotUnderAttributes_ReturnsInvalid() {
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":{"type":"crt.NumberInput","control":"$UsrEstimatedMinutes"}
+				}
+			]
+		""";
+		// Attribute sits at the viewModelConfig root (sibling of "attributes"), NOT under .attributes —
+		// the form the runtime ignores.
+		string viewModelConfig = """
+			{
+				"attributes": {},
+				"UsrEstimatedMinutes": { "modelConfig": { "path": "PDS.UsrEstimatedMinutes" } }
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because an attribute at the viewModelConfig root (not under .attributes) is ignored by the runtime, so the control would render with no data");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("UsrEstimatedMinutes") &&
+			error.Contains("does not declare attribute"));
+	}
+
+	[Test]
+	[Description("Static viewModelConfig form: an inserted field whose binding attribute is declared nowhere (empty attributes map) is rejected with the binding-declaration diagnostic — the static-form counterpart of the diff-form InsertWithoutViewModelAttribute case.")]
+	public void ValidateInsertedFieldSelfConsistency_StaticViewModelConfig_AttributeMissing_ReturnsInvalid() {
+		string viewConfigDiff = """
+			[
+				{
+					"operation":"insert",
+					"name":"UsrEstimatedMinutes",
+					"values":{"type":"crt.NumberInput","control":"$UsrEstimatedMinutes"}
+				}
+			]
+		""";
+		string viewModelConfig = """
+			{
+				"attributes": {}
+			}
+		""";
+		string body = BuildStaticViewModelConfigPageBody(viewConfigDiff, viewModelConfig);
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because the static viewModelConfig.attributes map does not declare the bound attribute, so the control would have no data source");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("UsrEstimatedMinutes") &&
+			error.Contains("does not declare attribute"));
+	}
+
+	[Test]
+	[Description("Legacy diff format path:[\"attributes\"] (older platform form, values IS the attributes container) is recognised as properly-nested and accepted by ValidateInsertedFieldSelfConsistency.")]
+	public void ValidateInsertedFieldSelfConsistency_LegacyPathAttributesFormat_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":
+							{
+								"type":"crt.NumberInput",
+								"label":"$Resources.Strings.PDS_UsrEstimatedMinutes",
+								"control":"$PDS_UsrEstimatedMinutes"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes"],
+						"values":{"PDS_UsrEstimatedMinutes":{"modelConfig":{"path":"PDS.UsrEstimatedMinutes"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue(
+			"because path:[\"attributes\"] is the older properly-nested form (attributes reach viewModelConfig.attributes) and must be accepted");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Designer format (path:[], values.attributes) with multiple attributes in a single entry — both controls must be recognised and validation must pass.")]
+	public void ValidateInsertedFieldSelfConsistency_DesignerFormat_MultipleAttributesInOneEntry_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.PDS_UsrA","control":"$PDS_UsrA"}
+					},
+					{
+						"operation":"insert",
+						"name":"UsrB",
+						"values":{"type":"crt.NumberInput","label":"$Resources.Strings.PDS_UsrB","control":"$PDS_UsrB"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{
+							"attributes":{
+								"PDS_UsrA":{"modelConfig":{"path":"PDS.UsrA"}},
+								"PDS_UsrB":{"modelConfig":{"path":"PDS.UsrB"}}
+							}
+						}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeTrue("because both attributes are declared in a single Designer-format path:[] entry and labels use auto-provided column codes");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Case-collision regression guard: a properly-nested attribute and a flat attribute differing ONLY in case must NOT collapse. properlyNestedAttributes is Ordinal (runtime keys case-exact), so the flat-form 'pds_usrx' is still rejected even though a nested 'PDS_USRX' exists.")]
+	public void ValidateInsertedFieldSelfConsistency_CaseCollidingNestedAndFlat_RejectsFlat() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldLower",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$pds_usrx"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_USRX":{"modelConfig":{"path":"PDS.UsrX"}}}}
+					},
+					{
+						"operation":"merge",
+						"values":{"pds_usrx":{"modelConfig":{"path":"PDS.UsrX"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because the flat 'pds_usrx' lands at viewModelConfig root and must not be masked by the case-different nested 'PDS_USRX'");
+		result.Errors.Should().ContainSingle(e => e.Contains("pds_usrx") && e.Contains("without the required nesting"));
+	}
+
+	[Test]
+	[Description("Multi-segment path:[\"attributes\",\"X\"] must NOT be treated as an attributes container — for that path `values` is the attribute body, not an attribute map. The classifier rejects it, so a control binding the targeted attribute is reported as not declared rather than silently accepting body keys (e.g. 'modelConfig') as attribute names.")]
+	public void ValidateInsertedFieldSelfConsistency_MultiSegmentAttributesPath_NotTreatedAsContainer() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$PDS_UsrX"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":["attributes","PDS_UsrX"],
+						"values":{"modelConfig":{"path":"PDS.UsrX"}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because a multi-segment attributes path is not a valid attribute-map container");
+		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrX") && e.Contains("does not declare attribute"),
+			"because PDS_UsrX is not collected (the body keys under a 2-segment path are not attribute names) — and the spurious 'modelConfig' must not be accepted as an attribute either");
+	}
+
+	[Test]
+	[Description("A remove operation must not contribute declared attribute names. An insert binding an attribute that is only 'declared' by a remove entry is reported as not declared.")]
+	public void ValidateInsertedFieldSelfConsistency_RemoveOperationDoesNotDeclareAttribute_ReturnsInvalid() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldFoo",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrFoo","control":"$PDS_UsrFoo"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"remove",
+						"path":["attributes"],
+						"values":{"PDS_UsrFoo":{"modelConfig":{"path":"PDS.UsrFoo"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse("because a remove operation deletes the attribute and must not make a binding to it appear valid");
+		result.Errors.Should().Contain(e => e.Contains("PDS_UsrFoo") && e.Contains("does not declare attribute"));
+	}
+
+	[Test]
+	[Description("Crash guard: a SCHEMA_VIEW_MODEL_CONFIG block that parses as a non-object (e.g. an array) must not throw — System.Text.Json TryGetProperty throws on non-objects, so EnumerateAttributesContainers guards ValueKind first. Validation returns a result instead of crashing.")]
+	public void ValidateInsertedFieldSelfConsistency_NonObjectStaticViewModelConfig_DoesNotThrow() {
+		// Static viewModelConfig marker holds an array instead of an object — malformed but must not crash.
+		string body = BuildStaticViewModelConfigPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"FieldX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$UsrX"}
+					}
+				]
+			""",
+			"[]");
+
+		Action act = () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		act.Should().NotThrow("because EnumerateAttributesContainers guards ValueKind before TryGetProperty");
+	}
+
+	[Test]
+	[Description("Designer format (path:[], values.attributes) with a validator using reactive binding in a param — the param binding rule must apply regardless of the viewModelConfigDiff format.")]
+	public void ValidateValidatorParamResourceBindings_DesignerFormat_ReactiveBindingInValidatorParam_ReturnsInvalid() {
+		string viewModelConfigDiff = """
+			[
+				{
+					"operation":"merge",
+					"path":[],
+					"values":{
+						"attributes":{
+							"UsrName":{
+								"modelConfig":{"path":"PDS.UsrName"},
+								"validators":{
+									"Upper":{
+										"type":"usr.Upper",
+										"params":{"message":"$Resources.Strings.UsrMsg"}
+									}
+								}
+							}
+						}
+					}
+				}
+			]
+		""";
+		string body = BuildDiffBackedPageBody("[]", viewModelConfigDiff);
+
+		var result = SchemaValidationService.ValidateValidatorParamResourceBindings(body);
+
+		result.IsValid.Should().BeFalse("because the reactive binding $Resources.Strings.* is not valid in validator params — must use #ResourceString()# — and the path:[] Designer format does not exempt this rule");
+		result.Errors.Should().ContainSingle(e => e.Contains("#ResourceString(UsrMsg)#"));
+	}
+
+	[Test]
+	[Description("path:[] entry where attribute is directly in values (no 'attributes' sub-object) must produce an error — " +
+	             "the attribute falls through all collection passes and is reported as undeclared. " +
+	             "Known approximation: the message says 'not declared' rather than 'wrong nesting', but the save is correctly blocked.")]
+	public void ValidateInsertedFieldSelfConsistency_RootPathWithAttributeDirectlyInValues_IsRejected() {
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrX",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.UsrX","control":"$PDS_UsrX"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"PDS_UsrX":{"modelConfig":{"path":"PDS.UsrX"}}}
+					}
+				]
+			""");
+
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		result.IsValid.Should().BeFalse(
+			"because path:[] with attribute directly in values (no 'attributes' sub-object) is not recognised " +
+			"by any collection path and the save is blocked — the diagnostic says 'not declared' rather than 'wrong nesting' " +
+			"(known approximation; the fix is correct nesting under values.attributes)");
+		result.Errors.Should().ContainSingle(e => e.Contains("PDS_UsrX") && e.Contains("does not declare attribute"),
+			"because the undeclared-attribute message is produced since the attribute is not found in any valid collection pass");
 	}
 
 	[Test]
@@ -5712,7 +6344,7 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Mobile: label using a sibling DS-bound attribute name that does NOT match the column code warns — auto-provide is keyed by entity column code (last segment of DS path), not by arbitrary alias.")]
+	[Description("Mobile: label using a DS-bound SIBLING attribute name that is not the field's own binding attribute warns — auto-provide is keyed by the control's binding attribute, not by an arbitrary alias sharing the same DS path.")]
 	public void ValidateMobileStandardFieldBindings_LabelResourceKeyIsSiblingAttributeOnSameDsPath_ReturnsWarning() {
 		string body = """
 		              {
@@ -5749,7 +6381,7 @@ public sealed class SchemaValidationServiceTests
 		result.IsValid.Should().BeTrue("because a missing label resource is a recoverable warning, not a hard failure");
 		result.Errors.Should().BeEmpty();
 		result.Warnings.Should().ContainSingle(w => w.Contains("UsrNameAlias") && w.Contains("render blank"),
-			"because the alias does not match the column code 'UsrName' so the platform does not auto-provide the caption");
+			"because the label key is a different attribute than the control's binding attribute 'UsrName', so the platform does not auto-provide the caption under it");
 	}
 
 	#endregion
@@ -5860,6 +6492,287 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeTrue("because the word sdk is a local variable, not an SDK access");
 		result.Warnings.Should().BeEmpty("because \\bsdk\\s*[.[] does not match a bare identifier assignment");
+	}
+
+	#endregion
+
+	#region ValidateContextAccessAwait
+
+	[Test]
+	[Description("Warns when a module-scope helper reads $context[\"Attr\"] without await inside a ?? chain.")]
+	public void ValidateContextAccessAwait_WhenHelperReadsContextWithoutAwait_ReturnsWarning() {
+		// Arrange — reproduces the real bug: the un-awaited read lives in a free helper function,
+		// not inside the SCHEMA_HANDLERS array, so a handler-only scan would miss it.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/["@creatio-devkit/common"]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/ {
+						const sync = async ($context, fmt) => {
+							const current = fmt ?? $context["UsrPhoneFormatMode"] ?? await getFormat();
+							await $context.set("UsrCountryCode", current);
+						};
+						return {/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an un-awaited read is a warning, not a blocking error");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrPhoneFormatMode") && w.Contains("await"),
+			because: "the helper reads $context[\"UsrPhoneFormatMode\"] without awaiting the asynchronous accessor");
+	}
+
+	[Test]
+	[Description("Warns when an un-awaited $context read is passed as a call argument.")]
+	public void ValidateContextAccessAwait_WhenUnAwaitedReadPassedAsArgument_ReturnsWarning() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										sync(request.$context, request.$context["UsrPhoneNumber"]);
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrPhoneNumber"),
+			because: "request.$context[\"UsrPhoneNumber\"] is passed on without await, yielding a Promise argument");
+	}
+
+	[Test]
+	[Description("Does not warn when every $context read is awaited.")]
+	public void ValidateContextAccessAwait_WhenReadsAreAwaited_ReturnsClean() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const v = await request.$context["UsrPhoneNumber"];
+										const m = await $context["UsrMode"];
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because all reads are awaited");
+		result.Warnings.Should().BeEmpty("because every $context bracket read is preceded by await");
+	}
+
+	[Test]
+	[Description("Does not warn for a bracket assignment target, which is a write rather than a read.")]
+	public void ValidateContextAccessAwait_WhenBracketIsAssignmentTarget_ReturnsClean() {
+		// Arrange — '$context["X"] =' is a write target, not an un-awaited read.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										request.$context["UsrTransient"] = next;
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because a write target is not flagged");
+		result.Warnings.Should().BeEmpty("because '$context[\"UsrTransient\"] =' is an assignment, not a read");
+	}
+
+	[Test]
+	[Description("Still warns when an un-awaited read is used in an equality comparison.")]
+	public void ValidateContextAccessAwait_WhenUnAwaitedReadInComparison_ReturnsWarning() {
+		// Arrange — '==' must not be mistaken for an assignment '='.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										if ($context["UsrMode"] === "local") {
+											return;
+										}
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "an un-awaited read compared with === resolves the Promise object, never the value");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still warns when an un-awaited read is followed by '=>', which is an arrow and not an assignment target.")]
+	public void ValidateContextAccessAwait_WhenReadFollowedByArrow_ReturnsWarning() {
+		// Arrange — '=>' must not be mistaken for an assignment '='; the read is still un-awaited.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const pick = $context["UsrMode"] => "x";
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "'=>' after a bracket read is an arrow, not an assignment, so the un-awaited read is still flagged");
+	}
+
+	[Test]
+	[Description("Does not warn for $context.set or $context.executeRequest method calls.")]
+	public void ValidateContextAccessAwait_WhenMethodCallsOnly_ReturnsClean() {
+		// Arrange — '.set(' / '.executeRequest(' are method calls, not bracket reads.
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										await request.$context.set("UsrName", "x");
+										await request.$context.executeRequest({
+											type: "usr.Req",
+											$context: request.$context
+										});
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because there are no bracket reads at all");
+		result.Warnings.Should().BeEmpty("because method-call forms on $context are not bracket attribute reads");
+	}
+
+	[Test]
+	[Description("Reports each distinct un-awaited attribute name once, even across multiple reads.")]
+	public void ValidateContextAccessAwait_WhenSameAttributeReadTwice_WarnsOnce() {
+		// Arrange
+		string body =
+			"""
+				define(
+					"Module",
+					/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/,
+					function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+						return {
+							handlers: /**SCHEMA_HANDLERS*/[
+								{
+									request: "crt.HandleViewModelInitRequest",
+									handler: async (request, next) => {
+										const a = $context["UsrMode"];
+										const b = $context["UsrMode"];
+									}
+								}
+							]/**SCHEMA_HANDLERS*/
+						};
+					}
+				);
+			""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because the finding is advisory");
+		result.Warnings.Should().ContainSingle(w => w.Contains("UsrMode"),
+			because: "duplicate reads of the same attribute are de-duplicated into a single warning");
+	}
+
+	[Test]
+	[Description("Returns clean result for null or empty body.")]
+	public void ValidateContextAccessAwait_WhenBodyEmpty_ReturnsClean() {
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateContextAccessAwait(string.Empty);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an empty body has nothing to scan");
+		result.Warnings.Should().BeEmpty("because there is no content to flag");
 	}
 
 	#endregion

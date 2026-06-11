@@ -291,6 +291,12 @@ public class BindingsModule {
 		// singleton bound to the server's startup environment. A singleton resolver would
 		// probe the wrong environment and report a falsely authoritative "environment" tier.
 		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
+		// Profile-culture resolution (ENG-91044): the cache is a singleton so a resolved culture
+		// survives across CLI/MCP calls (env-URI-keyed); the factory builds a per-environment
+		// resolver per call, sharing that singleton cache.
+		services.AddSingleton<ICurrentUserCultureCache, CurrentUserCultureCache>();
+		services.AddSingleton<ICurrentUserCultureResolverFactory, CurrentUserCultureResolverFactory>();
+		services.AddTransient<GetUserCultureCommand>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();
 		
@@ -329,6 +335,7 @@ public class BindingsModule {
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
@@ -336,6 +343,8 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
+		services.AddTransient<InstallGateTool>();
+		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
@@ -516,6 +525,7 @@ public class BindingsModule {
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
+		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();

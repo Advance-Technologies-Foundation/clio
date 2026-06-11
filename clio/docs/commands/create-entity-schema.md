@@ -13,6 +13,10 @@ clio create-entity-schema [options]
 
 Create an entity schema in a remote Creatio package.
 
+The command saves the schema, applies the DB structure, and publishes the
+configuration, so the new schema is immediately visible to lookup pickers and
+sys-setting reference schema lists. No separate compile is required.
+
 ## Examples
 
 ```bash
@@ -35,7 +39,18 @@ Create replacement schema
 --column <VALUE>
 Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
 name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
-Repeat the option for multiple columns
+Repeat the option for multiple columns.
+Supported types include Guid, Text/ShortText/MediumText/LongText/MaxSizeText, Integer, Float,
+Boolean, Date/DateTime/Time, Lookup, Binary, Image, ImageLookup, File, SecureText, and Email.
+For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use the
+`ImageLookup` ("Image link") type (alias: `ImageLink`) — the binary `Image` type does not work
+with `crt.ImageInput`. `ImageLookup` references the `SysImage` schema automatically; do not set
+a reference schema for it.
+--caption-culture <VALUE>
+Override the culture used for the generated schema and column captions/labels (e.g. `en-US`, `uk-UA`).
+Precedence: this override > the connected user's profile culture > `en-US`. Supplying it skips the
+profile-culture lookup. When omitted, clio resolves the logged-in user's profile culture (see
+`get-user-culture`) and falls back to `en-US` if it cannot be resolved.
 --timeout <NUMBER>
 Request timeout in milliseconds. Default: 100000.
 ```

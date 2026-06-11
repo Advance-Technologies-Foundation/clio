@@ -1108,8 +1108,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish branching rules between new-app and existing-app flows");
 		article.Text.Should().Contain("Schema sync recovery patterns",
 			because: "the guide should cover schema-sync recovery patterns owned by clio");
-		article.Text.Should().Contain("InsertQuery failed",
-			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("Failed to create section",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions using the current section-create error marker");
 		article.Text.Should().Contain("metadata readback timeout",
 			because: "the guide should describe the section readback timeout recovery path");
 		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
@@ -1410,6 +1410,163 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 		article.Text.Should().Contain("prefer `populateValue=true` by default",
 			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+		article.Text.Should().Contain("classify the requirement into one mechanism",
+			because: "the guide must teach lookup-restriction routing as a mechanism taxonomy, not a list of memorized business phrases");
+		article.Text.Should().Contain("never a handler/crt.InitRequest",
+			because: "the guide must steer every lookup-restriction mechanism away from handlers/crt.InitRequest");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI indicator widgets so AI callers can translate Copilot metric intent into runtime widget config.")]
+	public void IndicatorWidgetGuidanceResource_Should_Return_Canonical_Indicator_Widget_Guide() {
+		// Arrange
+		IndicatorWidgetGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the indicator widget guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the resource should expose a stable MCP URI for indicator widget guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the indicator widget guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the article should identify itself as the dedicated indicator-widget guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point callers to get-component-info as the single source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for adding and filtering a Freedom UI related/child list (detail) so AI callers can scope a list by the current page record.")]
+	public void RelatedListGuidanceResource_Should_Return_Canonical_Related_List_Guide() {
+		// Arrange
+		RelatedListGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the related-list guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the resource should expose a stable MCP URI for related-list guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the related-list guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP related list guide",
+			because: "the article should identify itself as the dedicated related-list guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
+		article.Text.Should().Contain("isCollection",
+			because: "the guide must teach the collection attribute that backs the child list");
+		article.Text.Should().Contain("modelConfig.dependencies",
+			because: "the guide must teach the declarative dependencies entry that scopes the list by the open record");
+		article.Text.Should().Contain("attributePath",
+			because: "the guide must name the child foreign-key column field of the dependency");
+		article.Text.Should().Contain("relationPath",
+			because: "the guide must name the master-id path field of the dependency");
+		article.Text.Should().Contain("\"relationPath\": \"PDS.Id\"",
+			because: "the guide must show the canonical relationPath pointing at the page primary data source id");
+		article.Text.Should().Contain("handlers: []",
+			because: "the guide must emphasize that the declarative dependency needs no handler");
+		article.Text.Should().Contain("Use `modelConfig.dependencies` instead",
+			because: "the guide must warn against the init-handler scoping anti-pattern and redirect to dependencies");
+		article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
+		article.Text.Should().Contain("\"items\": []",
+			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
+	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
+		// Arrange
+		EsqFiltersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the ESQ filters guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the ESQ filters guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP ESQ filters guide",
+			because: "the article should identify itself as the dedicated ESQ filters guide");
+		article.Text.Should().Contain("Column-path normalization",
+			because: "the guide should cover normalized path semantics explicitly");
+		article.Text.Should().Contain("Lookup-filter conversion guidance",
+			because: "the guide should cover lookup value-shape rules explicitly");
+		article.Text.Should().Contain("Relative-date conversion guidance",
+			because: "the guide should cover relative-date pitfalls explicitly");
+		article.Text.Should().Contain("`CreatedById` -> `CreatedBy`",
+			because: "the guide should include a concrete normalized-path example");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes indicator-widget so AI callers can retrieve indicator widget authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Indicator_Widget_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("indicator-widget", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose indicator-widget so get-guidance can return it by name");
+		entry.Name.Should().Be("indicator-widget",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("indicator widgets",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes related-list so AI callers can retrieve detail/master-detail filter guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Related_List_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("related-list", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose related-list so get-guidance can return it by name");
+		entry.Name.Should().Be("related-list",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("related/child list",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose esq-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("esq-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("filter authoring",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the article URI in the catalog must match the resource URI");
 	}
 
 	[Test]
@@ -1464,6 +1621,49 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rules",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article dedicated to the apply-static-filter friendly filter contract.")]
+	public void BusinessRuleFiltersGuidanceResource_Should_Return_Canonical_Filter_Contract_Guide() {
+		BusinessRuleFiltersGuidanceResource resource = new();
+
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the filter-contract guide should be returned as a plain-text MCP resource").Subject;
+
+		article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
+			because: "the resource should expose a stable MCP URI for the filter contract");
+		article.MimeType.Should().Be("text/plain");
+		article.Text.Should().Contain("apply-static-filter",
+			because: "the guide should identify itself as the apply-static-filter filter contract");
+		article.Text.Should().Contain("backwardReferenceFilters",
+			because: "the guide should document backward reference filters");
+		article.Text.Should().Contain("aggregationType",
+			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
+		article.Text.Should().Contain("discovery flow",
+			because: "the guide should keep the no-assumptions discovery flow");
+		article.Text.Should().Contain("validate before create (MANDATORY)",
+			because: "the guide must require an execute-esq dry-run of the filter before the rule is created");
+		article.Text.Should().Contain("DRY-RUN the same filter as an `execute-esq` SelectQuery",
+			because: "the guide must spell out the pre-save execute-esq validation discipline borrowed from the component widget recipe");
+		article.Text.Should().Contain("before-create checklist",
+			because: "the guide should end with a compact before-create checklist of the hard-won filter invariants");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes business-rule-filters so AI callers can retrieve the filter contract by name.")]
+	public void GuidanceCatalog_Should_Include_Business_Rule_Filters_Entry() {
+		bool found = GuidanceCatalog.TryGet("business-rule-filters", out GuidanceCatalogEntry entry);
+
+		found.Should().BeTrue(
+			because: "the catalog must expose business-rule-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("business-rule-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
 			because: "the article URI in the catalog must match the resource URI");
 	}
 }

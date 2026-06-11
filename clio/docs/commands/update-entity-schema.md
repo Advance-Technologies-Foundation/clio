@@ -30,6 +30,11 @@ Target package name. Required.
 Entity schema name. Required.
 --operation <VALUE>
 Structured operation JSON. Repeat the option for multiple values. Required.
+Operation `type` accepts the same values as modify-entity-schema-column, including
+Binary, Image, ImageLookup (alias ImageLink), File, SecureText, and Email.
+For image/photo fields bound to the `crt.ImageInput` component, add an `ImageLookup`
+("Image link") column instead of the binary `Image` type; `ImageLookup` references the
+`SysImage` schema automatically (no reference-schema-name).
 ```
 
 ## Environment Options
@@ -92,10 +97,12 @@ cliogate must be installed on the target Creatio environment.
 - `--operation` payloads can include structured `default-value-config`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
+- `--caption-culture <VALUE>` overrides the culture for written column captions/descriptions (e.g. `en-US`, `uk-UA`) across the whole batch. Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved.
 
 ## See also
 
 - `modify-entity-schema-column`
 - `get-entity-schema-properties`
+- `get-user-culture`
 
 - [Clio Command Reference](../../Commands.md#update-entity-schema)

@@ -1,0 +1,179 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json.Serialization;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Tools;
+
+/// <summary>
+/// Reflection-derived registry of every MCP tool registered by clio, used by
+/// <c>get-tool-contract</c> as a fallback so that a registered-but-uncurated tool returns a
+/// contract synthesized from its own input schema instead of a <c>tool-not-found</c> error.
+/// </summary>
+internal static class McpToolSchemaCatalog {
+	private const string StringType = "string";
+	private const string NumberType = "number";
+	private const string BooleanType = "boolean";
+	private const string ArrayType = "array";
+	private const string ObjectType = "object";
+
+	private static readonly Lazy<IReadOnlyDictionary<string, ToolContractDefinition>> SchemaContracts =
+		new(BuildSchemaContracts);
+
+	/// <summary>
+	/// Returns the stable set of every registered MCP tool name discovered by reflection.
+	/// </summary>
+	internal static IReadOnlyCollection<string> RegisteredToolNames => SchemaContracts.Value.Keys.ToArray();
+
+	/// <summary>
+	/// Tries to synthesize a contract from a registered tool's own input schema.
+	/// </summary>
+	internal static bool TryGetSchemaContract(string toolName, out ToolContractDefinition contract) =>
+		SchemaContracts.Value.TryGetValue(toolName, out contract);
+
+	private static IReadOnlyDictionary<string, ToolContractDefinition> BuildSchemaContracts() {
+		Assembly assembly = typeof(McpToolSchemaCatalog).Assembly;
+		Dictionary<string, ToolContractDefinition> contracts = new(StringComparer.OrdinalIgnoreCase);
+		foreach (MethodInfo method in EnumerateToolMethods(assembly)) {
+			McpServerToolAttribute toolAttribute = method.GetCustomAttribute<McpServerToolAttribute>();
+			string toolName = toolAttribute?.Name;
+			if (string.IsNullOrWhiteSpace(toolName) || contracts.ContainsKey(toolName)) {
+				continue;
+			}
+			contracts[toolName] = BuildSchemaContract(toolName, method, assembly);
+		}
+		return contracts;
+	}
+
+	private static IEnumerable<MethodInfo> EnumerateToolMethods(Assembly assembly) {
+		foreach (Type type in assembly.GetTypes()) {
+			foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)) {
+				if (method.GetCustomAttribute<McpServerToolAttribute>() is not null) {
+					yield return method;
+				}
+			}
+		}
+	}
+
+	private static ToolContractDefinition BuildSchemaContract(string toolName, MethodInfo method, Assembly assembly) {
+		string description = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
+		string note = "Auto-generated from the tool input schema; no curated contract is available for this tool yet.";
+		string fullDescription = string.IsNullOrWhiteSpace(description) ? note : $"{description}\n\n{note}";
+
+		(IReadOnlyList<string> required, IReadOnlyList<ToolContractField> properties) =
+			BuildInputSchema(method, assembly);
+
+		return new ToolContractDefinition(
+			toolName,
+			fullDescription,
+			new ToolInputSchemaContract(required, properties),
+			BuildOutputContract(method),
+			new ToolErrorContract([
+				new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
+				new ToolErrorCodeContract("missing-required-parameter", "A required parameter is missing."),
+				new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract.")
+			]),
+			Aliases: [],
+			Defaults: [],
+			Examples: [],
+			PreferredFlow: new ToolFlowHint([toolName], "Schema-only fallback contract; consult the tool description for sequencing."),
+			FallbackFlow: [],
+			Deprecations: []);
+	}
+
+	private static (IReadOnlyList<string> Required, IReadOnlyList<ToolContractField> Properties) BuildInputSchema(
+		MethodInfo method, Assembly assembly) {
+		Type argsType = method.GetParameters()
+			.Select(parameter => parameter.ParameterType)
+			.FirstOrDefault(parameterType =>
+				parameterType.IsClass &&
+				parameterType != typeof(string) &&
+				parameterType.Assembly == assembly);
+		if (argsType is null) {
+			return ([], []);
+		}
+
+		// Positional records carry [property: JsonPropertyName] on the property but often place
+		// [Required] / [Description] on the constructor parameter, so merge both sources.
+		Dictionary<string, ParameterInfo> constructorParameters = argsType
+			.GetConstructors()
+			.OrderByDescending(constructor => constructor.GetParameters().Length)
+			.FirstOrDefault()
+			?.GetParameters()
+			.GroupBy(parameter => parameter.Name, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase)
+			?? new Dictionary<string, ParameterInfo>(StringComparer.OrdinalIgnoreCase);
+
+		List<string> required = [];
+		List<ToolContractField> properties = [];
+		foreach (PropertyInfo property in argsType.GetProperties(BindingFlags.Public | BindingFlags.Instance)) {
+			if (property.GetCustomAttribute<JsonExtensionDataAttribute>() is not null ||
+				property.GetCustomAttribute<JsonIgnoreAttribute>() is not null) {
+				continue;
+			}
+			constructorParameters.TryGetValue(property.Name, out ParameterInfo parameter);
+			string name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+				?? parameter?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+				?? property.Name;
+			string description = property.GetCustomAttribute<DescriptionAttribute>()?.Description
+				?? parameter?.GetCustomAttribute<DescriptionAttribute>()?.Description
+				?? string.Empty;
+			properties.Add(new ToolContractField(name, MapClrType(property.PropertyType), description));
+			bool isRequired = property.GetCustomAttribute<RequiredAttribute>() is not null
+				|| parameter?.GetCustomAttribute<RequiredAttribute>() is not null;
+			if (isRequired) {
+				required.Add(name);
+			}
+		}
+		return (required, properties);
+	}
+
+	private static ToolOutputContract BuildOutputContract(MethodInfo method) {
+		Type returnType = UnwrapTask(method.ReturnType);
+		bool isCommandResult = returnType == typeof(CommandExecutionResult);
+		return new ToolOutputContract(
+			isCommandResult ? "command-execution-result" : "tool-native-response",
+			SuccessField: null,
+			FailureSignals: isCommandResult
+				? ["exit-code != 0", "execution-log-messages[*].message-type == Error"]
+				: ["success == false"],
+			Fields: []);
+	}
+
+	private static Type UnwrapTask(Type type) {
+		if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(System.Threading.Tasks.Task<>)) {
+			return type.GetGenericArguments()[0];
+		}
+		return type;
+	}
+
+	private static string MapClrType(Type type) {
+		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
+		if (underlying == typeof(string)) {
+			return StringType;
+		}
+		if (underlying == typeof(bool)) {
+			return BooleanType;
+		}
+		if (underlying.IsEnum) {
+			return StringType;
+		}
+		if (underlying == typeof(byte) || underlying == typeof(sbyte) ||
+			underlying == typeof(short) || underlying == typeof(ushort) ||
+			underlying == typeof(int) || underlying == typeof(uint) ||
+			underlying == typeof(long) || underlying == typeof(ulong) ||
+			underlying == typeof(float) || underlying == typeof(double) ||
+			underlying == typeof(decimal)) {
+			return NumberType;
+		}
+		if (underlying != typeof(string) && typeof(IEnumerable).IsAssignableFrom(underlying)) {
+			return ArrayType;
+		}
+		return ObjectType;
+	}
+}

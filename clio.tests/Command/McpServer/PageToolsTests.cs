@@ -176,6 +176,10 @@ public class PageToolsTests
 			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
+		prompt.Should().Contain("Before inserting ANY new component",
+			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
+		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
+			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
@@ -265,6 +269,10 @@ public class PageToolsTests
 			because: "get-page description should leave specialized guide selection to the general page modification guide");
 		description.Should().NotContain("page-schema-resources",
 			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
+		description.Should().Contain("classify the mechanism, not the wording",
+			because: "get-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
+		description.Should().Contain("not crt.InitRequest",
+			because: "get-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
 	}
 
 	[Test]
@@ -325,6 +333,10 @@ public class PageToolsTests
 			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
 		description.Should().Contain("do NOT register localizable strings",
 			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
+		description.Should().Contain("classify the mechanism, not the wording",
+			because: "update-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
+		description.Should().Contain("not crt.InitRequest",
+			because: "update-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
 	}
 
 	[Test]
@@ -1433,6 +1445,138 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage surfaces an advisory warning (without blocking) when a replace body downgrades an own-body insert to a merge")]
+	public void TryUpdatePage_WhenInsertDowngradedToMerge_ReturnsWarningAndSaves() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDowngrade_FormPage",
+				"downgrade-schema-uid",
+				"downgrade-package-uid",
+				"UsrDowngradePackage",
+				"BasePage").ToString());
+		// The schema currently stored on the server inserts UsrName in its own body.
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		// The incoming replace body changes that same UsrName from insert to merge.
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDowngrade_FormPage",
+			Body = CreatePageBody("""[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the downgrade is advisory only and must not block the save");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "demoting an own-body insert to a merge orphans the component and must surface as a warning");
+	}
+
+	[Test]
+	[Description("PageUpdateTool merges the command's downgrade warning with body-only validation warnings instead of overwriting either (locks MergeWarnings).")]
+	public async System.Threading.Tasks.Task UpdatePage_WhenDowngradeAndAwaitWarningsBothApply_MergesBothIntoResponse() {
+		// Arrange — the stored schema inserts UsrName (so the incoming merge is a downgrade), and the
+		// incoming body also reads $context without await (a body-only validation warning).
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMerge_FormPage", "merge-schema-uid", "merge-package-uid", "UsrMergePackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]""",
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, "dev", null, null, null, SkipSampling: true);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "both findings are advisory, so the save must still succeed");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "the command-side insert->merge downgrade warning must be preserved");
+		response.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "the body-only un-awaited $context warning must coexist rather than being overwritten");
+	}
+
+	[Test]
+	[Description("validate-page surfaces the un-awaited $context warning at the tool level without marking the body invalid (locks PageValidateTool ContextAwait wiring).")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenUnAwaitedContextRead_ReturnsWarningAndStaysValid() {
+		// Arrange
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageValidateArgs args = new(body);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an un-awaited $context read is advisory and must not invalidate the body");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "validate-page must surface the ValidateContextAccessAwait warning through its tool-level wiring");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {
@@ -2495,7 +2639,16 @@ public class PageToolsTests
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
 		failingFs.Path.Combine(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1), ci.ArgAt<string>(2)));
+		failingFs.Path.GetFullPath(Arg.Any<string>()).Returns(ci => ci.ArgAt<string>(0));
 		failingFs.Directory.GetCurrentDirectory().Returns("/workspace");
+		// Configure the workspace-root walk-up so it terminates: a bare IDirectoryInfo substitute
+		// returns a non-null recursive substitute for .Parent, so PageOutputDirectoryResolver
+		// would loop forever and exhaust memory. A single directory whose Parent is null models a
+		// filesystem root and lets the resolver fall through to the current directory.
+		System.IO.Abstractions.IDirectoryInfo workspaceDir = Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		workspaceDir.FullName.Returns("/workspace");
+		workspaceDir.Parent.Returns((System.IO.Abstractions.IDirectoryInfo)null);
+		failingFs.DirectoryInfo.New(Arg.Any<string>()).Returns(workspaceDir);
 		failingFs.Directory.When(d => d.CreateDirectory(Arg.Any<string>()))
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
 		PageGetTool tool = new(command, logger, commandResolver, failingFs);

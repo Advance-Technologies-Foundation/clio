@@ -70,8 +70,12 @@ internal sealed class EsqCompareFilterDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? TrimDateTimeParameterToDate { get; set; }
 
+	/// <summary>
+	/// Either an <see cref="EsqColumnExpressionDto"/> (plain column) or an
+	/// <see cref="EsqDatePartFunctionExpressionDto"/> (DatePart extraction over a date/time column).
+	/// </summary>
 	[JsonPropertyName("leftExpression")]
-	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
+	public object LeftExpression { get; set; } = new EsqColumnExpressionDto();
 
 	[JsonPropertyName("isAggregative")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -127,6 +131,9 @@ internal sealed class EsqInFilterDto {
 
 	[JsonPropertyName("isEnabled")]
 	public bool IsEnabled { get; set; } = true;
+
+	[JsonPropertyName("trimDateTimeParameterToDate")]
+	public bool TrimDateTimeParameterToDate { get; set; }
 
 	[JsonPropertyName("leftExpression")]
 	public EsqColumnExpressionDto LeftExpression { get; set; } = new();
@@ -287,9 +294,40 @@ internal sealed class EsqMacrosFunctionExpressionDto {
 	public string ClassName { get; set; } = EsqFilterClassNames.FunctionExpression;
 }
 
+/// <summary>
+/// DatePart function expression used as a CompareFilter leftExpression: extracts a calendar/clock part
+/// (datePartType) from a date/time column so the comparison runs against the extracted part rather than the
+/// whole value (e.g. the time-of-day of CreatedOn EQUAL 11:06). Mirrors devkit ɵDatePartFunctionExpression.
+/// </summary>
+internal sealed class EsqDatePartFunctionExpressionDto {
+	[JsonPropertyName("expressionType")]
+	public int ExpressionType { get; set; } = (int)EsqExpressionType.Function;
+
+	[JsonPropertyName("functionType")]
+	public int FunctionType { get; set; } = (int)EsqFunctionType.DatePart;
+
+	[JsonPropertyName("datePartType")]
+	public int DatePartType { get; set; }
+
+	[JsonPropertyName("functionArgument")]
+	public EsqColumnExpressionDto FunctionArgument { get; set; } = new();
+
+	[JsonPropertyName("className")]
+	public string ClassName { get; set; } = EsqFilterClassNames.FunctionExpression;
+}
+
 internal sealed class EsqParameterDto {
 	[JsonPropertyName("dataValueType")]
 	public int DataValueType { get; set; }
+
+	/// <summary>
+	/// UTC-instant carrier for a Time / DateTime parameter (e.g. "2026-06-10T08:06:00.000Z"). The Freedom UI
+	/// lookup control needs both a UTC <c>dateValue</c> and a local <c>value</c> to render a time-of-day filter;
+	/// a bare "HH:mm" value renders as a placeholder. Omitted (null) for non-temporal parameters.
+	/// </summary>
+	[JsonPropertyName("dateValue")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DateValue { get; set; }
 
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
