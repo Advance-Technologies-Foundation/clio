@@ -471,8 +471,8 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("When the registry client falls back to a different version, the response reports latest-fallback even if the resolver succeeded.")]
-	public async Task ComponentInfoTool_Should_Report_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the platform version is KNOWN but its exact catalog is not published, the response reports 'environment-superset' with a soft caveat — the version is not a mystery but the catalog may be wider than the target.")]
+	public async Task ComponentInfoTool_Should_Report_EnvironmentSuperset_When_Version_Known_But_Catalog_Falls_Back() {
 		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
 		// back to "latest" because 8.1.5 is not yet published on the CDN.
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
@@ -487,9 +487,11 @@ public sealed class ComponentInfoToolTests {
 		response.Success.Should().BeTrue(
 			because: "the catalog still loads through the fallback chain");
 		response.ResolvedTargetVersion.Should().Be("latest",
-			because: "the response must echo the version actually loaded by the client, not the requested one");
-		response.ResolvedFrom.Should().Be("latest-fallback",
-			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+			because: "the response must echo the catalog version actually loaded by the client");
+		response.ResolvedFrom.Should().Be("environment-superset",
+			because: "the platform version was known but the exact catalog was absent — the 'environment-superset' tier signals a known-version approximation rather than blind-latest");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "'latest' is a superset of older GA versions and the soft caveat must be surfaced so the agent checks critical components against the actual environment");
 	}
 
 	[Test]
@@ -506,6 +508,21 @@ public sealed class ComponentInfoToolTests {
 			because: "the fixture resolver reports latest-fallback");
 		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
 			because: "every latest-fallback response must surface the superset caveat so AI verifies the component exists in the target version");
+	}
+
+	[Test]
+	[Description("The latest-fallback warning directs the agent NOT to silently assume the component set, but to inform the user the version is unknown and request confirmation before proceeding (ENG-91134).")]
+	public void LatestFallbackWarning_Should_Direct_Agent_To_Confirm_Unknown_Version_With_User() {
+		string warning = ComponentInfoResolution.LatestFallbackWarning;
+
+		warning.Should().Contain("could not be determined",
+			because: "the agent must learn the target platform version is unknown, not silently assume one");
+		warning.Should().Contain("do NOT silently assume",
+			because: "the AC forbids silently assuming a default component set when the version is unknown");
+		warning.Should().Contain("request explicit",
+			because: "the agent must request the user's confirmation before proceeding against the 'latest' catalog");
+		warning.Should().Contain("superset",
+			because: "the original superset caveat must remain so existing renderer/consumer expectations hold");
 	}
 
 	[Test]

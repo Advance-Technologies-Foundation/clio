@@ -245,6 +245,39 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "with no environment-name/version the resolver cannot scope to a real version and must report latest-fallback");
 		response.VersionWarning.Should().NotBeNullOrWhiteSpace(
 			because: "a latest-fallback catalog is a superset of the target version and the caveat must warn AI the component may not exist there");
+		response.VersionWarning!.Should().Contain("do NOT silently assume",
+			because: "ENG-91134: when the version is unknown the agent must not silently assume a default component set");
+		response.VersionWarning.Should().Contain("request explicit",
+			because: "ENG-91134: the agent must inform the user and request confirmation before proceeding against 'latest'");
+	}
+
+	[Test]
+	[Description("List mode without a search term returns the full component catalog including non-obvious components like crt.Gallery, so the agent discovers them proactively without an explicit user prompt (ENG-91134).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info list mode surfaces crt.Gallery without an explicit search")]
+	[AllureDescription("Starts the real clio MCP server, lists the full web catalog with no search/component-type, and verifies crt.Gallery is present in the known component list.")]
+	public async Task ComponentInfoTool_List_Mode_Should_Surface_Gallery_Without_Explicit_Search() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act — no search, no component-type: the full catalog the agent sees on a proactive sweep.
+		ComponentInfoResponse listResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+
+		// Assert
+		listResponse.Success.Should().BeTrue(
+			because: "list mode must succeed so the agent can index every available component at the start of a session");
+		listResponse.Mode.Should().Be("list",
+			because: "omitting component-type and search returns the full catalog in list mode");
+		listResponse.Items.Should().NotBeNullOrEmpty(
+			because: "the full catalog must expose a flat item list to index");
+		listResponse.Items!.Select(item => item.ComponentType)
+			.Should().Contain("crt.Gallery",
+				because: "crt.Gallery is a non-obvious component that must appear in the known component list without the user asking to search for it (ENG-91134)");
 	}
 
 	[Test]

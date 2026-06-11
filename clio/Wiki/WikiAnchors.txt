@@ -63,6 +63,7 @@ get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
 find-entity-schema:find-entity-schema
+find-app:find-app
 get-info:get-info,describe,describe-creatio,instance-info
 get-schema:get-schema,schema-get
 get-sql-schema:get-sql-schema,sql-schema-get

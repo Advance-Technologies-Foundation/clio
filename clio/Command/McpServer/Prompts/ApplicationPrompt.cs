@@ -28,6 +28,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` when you need to target a registered clio environment explicitly.
 		 Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (the wire shape places `environment-name` inside the required `args` object).
 		 Do not pass application filters; this tool always returns the full installed application list for the selected environment.
+		 Prefer `{FindAppTool.FindAppToolName}` when you only have an imprecise or partial app name: it matches application name, code, description, and section captions and returns each matching app WITH its sections in a single call, so you usually do not need a separate per-app section lookup.
 		 Use this discovery step before `{ApplicationGetInfoTool.ApplicationGetInfoToolName}` when the target app is not fully known.
 		 """;
 
@@ -50,7 +51,7 @@ public static class ApplicationPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Pass exactly one identifier: `id` when you already have the installed application GUID, or `code` when you have the installed application code.
 		 Do not include both identifiers in the same call.
-		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` when the target app is not fully known.
+		 Use this after `{ApplicationGetListTool.ApplicationGetListToolName}` (or `{FindAppTool.FindAppToolName}`, which maps an imprecise app name to a code and returns its sections in one call) when the target app is not fully known.
 		 """;
 
 	/// <summary>

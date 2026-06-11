@@ -27,7 +27,8 @@ internal static class McpServerInstructions
 		3. `get-schema` → inspect a specific schema
 
 		### Create a new entity
-		1. `create-entity-schema` → define the table
+		1. `create-entity-schema` → define the table (applies DDL and publishes the schema, so it is immediately
+		   usable as a Lookup reference in sys-settings and lookup pickers)
 		2. `update-entity-schema` → add columns (already applies DDL to the database and refreshes the runtime schema; no separate compile needed)
 		3. `create-data-binding` + `add-data-binding-row` → seed lookup data
 
@@ -43,7 +44,11 @@ internal static class McpServerInstructions
 
 		## When `compile-creatio` is NOT required
 		- After `create-app`, `create-app-section`, `create-page`, `update-page` — Freedom UI bodies are AMD modules served at runtime.
-		- After `create-entity-schema` / `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		- After `create-entity-schema` / `create-lookup` — these tools apply DDL AND publish the schema themselves,
+		  so the new entity is immediately visible to lookup pickers and sys-setting reference schema lists.
+		- After `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		  Note: unlike `create-entity-schema`, these tools do not re-publish the full configuration (by design — the schema is already published).
+		  If a newly added lookup column must appear in reference schema lists immediately, run `compile-creatio`.
 		- After `create-data-binding` / `add-data-binding-row` / `upsert-data-binding-row-db` — data seeding does not change compiled artifacts.
 		Calling `compile-creatio` in these cases only wastes time and may trigger an unnecessary restart.
 
@@ -57,6 +62,14 @@ internal static class McpServerInstructions
 		- Many tools have two variants: `*-by-environment-name` (uses a registered alias)
 		  and `*-by-credentials` (takes raw URL/username/password). Prefer the environment-name variant.
 		- Read the `docs://help/command/{CommandName}` resources for detailed usage of any command.
+
+		### Freedom UI components — discover and version-check BEFORE planning page work
+		Before you propose components or generate an implementation plan for a Freedom UI page, do BOTH of these — do not rely on memory or assume a component set:
+		1. **Resolve the target platform version.** Call `get-component-info` with `environment-name` set to the environment you will edit, and read `resolvedFrom` on the response:
+		   - `resolvedFrom: "environment"` — the platform version is KNOWN and the exact per-version catalog was loaded; the catalog is authoritative, proceed with no confirmation.
+		   - `resolvedFrom: "environment-superset"` — the platform version was known (probe-success or explicit `--version`) but the exact per-version catalog was not published on the CDN, so `latest` was served as the closest available. The response carries `versionWarning` with a soft caveat. Flag this to the user and verify critical component types against the actual environment before committing to an implementation plan — a type listed in `latest` may not exist in the target’s actual platform version.
+		   - `resolvedFrom: "latest-fallback"` — the version could NOT be determined (no active environment, probe failed, or unparseable version). Do NOT silently assume a component set. Tell the user the platform version is unknown and request explicit confirmation before proceeding, or fix the upstream signal (register/activate the environment, upgrade cliogate). The response's `versionWarning` carries this caveat.
+		2. **Discover the full component set proactively.** Call `get-component-info` with no `component-type` (list mode) to enumerate every component available for that version. Non-obvious components (e.g. `crt.Gallery`) live in the catalog and must be considered and suggested when relevant — never conclude a capability is missing, or wait for the user to ask you to search, without listing the catalog first. Pass `schema-type: "mobile"` to discover the separate mobile component set.
 
 		### Edit a page from a Creatio designer URL
 		A Freedom UI designer URL is one of:

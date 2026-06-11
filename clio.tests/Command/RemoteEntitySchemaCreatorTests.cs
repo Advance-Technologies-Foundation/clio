@@ -972,6 +972,93 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Publishes the configuration after saving the DB structure so the new schema becomes visible to lookup pickers and sys-setting reference schema lists (ENG-90403).")]
+	public void Create_ShouldPublishConfiguration_WhenSchemaIsSaved()
+	{
+		// Arrange
+		var schemaDesignerBodies = new List<string>();
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				schemaDesignerBodies.Add(body);
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		schemaDesignerBodies.Should().HaveCount(2,
+			because: "the creator must send one SchemaDesignerRequest for DDL and one for publication");
+		JObject ddlBody = JObject.Parse(schemaDesignerBodies[0]);
+		ddlBody["saveSchemaDBStructure"]!.Values<string>().Should()
+			.Contain("22222222-2222-2222-2222-222222222222",
+				because: "the first SchemaDesignerRequest must materialize the saved schema DB structure");
+		JObject publishBody = JObject.Parse(schemaDesignerBodies[1]);
+		publishBody["buildWorkspace"]!.Value<bool>().Should().BeTrue(
+			because: "legacy runtimes publish saved schemas only through a workspace build");
+		publishBody["buildChangedConfiguration"]!.Value<bool>().Should().BeTrue(
+			because: "modern runtimes publish saved schemas through an incremental configuration build plus an EntitySchemaManager refresh");
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("published")));
+	}
+
+	[Test]
+	[Description("Surfaces an actionable error when the schema is saved but configuration publication fails, so callers know the schema exists yet stays invisible to reference lists until compiled.")]
+	public void Create_ShouldThrowActionableError_WhenPublishFails()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return JObject.Parse(body)["buildWorkspace"]?.Value<bool>() == true
+					? "{\"success\":false,\"errorInfo\":{\"message\":\"Compilation failed.\"}}"
+					: "{\"success\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*created and saved, but publishing the configuration failed*Compilation failed.*",
+				because: "a publish failure must explain that the schema exists but stays invisible until the configuration is built");
+	}
+
+	[Test]
 	[Description("Anchors the schema caption to the explicit --caption-culture override when provided (override > profile > en-US).")]
 	public void Create_ShouldAnchorCaptionToOverrideCulture_WhenCaptionCultureProvided()
 	{
@@ -1042,6 +1129,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			return "{\"success\":true}";
 		});
 	}
+
 
 	private void SetupApplicationClient(Func<string, string, string> handler)
 	{

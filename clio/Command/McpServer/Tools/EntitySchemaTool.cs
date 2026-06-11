@@ -31,10 +31,13 @@ public sealed class CreateEntitySchemaTool(
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
-				 
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
@@ -152,10 +155,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
 				 not send them as custom columns.
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
