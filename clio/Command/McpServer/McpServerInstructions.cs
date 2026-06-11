@@ -82,6 +82,16 @@ internal static class McpServerInstructions
 		3. Call `get-page schema-name=<matched schema-name>` to retrieve the editable body and bundle.
 		4. Call `update-page schema-name=<matched schema-name> body=<...>` to save. Do NOT pass `target-package-uid`: the backend's `GetDesignPackageUId` resolves the correct package automatically — it materializes a virtual package on first save (locked-source case) or reuses the existing replacing package (already-substituted case). Each platform package has a deterministic owning app, so there is no ambiguity to override.
 
+		## Long-running tools (await — do not retry on a perceived timeout)
+		- `create-app`, `create-app-section`, `update-app-section`, `delete-app-section`,
+		  `list-app-sections`, and `get-app-info` call the Creatio backend and can take minutes on
+		  a cold or busy environment. They stream `notifications/progress` while working.
+		- A progress notification means the server is still working — it is NOT a stall. Do not
+		  cancel and retry, and do not fall back to raw SQL or manual UI on a perceived client
+		  timeout; that duplicates work and can leave partial state.
+		- If your client surfaces a hard timeout while progress is still arriving, treat the call
+		  as in-flight: read back state with `get-app-info` / `list-app-sections` before any retry.
+
 		## Profile language for created entities (detect once, reuse, ask on failure)
 		- Before creating ANY entity (application, object, page, section, lookup, column), call
 		  `get-user-culture` ONCE per session to detect the connected user's profile language, and
