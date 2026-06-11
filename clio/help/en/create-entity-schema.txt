@@ -48,6 +48,10 @@ OPTIONS
                            legacy default-value-source/default-value or
                            structured default-value-config.
                            Repeat the option for multiple columns
+    --caption-culture      Override the culture used for the generated schema and
+                           column captions/labels (e.g. en-US, uk-UA). Precedence:
+                           this override > the connected user's profile culture >
+                           en-US. Supplying it skips the profile-culture lookup.
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration

@@ -6,6 +6,28 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Results;
 
 internal static class McpCommandExecutionParser {
+	private const string RuleNameMessagePrefix = "Rule name:";
+
+	/// <summary>
+	/// Extracts the generated business-rule name from a create-entity/page-business-rule execution result.
+	/// The create command logs <c>Rule name: BusinessRule_xxxx</c>; the platform persists this <c>name</c>
+	/// on the rule object (the friendly caption is stored as a separate addon resource, not on the rule),
+	/// so the generated name is the reliable discriminator for add-on readback.
+	/// </summary>
+	public static string ExtractBusinessRuleName(CommandExecutionEnvelope execution) {
+		string? ruleName = execution.Output?
+			.Select(message => message.Value)
+			.Where(value => !string.IsNullOrWhiteSpace(value) && value!.StartsWith(RuleNameMessagePrefix, StringComparison.Ordinal))
+			.Select(value => value!.Substring(RuleNameMessagePrefix.Length).Trim())
+			.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
+		if (string.IsNullOrWhiteSpace(ruleName)) {
+			throw new InvalidOperationException(
+				"The business-rule create execution output did not contain a 'Rule name:' message to identify the persisted rule.");
+		}
+
+		return ruleName!;
+	}
+
 	public static CommandExecutionEnvelope Extract(CallToolResult callResult) {
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
 			TryExtractExecutionFromElement(structuredContent, callResult.IsError == true, out CommandExecutionEnvelope? structuredExecution)) {

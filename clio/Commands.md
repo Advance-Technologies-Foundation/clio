@@ -556,6 +556,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-component-info"></a>
 <a id="component-info"></a>
 - [`get-component-info`](docs/commands/get-component-info.md) - Get curated Freedom UI component metadata by component type or list the catalog, `component-info`
+<a id="get-user-culture"></a>
+<a id="profile-language"></a>
+- [`get-user-culture`](docs/commands/get-user-culture.md) - Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, `profile-language`
 <a id="healthcheck"></a>
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`

@@ -26,6 +26,12 @@ public sealed class AppModelingGuidanceResource {
 			Text = """
 			       clio MCP app modeling guide
 
+			       Profile language (detect once, reuse, ask on failure)
+			       - Before creating ANY entity (application, object, page, section, lookup, column), call `get-user-culture` ONCE per session to detect the connected user's profile language.
+			       - Reuse that detected culture for all generated names, labels, and captions for the rest of the session; do not re-detect per entity (the server caches it per environment). Re-detect only when the active environment changes.
+			       - If `get-user-culture` returns `success:false`, ASK the user which language to use before creating anything. Do NOT silently fall back to the host machine locale or to `en-US`.
+			       - To force a specific language for one creation, pass `caption-culture` (precedence: `caption-culture` > detected profile culture > `en-US`).
+
 			       Core contract
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.

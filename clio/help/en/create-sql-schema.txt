@@ -27,6 +27,10 @@ OPTIONS
 
     --description                      Optional schema description
 
+    --caption-culture                  Override the culture for the generated
+                                       caption (e.g. en-US, uk-UA). Precedence:
+                                       override > profile culture > en-US.
+
     --uri                    -u       Application uri
 
     --Password               -p       User password
