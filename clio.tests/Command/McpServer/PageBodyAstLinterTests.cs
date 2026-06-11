@@ -63,61 +63,6 @@ internal class PageBodyAstLinterTests {
 
 	#region Tests: structural errors (fail-fast severity)
 
-	[Test]
-	[Description("`handlers: { ... }` (object literal instead of array) raises a handlers-must-be-array Error finding — the page body contract requires an array, the platform rejects objects, the LLM-only sampling cannot catch this")]
-	public void Lint_ShouldEmitError_WhenHandlersIsObjectLiteral() {
-		string body =
-			"define(\"X\", [], function() { return { handlers: { request: \"crt.HandleViewModelInitRequest\" }, " +
-			"converters: {}, validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().ContainSingle(f =>
-			f.Rule == PageBodyAstLinter.RuleHandlersMustBeArray && f.Severity == LintSeverity.Error,
-			because: "a `handlers: { ... }` object literal is the agent-hallucination shape the guidance explicitly bans");
-	}
-
-	[Test]
-	[Description("`validators: [ ... ]` (array instead of object) raises a validators-must-be-object Error — symmetric agent-hallucination with the handlers case")]
-	public void Lint_ShouldEmitError_WhenValidatorsIsArrayLiteral() {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: [] }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().ContainSingle(f =>
-			f.Rule == PageBodyAstLinter.RuleValidatorsMustBeObject && f.Severity == LintSeverity.Error,
-			because: "the page contract keys `validators` as an object map of validator name → declaration; an array is rejected by the platform");
-	}
-
-	[Test]
-	[Description("`converters: [ ... ]` (array instead of object) raises a converters-must-be-object Error")]
-	public void Lint_ShouldEmitError_WhenConvertersIsArrayLiteral() {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [], converters: [], validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().ContainSingle(f =>
-			f.Rule == PageBodyAstLinter.RuleConvertersMustBeObject && f.Severity == LintSeverity.Error,
-			because: "the page contract keys `converters` as an object map of converter name → declaration; an array is rejected by the platform");
-	}
-
-	[Test]
-	[Description("`params: []` (empty array) inside a validator block raises a validator-params-empty Error — guidance says NEVER valid because every custom validator requires a message param")]
-	public void Lint_ShouldEmitError_WhenValidatorParamsIsEmptyArray() {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: { " +
-			"\"usr.V\": { validator: function() { return function() { return null; }; }, params: [] } " +
-			"} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().ContainSingle(f =>
-			f.Rule == PageBodyAstLinter.RuleValidatorParamsEmpty && f.Severity == LintSeverity.Error,
-			because: "every custom validator MUST declare at minimum a `message` param so the user sees an error string; `params: []` blocks that contract");
-	}
-
 	[TestCase("return true;", TestName = "Lint_ShouldEmitError_WhenValidatorReturnsLiteralTrue")]
 	[TestCase("return false;", TestName = "Lint_ShouldEmitError_WhenValidatorReturnsLiteralFalse")]
 	[TestCase("return \"msg\";", TestName = "Lint_ShouldEmitError_WhenValidatorReturnsHardcodedString")]
@@ -199,38 +144,6 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("`params: []` constructed inside a validator factory body (e.g. an imperative request payload via `executeRequest({ type, params: [] })`) must NOT raise validator-params-empty — the rule is scoped to direct `params` properties of the validator entry config object, not arbitrary properties named `params` deep in the factory body")]
-	public void Lint_ShouldNotEmitError_WhenParamsEmptyAppearsInsideValidatorFactoryBody() {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: { " +
-			"\"usr.V\": { validator: function(c) { return function(value) { " +
-			"var req = { type: \"usr.X\", params: [] }; " +
-			"return value ? null : { \"usr.V\": { message: c.message } }; " +
-			"}; }, params: [{ name: \"message\" }] } } }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorParamsEmpty,
-			because: "the `params: []` lives inside a request payload object constructed in the validator body, not on the validator entry's own params declaration; the rule must scope to direct entries to avoid this false-positive");
-	}
-
-	[Test]
-	[Description("`params: []` declared outside the validators subtree (e.g. inside `viewConfigDiff` or a request handler) must NOT raise validator-params-empty — the rule scope is bounded to validator entry configs")]
-	public void Lint_ShouldNotEmitError_WhenParamsEmptyAppearsOutsideValidatorsSubtree() {
-		string body =
-			"define(\"X\", [], function() { return { " +
-			"viewConfigDiff: [{ operation: \"insert\", name: \"UsrBtn\", values: { type: \"crt.Button\", clicked: { request: \"usr.X\", params: [] } } }], " +
-			"handlers: [{ request: \"usr.X\", handler: async function(request, next) { return next?.handle(request); } }], " +
-			"converters: {}, validators: {} " +
-			"}; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorParamsEmpty,
-			because: "`params: []` outside the validators object is a request-payload param list (a legitimate empty arg list), not a custom validator's params declaration; the rule must not flag it");
-	}
-
-	[Test]
 	[Description("A pathologically deep AST (synthesized via a deeply-nested array literal) is short-circuited by the lint pass under `body-too-deeply-nested` rather than crashing the MCP server with StackOverflowException")]
 	public void Lint_ShouldEmitError_WhenBodyAstNestingExceedsDepthCap() {
 		// Build a body whose markers parse cleanly but whose body's expression
@@ -250,41 +163,6 @@ internal class PageBodyAstLinterTests {
 	#endregion
 
 	#region Tests: behavioural warnings (non-blocking severity)
-
-	[TestCase("request.viewModel", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestViewModel")]
-	[TestCase("request.sender", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestSender")]
-	[TestCase("request.$context.get(\"x\")", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesContextDotGet")]
-	[Description("Legacy handler request surfaces that may still resolve at runtime but are not part of the documented API fire a Warning — they do NOT block the write; the lint warning surfaces an AST-precise location alongside the existing regex validators")]
-	public void Lint_ShouldEmitWarning_WhenHandlerUsesDeprecatedContextApi(string deprecatedExpression) {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [{ " +
-			"request: \"crt.HandleViewModelInitRequest\", " +
-			"handler: async function(request, next) { var x = " + deprecatedExpression + "; return next?.handle(request); } }], " +
-			"converters: {}, validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().Contain(f =>
-			f.Rule == PageBodyAstLinter.RuleHandlerUsesDeprecatedContextApi && f.Severity == LintSeverity.Warning,
-			because: "deprecated-but-resolvable handler APIs stay at Warning severity — the page still loads, but the agent should migrate to the documented $context shape");
-	}
-
-	[TestCase("request.$get(\"x\")", TestName = "Lint_ShouldEmitError_WhenHandlerUsesRequestDollarGet")]
-	[TestCase("request.$set(\"x\", 1)", TestName = "Lint_ShouldEmitError_WhenHandlerUsesRequestDollarSet")]
-	[Description("`request.$get(...)` / `request.$set(...)` do NOT exist on the handler-chain request object — calling them throws TypeError at runtime on first invocation, so the body is functionally broken and the lint pass blocks the save under handler-uses-nonexistent-request-api")]
-	public void Lint_ShouldEmitError_WhenHandlerUsesNonexistentRequestApi(string nonexistentExpression) {
-		string body =
-			"define(\"X\", [], function() { return { handlers: [{ " +
-			"request: \"crt.HandleViewModelInitRequest\", " +
-			"handler: async function(request, next) { var x = " + nonexistentExpression + "; return next?.handle(request); } }], " +
-			"converters: {}, validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().Contain(f =>
-			f.Rule == PageBodyAstLinter.RuleHandlerUsesNonexistentRequestApi && f.Severity == LintSeverity.Error,
-			because: "request.$get / request.$set throw TypeError at runtime — the lint pass must fail fast and refuse the write, not surface a soft warning the agent might ignore");
-	}
 
 	[Test]
 	[Description("`request.$context.executeRequest({ ... })` raises a handler-uses-context-execute-request Warning — Creatio Academy SCHEMA_HANDLERS examples use `sdk.HandlerChainService.instance.process(...)`, executeRequest is not part of the documented @creatio-devkit/common public surface")]
@@ -349,45 +227,16 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("`viewModel` property on an unrelated object (NOT a handler `request` argument) does NOT trigger the deprecated-context-api rule — the rule is bounded to MemberExpressions rooted at `request`")]
-	public void Lint_ShouldNotEmitDeprecatedApi_WhenMemberAccessIsNotRootedAtRequest() {
-		string body =
-			"define(\"X\", [], function() { var foo = { viewModel: null }; return { " +
-			"handlers: [], converters: {}, validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerUsesDeprecatedContextApi,
-			because: "the rule fires only on chains rooted at `request` so unrelated objects that happen to declare a `viewModel` field are not falsely flagged");
-	}
-
-	[Test]
-	[Description("Spread elements (`...base`) inside the schema return-object do not crash the visitor and are not falsely matched against schema-section shape rules — defensive against agent-generated `{ ...defaults, handlers: [], ... }` shapes")]
+	[Description("Spread elements (`...base`) inside the schema return-object do not crash the visitor — defensive against agent-generated `{ ...defaults, converters: {...} }` shapes that would otherwise hit a cast in the converters direct-child walk")]
 	public void Lint_ShouldHandleSpreadElement_WithoutCrashOrFalsePositive() {
 		string body =
-			"define(\"X\", [], function() { var defaults = { handlers: [] }; return { ...defaults, " +
+			"define(\"X\", [], function() { var defaults = { converters: {} }; return { ...defaults, " +
 			"converters: {}, validators: {} }; });";
 
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 
-		findings.Should().NotContain(f =>
-			f.Rule == PageBodyAstLinter.RuleHandlersMustBeArray
-			|| f.Rule == PageBodyAstLinter.RuleValidatorsMustBeObject
-			|| f.Rule == PageBodyAstLinter.RuleConvertersMustBeObject,
-			because: "spread elements are not Property nodes and must be skipped by the visitor without emitting a false positive on the section-shape rules");
-	}
-
-	[Test]
-	[Description("Computed property keys (`['handlers']: { ... }`) do NOT trigger handlers-must-be-array — TryGetStaticPropertyName returns null on computed keys, keeping rules bounded to authored static keys")]
-	public void Lint_ShouldNotEmitSchemaShape_WhenSectionKeyIsComputed() {
-		string body =
-			"define(\"X\", [], function() { var k = \"handlers\"; return { " +
-			"[k]: {}, converters: {}, validators: {} }; });";
-
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
-
-		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlersMustBeArray,
-			because: "a computed property key `[k]` does not statically declare the section name; deciding whether it equals \"handlers\" at parse time is undecidable, so the linter must abstain rather than guess");
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleConverterCrtPrefixReserved,
+			because: "spread elements are not Property nodes and must be skipped by the converters direct-child walk without emitting false positives or crashing the visitor");
 	}
 
 	[Test]
@@ -414,26 +263,26 @@ internal class PageBodyAstLinterTests {
 	public void FormatErrors_ShouldRenderEachFinding_WithRuleLineColumnAndMessage() {
 		// Arrange — two errors on the same body
 		PageBodyLintFinding e1 = new(
-			Rule: PageBodyAstLinter.RuleHandlersMustBeArray,
+			Rule: PageBodyAstLinter.RuleConverterCrtPrefixReserved,
 			Severity: LintSeverity.Error,
 			Line: 3,
 			Column: 1,
-			Message: "handlers must be an array literal");
+			Message: "custom converter uses the reserved `crt.*` namespace");
 		PageBodyLintFinding e2 = new(
-			Rule: PageBodyAstLinter.RuleValidatorParamsEmpty,
+			Rule: PageBodyAstLinter.RuleValidatorBadReturnLiteral,
 			Severity: LintSeverity.Error,
 			Line: 12,
 			Column: 7,
-			Message: "params must not be empty");
+			Message: "validator return must be the canonical shape");
 
 		// Act
 		string rendered = PageBodyAstLinter.FormatErrors([e1, e2]);
 
 		// Assert
 		rendered.Should()
-			.Contain("handlers-must-be-array", because: "the rule id must be visible to the operator")
+			.Contain("converter-crt-prefix-reserved", because: "the rule id must be visible to the operator")
 			.And.Contain("line 3, column 1", because: "the precise location must be visible")
-			.And.Contain("validator-params-empty", because: "every distinct error must be enumerated")
+			.And.Contain("validator-bad-return-literal", because: "every distinct error must be enumerated")
 			.And.EndWith("The body was NOT sent to Creatio.",
 				because: "the tail must match the syntax validator's tail so callers can key on a single substring for both gates");
 	}

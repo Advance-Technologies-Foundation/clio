@@ -194,21 +194,24 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("sync-pages fails fast at the AST lint gate when a page ships SCHEMA_VALIDATORS as an array literal instead of an object — the lint rule `validators-must-be-object` fires through the real MCP transport, no sampling and no remote save attempted.")]
+	[Description("sync-pages fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport, no sampling and no remote save attempted.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages fails fast on validators-must-be-object lint error")]
-	[AllureDescription("Starts the real clio MCP server and submits a syntactically valid body whose SCHEMA_VALIDATORS is an array literal. Existing regex content validators do NOT cover this anti-pattern; verifying the per-page response carries `Page body lint failed` confirms the AST lint pass surfaces end-to-end through the real MCP wire.")]
-	public async Task PageSyncTool_Should_FailFast_When_Validators_Section_Is_Array_Literal() {
+	[AllureName("sync-pages fails fast on converter-crt-prefix-reserved lint error")]
+	[AllureDescription("Starts the real clio MCP server and submits a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The existing regex validators accept the body (their shape checks explicitly skip `crt.*` keys); verifying the per-page response carries `Page body lint failed` confirms the AST lint pass surfaces end-to-end through the real MCP wire.")]
+	public async Task PageSyncTool_Should_FailFast_When_Custom_Converter_Uses_Crt_Prefix() {
 		await using ArrangeContext context = await ArrangeAsync();
-		string nonValidValidatorsSchemaBody =
+		// Body uses the reserved `crt.*` namespace for a custom converter
+		// — only the AST lint pass catches this; the regex layer treats
+		// `crt.*` as a valid vendor prefix.
+		string crtPrefixConverterBody =
 			"define(\"Bad_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
 			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"validators: /**SCHEMA_VALIDATORS*/[]/**SCHEMA_VALIDATORS*/ }; });";
+			"converters: /**SCHEMA_CONVERTERS*/{ \"crt.MyConverter\": function(v) { return v; } }/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
@@ -216,8 +219,8 @@ public sealed class PageSyncToolE2ETests {
 				["args"] = new Dictionary<string, object?> {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
-							["schema-name"] = $"UsrLintValidatorsShape_{Guid.NewGuid():N}",
-							["body"] = nonValidValidatorsSchemaBody
+							["schema-name"] = $"UsrLintCrtConverter_{Guid.NewGuid():N}",
+							["body"] = crtPrefixConverterBody
 						}
 					},
 					["skip-sampling"] = true
@@ -229,14 +232,14 @@ public sealed class PageSyncToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "the lint failure is a structured tool response, not an MCP transport error");
 		response.Success.Should().BeFalse(
-			because: "validators-as-array is rejected by the Freedom UI page contract; lint must catch it end-to-end via the real MCP transport per AGENTS.md MCP rule");
+			because: "the reserved `crt.*` namespace is for Creatio built-in converters; lint must catch the custom-name usage end-to-end via the real MCP transport per AGENTS.md MCP rule");
 		response.Pages.Should().ContainSingle(
 			because: "one page was submitted");
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("Page body lint failed",
 			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
-		response.Pages[0].Error.Should().Contain("validators-must-be-object",
+		response.Pages[0].Error.Should().Contain("converter-crt-prefix-reserved",
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");

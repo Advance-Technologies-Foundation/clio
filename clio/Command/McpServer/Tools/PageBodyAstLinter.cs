@@ -36,25 +36,31 @@ internal static class PageBodyAstLinter {
 
 	#region Rule identifiers
 
-	internal const string RuleHandlersMustBeArray = "handlers-must-be-array";
-	internal const string RuleValidatorsMustBeObject = "validators-must-be-object";
-	internal const string RuleConvertersMustBeObject = "converters-must-be-object";
+	// The lint pass only ships rules that have NO regex counterpart in
+	// SchemaValidationService / SchemaHandlerValidationService. Anything the
+	// regex layer already detects with established wording is intentionally
+	// NOT duplicated here — duplicate detection would never reach the canonical
+	// path (regex runs first and wins on overlap) and would only widen the
+	// false-positive surface through any rule-scoping bug. Reviewer audit on
+	// 2026-06-11 removed six previously-shipped duplicate rules
+	// (`handlers-must-be-array`, `validators-must-be-object`,
+	// `converters-must-be-object`, `validator-params-empty`,
+	// `handler-uses-deprecated-context-api`, `handler-uses-nonexistent-request-api`)
+	// covered respectively by `SchemaHandlerValidationService.cs:60`,
+	// `ValidateJavaScriptObjectMarkers`, `ValidateCustomValidatorParamCompleteness`,
+	// and `ForbiddenHandlerApiRules` (which catches all five forbidden
+	// patterns including `$get` / `$set` as Errors).
+	//
 	// NOTE: the `request-type-missing-Request-suffix` rule is intentionally NOT
-	// shipped in this lint pass. The naive form (any `type: "crt.X"` string
-	// literal that does not end in `Request`) misfires on Freedom UI component
-	// types in `viewConfigDiff` entries (`"type": "crt.ComboBox"`, `"crt.Input"`,
+	// shipped either. The naive form misfires on Freedom UI component types in
+	// `viewConfigDiff` entries (`"type": "crt.ComboBox"`, `"crt.Input"`,
 	// `"crt.MaxLength"` — UI element types, not request dispatch payloads). A
-	// correct form would bound the rule to ObjectExpressions that are the
-	// argument to `request.$context.executeRequest(...)` or
-	// `sdk.HandlerChainService.instance.process(...)` — that bounding is
-	// deferred to a follow-up ticket so this PR ships only rules with crisp
-	// AST patterns.
-	internal const string RuleValidatorParamsEmpty = "validator-params-empty";
+	// correct form would bound the rule to the argument ObjectExpression of
+	// `sdk.HandlerChainService.instance.process(...)` — deferred to a follow-up
+	// ticket.
 	internal const string RuleValidatorBadReturnLiteral = "validator-bad-return-literal";
 	internal const string RuleConverterCrtPrefixReserved = "converter-crt-prefix-reserved";
 	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
-	internal const string RuleHandlerUsesDeprecatedContextApi = "handler-uses-deprecated-context-api";
-	internal const string RuleHandlerUsesNonexistentRequestApi = "handler-uses-nonexistent-request-api";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 
@@ -129,9 +135,6 @@ internal static class PageBodyAstLinter {
 			case CallExpression call:
 				CheckCallExpression(call, ctx, findings);
 				break;
-			case MemberExpression member:
-				CheckMemberExpression(member, findings);
-				break;
 			case ReturnStatement ret:
 				CheckReturnStatement(ret, ctx, findings);
 				break;
@@ -200,23 +203,24 @@ internal static class PageBodyAstLinter {
 
 	#region Rule implementations
 
-	// Rules 1-3: detect `handlers: {...}`, `validators: [...]`, `converters: [...]`.
-	// All three keys can appear at any depth (the schema return-object is the
-	// canonical location, but agents occasionally nest these inside SCHEMA_*
-	// markers via spread or alternative shapes). Walking every ObjectExpression
-	// covers all locations without requiring a structural pre-pass.
+	// Walks every ObjectExpression looking for the `converters: {...}` map.
+	// The crt-prefix rule applies to direct entries of that map only — a
+	// `"crt.X"` key inside a nested lookup table in a converter's closure
+	// is opaque to the rule.
 	private static void CheckSchemaSectionShapes(ObjectExpression obj, List<PageBodyLintFinding> findings) {
 		foreach (Node element in obj.Properties) {
-			if (TryGetInitProperty(element, out Property prop, out string key)) {
-				CheckSchemaSectionShape(prop, key, findings);
+			if (!TryGetInitProperty(element, out Property prop, out string key)) {
+				continue;
+			}
+			if (key == "converters" && prop.Value is ObjectExpression convertersObj) {
+				CheckConvertersDirectKeys(convertersObj, findings);
 			}
 		}
 	}
 
 	// Match plain init properties carrying a static key. Skips shorthand
 	// methods (`handlers() { ... }`), accessors (`get handlers() { ... }`),
-	// spread elements, and computed-key properties — rules 1-3 only target
-	// authored static keys on init properties.
+	// spread elements, and computed-key properties.
 	private static bool TryGetInitProperty(Node node, out Property prop, out string key) {
 		prop = null;
 		key = null;
@@ -232,79 +236,13 @@ internal static class PageBodyAstLinter {
 		return true;
 	}
 
-	private static void CheckSchemaSectionShape(Property prop, string key, List<PageBodyLintFinding> findings) {
-		(string rule, string message, bool expectedShape) = key switch {
-			"handlers" => (RuleHandlersMustBeArray, "`handlers` must be an array literal; an object literal here is rejected by the Freedom UI page contract", prop.Value is ArrayExpression),
-			"validators" => (RuleValidatorsMustBeObject, "`validators` must be an object literal keyed by validator name; an array is rejected by the Freedom UI page contract", prop.Value is ObjectExpression),
-			"converters" => (RuleConvertersMustBeObject, "`converters` must be an object literal keyed by converter name; an array is rejected by the Freedom UI page contract", prop.Value is ObjectExpression),
-			_ => (null, null, true)
-		};
-		if (rule is null || expectedShape || IsNullOrUndefined(prop.Value)) {
-			ApplyDirectChildRules(prop, key, findings);
-			return;
-		}
-		findings.Add(new PageBodyLintFinding(
-			Rule: rule,
-			Severity: LintSeverity.Error,
-			Line: prop.Location.Start.Line,
-			Column: prop.Location.Start.Column + 1,
-			Message: message));
-	}
-
-	// Section-bounded rules whose intent is "applies only to direct property
-	// entries of the validators/converters object, not to nested object
-	// literals". Running them off the section's ObjectExpression avoids the
-	// false-positive class of "fires anywhere under the subtree" that a
-	// VisitContext-only gate would suffer from.
-	private static void ApplyDirectChildRules(Property prop, string key, List<PageBodyLintFinding> findings) {
-		if (prop.Value is not ObjectExpression sectionObj) {
-			return;
-		}
-		switch (key) {
-			case "validators":
-				CheckValidatorParamsEmptyOnDirectEntries(sectionObj, findings);
-				break;
-			case "converters":
-				CheckConvertersDirectKeys(sectionObj, findings);
-				break;
-		}
-	}
-
-	// `params: []` on a custom validator's own configuration object — the
-	// shape is `{ "<name>": { validator: fn, params: [...] } }`, and the
-	// `params` we care about is the sibling of `validator`, not some
-	// arbitrary `params: []` deep inside a factory body (e.g. a request
-	// payload constructed by the validator itself). Walks the validators
-	// object's direct entries and inspects each entry value's direct
-	// `params` property only.
-	private static void CheckValidatorParamsEmptyOnDirectEntries(ObjectExpression validatorsObj, List<PageBodyLintFinding> findings) {
-		foreach (Node element in validatorsObj.Properties) {
-			if (!TryGetInitProperty(element, out Property entry, out _)) {
-				continue;
-			}
-			if (entry.Value is not ObjectExpression entryObj) {
-				continue;
-			}
-			foreach (Node entryChild in entryObj.Properties) {
-				if (!TryGetInitProperty(entryChild, out Property inner, out string innerKey) || innerKey != "params") {
-					continue;
-				}
-				if (inner.Value is ArrayExpression arr && arr.Elements.Count == 0) {
-					findings.Add(new PageBodyLintFinding(
-						Rule: RuleValidatorParamsEmpty,
-						Severity: LintSeverity.Error,
-						Line: inner.Location.Start.Line,
-						Column: inner.Location.Start.Column + 1,
-						Message: "`params: []` on a custom validator is never valid; every entry requires at minimum `{ name: \"message\" }` so the user sees an error message"));
-				}
-			}
-		}
-	}
-
 	// Custom converter names declared with the reserved `crt.*` namespace.
 	// The rule applies only to keys that ARE direct entries of the
 	// converters object; a lookup-table inside a converter's closure such
 	// as `{ "crt.X": "label" }` is unrelated and must not be flagged.
+	// No regex counterpart in SchemaValidationService — `crt.*` is treated
+	// as a valid vendor prefix by `ValidatePrefixedDeclarations` and the
+	// converter shape validators explicitly skip `crt.*` keys.
 	private static void CheckConvertersDirectKeys(ObjectExpression convertersObj, List<PageBodyLintFinding> findings) {
 		foreach (Node element in convertersObj.Properties) {
 			if (!TryGetInitProperty(element, out Property entry, out string entryKey)) {
@@ -371,51 +309,6 @@ internal static class PageBodyAstLinter {
 			MemberExpression { Property: Identifier { Name: "fetch" }, Computed: false, Object: Identifier { Name: "window" } } => true,
 			_ => false
 		};
-
-	private static void CheckMemberExpression(MemberExpression member, List<PageBodyLintFinding> findings) {
-		// Rule 8: request API surface checks. Only flag chains rooted at `request`
-		// to avoid hitting unrelated objects that share these property names.
-		// Split severity:
-		//   - `request.$get(...)` / `request.$set(...)` — these methods DO NOT
-		//     EXIST on the handler-chain BaseRequest. Calling them throws
-		//     `TypeError: request.$get is not a function` at runtime on first
-		//     invocation, so the page is functionally broken — Error severity
-		//     blocks the write under `handler-uses-nonexistent-request-api`.
-		//   - `request.viewModel` / `.sender` / `.$context.get(...)` — legacy
-		//     surfaces that may still resolve to something in some flows but
-		//     are not part of the documented handler API. Warning severity
-		//     under `handler-uses-deprecated-context-api`.
-		if (!IsRootedAtRequest(member)) {
-			return;
-		}
-		string propertyName = member.Property is Identifier id ? id.Name : null;
-		if (propertyName is "$get" or "$set") {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleHandlerUsesNonexistentRequestApi,
-				Severity: LintSeverity.Error,
-				Line: member.Location.Start.Line,
-				Column: member.Location.Start.Column + 1,
-				Message: $"`request.{propertyName}` does not exist on the handler-chain request object and throws `TypeError: request.{propertyName} is not a function` at runtime; use `await request.$context[\"<Attr>\"]` to read and `await request.$context.set(\"<Attr>\", <value>)` to write"));
-			return;
-		}
-		string deprecatedMatch = propertyName switch {
-			"viewModel" => "viewModel",
-			"sender" => "sender",
-			_ => null
-		};
-		if (deprecatedMatch is null && IsContextDotGet(member)) {
-			deprecatedMatch = "$context.get";
-		}
-		if (deprecatedMatch is null) {
-			return;
-		}
-		findings.Add(new PageBodyLintFinding(
-			Rule: RuleHandlerUsesDeprecatedContextApi,
-			Severity: LintSeverity.Warning,
-			Line: member.Location.Start.Line,
-			Column: member.Location.Start.Column + 1,
-			Message: $"`request.{deprecatedMatch}` is deprecated in deployed page-body handlers; use the documented `request.$context[\"<Attr>\"]` reactive read/write or the `request.next?.handle(request)` chain forwarder"));
-	}
 
 	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, List<PageBodyLintFinding> findings) {
 		// Rule 6: validator declaration must not return a literal. Bounded
@@ -491,19 +384,6 @@ internal static class PageBodyAstLinter {
 		}
 		return false;
 	}
-
-	private static bool IsRootedAtRequest(MemberExpression member) {
-		Node current = member.Object;
-		while (current is MemberExpression inner) {
-			current = inner.Object;
-		}
-		return current is Identifier { Name: "request" };
-	}
-
-	private static bool IsContextDotGet(MemberExpression member) =>
-		// matches `request.$context.get`
-		member.Property is Identifier { Name: "get" }
-		&& member.Object is MemberExpression { Property: Identifier { Name: "$context" } };
 
 	private static bool IsContextExecuteRequest(Node callee) =>
 		// matches `<obj>.$context.executeRequest` — typically `request.$context.executeRequest`,
