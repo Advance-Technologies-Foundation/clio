@@ -10,7 +10,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <see cref="PageBodySyntaxValidator"/> succeeds and BEFORE the body reaches
 /// <see cref="PageBodySamplingService"/> or Creatio.
 ///
-/// Background (ENG-89796 follow-up): the syntactic floor catches grammar errors
+/// Background: the syntactic floor catches grammar errors
 /// but not the semantic anti-patterns described in the guidance resources
 /// (<c>PageSchemaHandlersGuidanceResource</c>, <c>PageSchemaValidatorsGuidanceResource</c>,
 /// <c>PageSchemaConvertersGuidanceResource</c>, <c>PageModificationGuidanceResource</c>).
@@ -53,7 +53,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleValidatorBadReturnLiteral = "validator-bad-return-literal";
 	internal const string RuleConverterCrtPrefixReserved = "converter-crt-prefix-reserved";
 	internal const string RuleHandlerUsesDeprecatedContextApi = "handler-uses-deprecated-context-api";
-	internal const string RuleHandlerUsesHandlerChainServiceInstance = "handler-uses-handler-chain-service-instance";
+	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 
 	#endregion
@@ -216,14 +216,18 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CheckCallExpression(CallExpression call, VisitContext ctx, List<PageBodyLintFinding> findings) {
-		// Rule 9: sdk.HandlerChainService.instance.process(...)
-		if (IsSdkHandlerChainServiceInstanceProcess(call.Callee)) {
+		// Rule 9: request.$context.executeRequest(...) is reachable from handler code
+		// but it is NOT part of the @creatio-devkit/common public surface — Creatio
+		// Academy uniformly uses sdk.HandlerChainService.instance.process(...) in
+		// SCHEMA_HANDLERS examples. The reverse direction (process discouraged in
+		// favour of executeRequest) was the previous guidance and is no longer correct.
+		if (IsContextExecuteRequest(call.Callee)) {
 			findings.Add(new PageBodyLintFinding(
-				Rule: RuleHandlerUsesHandlerChainServiceInstance,
+				Rule: RuleHandlerUsesContextExecuteRequest,
 				Severity: LintSeverity.Warning,
 				Line: call.Location.Start.Line,
 				Column: call.Location.Start.Column + 1,
-				Message: "`sdk.HandlerChainService.instance.process(...)` is discouraged in deployed page-body handlers; prefer `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern"));
+				Message: "`request.$context.executeRequest(...)` is not part of the documented @creatio-devkit/common public API; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })` in deployed page-body handlers (per Creatio Academy SCHEMA_HANDLERS examples)"));
 		}
 		// Rule 10: direct `fetch(...)` / `globalThis.fetch(...)` / `window.fetch(...)`
 		// inside the converters schema subtree. Bounded via VisitContext.InsideConverters
@@ -355,13 +359,13 @@ internal static class PageBodyAstLinter {
 		member.Property is Identifier { Name: "get" }
 		&& member.Object is MemberExpression { Property: Identifier { Name: "$context" } };
 
-	private static bool IsSdkHandlerChainServiceInstanceProcess(Node callee) =>
-		// matches sdk.HandlerChainService.instance.process
-		callee is MemberExpression { Property: Identifier { Name: "process" }, Object: MemberExpression instMember }
-		&& instMember.Property is Identifier { Name: "instance" }
-		&& instMember.Object is MemberExpression svcMember
-		&& svcMember.Property is Identifier { Name: "HandlerChainService" }
-		&& svcMember.Object is Identifier { Name: "sdk" };
+	private static bool IsContextExecuteRequest(Node callee) =>
+		// matches `<obj>.$context.executeRequest` — typically `request.$context.executeRequest`,
+		// but also catches handler-local aliases like `const ctx = request.$context; ctx.executeRequest(...)`
+		// indirectly only when the inner property is `$context`; aliased ctx call sites that drop the
+		// `$context` member walk are intentionally out of scope (would need data-flow analysis).
+		callee is MemberExpression { Property: Identifier { Name: "executeRequest" }, Object: MemberExpression contextMember }
+		&& contextMember.Property is Identifier { Name: "$context" };
 
 	#endregion
 }

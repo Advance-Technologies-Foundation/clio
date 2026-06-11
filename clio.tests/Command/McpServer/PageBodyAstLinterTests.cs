@@ -176,19 +176,19 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("`sdk.HandlerChainService.instance.process({ ... })` raises a handler-uses-handler-chain-service-instance Warning — should be `request.$context.executeRequest(...)` per guidance, but warning-only because the SDK pattern is still valid in advanced flows")]
-	public void Lint_ShouldEmitWarning_WhenHandlerUsesHandlerChainServiceInstance() {
+	[Description("`request.$context.executeRequest({ ... })` raises a handler-uses-context-execute-request Warning — Creatio Academy SCHEMA_HANDLERS examples use `sdk.HandlerChainService.instance.process(...)`, executeRequest is not part of the documented @creatio-devkit/common public surface")]
+	public void Lint_ShouldEmitWarning_WhenHandlerUsesContextExecuteRequest() {
 		string body =
-			"define(\"X\", [], function(sdk) { return { handlers: [{ " +
+			"define(\"X\", [], function() { return { handlers: [{ " +
 			"request: \"crt.HandleViewModelInitRequest\", " +
-			"handler: async function(request, next) { await sdk.HandlerChainService.instance.process({ type: \"crt.OpenPageRequest\" }); return next?.handle(request); } }], " +
+			"handler: async function(request, next) { await request.$context.executeRequest({ type: \"crt.OpenPageRequest\" }); return next?.handle(request); } }], " +
 			"converters: {}, validators: {} }; });";
 
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 
 		findings.Should().ContainSingle(f =>
-			f.Rule == PageBodyAstLinter.RuleHandlerUsesHandlerChainServiceInstance && f.Severity == LintSeverity.Warning,
-			because: "the guidance prefers `request.$context.executeRequest(...)` for in-page dispatches; the SDK chain service call is permitted but worth flagging");
+			f.Rule == PageBodyAstLinter.RuleHandlerUsesContextExecuteRequest && f.Severity == LintSeverity.Warning,
+			because: "Academy uniformly uses `sdk.HandlerChainService.instance.process(...)` in SCHEMA_HANDLERS examples; `request.$context.executeRequest(...)` is reachable but undocumented and may break across minor versions");
 	}
 
 	[Test]
