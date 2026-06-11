@@ -158,6 +158,74 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	}
 
 	[Test]
+	[Description("Binds a system-variable condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds system-variable conditions")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-sys-value-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateSysValueConditionRule()
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid system-variable condition payloads should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue payload");
+	}
+
+	[Test]
+	[Description("Binds a role-gate condition payload (CurrentUserRoles CONTAIN role on the left) through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds role-gate conditions")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a CurrentUserRoles CONTAIN role condition and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_RoleGate_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-role-gate-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rule"] = CreateRoleGateRule("Require status for administrators")
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid role-gate payloads should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the role-gate payload");
+	}
+
+	[Test]
 	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool surfaces action deserialization errors")]
@@ -237,10 +305,112 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			environmentName,
 			packageName,
 			"Contact",
-			caption,
+			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
 			["Name"],
 			"Name",
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	[Test]
+	[Description("Creates an entity business rule with a system-variable condition for Contact through the real MCP server and verifies the persisted SysValue right expression.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool creates a system-variable condition rule")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Calls create-entity-business-rule for Contact with an Owner equals CurrentUserContact condition and verifies the persisted BusinessRuleSysValueExpression through add-on readback.")]
+	public async Task BusinessRuleCreate_Should_Create_SysValue_Condition_Rule_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive system-variable create-entity-business-rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		string caption = $"MCP E2E Contact sys-value {Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = "Contact",
+					["rule"] = CreateContactSysValueRule(caption)
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid Contact system-variable rule should return the standard command execution envelope");
+		execution.ExitCode.Should().Be(0,
+			because: "the Contact system-variable rule should be created in the configured Creatio sandbox");
+		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
+			because: "successful business-rule creation should report the generated rule name");
+		await BusinessRuleAddonReadback.AssertEntityRuleSysValueConditionExistsAsync(
+			settings,
+			environmentName,
+			packageName,
+			"Contact",
+			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			"Owner",
+			"CurrentUserContact",
+			"Lookup",
+			"Contact",
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	[Test]
+	[Description("Creates a role-gate entity business rule (CurrentUserRoles CONTAIN role) for Contact through the real MCP server and verifies the persisted left SysValue + contain condition.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool creates a role-gate rule")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Calls create-entity-business-rule for Contact with a CurrentUserRoles CONTAIN role condition and verifies the persisted SysValue-left contain condition through add-on readback.")]
+	public async Task BusinessRuleCreate_Should_Create_RoleGate_Rule_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive role-gate create-entity-business-rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		string caption = $"MCP E2E Contact role-gate {Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = "Contact",
+					["rule"] = CreateRoleGateRule(caption)
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid Contact role-gate rule should return the standard command execution envelope");
+		execution.ExitCode.Should().Be(0,
+			because: "the Contact role-gate rule should be created in the configured Creatio sandbox");
+		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
+			because: "successful business-rule creation should report the generated rule name");
+		await BusinessRuleAddonReadback.AssertEntityRuleRoleGateConditionExistsAsync(
+			settings,
+			environmentName,
+			packageName,
+			"Contact",
+			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			"CurrentUserRoles",
+			11,
+			RoleGateRoleId,
+			"SysAdminUnit",
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
@@ -265,10 +435,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = environmentName,
-				["packageName"] = packageName,
-				["entitySchemaName"] = "Contact",
-				["rule"] = CreateContactApplyFilterRule(caption)
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["entity-schema-name"] = "Contact",
+					["rule"] = CreateContactApplyFilterRule(caption)
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -287,7 +459,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			environmentName,
 			packageName,
 			"Contact",
-			caption,
+			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
 			"City",
 			"Country",
 			"Country",
@@ -353,6 +525,76 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				new Dictionary<string, object?> {
 					["type"] = "make-read-only",
 					["items"] = new object[] { "Name" }
+				}
+			}
+		};
+
+	// A SysAdminUnit role id; business-rule metadata save does not enforce the FK, so readback only
+	// asserts the value round-trips. (This is the System Administrators role id on the reference sandbox.)
+	private const string RoleGateRoleId = "83a43ebc-f36b-1410-298d-001e8c82bcad";
+
+	private static IReadOnlyDictionary<string, object?> CreateRoleGateRule(string caption) =>
+		new Dictionary<string, object?> {
+			["caption"] = caption,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateSysValueExpression("CurrentUserRoles"),
+						["comparisonType"] = "contain",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "Const",
+							["value"] = RoleGateRoleId
+						}
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "make-read-only",
+					["items"] = new object[] { "Name" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateContactSysValueRule(string caption) =>
+		new Dictionary<string, object?> {
+			["caption"] = caption,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("Owner"),
+						["comparisonType"] = "equal",
+						["rightExpression"] = CreateSysValueExpression("CurrentUserContact")
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "make-read-only",
+					["items"] = new object[] { "Name" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateSysValueConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Require status when owner is the current user",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("Owner"),
+						["comparisonType"] = "equal",
+						["rightExpression"] = CreateSysValueExpression("CurrentUserContact")
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "make-required",
+					["items"] = new object[] { "Status" }
 				}
 			}
 		};
@@ -465,6 +707,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		new Dictionary<string, object?> {
 			["type"] = "AttributeValue",
 			["path"] = path
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateSysValueExpression(string sysValueName) =>
+		new Dictionary<string, object?> {
+			["type"] = "SysValue",
+			["sysValueName"] = sysValueName
 		};
 
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {

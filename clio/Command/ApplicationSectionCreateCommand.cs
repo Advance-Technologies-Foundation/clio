@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -10,6 +11,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -34,11 +36,17 @@ public sealed class CreateAppSectionOptions : EnvironmentOptions {
 	[Option("entity-schema-name", Required = false, HelpText = "Existing entity schema name")]
 	public string? EntitySchemaName { get; set; }
 
+	[Option("code", Required = false, HelpText = "Explicit section code (Latin identifier). When omitted, the code is generated from the caption; required when the caption has no Latin letters or digits (for example a non-Latin caption such as \"Контакти\").")]
+	public string? Code { get; set; }
+
 	[Option("icon-background", Required = false, HelpText = "Icon background color in #RRGGBB format, e.g. #1F5F8B. Defaults to a random color when omitted.")]
 	public string? IconBackground { get; set; }
 
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages in addition to web pages (default: true)")]
 	public string? WithMobilePagesValue { get; set; }
+
+	[Option("caption-culture", Required = false, HelpText = "Override the culture used when displaying the created section caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. The stored section caption itself is localized server-side under the connected user's profile.")]
+	public string? CaptionCulture { get; set; }
 
 	public bool WithMobilePages {
 		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
@@ -70,6 +78,8 @@ public interface IApplicationSectionCreateService {
 /// <summary>
 /// Default ApplicationSection DataService-backed implementation for existing-app section creation.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Service composes its required collaborators (settings, client factory, URL builders, app info, sys-settings factory, logger, culture resolver) via constructor injection; splitting them would add an artificial parameter object without behavioral benefit.")]
 public sealed class ApplicationSectionCreateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
@@ -77,7 +87,8 @@ public sealed class ApplicationSectionCreateService(
 	IServiceUrlBuilderFactory serviceUrlBuilderFactory,
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
-	ILogger logger)
+	ILogger logger,
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -129,6 +140,10 @@ public sealed class ApplicationSectionCreateService(
 		@"[^\p{L}\p{Nd}]+",
 		RegexOptions.None,
 		TimeSpan.FromSeconds(5));
+	private static readonly Regex SectionCodeRegex = new(
+		@"^[A-Za-z][A-Za-z0-9_]*$",
+		RegexOptions.None,
+		TimeSpan.FromSeconds(5));
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -151,6 +166,10 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		// The stored section caption is localized server-side under the connected user's profile.
+		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
+		string effectiveCultureName = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		ApplicationInfoResult beforeInfo;
 		ResolvedApplicationSectionCreateRequest resolvedRequest;
@@ -171,6 +190,8 @@ public sealed class ApplicationSectionCreateService(
 			requestBody = JsonSerializer.Serialize(BuildInsertBody(resolvedRequest), JsonOptions);
 			if (string.IsNullOrWhiteSpace(resolvedRequest.EntitySchemaName)) {
 				CheckEntitySchemaDoesNotExist(client, environmentSettings, resolvedRequest.SectionCode, request.Caption);
+			} else {
+				CheckEntitySchemaExists(client, environmentSettings, resolvedRequest.EntitySchemaName, request.Caption);
 			}
 		} catch (Exception exception) {
 			// Preparation reads happen before the destructive insert, so any classified failure here
@@ -203,6 +224,7 @@ public sealed class ApplicationSectionCreateService(
 					resolvedRequest,
 					client,
 					environmentSettings,
+					effectiveCultureName,
 					insertTimeoutMs,
 					exception);
 			}
@@ -214,7 +236,7 @@ public sealed class ApplicationSectionCreateService(
 		EnsureInsertSucceeded(responseBody, resolvedRequest);
 		logger.EndSpinner(true);
 
-		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
+		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings, effectiveCultureName);
 	}
 
 	private static void ValidateRequest(ApplicationSectionCreateRequest request) {
@@ -229,6 +251,15 @@ public sealed class ApplicationSectionCreateService(
 		if (request.IconBackground is not null) {
 			ApplicationSectionColorPalette.ValidateOrThrow(request.IconBackground);
 		}
+
+		if (!string.IsNullOrWhiteSpace(request.Code)) {
+			string trimmedCode = request.Code.Trim();
+			if (!trimmedCode.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')) {
+				throw new ArgumentException(
+					$"Section code '{trimmedCode}' is invalid. Codes must contain only Latin letters, digits, or underscore.",
+					nameof(request));
+			}
+		}
 	}
 
 	private ResolvedApplicationSectionCreateRequest ResolveRequest(
@@ -237,7 +268,7 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string schemaNamePrefix) {
-		string sectionCode = GenerateCodeFromCaption(request.Caption, schemaNamePrefix);
+		string sectionCode = ResolveSectionCode(request, schemaNamePrefix);
 		string iconBackground = string.IsNullOrWhiteSpace(request.IconBackground)
 		? GenerateRandomHexColor()
 		: request.IconBackground.Trim();
@@ -287,10 +318,52 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
+	/// Verifies that an existing entity schema targeted by <c>--entity-schema-name</c> actually exists before the
+	/// section insert is attempted, so a missing object fails with a clear message instead of the opaque server
+	/// rejection ("InsertQuery failed.") that Creatio returns for a dangling entity reference. The probe is
+	/// best-effort: when the readback query cannot be executed the method proceeds and lets the insert run,
+	/// mirroring <see cref="CheckEntitySchemaDoesNotExist"/>. Multiple sections may target the same entity, so no
+	/// section-binding uniqueness is enforced here.
+	/// </summary>
+	/// <param name="client">Environment-scoped application client used for the readback query.</param>
+	/// <param name="environmentSettings">Resolved environment settings for the target environment.</param>
+	/// <param name="entitySchemaName">Existing entity schema name the section will be bound to.</param>
+	/// <param name="caption">Requested section caption, surfaced in the diagnostic message.</param>
+	private void CheckEntitySchemaExists(
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		string entitySchemaName,
+		string caption) {
+		int matchedSchemaCount;
+		try {
+			SysSchemaExistsResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SysSchemaExistsResponseDto>(
+				client,
+				serviceUrlBuilderFactory.Create(environmentSettings),
+				SelectQueryHelper.BuildSelectQuery(
+					"SysSchema",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
+					[new SelectQueryHelper.SelectQueryFilterDefinition("Name", entitySchemaName, SelectQueryHelper.TextDataValueType)]));
+			matchedSchemaCount = response.Rows.Count;
+		} catch {
+			// The existence probe is best-effort: when the readback query fails (permissions, transport,
+			// unexpected payloads) proceed and let the section insert surface the server error instead of
+			// blocking a potentially valid creation.
+			return;
+		}
+
+		if (matchedSchemaCount == 0) {
+			throw new InvalidOperationException(
+				$"Entity schema '{entitySchemaName}' does not exist in this environment, so section '{caption}' cannot be bound to it. "
+				+ "Verify the object name (names are case-sensitive), or omit --entity-schema-name to create a new object for the section.");
+		}
+	}
+
+	/// <summary>
 	/// Builds a human-readable failure message for a rejected ApplicationSection insert.
-	/// Propagates the server-supplied error when present and always appends the most common
-	/// cause (the target entity is already bound to a section, or the generated section code
-	/// collides with an existing section) plus an actionable next step.
+	/// Propagates the server-supplied error when present and appends an actionable next step. The most
+	/// common detail-less rejection is a section-code collision; the message does not assert entity-binding
+	/// uniqueness because Creatio allows several sections to target the same entity (missing entities and
+	/// invalid codes are already caught before the insert by the resolve/validation steps).
 	/// </summary>
 	/// <param name="request">Resolved section-create request used to surface the caption, code, entity, and application context.</param>
 	/// <param name="serverMessage">Optional error message returned by the InsertQuery response.</param>
@@ -329,18 +402,9 @@ public sealed class ApplicationSectionCreateService(
 			builder.Append(" The server rejected the section insert (InsertQuery failed) without returning a detailed message.");
 		}
 
-		builder.Append(' ');
-		if (!string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			builder.Append("This usually means entity '")
-				.Append(request.EntitySchemaName)
-				.Append("' is already bound to an existing section, or a section with code '")
-				.Append(request.SectionCode)
-				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, then reuse the existing section, pick a different entity, or change the caption to generate a new section code.");
-		} else {
-			builder.Append("This usually means a section with code '")
-				.Append(request.SectionCode)
-				.Append("' already exists. Run 'list-app-sections' to inspect existing sections, or change the caption to generate a different section code.");
-		}
+		builder.Append(" A section with code '")
+			.Append(request.SectionCode)
+			.Append("' may already exist, or the server rejected the insert for a reason it did not detail. Run 'list-app-sections' to inspect existing sections, then change the caption or pass a different --code to use another section code.");
 
 		return builder.ToString();
 	}
@@ -487,6 +551,7 @@ public sealed class ApplicationSectionCreateService(
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
+		string effectiveCultureName,
 		int insertTimeoutMs,
 		Exception cause) {
 		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
@@ -503,6 +568,7 @@ public sealed class ApplicationSectionCreateService(
 				resolvedRequest,
 				client,
 				environmentSettings,
+				effectiveCultureName,
 				VerificationTimeoutMs);
 		}
 
@@ -601,6 +667,7 @@ public sealed class ApplicationSectionCreateService(
 		ResolvedApplicationSectionCreateRequest request,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
+		string effectiveCultureName,
 		int readbackTimeout = Timeout.Infinite) {
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
@@ -634,7 +701,7 @@ public sealed class ApplicationSectionCreateService(
 					new ApplicationSectionInfoResult(
 						createdSection.Id,
 						createdSection.Code,
-						ResolveLocalizedCaption(createdSection.Caption, request.Caption),
+						ResolveLocalizedCaption(createdSection.Caption, request.Caption, effectiveCultureName),
 						createdSection.Description,
 						entitySchemaName,
 						createdSection.PackageId,
@@ -801,7 +868,7 @@ public sealed class ApplicationSectionCreateService(
 	private static string CreatePageIdentity(PageListItem page) =>
 		$"{page.SchemaName}|{page.UId}|{page.PackageName}";
 
-	private static string ResolveLocalizedCaption(string? value, string fallbackCaption) {
+	private static string ResolveLocalizedCaption(string? value, string fallbackCaption, string? effectiveCultureName = null) {
 		if (string.IsNullOrWhiteSpace(value)) {
 			return fallbackCaption;
 		}
@@ -812,6 +879,15 @@ public sealed class ApplicationSectionCreateService(
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 			if (localizedValues is null || localizedValues.Count == 0) {
 				return value;
+			}
+
+			// Show the readback caption in the effective culture when that culture key exists in the
+			// returned map. Otherwise prefer the en-US value, then any non-empty value. The host
+			// machine locale is never consulted here.
+			if (!string.IsNullOrWhiteSpace(effectiveCultureName)
+				&& localizedValues.TryGetValue(effectiveCultureName, out string? effectiveCaption)
+				&& !string.IsNullOrWhiteSpace(effectiveCaption)) {
+				return effectiveCaption;
 			}
 
 			if (localizedValues.TryGetValue("en-US", out string? enUsCaption) &&
@@ -945,13 +1021,47 @@ public sealed class ApplicationSectionCreateService(
 			querySource = 0
 		};
 
+	/// <summary>
+	/// Resolves the section code to insert: uses the explicit caller-supplied code when provided
+	/// (ensuring the environment schema-name prefix and validating it is a Latin identifier), otherwise
+	/// generates one from the caption.
+	/// </summary>
+	/// <param name="request">Section creation request carrying the optional explicit code and the caption.</param>
+	/// <param name="schemaNamePrefix">Environment schema-name prefix (for example <c>Usr</c>).</param>
+	/// <returns>A valid Latin section code.</returns>
+	private static string ResolveSectionCode(ApplicationSectionCreateRequest request, string schemaNamePrefix) {
+		if (string.IsNullOrWhiteSpace(request.Code)) {
+			return GenerateCodeFromCaption(request.Caption, schemaNamePrefix);
+		}
+
+		string explicitCode = request.Code.Trim();
+		if (!string.IsNullOrEmpty(schemaNamePrefix)) {
+			if (explicitCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)) {
+				// Re-canonicalize casing: --code usrContacts with prefix Usr becomes UsrContacts.
+				explicitCode = schemaNamePrefix + explicitCode[schemaNamePrefix.Length..];
+			} else {
+				explicitCode = schemaNamePrefix + explicitCode;
+			}
+		}
+
+		if (!SectionCodeRegex.IsMatch(explicitCode)) {
+			throw new ArgumentException(
+				$"Section code '{explicitCode}' is invalid. Section codes must start with a Latin letter and contain only "
+				+ "Latin letters, digits, or underscore.",
+				nameof(request));
+		}
+
+		return explicitCode;
+	}
+
 	private static string GenerateCodeFromCaption(string caption, string schemaNamePrefix) {
 		string[] words = CodeWordRegex.Split(caption.Trim())
 			.Where(item => !string.IsNullOrWhiteSpace(item))
 			.ToArray();
 		if (words.Length == 0) {
 			throw new ArgumentException(
-				$"Section caption '{caption}' contains no valid characters for code generation.",
+				$"Caption '{caption}' has no Latin letters or digits to generate a section code. "
+				+ "Provide an explicit code via --code (for example --code UsrContacts), or use a Latin caption.",
 				nameof(caption));
 		}
 
@@ -966,7 +1076,8 @@ public sealed class ApplicationSectionCreateService(
 		int prefixLength = schemaNamePrefix.Length;
 		if (builder.Length == prefixLength) {
 			throw new ArgumentException(
-				$"Section caption '{caption}' contains no valid characters for code generation.",
+				$"Caption '{caption}' has no Latin letters or digits to generate a section code. "
+				+ "Provide an explicit code via --code (for example --code UsrContacts), or use a Latin caption.",
 				nameof(caption));
 		}
 
@@ -978,7 +1089,11 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	private static string NormalizeWord(string value) {
-		string sanitizedValue = new(value.Where(char.IsLetterOrDigit).ToArray());
+		// Section codes must be Latin identifiers, so only ASCII letters/digits feed the generated code.
+		// Non-Latin captions (for example Cyrillic "Контакти") therefore yield no code and are reported as an
+		// actionable error that points the caller at --code, instead of producing an invalid code that the
+		// Creatio InsertQuery silently rejects.
+		string sanitizedValue = new(value.Where(char.IsAsciiLetterOrDigit).ToArray());
 		if (string.IsNullOrWhiteSpace(sanitizedValue)) {
 			return string.Empty;
 		}
@@ -1084,7 +1199,9 @@ public sealed class CreateAppSectionCommand(
 					options.Description,
 					options.EntitySchemaName,
 					options.WithMobilePages,
-					options.IconBackground));
+					options.IconBackground,
+					options.CaptionCulture,
+					options.Code));
 			logger.WriteInfo(JsonSerializer.Serialize(result));
 			return 0;
 		} catch (ApplicationSectionCreateException exception) {
@@ -1107,13 +1224,16 @@ public sealed class CreateAppSectionCommand(
 /// <param name="EntitySchemaName">Optional existing entity schema name. When provided, the section reuses that entity.</param>
 /// <param name="WithMobilePages">Whether to create mobile pages.</param>
 /// <param name="IconBackground">Optional icon background color in #RRGGBB format. Defaults to a random color when omitted.</param>
+/// <param name="Code">Optional explicit section code (Latin identifier). When omitted, the code is generated from the caption.</param>
 public sealed record ApplicationSectionCreateRequest(
 	string ApplicationCode,
 	string Caption,
 	string? Description = null,
 	string? EntitySchemaName = null,
 	bool WithMobilePages = true,
-	string? IconBackground = null);
+	string? IconBackground = null,
+	string? CaptionCulture = null,
+	string? Code = null);
 
 /// <summary>
 /// Structured result for existing-app section creation.

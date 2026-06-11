@@ -21,6 +21,9 @@ public class SqlSchemaCreateOptions : EnvironmentOptions {
 
 	[Option("description", Required = false, HelpText = "Optional schema description")]
 	public string Description { get; set; }
+
+	[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated schema caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; set; }
 }
 
 public sealed class SqlSchemaCreateResponse {
@@ -61,14 +64,17 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
+	private readonly Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver _captionCultureResolver;
 
 	public SqlSchemaCreateCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
-		ILogger logger) {
+		ILogger logger,
+		Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
+		_captionCultureResolver = captionCultureResolver;
 	}
 
 	public virtual bool TryCreate(SqlSchemaCreateOptions options, out SqlSchemaCreateResponse response) {
@@ -102,7 +108,8 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 				response = new SqlSchemaCreateResponse { Success = false, Error = createError };
 				return false;
 			}
-			SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description);
+			string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
+			SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description, captionCulture);
 			string saveError = SchemaDesignerHelper.SaveSchema(_applicationClient, _serviceUrlBuilder, schema, Kind);
 			if (saveError != null) {
 				response = new SqlSchemaCreateResponse { Success = false, Error = saveError };

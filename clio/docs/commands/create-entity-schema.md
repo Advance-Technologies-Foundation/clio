@@ -42,6 +42,11 @@ For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, 
 `ImageLookup` ("Image link") type (alias: `ImageLink`) — the binary `Image` type does not work
 with `crt.ImageInput`. `ImageLookup` references the `SysImage` schema automatically; do not set
 a reference schema for it.
+--caption-culture <VALUE>
+Override the culture used for the generated schema and column captions/labels (e.g. `en-US`, `uk-UA`).
+Precedence: this override > the connected user's profile culture > `en-US`. Supplying it skips the
+profile-culture lookup. When omitted, clio resolves the logged-in user's profile culture (see
+`get-user-culture`) and falls back to `en-US` if it cannot be resolved.
 --timeout <NUMBER>
 Request timeout in milliseconds. Default: 100000.
 ```

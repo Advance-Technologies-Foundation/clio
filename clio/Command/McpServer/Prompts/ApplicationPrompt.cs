@@ -102,6 +102,7 @@ public static class ApplicationPrompt {
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`, generating the main entity `_MobileFormPage` and `_MobileListPage` alongside the web pages.
 		 When the user's plan is web-only (no mobile app target), proactively set `with-mobile-pages` to `false` before calling `create-app` so the mobile pages are not created and do not need manual cleanup afterwards.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the application name and captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`.
 		 """;
 
 	/// <summary>
@@ -133,11 +134,12 @@ public static class ApplicationPrompt {
 		 Provide `caption` as a plain scalar string.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 When `entity-schema-name` is provided, the section reuses that existing entity. When it is omitted, Creatio creates a new object for the section.
-		 If creation fails with `Failed to create section ... is already bound to an existing section`, the chosen `entity-schema-name` already backs another section. Do not retry with the same entity; call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections, then reuse the existing section or choose a different entity.
+		 The section `code` is generated from the caption; a non-Latin caption (for example `Контакти`) cannot produce a valid Latin code, so pass an explicit `code` such as `Contacts`. Several sections may target the same `entity-schema-name`, so reuse is allowed; the object must exist, and a missing object fails with a clear `does not exist` error. If creation reports that a section with that code already exists, change the caption or pass a different `code`, or call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}` to inspect existing sections.
 		 If creation fails with a classified error, read `error-class` before deciding: `transport` means the request never reached Creatio and retrying is safe; `creatio-timeout` means the section may still be created server-side — wait, call `{ApplicationSectionGetListTool.ApplicationSectionGetListToolName}`, and retry only if the section is still absent; `server-error` means Creatio rejected the operation. Follow the returned `retry-guidance`; never blind-retry the same call.
 		 Keep `with-mobile-pages` as a top-level boolean. When omitted it defaults to `true`.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the section caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 
 	/// </summary>

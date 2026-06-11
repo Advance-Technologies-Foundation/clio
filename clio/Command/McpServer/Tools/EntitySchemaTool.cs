@@ -88,7 +88,8 @@ public sealed class CreateEntitySchemaTool(
 			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName)) ? "BaseEntity" : parentSchemaName,
 			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns, context),
-			Environment = args.EnvironmentName
+			Environment = args.EnvironmentName,
+			CaptionCulture = args.CaptionCulture
 		};
 	}
 
@@ -504,7 +505,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				UseSeconds = args.UseSeconds,
 				SimpleLookup = args.SimpleLookup,
 				Cascade = args.Cascade,
-				DoNotControlIntegrity = args.DoNotControlIntegrity
+				DoNotControlIntegrity = args.DoNotControlIntegrity,
+				CaptionCulture = args.CaptionCulture
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
@@ -551,6 +553,10 @@ public abstract record EntitySchemaCreateArgsBase(
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for generated captions (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>
@@ -811,6 +817,10 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("default-value-config")]
 	[property: Description("Structured default value metadata. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>
