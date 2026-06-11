@@ -191,16 +191,19 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-89796: a body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain and the body is NOT sent to Creatio — pins the new pre-write gate independent of the existing markers-only path")]
+	[Description("A body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
 	public async Task SyncPages_Should_FailFast_WhenBodyHasJavaScriptSyntaxError() {
-		// Arrange
+		// Arrange — wire a real PageUpdateCommand so the IApplicationClient
+		// substitute behind it can confirm no remote save call was made.
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
 		// `define('BadPage', {})}` has a stray closing brace at the end → SyntaxError.
 		// The PageBodySyntaxValidator must surface this before the markers validator
-		// runs; no Resolve<PageUpdateCommand>() should be issued.
+		// runs and no SaveSchema request should ever leave the process.
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
@@ -212,19 +215,91 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(
-			because: "a syntactically broken body must NEVER be persisted — this is the deterministic floor of ENG-89796");
+			because: "a syntactically broken body must NEVER be persisted — this is the deterministic floor of the syntax gate");
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
 			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker/sampling issue");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to read the code");
-		// Sync-pages eagerly resolves the per-environment PageUpdateCommand once
-		// at the start of the lock block; the broken body still must not reach
-		// TryUpdatePage. The success=false response is the structural proof —
-		// the fail-fast path returns BEFORE TryUpdatePage is ever invoked, so
-		// asserting on success here is the strongest "no write happened" signal
-		// available at this seam without an extra mock for the command itself.
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax-gate short-circuit must run BEFORE PageUpdateCommand.TryUpdatePage — no SaveSchema (or any other) request must have been issued for this batch");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Batch with two pages sharing the same schema-name: a broken first body must not corrupt the second body's pre-pass results — the gates are keyed by input index, not by SchemaName, so last-write-wins on a Dictionary cannot blow away the AST/findings of the first page.")]
+	public async Task SyncPages_Should_Not_CrossContaminate_When_Batch_Contains_Duplicate_SchemaName() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrPage_FormPage", "define('Dup', {})}"),
+				new PageSyncPageInput("UsrPage_FormPage", ValidPageBody)
+			],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().HaveCount(2,
+			because: "both inputs must produce an independent per-page result, even when they share a schema-name");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the first entry's body is syntactically broken and must surface its own deterministic failure regardless of what the duplicate-named sibling looks like");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "index-keyed pre-pass guarantees the first entry's diagnosis is not overwritten by the second entry's AST or vice versa");
+		response.Pages[1].Success.Should().BeTrue(
+			because: "the second entry's valid body must still proceed to save, independent of the first entry's failure");
+		int saveSchemaCalls = applicationClient.ReceivedCalls()
+			.Count(c => c.GetArguments().FirstOrDefault() is string url && url.Contains("SaveSchema"));
+		saveSchemaCalls.Should().Be(1,
+			because: "exactly one SaveSchema round-trip must happen — for the valid second entry only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mixed batch: a syntactically broken page is rejected and a valid page is saved in the same call — exactly one save round-trip happens for the valid page, not one per page or none at all. Pins per-page fail-fast semantics that no other test currently covers.")]
+	public async Task SyncPages_Should_Save_Only_Valid_Page_When_Batch_Contains_One_Broken_And_One_Valid() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}"),
+				new PageSyncPageInput("UsrGood_FormPage", ValidPageBody)
+			],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().HaveCount(2,
+			because: "both inputs must produce a per-page result, with order preserved");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the broken page must fail fast on the syntax gate");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "the broken page's failure must name the deterministic problem class");
+		response.Pages[1].Success.Should().BeTrue(
+			because: "fail-fast is per-page; one broken sibling must not block the valid one from being saved");
+		int saveSchemaCalls = applicationClient.ReceivedCalls()
+			.Count(c => c.GetArguments().FirstOrDefault() is string url && url.Contains("SaveSchema"));
+		saveSchemaCalls.Should().Be(1,
+			because: "exactly one SaveSchema round-trip must happen — for the valid page only; the broken page must not be sent");
 	}
 
 	[Test]
@@ -702,8 +777,15 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
-	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
+		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
+
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient, int schemaType = 9) {
+		applicationClient = Substitute.For<IApplicationClient>();
+		return ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType);
+	}
+
+	private static PageUpdateCommand ConfigureSuccessfulPageUpdateCommand(IApplicationClient applicationClient, int schemaType) {
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
