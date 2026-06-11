@@ -157,10 +157,8 @@ internal class PageBodyAstLinterTests {
 
 	[TestCase("request.viewModel", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestViewModel")]
 	[TestCase("request.sender", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestSender")]
-	[TestCase("request.$get(\"x\")", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestDollarGet")]
-	[TestCase("request.$set(\"x\", 1)", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesRequestDollarSet")]
 	[TestCase("request.$context.get(\"x\")", TestName = "Lint_ShouldEmitWarning_WhenHandlerUsesContextDotGet")]
-	[Description("Deprecated handler request API surfaces fire a Warning — they do NOT block the write (existing regex validators may also catch the same patterns with their own messaging) but the lint warning surfaces alongside")]
+	[Description("Legacy handler request surfaces that may still resolve at runtime but are not part of the documented API fire a Warning — they do NOT block the write; the lint warning surfaces an AST-precise location alongside the existing regex validators")]
 	public void Lint_ShouldEmitWarning_WhenHandlerUsesDeprecatedContextApi(string deprecatedExpression) {
 		string body =
 			"define(\"X\", [], function() { return { handlers: [{ " +
@@ -172,7 +170,24 @@ internal class PageBodyAstLinterTests {
 
 		findings.Should().Contain(f =>
 			f.Rule == PageBodyAstLinter.RuleHandlerUsesDeprecatedContextApi && f.Severity == LintSeverity.Warning,
-			because: "deprecated handler APIs are warnings (existing regex validators handle the error-severity side); the lint warning gives an AST-precise location alongside the legacy message");
+			because: "deprecated-but-resolvable handler APIs stay at Warning severity — the page still loads, but the agent should migrate to the documented $context shape");
+	}
+
+	[TestCase("request.$get(\"x\")", TestName = "Lint_ShouldEmitError_WhenHandlerUsesRequestDollarGet")]
+	[TestCase("request.$set(\"x\", 1)", TestName = "Lint_ShouldEmitError_WhenHandlerUsesRequestDollarSet")]
+	[Description("`request.$get(...)` / `request.$set(...)` do NOT exist on the handler-chain request object — calling them throws TypeError at runtime on first invocation, so the body is functionally broken and the lint pass blocks the save under handler-uses-nonexistent-request-api")]
+	public void Lint_ShouldEmitError_WhenHandlerUsesNonexistentRequestApi(string nonexistentExpression) {
+		string body =
+			"define(\"X\", [], function() { return { handlers: [{ " +
+			"request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async function(request, next) { var x = " + nonexistentExpression + "; return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().Contain(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerUsesNonexistentRequestApi && f.Severity == LintSeverity.Error,
+			because: "request.$get / request.$set throw TypeError at runtime — the lint pass must fail fast and refuse the write, not surface a soft warning the agent might ignore");
 	}
 
 	[Test]

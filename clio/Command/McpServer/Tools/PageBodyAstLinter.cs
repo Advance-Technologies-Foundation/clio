@@ -53,6 +53,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleValidatorBadReturnLiteral = "validator-bad-return-literal";
 	internal const string RuleConverterCrtPrefixReserved = "converter-crt-prefix-reserved";
 	internal const string RuleHandlerUsesDeprecatedContextApi = "handler-uses-deprecated-context-api";
+	internal const string RuleHandlerUsesNonexistentRequestApi = "handler-uses-nonexistent-request-api";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 
@@ -253,23 +254,40 @@ internal static class PageBodyAstLinter {
 		};
 
 	private static void CheckMemberExpression(MemberExpression member, List<PageBodyLintFinding> findings) {
-		// Rule 8: deprecated request API surface (request.viewModel / .sender /
-		// .$get / .$set / .$context.get). Only flag chains rooted at `request`
+		// Rule 8: request API surface checks. Only flag chains rooted at `request`
 		// to avoid hitting unrelated objects that share these property names.
+		// Split severity:
+		//   - `request.$get(...)` / `request.$set(...)` — these methods DO NOT
+		//     EXIST on the handler-chain BaseRequest. Calling them throws
+		//     `TypeError: request.$get is not a function` at runtime on first
+		//     invocation, so the page is functionally broken — Error severity
+		//     blocks the write under `handler-uses-nonexistent-request-api`.
+		//   - `request.viewModel` / `.sender` / `.$context.get(...)` — legacy
+		//     surfaces that may still resolve to something in some flows but
+		//     are not part of the documented handler API. Warning severity
+		//     under `handler-uses-deprecated-context-api`.
 		if (!IsRootedAtRequest(member)) {
 			return;
 		}
-		string match = (member.Property is Identifier id ? id.Name : null) switch {
+		string propertyName = member.Property is Identifier id ? id.Name : null;
+		if (propertyName is "$get" or "$set") {
+			findings.Add(new PageBodyLintFinding(
+				Rule: RuleHandlerUsesNonexistentRequestApi,
+				Severity: LintSeverity.Error,
+				Line: member.Location.Start.Line,
+				Column: member.Location.Start.Column + 1,
+				Message: $"`request.{propertyName}` does not exist on the handler-chain request object and throws `TypeError: request.{propertyName} is not a function` at runtime; use `await request.$context[\"<Attr>\"]` to read and `await request.$context.set(\"<Attr>\", <value>)` to write"));
+			return;
+		}
+		string deprecatedMatch = propertyName switch {
 			"viewModel" => "viewModel",
 			"sender" => "sender",
-			"$get" => "$get",
-			"$set" => "$set",
 			_ => null
 		};
-		if (match is null && IsContextDotGet(member)) {
-			match = "$context.get";
+		if (deprecatedMatch is null && IsContextDotGet(member)) {
+			deprecatedMatch = "$context.get";
 		}
-		if (match is null) {
+		if (deprecatedMatch is null) {
 			return;
 		}
 		findings.Add(new PageBodyLintFinding(
@@ -277,7 +295,7 @@ internal static class PageBodyAstLinter {
 			Severity: LintSeverity.Warning,
 			Line: member.Location.Start.Line,
 			Column: member.Location.Start.Column + 1,
-			Message: $"`request.{match}` is deprecated in deployed page-body handlers; use the documented `request.$context.<Attr>` reactive read/write or the `request.next?.handle(request)` chain forwarder"));
+			Message: $"`request.{deprecatedMatch}` is deprecated in deployed page-body handlers; use the documented `request.$context[\"<Attr>\"]` reactive read/write or the `request.next?.handle(request)` chain forwarder"));
 	}
 
 	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, List<PageBodyLintFinding> findings) {
