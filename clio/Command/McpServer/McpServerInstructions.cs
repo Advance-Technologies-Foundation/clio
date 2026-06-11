@@ -27,7 +27,8 @@ internal static class McpServerInstructions
 		3. `get-schema` → inspect a specific schema
 
 		### Create a new entity
-		1. `create-entity-schema` → define the table
+		1. `create-entity-schema` → define the table (applies DDL and publishes the schema, so it is immediately
+		   usable as a Lookup reference in sys-settings and lookup pickers)
 		2. `update-entity-schema` → add columns (already applies DDL to the database and refreshes the runtime schema; no separate compile needed)
 		3. `create-data-binding` + `add-data-binding-row` → seed lookup data
 
@@ -43,7 +44,11 @@ internal static class McpServerInstructions
 
 		## When `compile-creatio` is NOT required
 		- After `create-app`, `create-app-section`, `create-page`, `update-page` — Freedom UI bodies are AMD modules served at runtime.
-		- After `create-entity-schema` / `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		- After `create-entity-schema` / `create-lookup` — these tools apply DDL AND publish the schema themselves,
+		  so the new entity is immediately visible to lookup pickers and sys-setting reference schema lists.
+		- After `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		  Note: unlike `create-entity-schema`, these tools do not re-publish the full configuration (by design — the schema is already published).
+		  If a newly added lookup column must appear in reference schema lists immediately, run `compile-creatio`.
 		- After `create-data-binding` / `add-data-binding-row` / `upsert-data-binding-row-db` — data seeding does not change compiled artifacts.
 		Calling `compile-creatio` in these cases only wastes time and may trigger an unnecessary restart.
 
