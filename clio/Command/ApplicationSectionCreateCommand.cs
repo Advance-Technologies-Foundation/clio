@@ -196,16 +196,14 @@ public sealed class ApplicationSectionCreateService(
 				throw;
 			}
 			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
-				bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
-				if (sectionVisible == true) {
-					logger.EndSpinner(true);
-					logger.WriteInfo(
-						$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
-						+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
-					return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
-				}
-				logger.EndSpinner(false);
-				throw BuildTimeoutFailure(resolvedRequest, insertTimeoutMs, sectionVisible, exception);
+				return RecoverFromInsertTimeout(
+					environmentName,
+					beforeInfo,
+					resolvedRequest,
+					client,
+					environmentSettings,
+					insertTimeoutMs,
+					exception);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
@@ -436,6 +434,31 @@ public sealed class ApplicationSectionCreateService(
 				pending.Enqueue(current.InnerException);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Handles a timed-out ApplicationSection insert: returns the normal readback result when the
+	/// section is already visible despite the timeout, otherwise throws the classified failure.
+	/// </summary>
+	private ApplicationSectionCreateResult RecoverFromInsertTimeout(
+		string environmentName,
+		ApplicationInfoResult beforeInfo,
+		ResolvedApplicationSectionCreateRequest resolvedRequest,
+		IApplicationClient client,
+		EnvironmentSettings environmentSettings,
+		int insertTimeoutMs,
+		Exception cause) {
+		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
+		if (sectionVisible == true) {
+			logger.EndSpinner(true);
+			logger.WriteInfo(
+				$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
+				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
+			return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
+		}
+
+		logger.EndSpinner(false);
+		throw BuildTimeoutFailure(resolvedRequest, insertTimeoutMs, sectionVisible, cause);
 	}
 
 	/// <summary>
