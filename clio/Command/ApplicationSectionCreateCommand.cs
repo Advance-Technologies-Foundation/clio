@@ -211,37 +211,7 @@ public sealed class ApplicationSectionCreateService(
 				? BuildTransportFailure(resolvedRequest, exception)
 				: BuildServerErrorFailure(resolvedRequest, exception);
 		}
-		InsertQueryResponseDto? response;
-		try {
-			response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions);
-		} catch (JsonException jsonException) {
-			logger.EndSpinner(false);
-			throw new ApplicationSectionCreateException(
-				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
-				+ "Creatio returned a non-JSON response to the section insert (an HTML error page is the usual "
-				+ "cause), so the server is likely misconfigured or in a broken state.",
-				ApplicationSectionCreateFailureClass.ServerError,
-				sectionCreated: null,
-				ServerErrorRetryGuidance,
-				jsonException);
-		}
-		if (response is null) {
-			logger.EndSpinner(false);
-			throw new ApplicationSectionCreateException(
-				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
-				+ "Creatio returned an empty insert response, so the actual insert outcome is unknown.",
-				ApplicationSectionCreateFailureClass.ServerError,
-				sectionCreated: null,
-				ServerErrorRetryGuidance);
-		}
-		if (!response.Success) {
-			logger.EndSpinner(false);
-			throw new ApplicationSectionCreateException(
-				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),
-				ApplicationSectionCreateFailureClass.ServerError,
-				sectionCreated: false,
-				ServerErrorRetryGuidance);
-		}
+		EnsureInsertSucceeded(responseBody, resolvedRequest);
 		logger.EndSpinner(true);
 
 		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
@@ -373,6 +343,46 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		return builder.ToString();
+	}
+
+	/// <summary>
+	/// Parses the InsertQuery response and converts every non-contract payload — HTML, empty,
+	/// or an explicit rejection — into a classified server-error failure with the spinner closed.
+	/// </summary>
+	private void EnsureInsertSucceeded(
+		string responseBody,
+		ResolvedApplicationSectionCreateRequest resolvedRequest) {
+		InsertQueryResponseDto? response;
+		try {
+			response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions);
+		} catch (JsonException jsonException) {
+			logger.EndSpinner(false);
+			throw new ApplicationSectionCreateException(
+				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
+				+ "Creatio returned a non-JSON response to the section insert (an HTML error page is the usual "
+				+ "cause), so the server is likely misconfigured or in a broken state.",
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: null,
+				ServerErrorRetryGuidance,
+				jsonException);
+		}
+		if (response is null) {
+			logger.EndSpinner(false);
+			throw new ApplicationSectionCreateException(
+				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
+				+ "Creatio returned an empty insert response, so the actual insert outcome is unknown.",
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: null,
+				ServerErrorRetryGuidance);
+		}
+		if (!response.Success) {
+			logger.EndSpinner(false);
+			throw new ApplicationSectionCreateException(
+				BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: false,
+				ServerErrorRetryGuidance);
+		}
 	}
 
 	private static int ResolveInsertTimeoutMilliseconds() {
