@@ -87,7 +87,7 @@ public sealed record BusinessRuleCondition
 
     [JsonPropertyName("rightExpression")]
     [Description(
-        "Right expression. Supports AttributeValue or Const for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
+        "Right expression. Supports AttributeValue, Const, or SysValue for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
     public BusinessRuleExpression? RightExpression { get; init; }
 }
 
@@ -97,16 +97,22 @@ public sealed record BusinessRuleExpression
     {
     }
 
-    public BusinessRuleExpression(string type, string? path = null, JsonElement? value = null, string? expression = null)
+    public BusinessRuleExpression(
+        string type,
+        string? path = null,
+        JsonElement? value = null,
+        string? expression = null,
+        string? sysValueName = null)
     {
         Type = type;
         Path = path;
         Value = value;
         Expression = expression;
+        SysValueName = sysValueName;
     }
 
     [JsonPropertyName("type")]
-    [Description("Expression type. Supported values: AttributeValue, Const, Formula.")]
+    [Description("Expression type. Supported values: AttributeValue, Const, Formula, SysValue.")]
     [Required]
     public string Type { get; init; } = null!;
 
@@ -125,6 +131,14 @@ public sealed record BusinessRuleExpression
     [JsonPropertyName("expression")]
     [Description("Simple numeric direct-field expression when type is Formula, for example 'Field1 + Field2'. Formula functions and date/time arithmetic are not supported in this scope.")]
     public string? Expression { get; init; }
+
+    /// <summary>
+    /// System-variable name when <see cref="Type"/> is <c>SysValue</c>.
+    /// </summary>
+    [JsonPropertyName("sysValueName")]
+    [Description(
+        "System variable name when type is SysValue. A SysValue may be on either side of a condition. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles; use comparisonType contain/not-contain against a role). Both operands must resolve to the same data value type, and lookup operands must reference the same schema.")]
+    public string? SysValueName { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]

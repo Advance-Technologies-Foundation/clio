@@ -64,17 +64,53 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILogger _logger;
+	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
+	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
-		ILogger logger) {
+		ILogger logger,
+		ICurrentUserCultureResolverFactory cultureResolverFactory,
+		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_logger = logger;
+		_cultureResolverFactory = cultureResolverFactory;
+		_settingsRepository = settingsRepository;
+	}
+
+	/// <summary>
+	/// Resolves the effective caption culture for a column WRITE batch: an explicit
+	/// <c>--caption-culture</c> override wins; otherwise the connected user's profile culture
+	/// (cached); otherwise the <c>en-US</c> fallback. Never reads the host
+	/// <c>CultureInfo.CurrentCulture</c>. Resolution failure is non-fatal (M-4): it degrades to
+	/// <c>en-US</c> so scripted/CI column writes keep working.
+	/// </summary>
+	private string ResolveEffectiveCultureName(ModifyEntitySchemaColumnOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.CaptionCulture)) {
+			string overrideCulture = options.CaptionCulture.Trim();
+			try {
+				return System.Globalization.CultureInfo.GetCultureInfo(overrideCulture).Name;
+			} catch (System.Globalization.CultureNotFoundException) {
+				throw new EntitySchemaDesignerException(
+					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");
+			}
+		}
+
+		try {
+			EnvironmentSettings settings = _settingsRepository.GetEnvironment(options);
+			CultureResolution resolution = _cultureResolverFactory.Create(settings)
+				.ResolveAsync().GetAwaiter().GetResult();
+			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
+		} catch (Exception ex) {
+			_logger.WriteWarning(
+				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
+			return EntitySchemaDesignerSupport.DefaultCultureName;
+		}
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {
@@ -92,8 +128,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(rootOperation.Package);
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
-			ApplyColumnMutation(schema, package, operation);
+			ApplyColumnMutation(schema, package, operation, effectiveCultureName);
 		}
 
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, rootOperation);
@@ -341,7 +378,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Use live editing: {FormatBoolean(schema.UseLiveEditing)}");
 	}
 
-	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void AddColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
 		EnsureNameIsUnique(schema, options.ColumnName, null);
 		int dataValueType = ParseSupportedType(options.Type, "add");
 		ValidateOptionsForType(options, dataValueType, isAdd: true);
@@ -349,7 +387,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
 				ResolveEffectiveTitle(options.Title, options.ColumnName),
-				"title-localizations");
+				"title-localizations",
+				effectiveCultureName);
 		IReadOnlyDictionary<string, string>? descriptionLocalizations = options.DescriptionLocalizations == null
 			? null
 			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
@@ -361,10 +400,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				titleNormalization.Localizations,
-				titleNormalization.EffectiveTitle),
+				titleNormalization.EffectiveTitle,
+				effectiveCultureName),
 			Description = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				descriptionLocalizations,
-				options.Description),
+				options.Description,
+				effectiveCultureName),
 			RequirementType = MapRequirementType(options.Required),
 			Indexed = options.Indexed ?? false,
 			IsValueCloneable = options.Cloneable ?? false,
@@ -401,7 +442,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private void ModifyColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void ModifyColumn(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options,
+		string effectiveCultureName) {
 		EntitySchemaColumnDto column = FindOwnColumnForMutation(schema, options.ColumnName);
 		int effectiveDataValueType = options.Type == null
 			? column.DataValueType ?? 0
@@ -416,6 +458,17 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.DataValueType = effectiveDataValueType;
 		}
 
+		ApplyColumnCaptionAndDescription(column, options, effectiveCultureName);
+		ApplyColumnScalarOptions(column, options);
+
+		ApplyColumnTypeConfiguration(package, column, options, effectiveDataValueType);
+	}
+
+	/// <summary>
+	/// Writes the column caption and description using the effective culture (override &gt; profile &gt; en-US).
+	/// </summary>
+	private static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
 		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
 		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
 		if (options.TitleLocalizations != null) {
@@ -423,12 +476,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 					options.TitleLocalizations,
 					options.Title,
-					"title-localizations");
+					"title-localizations",
+					effectiveCultureName);
 			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
 				caption,
 				titleNormalization.Localizations!);
 		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim());
+			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim(), effectiveCultureName);
 		}
 		if (options.DescriptionLocalizations != null) {
 			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
@@ -437,10 +491,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 					options.DescriptionLocalizations,
 					"description-localizations")!);
 		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description);
+			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description, effectiveCultureName);
 		}
 		column.Caption = caption;
 		column.Description = description;
+	}
+
+	/// <summary>
+	/// Applies the optional scalar column flags and default value left unspecified-as-unchanged.
+	/// </summary>
+	private void ApplyColumnScalarOptions(EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options) {
 		if (options.Required.HasValue) {
 			column.RequirementType = MapRequirementType(options.Required);
 		}
@@ -473,7 +533,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.UseSeconds.HasValue) {
 			column.UseSeconds = options.UseSeconds.Value;
 		}
+	}
 
+	/// <summary>
+	/// Applies lookup / image-lookup reference configuration for the column based on its data value type.
+	/// </summary>
+	private void ApplyColumnTypeConfiguration(PackageInfo package, EntitySchemaColumnDto column,
+		ModifyEntitySchemaColumnOptions options, int effectiveDataValueType) {
 		bool isLookupType = effectiveDataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"];
 		bool isImageLookupType = EntitySchemaDesignerSupport.IsImageLookupDataValueType(effectiveDataValueType);
 		if (isLookupType) {
@@ -831,14 +897,15 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			$"Column '{options.ColumnName}'");
 	}
 
-	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package, ModifyEntitySchemaColumnOptions options) {
+	private void ApplyColumnMutation(EntityDesignSchemaDto schema, PackageInfo package,
+		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
 		EntitySchemaColumnAction action = NormalizeAction(options.Action);
 		switch (action) {
 			case EntitySchemaColumnAction.Add:
-				AddColumn(schema, package, options);
+				AddColumn(schema, package, options, effectiveCultureName);
 				return;
 			case EntitySchemaColumnAction.Modify:
-				ModifyColumn(schema, package, options);
+				ModifyColumn(schema, package, options, effectiveCultureName);
 				return;
 			case EntitySchemaColumnAction.Remove:
 				RemoveColumn(schema, options.ColumnName);

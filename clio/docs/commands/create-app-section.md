@@ -17,7 +17,17 @@ data for the created section, resolved entity, and created pages.
 Provide the target application through --application-code.
 
 By default clio creates a section with a new object. To bind the section
-to an existing entity, provide --entity-schema-name.
+to an existing entity, provide --entity-schema-name. The object must exist
+(clio validates this before creating the section and returns a clear,
+actionable error otherwise). Several sections may target the same object, so
+reusing an object that already backs a section is allowed.
+
+The section code is generated from the caption. Only ASCII letters and
+digits contribute to the generated code: a fully non-Latin caption (for
+example "Контакти") yields no code and requires an explicit --code. When a
+caption mixes scripts (for example "Контакти 2024"), the ASCII fragment is
+salvaged ("2024" → "Usr_2024"); pass --code when the salvaged result is
+not what you want.
 
 By default clio creates web and mobile pages. Set --with-mobile-pages false
 when the new section must stay web-only.
@@ -48,6 +58,12 @@ clio create-app-section [options]
 
 --entity-schema-name             Existing entity schema name
 
+--code                           Explicit section code (Latin identifier).
+                                 Generated from the caption when omitted;
+                                 required when the caption has no Latin
+                                 letters or digits (for example a non-Latin
+                                 caption such as "Контакти").
+
 --icon-background                Icon background color in #RRGGBB format.
                                  Must match one of the Freedom UI palette
                                  values listed above. Defaults to a random
@@ -55,6 +71,13 @@ clio create-app-section [options]
 
 --with-mobile-pages              Create mobile pages in addition to web
                                  pages. Default: true
+
+--caption-culture                Override the culture used when displaying the
+                                 created section caption (e.g. en-US, uk-UA).
+                                 Precedence: override > the connected user's
+                                 profile culture (see get-user-culture) > en-US.
+                                 The stored caption is localized server-side
+                                 under the connected user's profile.
 
 --Environment            -e      Environment name. Required.
 ```
@@ -84,11 +107,45 @@ create a web-only section with automatically resolved icon metadata
 ## Notes
 
 - --application-code is required.
-- When --entity-schema-name is provided, the section reuses that entity.
+- When --entity-schema-name is provided, the section reuses that entity. The
+  object must exist (validated before creation); several sections may target
+  the same object, so reuse is allowed.
 - The section code is generated automatically from the caption and prefixed
   with the active SchemaNamePrefix system setting from the target environment
   (for example caption "Orders" produces "UsrOrders" when SchemaNamePrefix is
-  "Usr", or "Orders" when the setting is empty).
+  "Usr", or "Orders" when the setting is empty). Only ASCII letters and digits
+  feed the generated code. A fully non-Latin caption (for example "Контакти")
+  yields no code and must be accompanied by an explicit --code. A mixed caption
+  (for example "Контакти 2024") salvages the ASCII fragment ("2024" →
+  "Usr_2024"); pass --code to override.
+- --code overrides the generated code. It is prefixed with the SchemaNamePrefix
+  when it does not already start with it, and the prefix casing is always
+  canonicalized (for example --code usrContacts with prefix Usr gives
+  UsrContacts). The code must contain only Latin letters, digits, or underscore.
+
+## Troubleshooting
+
+- **"Caption ... has no Latin letters or digits to generate a section code"** —
+  the caption is non-Latin (for example "Контакти"), so a valid Latin section
+  code cannot be generated. Pass an explicit code via `--code` (for example
+  `--code Contacts`), or use a Latin caption. The caption stays as the
+  localized display title. clio reports this before creating the section.
+- **"Entity schema ... does not exist ..."** — the object passed via
+  --entity-schema-name was not found in the environment. Object names are
+  case-sensitive. Verify the name, or omit --entity-schema-name to create a new
+  object. clio checks this before creating the section.
+- **"Section code ... is invalid ..."** — the value passed via `--code` is not
+  a Latin identifier. Section codes must start with a Latin letter and contain
+  only Latin letters, digits, or underscore.
+- **Detail-less "Failed to create section ..." rejection** — the server
+  rejected the insert without details. A section with the generated or explicit
+  code may already exist. Run `clio list-app-sections` to inspect existing
+  sections, then change the caption or pass a different `--code`. Several
+  sections may target the same object, so reusing an object that already backs a
+  section is allowed.
+- When the underlying Creatio insert returns its own error text, that message
+  is surfaced after `Server error:` so the root cause is visible instead of a
+  generic failure.
 
 ## Reporting Bugs
 

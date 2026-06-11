@@ -64,6 +64,30 @@ public sealed class BusinessRuleValidatorTests {
 		new object[] { 9, "ReminderTime", "13:45:00+02:00" }
 	];
 
+	// Each case: sysValueName, leftPath, leftDataValueType, leftReferenceSchemaName, comparisonType.
+	// Data value type codes: Date=8, Time=9, DateTime=7, Lookup=10 (see CreatioDataValueType / existing cases).
+	private static readonly object?[] SupportedSystemVariableMatchCases = [
+		new object?[] { "CurrentDate", "DateCol", 8, null, "equal" },
+		new object?[] { "CurrentTime", "TimeCol", 9, null, "equal" },
+		new object?[] { "CurrentDateTime", "DateTimeCol", 7, null, "equal" },
+		new object?[] { "CurrentUser", "UserCol", 10, "SysAdminUnit", "equal" },
+		new object?[] { "CurrentUserContact", "ContactCol", 10, "Contact", "equal" },
+		new object?[] { "CurrentUserAccount", "AccountCol", 10, "Account", "equal" },
+		new object?[] { "CurrentUserRoles", "RolesCol", 10, "SysAdminUnit", "equal" }
+	];
+
+	// Each case: sysValueName, leftPath, mismatched leftDataValueType, mismatched leftReferenceSchemaName.
+	// Non-lookup variables mismatch on data value type; lookup variables mismatch on reference schema.
+	private static readonly object?[] SupportedSystemVariableMismatchCases = [
+		new object?[] { "CurrentDate", "TimeCol", 9, null },
+		new object?[] { "CurrentTime", "DateCol", 8, null },
+		new object?[] { "CurrentDateTime", "DateCol", 8, null },
+		new object?[] { "CurrentUser", "ContactCol", 10, "Contact" },
+		new object?[] { "CurrentUserContact", "AccountCol", 10, "Account" },
+		new object?[] { "CurrentUserAccount", "ContactCol", 10, "Contact" },
+		new object?[] { "CurrentUserRoles", "ContactCol", 10, "Contact" }
+	];
+
 	private static readonly object[] SetValuesConstantCases = [
 		new object[] { 1, "TextResult", "\"Ready\"" },
 		new object[] { 4, "Score", "42" },
@@ -156,7 +180,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("Unsupported rule.condition.conditions[*].comparisonType 'contains'. Supported values: equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal.",
+			.WithMessage("Unsupported rule.condition.conditions[*].comparisonType 'contains'. Supported values: equal, not-equal, is-filled-in, is-not-filled-in, greater-than, greater-than-or-equal, less-than, less-than-or-equal, contain, not-contain.",
 				because: "the validator should reject comparisons outside the supported object business-rule subset");
 	}
 
@@ -178,6 +202,296 @@ public sealed class BusinessRuleValidatorTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "valid OR groups and not-equal comparisons should pass validator ownership checks");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a lookup system variable when the left lookup attribute references the same schema as the variable.")]
+	public void Validate_Should_Accept_Lookup_SysValue_When_Reference_Schema_Matches() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserContact"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a lookup system variable whose reference schema matches the left lookup attribute is a valid comparison");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a date system variable in a relational comparison against a date left attribute.")]
+	public void Validate_Should_Accept_Date_SysValue_For_Date_Left_Attribute() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "less-than-or-equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "DueDate", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentDate"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("DueDate", 8),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "CurrentDate is a Date system variable and is valid against a Date left attribute in a relational comparison");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a system variable whose data value type does not match the left attribute type.")]
+	public void Validate_Should_Reject_SysValue_When_Data_Value_Type_Mismatch() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "ReminderTime", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentDate"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("ReminderTime", 9),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*same data value type*",
+				because: "a Date system variable must be rejected against a Time left attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a lookup system variable whose reference schema differs from the left lookup attribute reference schema.")]
+	public void Validate_Should_Reject_Lookup_SysValue_When_Reference_Schema_Mismatch() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserAccount"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*reference the same schema*",
+				because: "CurrentUserAccount references Account and must be rejected against a Contact lookup attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an unknown system variable name.")]
+	public void Validate_Should_Reject_Unknown_SysValue_Name() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentSupervisor"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*Unsupported*sysValueName*CurrentSupervisor*",
+				because: "only the documented system variable names are accepted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a SysValue right expression that omits the sysValueName.")]
+	public void Validate_Should_Reject_SysValue_Without_Name() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("SysValue"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*sysValueName is required*",
+				because: "a SysValue right expression must carry a system variable name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a relational comparison between a lookup left attribute and a lookup system variable.")]
+	public void Validate_Should_Reject_Relational_Comparison_For_Lookup_SysValue() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "greater-than",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserContact"));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*numeric and date/time operands*",
+				because: "relational comparisons are not supported for lookup operands regardless of the right operand kind");
+	}
+
+	[TestCaseSource(nameof(SupportedSystemVariableMatchCases))]
+	[Category("Unit")]
+	[Description("Accepts every supported system variable against a correctly-typed left attribute, guarding the full catalog against descriptor typos.")]
+	public void Validate_Should_Accept_System_Variable_When_Left_Attribute_Type_Matches(
+		string sysValueName,
+		string leftPath,
+		int leftDataValueType,
+		string? leftReferenceSchemaName,
+		string comparisonType) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: comparisonType,
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: sysValueName));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, leftDataValueType, leftReferenceSchemaName),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: $"system variable '{sysValueName}' should validate against a left attribute that matches its catalog data value type and reference schema");
+	}
+
+	[TestCaseSource(nameof(SupportedSystemVariableMismatchCases))]
+	[Category("Unit")]
+	[Description("Rejects every supported system variable against a mismatched left attribute, covering both data-value-type and reference-schema catalog entries.")]
+	public void Validate_Should_Reject_System_Variable_When_Left_Attribute_Type_Mismatches(
+		string sysValueName,
+		string leftPath,
+		int leftDataValueType,
+		string? leftReferenceSchemaName) {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("AttributeValue", leftPath, null),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: sysValueName));
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn(leftPath, leftDataValueType, leftReferenceSchemaName),
+			CreateColumn("Owner", 10, "Contact"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: $"system variable '{sysValueName}' must be rejected against a left attribute that does not match its catalog data value type or reference schema");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a CurrentUserRoles CONTAIN role condition (system variable on the left, constant role on the right).")]
+	public void Validate_Should_Accept_CurrentUserRoles_Contain_Role() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "contain",
+			leftExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserRoles"),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"83a43ebc-f36b-1410-298d-001e8c82bcad\"")),
+			actions: [new MakeRequiredBusinessRuleAction(["Status"])]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "CurrentUserRoles (ObjectList) CONTAIN a SysAdminUnit role constant is a valid role-membership condition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a system variable on the left compared by equality to a constant of the same reference schema.")]
+	public void Validate_Should_Accept_SysValue_Left_Equal_Constant() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "equal",
+			leftExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserContact"),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"410006e1-ca4e-4502-a9ec-e54d922d2c00\"")),
+			actions: [new MakeRequiredBusinessRuleAction(["Status"])]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a system variable on the left compared to a constant is allowed; the constant inherits the variable's type");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a contain comparison when the left operand is neither a collection nor a text type.")]
+	public void Validate_Should_Reject_Contain_When_Left_Is_Not_Collection_Or_Text() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "contain",
+			leftExpression: new BusinessRuleExpression("AttributeValue", "Owner", null),
+			rightExpression: new BusinessRuleExpression("Const", null, Json("\"11111111-1111-1111-1111-111111111111\"")),
+			actions: [new MakeRequiredBusinessRuleAction(["Status"])]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Owner", 10, "Contact"),
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*only supported when the left operand is a collection*",
+				because: "contain/not-contain require an ObjectList or text left operand, not a Lookup attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a CurrentUserRoles contain comparison against a system variable of a different reference schema.")]
+	public void Validate_Should_Reject_Contain_When_Reference_Schemas_Differ() {
+		// Arrange
+		BusinessRule rule = CreateRule(
+			comparisonType: "contain",
+			leftExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserRoles"),
+			rightExpression: new BusinessRuleExpression("SysValue", sysValueName: "CurrentUserContact"),
+			actions: [new MakeRequiredBusinessRuleAction(["Status"])]);
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, columnMap);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*reference the same schema*",
+				because: "CurrentUserRoles (SysAdminUnit) and CurrentUserContact (Contact) reference different schemas");
 	}
 
 	[TestCaseSource(nameof(UnarySupportedTypeCases))]
@@ -244,7 +558,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*] compares left attribute 'Status' (Text) to right attribute 'Amount' (Money). Both attributes must have the same data value type.",
+			.WithMessage("rule.condition.conditions[*] compares attribute 'Status' (Text) to attribute 'Amount' (Money). Both operands must resolve to the same data value type.",
 				because: "attribute-to-attribute comparisons should only compare like-typed entity columns");
 	}
 
@@ -285,7 +599,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON boolean when the left attribute is Boolean.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON boolean when compared against a Boolean operand.",
 				because: "boolean comparisons should reject string payloads that only look like booleans");
 	}
 
@@ -326,7 +640,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string when the left attribute is a text type.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON string when compared against a text operand.",
 				because: $"{dataValueTypeName} constants should be represented as JSON strings in business-rule metadata");
 	}
 
@@ -372,7 +686,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage($"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for left attribute 'UnsupportedCol' with type {expectedTypeName}. RichText and Image attributes do not support equal or not-equal business-rule conditions.",
+			.WithMessage($"rule.condition.conditions[*].comparisonType '{comparisonType}' is not supported for {expectedTypeName} operands. RichText and Image operands do not support equal or not-equal business-rule conditions.",
 				because: "the Creatio business-rule designer blocks equality comparisons for large attribute value types");
 	}
 
@@ -393,7 +707,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON number when the left attribute is a numeric type.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when compared against a numeric operand.",
 				because: $"{dataValueTypeName} constants should stay numeric in the serialized business-rule payload");
 	}
 
@@ -455,7 +769,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when the left attribute is a numeric type.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a JSON number representable as Int64 or Decimal when compared against a numeric operand.",
 				because: "numeric constants outside the supported CLR range should be rejected before metadata serialization");
 	}
 
@@ -550,7 +864,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].comparisonType 'greater-than' is only supported for numeric and date/time left attributes. Left attribute 'Status' has type Text.",
+			.WithMessage("rule.condition.conditions[*].comparisonType 'greater-than' is only supported for numeric and date/time operands. The compared value type is Text.",
 				because: "relational operators should be limited to numeric and date/time columns");
 	}
 
@@ -620,7 +934,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is a Lookup.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a GUID string when compared against a Lookup operand.",
 				because: "lookup comparisons should persist raw lookup ids rather than captions or arbitrary text");
 	}
 
@@ -661,7 +975,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a GUID string when the left attribute is Guid.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.value must be a GUID string when compared against a Guid operand.",
 				because: "Guid columns should only compare against actual Guid payloads");
 	}
 
@@ -1518,11 +1832,11 @@ public sealed class BusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects left expressions that are not attribute references.")]
+	[Description("Rejects left expressions whose type is not one of the supported expression kinds.")]
 	public void Validate_Should_Reject_Unsupported_Left_Expression_Type() {
 		// Arrange
 		BusinessRule rule = CreateRule(
-			leftExpression: new BusinessRuleExpression("Const", null, Json("\"Draft\"")));
+			leftExpression: new BusinessRuleExpression("Bogus", null, Json("\"Draft\"")));
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
 			CreateColumn("Status", 1),
 			CreateColumn("Owner", 10, "Contact"));
@@ -1532,8 +1846,8 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue'.",
-				because: "the left side of a business-rule condition must always reference an entity attribute");
+			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
+				because: "each condition operand must be one of the three supported expression kinds, on either side");
 	}
 
 	[TestCase(11, "Enum")]
@@ -1555,7 +1869,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage($"Const rightExpression is not supported for left attribute type '{expectedTypeName}'.",
+			.WithMessage($"rule.condition.conditions[*].rightExpression.value (Const) is not supported when compared against a '{expectedTypeName}' operand.",
 				because: $"{expectedTypeName} columns do not have a defined constant comparison contract and should be rejected before metadata is serialized");
 	}
 
@@ -1575,7 +1889,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue' or 'Const'.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
 				because: "the validator should only allow the supported right-hand operand kinds");
 	}
 

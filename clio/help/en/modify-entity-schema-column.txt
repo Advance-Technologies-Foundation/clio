@@ -62,6 +62,10 @@ OPTIONS
     --simple-lookup                Set simple-lookup flag (Lookup only)
     --cascade                      Set cascade-connection flag (Lookup only)
     --do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
+    --caption-culture              Override the culture for the written column
+                                   caption/description (e.g. en-US, uk-UA).
+                                   Precedence: override > profile culture > en-US.
+                                   Supplying it skips the profile-culture lookup.
 
     Environment options are also available:
     -e, --Environment              Environment name from the registered configuration

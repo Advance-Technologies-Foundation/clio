@@ -1108,8 +1108,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish branching rules between new-app and existing-app flows");
 		article.Text.Should().Contain("Schema sync recovery patterns",
 			because: "the guide should cover schema-sync recovery patterns owned by clio");
-		article.Text.Should().Contain("InsertQuery failed",
-			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("Failed to create section",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions using the current section-create error marker");
 		article.Text.Should().Contain("metadata readback timeout",
 			because: "the guide should describe the section readback timeout recovery path");
 		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
@@ -1410,6 +1410,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 		article.Text.Should().Contain("prefer `populateValue=true` by default",
 			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+		article.Text.Should().Contain("classify the requirement into one mechanism",
+			because: "the guide must teach lookup-restriction routing as a mechanism taxonomy, not a list of memorized business phrases");
+		article.Text.Should().Contain("never a handler/crt.InitRequest",
+			because: "the guide must steer every lookup-restriction mechanism away from handlers/crt.InitRequest");
 	}
 
 	[Test]
@@ -1641,6 +1645,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
 		article.Text.Should().Contain("discovery flow",
 			because: "the guide should keep the no-assumptions discovery flow");
+		article.Text.Should().Contain("validate before create (MANDATORY)",
+			because: "the guide must require an execute-esq dry-run of the filter before the rule is created");
+		article.Text.Should().Contain("DRY-RUN the same filter as an `execute-esq` SelectQuery",
+			because: "the guide must spell out the pre-save execute-esq validation discipline borrowed from the component widget recipe");
+		article.Text.Should().Contain("before-create checklist",
+			because: "the guide should end with a compact before-create checklist of the hard-won filter invariants");
 	}
 
 	[Test]
