@@ -10,6 +10,14 @@ namespace Clio.Command;
 [Verb("clear-browser-session", Aliases = ["clear-session"],
 	HelpText = "Delete the cached browser session for a Creatio environment")]
 public class ClearBrowserSessionOptions : EnvironmentOptions {
+
+	/// <summary>
+	/// When a session was obtained via <c>get-browser-session --output-path</c>, pass the same
+	/// path here so that the credential file written outside the default cache is also removed.
+	/// </summary>
+	[Option("output-path", Required = false,
+		HelpText = "Also delete the file written by a prior 'get-browser-session --output-path' invocation")]
+	public string OutputPath { get; set; }
 }
 
 /// <summary>
@@ -26,7 +34,7 @@ public class ClearBrowserSessionCommand(
 	public override int Execute(ClearBrowserSessionOptions options) {
 		try {
 			EnvironmentSettings environment = settingsRepository.GetEnvironment(options);
-			browserSessionService.ClearSessionAsync(environment).ConfigureAwait(false).GetAwaiter().GetResult();
+			browserSessionService.ClearSessionAsync(environment, options.OutputPath).ConfigureAwait(false).GetAwaiter().GetResult();
 			logger.WriteInfo($"Browser session for '{options.Environment ?? environment.Uri}' cleared.");
 			return 0;
 		} catch (Exception e) {

@@ -164,6 +164,20 @@ public sealed class BrowserSessionServiceTests {
 	}
 
 	[Test]
+	[Description("ClearSessionAsync also deletes the override-path file when one is supplied, so a credential written via --output-path is fully revoked.")]
+	public void ClearSessionAsync_ShouldDeleteOverrideFile_WhenOutputPathIsProvided() {
+		// Arrange
+		const string overridePath = "/tmp/session.storageState.json";
+
+		// Act
+		_sut.ClearSessionAsync(Env(), overridePath).GetAwaiter().GetResult();
+
+		// Assert
+		_cache.Received(1).Delete(Key);
+		_fileSystem.Received(1).DeleteFileIfExists(overridePath);
+	}
+
+	[Test]
 	[Description("A cached session that returns HTTP 302 is treated as expired: .NET Framework redirects to the login page rather than serving login HTML, and with AllowAutoRedirect=false the body is empty which would otherwise fool IsSessionExpiredResponse into returning false.")]
 	public void GetSessionPathAsync_ShouldReauthenticate_WhenValidationReturns302() {
 		// Arrange

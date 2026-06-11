@@ -44,7 +44,7 @@ public sealed class ClearBrowserSessionToolTests {
 		// Assert
 		result.Success.Should().BeTrue("because clearing a session is a successful, idempotent operation");
 		result.Error.Should().BeNull("because there was no error");
-		_service.Received(1).ClearSessionAsync(_env, Arg.Any<CancellationToken>());
+		_service.Received(1).ClearSessionAsync(_env, null, Arg.Any<CancellationToken>());
 	}
 
 	[Test]

@@ -56,7 +56,21 @@ public class ClearBrowserSessionCommandTests : BaseCommandTests<ClearBrowserSess
 
 		// Assert
 		result.Should().Be(0, "because clearing a session is a successful, idempotent operation");
-		_service.Received(1).ClearSessionAsync(_env, Arg.Any<CancellationToken>());
+		_service.Received(1).ClearSessionAsync(_env, null, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("Execute passes --output-path to the service so a credential file written outside the cache is also deleted.")]
+	public void Execute_ShouldPassOutputPath_WhenOutputPathIsProvided() {
+		// Arrange
+		var options = new ClearBrowserSessionOptions { Environment = "MyEnv", OutputPath = "/tmp/session.json" };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, "because the command succeeds when an output-path is supplied");
+		_service.Received(1).ClearSessionAsync(_env, "/tmp/session.json", Arg.Any<CancellationToken>());
 	}
 
 	[Test]
@@ -72,6 +86,6 @@ public class ClearBrowserSessionCommandTests : BaseCommandTests<ClearBrowserSess
 
 		// Assert
 		result.Should().Be(1, "because an unresolvable environment must surface as a non-zero exit code");
-		_service.DidNotReceive().ClearSessionAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<CancellationToken>());
+		_service.DidNotReceive().ClearSessionAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 	}
 }

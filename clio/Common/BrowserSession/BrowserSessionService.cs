@@ -45,9 +45,13 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 	}
 
 	/// <inheritdoc />
-	public Task ClearSessionAsync(EnvironmentSettings env, CancellationToken ct = default) {
+	public Task ClearSessionAsync(EnvironmentSettings env, string overrideOutputPath = null,
+		CancellationToken ct = default) {
 		ArgumentNullException.ThrowIfNull(env);
 		_cache.Delete(_cache.BuildKey(env));
+		if (!string.IsNullOrEmpty(overrideOutputPath)) {
+			_fileSystem.DeleteFileIfExists(overrideOutputPath);
+		}
 		return Task.CompletedTask;
 	}
 

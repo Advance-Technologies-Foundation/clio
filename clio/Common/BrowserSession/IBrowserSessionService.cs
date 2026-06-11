@@ -22,8 +22,15 @@ public interface IBrowserSessionService {
 	Task<string> GetSessionPathAsync(EnvironmentSettings env, string overrideOutputPath = null,
 		bool forceRefresh = false, CancellationToken ct = default);
 
-	/// <summary>Deletes any cached session for <paramref name="env"/> (idempotent).</summary>
+	/// <summary>
+	/// Deletes any cached session for <paramref name="env"/> (idempotent). When
+	/// <paramref name="overrideOutputPath"/> is supplied, that file is also removed so that a
+	/// credential written via <c>get-browser-session --output-path</c> is fully revoked.
+	/// </summary>
 	/// <param name="env">Target environment.</param>
+	/// <param name="overrideOutputPath">Optional explicit file written by a prior
+	/// <c>get-browser-session --output-path</c> invocation; deleted when present.</param>
 	/// <param name="ct">Cancellation token.</param>
-	Task ClearSessionAsync(EnvironmentSettings env, CancellationToken ct = default);
+	Task ClearSessionAsync(EnvironmentSettings env, string overrideOutputPath = null,
+		CancellationToken ct = default);
 }
