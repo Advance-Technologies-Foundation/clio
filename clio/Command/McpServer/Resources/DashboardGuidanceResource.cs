@@ -26,10 +26,9 @@ public sealed class DashboardGuidanceResource {
 
 		       Use this guide whenever you add, arrange, size, group, or style Freedom UI ANALYTICAL widgets
 		       (metrics/indicators and charts) on a DASHBOARD so they look native and balanced — matching how
-		       Creatio's own dashboards (Agent 360 View, Agent command center, Case intelligence, Service command
-		       center) look. A dashboard is a standalone analytics screen the user opens from the Dashboards
-		       section to monitor — the analytics are the destination, not part of working a record. This guide
-		       covers dashboards only.
+		       Creatio's own product dashboards look. A dashboard is a standalone analytics screen the user opens
+		       from the Dashboards section to monitor — the analytics are the destination, not part of working a
+		       record. This guide covers dashboards only.
 
 		       This is a LAYOUT / DESIGN-QUALITY guide. It owns WHERE a widget goes on a dashboard, HOW BIG it is,
 		       and HOW it is styled. It does NOT own the runtime payload of any single widget — for the
@@ -125,29 +124,26 @@ public sealed class DashboardGuidanceResource {
 		         [chart6][chart6]
 		       ```
 
-		       (This is exactly the "Agent 360 View" structure: My Calls / My Chats / My Cases, each a metric band
-		       over a chart row.)
-
 		       ## Worked patterns (lifted from product dashboards)
 
 		       Use these as ready templates.
 
-		       Pattern A — Section stack ("Agent 360 View"): per topic, a 4-up (or 6-up) metric band, then a 3-up
+		       Pattern A — Section stack: per topic, a 4-up (or 6-up) metric band, then a 3-up
 		       chart row of [bar 4][comparison 4][trend 4]. Repeat for each topic with its own header.
 
-		       Pattern B — KPI strip + focus rows ("Agent command center"):
+		       Pattern B — KPI strip + focus rows:
 		       - Top: 6 metric tiles (2 cols each) across the full width.
 		       - Then repeated [chart 4][chart 8] rows: a small left chart (status/priority/channel breakdown)
 		         beside a wide right chart (trend/activity/dynamics).
 		       - Bottom: a 3-up row (4+4+4).
 
-		       Pattern C — Metric column + focal chart ("Case intelligence"):
+		       Pattern C — Metric column + focal chart:
 		       - Left: a 2-wide column of metric tiles stacked (each tile 2 cols -> the column is 4 cols wide),
 		         e.g. 4 rows of two tiles.
 		       - Right: a focal doughnut at 8 cols spanning the height of that metric column.
 		       - Then a 3-up chart row (4+4+4), then [doughnut 4][chart 8].
 
-		       Pattern D — KPI strip + breakdown grid ("Service command center"):
+		       Pattern D — KPI strip + breakdown grid:
 		       - Top: 6 metric tiles (2 cols each).
 		       - Then [bar 6][bar 6] (two half-width bars).
 		       - Then [doughnut 4][doughnut 4][doughnut 4] (by service / by category / by channel).
@@ -196,7 +192,7 @@ public sealed class DashboardGuidanceResource {
 		       - When to use: part-to-whole with a small number of slices (<= ~6). For many categories use a bar
 		         chart instead. Examples: "Cases by service", "Cases by category", "Cases by channel".
 		       - Size: 4 columns, grouped 3 per row (by service / by category / by channel side by side). A single
-		         focal doughnut may take 8 columns beside a metric column (as in "Case intelligence").
+		         focal doughnut may take 8 columns beside a metric column.
 		       - Don't use for time series, for > 6 slices, or for values that don't sum to a meaningful whole.
 
 		       Line / Spline chart — how a measure moves over time.
