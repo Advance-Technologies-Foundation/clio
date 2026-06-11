@@ -19,10 +19,12 @@ public sealed class PageUpdateTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
-	IComponentInfoCatalog webComponentCatalog)
+	IComponentInfoCatalog webComponentCatalog,
+	IPageBodySamplingService samplingService)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
+	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";
 
@@ -169,12 +171,12 @@ public sealed class PageUpdateTool(
 		return (null, webWarnings);
 	}
 
-	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+	private async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
 		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
 		if (options.DryRun || args.SkipSampling == true) {
 			return (null, null);
 		}
-		PageSamplingReview samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(
+		PageSamplingReview samplingReview = await _samplingService.TrySamplingReviewAsync(
 			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
 		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 			return (new PageUpdateResponse {

@@ -9,6 +9,32 @@ using McpServerLib = ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>
+/// Strategy seam for the LLM semantic-review (sampling) step. The page write
+/// tools depend on this interface so tests can substitute a recording fake and
+/// observe sampling invocations (proving AC4 — "sampling unchanged after a
+/// successful parse"); the live MCP transport implementation lives in
+/// <see cref="PageBodySamplingService"/>.
+/// </summary>
+public interface IPageBodySamplingService {
+	Task<PageSamplingReview> TrySamplingReviewAsync(
+		McpServerLib.McpServer server,
+		string schemaName,
+		string body,
+		string? resources,
+		CancellationToken ct = default);
+}
+
+public sealed class PageBodySamplingServiceImpl : IPageBodySamplingService {
+	public Task<PageSamplingReview> TrySamplingReviewAsync(
+		McpServerLib.McpServer server,
+		string schemaName,
+		string body,
+		string? resources,
+		CancellationToken ct = default) =>
+		PageBodySamplingService.TrySamplingReviewAsync(server, schemaName, body, resources, ct);
+}
+
 internal static class PageBodySamplingService {
 
 	internal const string SystemPrompt =

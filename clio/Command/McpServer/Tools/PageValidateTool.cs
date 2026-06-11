@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Acornima.Ast;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -46,6 +48,20 @@ public sealed class PageValidateTool(
 	}
 
 	private static PageSyncValidationResult Validate(string body, string? resources) {
+		// Run the deterministic syntax parser first — same gate as PageUpdateTool
+		// / PageSyncTool so the pre-flight tool catches the production-incident
+		// shape (`await X = Y`) instead of letting the regex syntax validator
+		// pass it as syntax-OK.
+		PageBodySyntaxValidationResult parserResult = PageBodySyntaxValidator.ValidateAndParse(body, out Script parsedAst);
+		if (!parserResult.IsValid) {
+			string syntaxError = PageBodySyntaxValidator.FormatError(parserResult);
+			return new PageSyncValidationResult {
+				MarkersOk = false,
+				JsSyntaxOk = false,
+				ContentOk = false,
+				Errors = [syntaxError]
+			};
+		}
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
 		SchemaValidationResult contentResult = markerResult.IsValid
@@ -53,7 +69,39 @@ public sealed class PageValidateTool(
 			: new SchemaValidationResult { IsValid = true };
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		ContentValidationResults content = RunContentValidations(body, contentResult, explicitResources);
-		return BuildResult(markerResult, syntaxResult, contentResult, content);
+		PageSyncValidationResult result = BuildResult(markerResult, syntaxResult, contentResult, content);
+		// Fold AST lint findings into the validation envelope — same source of
+		// truth the write-path tools use. Error-severity findings demote
+		// ContentOk to false and join the Errors[] list; Warning-severity
+		// findings join the Warnings[] list.
+		return FoldInLintFindings(result, parsedAst);
+	}
+
+	private static PageSyncValidationResult FoldInLintFindings(PageSyncValidationResult result, Script parsedAst) {
+		if (parsedAst is null) {
+			return result;
+		}
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
+		if (findings.Count == 0) {
+			return result;
+		}
+		IReadOnlyList<PageBodyLintFinding> errors = findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+		IReadOnlyList<PageBodyLintFinding> warnings = findings.Where(f => f.Severity == LintSeverity.Warning).ToArray();
+		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
+		List<string> mergedWarnings = result.Warnings is null ? new List<string>() : new List<string>(result.Warnings);
+		if (errors.Count > 0) {
+			mergedErrors.Add(PageBodyAstLinter.FormatErrors(errors));
+		}
+		if (warnings.Count > 0) {
+			mergedWarnings.AddRange(warnings.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}"));
+		}
+		return new PageSyncValidationResult {
+			MarkersOk = result.MarkersOk,
+			JsSyntaxOk = result.JsSyntaxOk,
+			ContentOk = result.ContentOk && errors.Count == 0,
+			Errors = mergedErrors.Count > 0 ? mergedErrors : null,
+			Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null
+		};
 	}
 
 	private static ContentValidationResults RunContentValidations(

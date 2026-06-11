@@ -23,7 +23,8 @@ public sealed class PageSyncTool(
 	IToolCommandResolver commandResolver,
 	IFileSystem fileSystem,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
-	IComponentInfoCatalog webComponentCatalog) {
+	IComponentInfoCatalog webComponentCatalog,
+	IPageBodySamplingService samplingService) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -114,7 +115,7 @@ public sealed class PageSyncTool(
 		return new PageSyncPrePassEntry(null, findings);
 	}
 
-	private static async Task<IReadOnlyList<PageSamplingReview?>> RunSamplingPrePassAsync(
+	private async Task<IReadOnlyList<PageSamplingReview?>> RunSamplingPrePassAsync(
 		McpServerLib.McpServer server,
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
@@ -129,7 +130,7 @@ public sealed class PageSyncTool(
 				continue;
 			}
 			PageSyncPageInput page = pages[i];
-			samplingResults[i] = await PageBodySamplingService.TrySamplingReviewAsync(
+			samplingResults[i] = await samplingService.TrySamplingReviewAsync(
 				server, page.SchemaName, page.Body, page.Resources, cancellationToken);
 		}
 		return samplingResults;
@@ -249,15 +250,20 @@ public sealed class PageSyncTool(
 		}
 	}
 
+	// Materialise a syntax-gate failure as a per-page result. MarkersOk and
+	// ContentOk are set to false (not the previously-fabricated `true`) — a
+	// syntactic failure means we never ran the markers or content validators
+	// for this body, so the envelope must NOT claim those gates passed. Only
+	// JsSyntaxOk has authoritative state at this point.
 	private static PageSyncPageResult BuildPrePassFailureResult(PageSyncPageInput page, string failureMessage) =>
 		new() {
 			SchemaName = page.SchemaName,
 			Success = false,
 			Error = failureMessage,
 			Validation = new PageSyncValidationResult {
-				MarkersOk = true,
+				MarkersOk = false,
 				JsSyntaxOk = false,
-				ContentOk = true,
+				ContentOk = false,
 				Errors = [failureMessage]
 			}
 		};
@@ -299,7 +305,14 @@ public sealed class PageSyncTool(
 			SchemaName = page.SchemaName,
 			Success = false,
 			Validation = new PageSyncValidationResult {
-				MarkersOk = true,
+				// JsSyntaxOk = true because the parser produced an AST (otherwise
+				// the syntax pre-pass would have short-circuited before this).
+				// MarkersOk reflects whether the regex chain actually ran:
+				//   - validate=true → regex ran and passed (we only reach lint
+				//     Error materialisation when regex returned a clean result)
+				//   - validate=false → regex never ran, so we cannot claim the
+				//     markers passed; leave it false rather than fabricate true.
+				MarkersOk = validate,
 				JsSyntaxOk = true,
 				ContentOk = false,
 				Errors = [lintError]
@@ -404,25 +417,17 @@ public sealed class PageSyncTool(
 
 	private PageSyncPageResult SyncSinglePage(PageSyncPageInput page, PageSyncOperationOptions opOptions) {
 		try {
-			// Pipeline order inside this method:
-			//   1. Regex content validation (existing chain inside
-			//      TryValidatePage / ValidateBody) — runs first so its
-			//      established error wording wins on overlapping detections.
-			//   2. AST lint pass — runs only when regex passed. Error-severity
-			//      lint findings produce a fail-fast result; warnings are
-			//      appended to the validation envelope.
-			// Pre-pass already ran syntax + lint, so a syntax failure was
-			// short-circuited in ExecuteSyncBatch; only lint results need to
-			// be re-checked here.
+			// Pages reaching SyncSinglePage already passed every deterministic
+			// gate (syntax, regex, lint Errors) via ExecuteSyncBatch /
+			// TryMaterialiseDeterministicFailure. The only validation work here
+			// is the mobile-side async validator (web bodies already cleared
+			// regex upstream) plus appending lint Warnings to the final
+			// validation envelope.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
 				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
-			}
-			PageSyncPageResult lintFailure = TryMaterialiseLintError(page, opOptions, validationResult);
-			if (lintFailure != null) {
-				return lintFailure;
 			}
 			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
 			if (opOptions.SamplingReview is { Ok: false, Skipped: false } && opOptions.SamplingReview.Issues?.Count > 0) {
@@ -505,31 +510,6 @@ public sealed class PageSyncTool(
 				Error = ex.Message
 			};
 		}
-	}
-
-	private static PageSyncPageResult TryMaterialiseLintError(
-		PageSyncPageInput page,
-		PageSyncOperationOptions opOptions,
-		PageSyncValidationResult validationResult) {
-		IReadOnlyList<PageBodyLintFinding> errors = opOptions.LintFindings
-			.Where(f => f.Severity == LintSeverity.Error)
-			.ToArray();
-		if (errors.Count == 0) {
-			return null;
-		}
-		string lintError = PageBodyAstLinter.FormatErrors(errors);
-		return new PageSyncPageResult {
-			SchemaName = page.SchemaName,
-			Success = false,
-			Validation = new PageSyncValidationResult {
-				MarkersOk = validationResult?.MarkersOk ?? true,
-				JsSyntaxOk = validationResult?.JsSyntaxOk ?? true,
-				ContentOk = false,
-				Errors = [lintError]
-			},
-			SamplingReview = opOptions.SamplingReview,
-			Error = lintError
-		};
 	}
 
 	private static IReadOnlyList<string> GetLintWarningMessages(IReadOnlyList<PageBodyLintFinding> findings) =>
@@ -729,7 +709,7 @@ public sealed record PageSyncArgs(
 	IEnumerable<PageSyncPageInput> Pages,
 
 	[property: JsonPropertyName("validate")]
-	[property: Description("Run client-side validation (markers and JS syntax) before saving. Default: true")]
+	[property: Description("Toggle for the regex content-validation chain (markers, field bindings, validator/converter/handler shape, etc.). Default: true. The deterministic JavaScript syntax parser and the AST lint pass ALWAYS run regardless of this flag — they enforce the page-loadability floor and the platform-rejected anti-patterns the regex layer cannot express, so an opt-out for those is intentionally not provided.")]
 	bool? Validate = null,
 
 	[property: JsonPropertyName("verify")]
