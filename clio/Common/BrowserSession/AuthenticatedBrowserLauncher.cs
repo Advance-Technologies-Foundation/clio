@@ -80,7 +80,10 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		// leaving the loop running indefinitely. Guard with a per-launch timeout linked to the caller's
 		// token so Ctrl-C is still honoured and the command always terminates.
 		using var cdpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-		cdpCts.CancelAfter(TimeSpan.FromSeconds(15));
+		// Budget must exceed the sum of all three phases: port-poll (~20s), page-poll (~4s), and
+		// the CDP inject/navigate round-trips (~5s) — 15s was shorter than the port-poll alone on a
+		// cold start.  30s gives headroom while still bounding a hung browser.
+		cdpCts.CancelAfter(TimeSpan.FromSeconds(30));
 
 		int? browserPid = launch.ProcessId;
 		try {
@@ -264,6 +267,17 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 			using JsonDocument doc = JsonDocument.Parse(response);
 			if (doc.RootElement.TryGetProperty("id", out JsonElement idElement)
 				&& idElement.TryGetInt32(out int responseId) && responseId == id) {
+				// A CDP error response has the form {"id":N,"error":{"code":…,"message":"…"}}.
+				// Treat any error as a hard failure — silently accepting it would log "N cookie(s)
+				// injected" while the user actually sees the login form.
+				if (doc.RootElement.TryGetProperty("error", out JsonElement errorElem)) {
+					string msg = errorElem.ValueKind == JsonValueKind.Object
+						&& errorElem.TryGetProperty("message", out JsonElement msgElem)
+						? msgElem.GetString() ?? "unknown CDP error"
+						: errorElem.ToString();
+					throw new InvalidOperationException(
+						$"CDP command '{method}' (id={id}) returned an error: {msg}");
+				}
 				return;
 			}
 		}

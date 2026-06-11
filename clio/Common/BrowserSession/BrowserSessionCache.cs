@@ -77,8 +77,9 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 	public void Delete(string cacheKey) => _fileSystem.DeleteFileIfExists(GetPath(cacheKey));
 
 	// Validates a caller-supplied --output-path: rejects traversal in the raw input, resolves to a
-	// full path, and refuses an existing symlink target (a live bearer token must not be written
-	// through a planted link). The owner-only write itself is enforced by HardenFile in Write().
+	// full path, and refuses an existing symlink anywhere in the path (leaf or parent directory) — a
+	// live bearer token must not be written through a planted link. The owner-only write itself is
+	// enforced by HardenFile in Write().
 	private static string ValidateOverridePath(string overridePath) {
 		bool hasTraversalSegment = overridePath
 			.Split(new[] { '/', '\\' }, StringSplitOptions.None)
@@ -89,10 +90,24 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 				nameof(overridePath));
 		}
 		string fullPath = System.IO.Path.GetFullPath(overridePath);
+		// Check the final leaf for an existing symlink.
 		if (System.IO.File.Exists(fullPath)
 			&& (System.IO.File.GetAttributes(fullPath) & System.IO.FileAttributes.ReparsePoint) != 0) {
 			throw new ArgumentException(
 				$"Invalid --output-path '{overridePath}': refusing to write a session through an existing symlink.",
+				nameof(overridePath));
+		}
+		// GetFullPath does not resolve filesystem symlinks, so a symlinked parent directory would
+		// bypass the leaf check above. Check the immediate containing directory: the primary attack
+		// vector is a symlink planted directly below the file (e.g. /tmp/linkdir/session.json where
+		// /tmp/linkdir → /etc). Checking only one level avoids false positives from OS-managed root
+		// symlinks (e.g. /var → /private/var on macOS).
+		string immediateParent = System.IO.Path.GetDirectoryName(fullPath);
+		if (!string.IsNullOrEmpty(immediateParent)
+			&& System.IO.Directory.Exists(immediateParent)
+			&& (System.IO.File.GetAttributes(immediateParent) & System.IO.FileAttributes.ReparsePoint) != 0) {
+			throw new ArgumentException(
+				$"Invalid --output-path '{overridePath}': refusing to write a session through a symlinked directory.",
 				nameof(overridePath));
 		}
 		return fullPath;

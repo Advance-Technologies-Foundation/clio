@@ -153,6 +153,37 @@ public sealed class BrowserSessionCacheTests {
 	}
 
 	[Test]
+	[Category("Integration")]
+	[Description("Write rejects an --output-path whose parent directory is a symlink, to prevent a bearer token being written through a planted link.")]
+	public void Write_ShouldThrowAndWriteNothing_WhenParentDirectoryIsSymlink() {
+		// Arrange — create a real symlink in the temp directory (requires OS support).
+		string tempDir = System.IO.Path.GetTempPath();
+		string realTarget = System.IO.Path.Combine(tempDir, "clio-cache-test-real-" + System.Guid.NewGuid().ToString("N"));
+		string symlinkDir = System.IO.Path.Combine(tempDir, "clio-cache-test-link-" + System.Guid.NewGuid().ToString("N"));
+		System.IO.Directory.CreateDirectory(realTarget);
+		try {
+			System.IO.Directory.CreateSymbolicLink(symlinkDir, realTarget);
+			string overridePath = System.IO.Path.Combine(symlinkDir, "session.json");
+
+			// Act
+			Action act = () => _sut.Write("key", "{}", overridePath);
+
+			// Assert
+			if (OperatingSystem.IsWindows()) {
+				// Symbolic-link creation requires elevated privileges on most Windows configurations
+				// — skip rather than fail on a machine where the test cannot be set up.
+				Assert.Ignore("Symlink creation requires elevation on this Windows configuration.");
+			}
+			act.Should().Throw<ArgumentException>(
+				because: "a parent-directory symlink must be rejected before any write to prevent token exfiltration");
+			_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
+		} finally {
+			try { System.IO.Directory.Delete(symlinkDir); } catch { /* best effort */ }
+			try { System.IO.Directory.Delete(realTarget, recursive: true); } catch { /* best effort */ }
+		}
+	}
+
+	[Test]
 	[Description("TryRead returns true and the path when the cache file exists.")]
 	public void TryRead_ShouldReturnTrueAndPath_WhenFileExists() {
 		// Arrange

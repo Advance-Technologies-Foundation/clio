@@ -197,6 +197,24 @@ public sealed class BrowserSessionServiceTests {
 	}
 
 	[Test]
+	[Description("--output-path is honoured even on a cache hit: the cached JSON is copied to the override path so callers always get the file they asked for.")]
+	public void GetSessionPathAsync_ShouldWriteToOverridePath_WhenCacheHitAndOverridePathProvided() {
+		// Arrange
+		const string overridePath = "/tmp/override.storageState.json";
+		StubCacheHit();
+		StubValidationResponse(HttpStatusCode.OK, "<html><body>Home</body></html>"); // valid session
+		string fullOverridePath = System.IO.Path.GetFullPath(overridePath);
+
+		// Act
+		string path = _sut.GetSessionPathAsync(Env(), overridePath).GetAwaiter().GetResult();
+
+		// Assert
+		path.Should().Be(fullOverridePath, "because --output-path must be honoured even when the cache is warm");
+		_cache.Received(1).Write(Key, Arg.Any<string>(), overridePath);
+		_auth.DidNotReceive().LoginAsync(Arg.Any<EnvironmentSettings>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
 	[Description("An authentication failure from the auth client propagates to the caller.")]
 	public void GetSessionPathAsync_ShouldPropagate_WhenLoginThrows() {
 		// Arrange

@@ -30,6 +30,13 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 
 		if (!forceRefresh && _cache.TryRead(key, out string cachedPath)) {
 			if (await IsCachedSessionValidAsync(env, cachedPath, ct).ConfigureAwait(false)) {
+				if (!string.IsNullOrWhiteSpace(overrideOutputPath)) {
+					// --output-path must be honoured on a cache hit, not only on a fresh login.
+					// Read the cached JSON and write a hardened copy to the requested path.
+					string cachedJson = _fileSystem.ReadAllText(cachedPath);
+					_cache.Write(key, cachedJson, overrideOutputPath);
+					return System.IO.Path.GetFullPath(overrideOutputPath);
+				}
 				return cachedPath;
 			}
 			// Expired/invalid cached session: drop it before re-authenticating.

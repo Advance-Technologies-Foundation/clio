@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -62,7 +63,7 @@ public sealed class GetBrowserSessionToolE2ETests {
 			});
 		GetBrowserSessionResult response = EntitySchemaStructuredResultParser.Extract<GetBrowserSessionResult>(callResult);
 
-		// Assert
+		// Assert — basic success
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-browser-session should return a structured payload for a reachable forms-auth environment");
 		response.Success.Should().BeTrue(
@@ -71,6 +72,30 @@ public sealed class GetBrowserSessionToolE2ETests {
 			because: "a successful call returns the path to the storageState file");
 		response.Error.Should().BeNull(
 			because: "no error message should be present when the tool call succeeds");
+
+		// AC3 — no-secrets guarantee: cookie VALUES must never appear in the agent-facing MCP surface.
+		// Serialize the full CallToolResult to JSON and assert every cookie VALUE is absent — if a
+		// regression echoed session JSON into the result the test would catch it.
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		string sessionFileJson = await System.IO.File.ReadAllTextAsync(response.SessionFilePath,
+			arrangeContext.CancellationTokenSource.Token);
+		using JsonDocument sessionDoc = JsonDocument.Parse(sessionFileJson);
+		if (sessionDoc.RootElement.TryGetProperty("cookies", out JsonElement cookiesArray)) {
+			foreach (JsonElement cookie in cookiesArray.EnumerateArray()) {
+				if (!cookie.TryGetProperty("value", out JsonElement valElem)) {
+					continue;
+				}
+				string cookieValue = valElem.GetString();
+				if (string.IsNullOrEmpty(cookieValue)) {
+					continue;
+				}
+				string cookieName = cookie.TryGetProperty("name", out JsonElement nameElem)
+					? nameElem.GetString() ?? "unknown"
+					: "unknown";
+				callResultJson.Should().NotContain(cookieValue,
+					because: $"cookie '{cookieName}' value is a bearer secret and must never appear in the agent-facing MCP result");
+			}
+		}
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(
