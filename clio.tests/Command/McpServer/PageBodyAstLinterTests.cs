@@ -137,6 +137,23 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
+	[Description("Legitimate validator with a nested array-callback predicate (`.filter(function(i){ return true; })`) must NOT raise validator-bad-return-literal — the inner `return true` belongs to the predicate, not the validator itself, and blocking it would reject correct JavaScript")]
+	public void Lint_ShouldNotEmitError_WhenValidatorBodyContainsNestedCallbackReturningLiteral() {
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: { " +
+			"\"usr.AllValid\": { validator: function(c) { return function(value) { " +
+			"if (value.items.filter(function(i){ return true; }).length) { return { \"usr.AllValid\": { message: c.message } }; } " +
+			"return null; " +
+			"}; }, params: [{ name: \"message\" }] } " +
+			"} }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorBadReturnLiteral,
+			because: "the only `return true` here is inside a `.filter(...)` predicate at function-depth 3, NOT a validator factory or its inner validator function — the lint pass must scope the rule by function nesting so it does not block legitimate JavaScript that happens to live inside the validators subtree");
+	}
+
+	[Test]
 	[Description("Custom converter declared with the reserved `crt.*` prefix raises a converter-crt-prefix-reserved Error — only Creatio built-in converters may use this namespace")]
 	public void Lint_ShouldEmitError_WhenCustomConverterUsesCrtPrefix() {
 		string body =

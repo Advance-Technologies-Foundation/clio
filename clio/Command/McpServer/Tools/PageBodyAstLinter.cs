@@ -93,7 +93,7 @@ internal static class PageBodyAstLinter {
 
 	#region AST traversal
 
-	private readonly record struct VisitContext(bool InsideValidators, bool InsideConverters);
+	private readonly record struct VisitContext(bool InsideValidators, bool InsideConverters, int ValidatorFunctionDepth);
 
 	private static void Visit(Node node, VisitContext ctx, List<PageBodyLintFinding> findings) {
 		switch (node) {
@@ -119,20 +119,35 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
-	// When descending into the VALUE of a Property whose key is "validators" or
-	// "converters", set the corresponding flag for the subtree. Nested validators
-	// are not a documented shape so we do not pop the flag mid-walk; the
-	// recursion exits naturally when each Property subtree finishes.
+	// Compute the VisitContext for `child` when descending from `parent`.
+	// Two orthogonal pieces of state are tracked:
+	//   1) InsideValidators / InsideConverters — flipped on Property -> Value
+	//      transitions where the Property key is "validators" / "converters".
+	//      Nested occurrences are not a documented shape, so we do not pop the
+	//      flag mid-walk; recursion exits naturally when each subtree finishes.
+	//   2) ValidatorFunctionDepth — counts function-bearing parents we have
+	//      descended through while InsideValidators is true. The validator
+	//      factory is depth 1; the inner validator function returned by the
+	//      factory is depth 2; anything deeper (a `.filter(function(i){ ... })`
+	//      predicate inside the validator body) is depth 3+. Returns at depth
+	//      3+ are intentionally NOT flagged by `validator-bad-return-literal`
+	//      — they belong to nested callbacks and the rule must not block
+	//      legitimate JS just because it sits inside the validators subtree.
 	private static VisitContext ComputeChildContext(Node parent, Node child, VisitContext currentCtx) {
-		if (parent is not Property prop || !ReferenceEquals(child, prop.Value)) {
+		if (parent is Property prop && ReferenceEquals(child, prop.Value)) {
+			string key = TryGetStaticPropertyName(prop);
+			if (key == "validators") {
+				return currentCtx with { InsideValidators = true };
+			}
+			if (key == "converters") {
+				return currentCtx with { InsideConverters = true };
+			}
 			return currentCtx;
 		}
-		string key = TryGetStaticPropertyName(prop);
-		return key switch {
-			"validators" => new VisitContext(InsideValidators: true, InsideConverters: currentCtx.InsideConverters),
-			"converters" => new VisitContext(InsideValidators: currentCtx.InsideValidators, InsideConverters: true),
-			_ => currentCtx
-		};
+		if (currentCtx.InsideValidators && parent is IFunction) {
+			return currentCtx with { ValidatorFunctionDepth = currentCtx.ValidatorFunctionDepth + 1 };
+		}
+		return currentCtx;
 	}
 
 	#endregion
@@ -299,10 +314,18 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, List<PageBodyLintFinding> findings) {
-		// Rule 6: validator declaration must not return a literal. Bounded via
-		// VisitContext.InsideValidators so the rule only fires inside the
-		// `validators` schema section — a plain `return true` elsewhere is fine.
-		if (!ctx.InsideValidators) {
+		// Rule 6: validator declaration must not return a literal. Bounded by
+		// VisitContext to two checks:
+		//   - InsideValidators — the rule only fires inside the `validators`
+		//     schema section; `return true` elsewhere is fine.
+		//   - ValidatorFunctionDepth <= 2 — only the validator factory (depth 1)
+		//     and the validator-instance function returned by the factory
+		//     (depth 2) own a meaningful `return`. Nested callbacks such as
+		//     `.filter(function(i){ return true; })` sit at depth 3+ and must
+		//     NOT be flagged; otherwise the rule rejects legitimate JS just
+		//     because it lives inside the validators subtree (regression
+		//     reported by reviewer on 2026-06-11).
+		if (!ctx.InsideValidators || ctx.ValidatorFunctionDepth > 2) {
 			return;
 		}
 		if (!IsBadValidatorReturnLiteral(ret.Argument)) {
