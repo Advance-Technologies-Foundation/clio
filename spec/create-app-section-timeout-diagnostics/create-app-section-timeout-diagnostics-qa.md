@@ -16,6 +16,14 @@
 | TC-U-8 | Insert throws `WebException(ProtocolError)` | exception with `ServerError` |
 | TC-U-9 | Insert returns HTML (JSON parse failure) | exception with `ServerError`, message mentions non-JSON response |
 | TC-U-10 | Insert returns `success:false` | exception with `ServerError`, preserves the #684 actionable message |
+| TC-U-15 | Insert throws `TaskCanceledException` / `OperationCanceledException` / `TimeoutException` (HttpClient-era shapes) | `CreatioTimeout` |
+| TC-U-16 | Insert throws bare `HttpRequestException` | `Transport` |
+| TC-U-17 | Insert throws `HttpRequestException` with `StatusCode=500` | `ServerError` |
+| TC-U-18 | Insert throws `HttpRequestException` with transient `StatusCode` (503) | `CreatioTimeout` (wait-then-verify, not "fix inputs") |
+| TC-U-19 | Insert throws `InvalidOperationException` wrapping `WebException(Timeout)` / `AggregateException` wrapping nested `SocketException` | chain walk classifies the inner cause |
+| TC-U-20 | Readback after timeout returns a pre-existing section bound to the same entity (different Id) | NOT recovered: `CreatioTimeout`, `SectionCreated=false`, no UpdateQuery issued (verification matches strictly by the generated section Id) |
+| TC-U-21 | Env var value whose ms equivalent exceeds `int.MaxValue` (`3000000`) | clamped to `int.MaxValue` |
+| TC-U-22 | Insert returns JSON `null` (empty response) | `ServerError`, `SectionCreated=unknown`, spinner closed |
 
 ## Unit — `Module=McpServer` (`ApplicationToolTests`)
 

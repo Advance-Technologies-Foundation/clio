@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Package;
@@ -210,10 +211,9 @@ public sealed class ApplicationSectionCreateService(
 				? BuildTransportFailure(resolvedRequest, exception)
 				: BuildServerErrorFailure(resolvedRequest, exception);
 		}
-		InsertQueryResponseDto response;
+		InsertQueryResponseDto? response;
 		try {
-			response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions)
-				?? throw new InvalidOperationException("InsertQuery returned an empty response.");
+			response = JsonSerializer.Deserialize<InsertQueryResponseDto>(responseBody, JsonOptions);
 		} catch (JsonException jsonException) {
 			logger.EndSpinner(false);
 			throw new ApplicationSectionCreateException(
@@ -224,6 +224,15 @@ public sealed class ApplicationSectionCreateService(
 				sectionCreated: null,
 				ServerErrorRetryGuidance,
 				jsonException);
+		}
+		if (response is null) {
+			logger.EndSpinner(false);
+			throw new ApplicationSectionCreateException(
+				$"Failed to create section '{resolvedRequest.Caption}' (code '{resolvedRequest.SectionCode}'): "
+				+ "Creatio returned an empty insert response, so the actual insert outcome is unknown.",
+				ApplicationSectionCreateFailureClass.ServerError,
+				sectionCreated: null,
+				ServerErrorRetryGuidance);
 		}
 		if (!response.Success) {
 			logger.EndSpinner(false);
@@ -368,7 +377,8 @@ public sealed class ApplicationSectionCreateService(
 
 	private static int ResolveInsertTimeoutMilliseconds() {
 		string? raw = Environment.GetEnvironmentVariable(InsertTimeoutEnvironmentVariable);
-		if (int.TryParse(raw, out int seconds) && seconds > 0) {
+		if (int.TryParse(raw, System.Globalization.NumberStyles.Integer,
+				System.Globalization.CultureInfo.InvariantCulture, out int seconds) && seconds > 0) {
 			return (int)Math.Min(seconds * 1000L, int.MaxValue);
 		}
 
@@ -387,8 +397,8 @@ public sealed class ApplicationSectionCreateService(
 					return webClass;
 				case SocketException:
 					return ApplicationSectionCreateFailureClass.Transport;
-				case HttpRequestException { StatusCode: not null }:
-					return ApplicationSectionCreateFailureClass.ServerError;
+				case HttpRequestException { StatusCode: { } statusCode }:
+					return ClassifyHttpStatus(statusCode);
 				case HttpRequestException:
 					// Keep walking the chain: an inner SocketException/TimeoutException is more precise.
 					sawHttpRequestException = true;
@@ -414,16 +424,37 @@ public sealed class ApplicationSectionCreateService(
 				or WebExceptionStatus.ReceiveFailure
 				or WebExceptionStatus.ConnectionClosed
 				or WebExceptionStatus.PipelineFailure => ApplicationSectionCreateFailureClass.CreatioTimeout,
-			WebExceptionStatus.ProtocolError => ApplicationSectionCreateFailureClass.ServerError,
+			WebExceptionStatus.ProtocolError => ClassifyWebProtocolError(exception),
 			_ => null
 		};
+
+	private static ApplicationSectionCreateFailureClass ClassifyWebProtocolError(WebException exception) =>
+		exception.Response is HttpWebResponse httpResponse
+			? ClassifyHttpStatus(httpResponse.StatusCode)
+			: ApplicationSectionCreateFailureClass.ServerError;
+
+	/// <summary>
+	/// Transient statuses from a busy or restarting server (408/429/502/503/504) map to the
+	/// retry-after-verification class instead of the non-retryable server-error class.
+	/// </summary>
+	private static ApplicationSectionCreateFailureClass ClassifyHttpStatus(HttpStatusCode statusCode) =>
+		statusCode switch {
+			HttpStatusCode.RequestTimeout
+				or HttpStatusCode.TooManyRequests
+				or HttpStatusCode.BadGateway
+				or HttpStatusCode.ServiceUnavailable
+				or HttpStatusCode.GatewayTimeout => ApplicationSectionCreateFailureClass.CreatioTimeout,
+			_ => ApplicationSectionCreateFailureClass.ServerError
+		};
+
+	// Bounds pathological self-referencing exception chains during classification.
+	private const int MaxFlattenedExceptions = 32;
 
 	private static IEnumerable<Exception> FlattenExceptionChain(Exception exception) {
 		Queue<Exception> pending = new();
 		pending.Enqueue(exception);
-		// The guard bounds pathological self-referencing chains.
 		int guard = 0;
-		while (pending.Count > 0 && guard++ < 32) {
+		while (pending.Count > 0 && guard++ < MaxFlattenedExceptions) {
 			Exception current = pending.Dequeue();
 			yield return current;
 			if (current is AggregateException aggregate) {
@@ -454,7 +485,15 @@ public sealed class ApplicationSectionCreateService(
 			logger.WriteInfo(
 				$"Insert response timed out after {insertTimeoutMs / 1000}s, but section "
 				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
-			return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings);
+			// The server already proved slow, so the recovery readback runs bounded too —
+			// otherwise the budget guarantee would be lost right after the timeout.
+			return LoadCreatedSection(
+				environmentName,
+				beforeInfo,
+				resolvedRequest,
+				client,
+				environmentSettings,
+				VerificationTimeoutMs);
 		}
 
 		logger.EndSpinner(false);
@@ -464,6 +503,8 @@ public sealed class ApplicationSectionCreateService(
 	/// <summary>
 	/// Bounded post-timeout side-effect check: returns <c>true</c>/<c>false</c> when the
 	/// ApplicationSection readback answered, or <c>null</c> when verification itself failed.
+	/// Matches strictly by the section identifier generated for this call, so a pre-existing
+	/// section bound to the same entity can never produce a false-positive recovery.
 	/// </summary>
 	private bool? TryVerifySectionExists(
 		IApplicationClient client,
@@ -479,10 +520,7 @@ public sealed class ApplicationSectionCreateService(
 					BuildSectionSelectQuery(request.ApplicationId),
 					VerificationTimeoutMs);
 			return response.Rows.Any(row =>
-				string.Equals(row.Code, request.SectionCode, StringComparison.OrdinalIgnoreCase)
-				|| (!string.IsNullOrWhiteSpace(request.EntitySchemaName)
-					&& string.Equals(row.EntitySchemaName, request.EntitySchemaName,
-						StringComparison.OrdinalIgnoreCase)));
+				string.Equals(row.Id, request.Id, StringComparison.OrdinalIgnoreCase));
 		} catch (Exception verificationError) {
 			// Verification is best-effort by design: its outcome only refines the diagnostic
 			// (`section-created: unknown` instead of true/false), so any failure is reported, not thrown.
@@ -544,21 +582,16 @@ public sealed class ApplicationSectionCreateService(
 			ServerErrorRetryGuidance,
 			cause);
 
-	private static string RootCauseMessage(Exception exception) {
-		Exception current = exception;
-		while (current.InnerException is not null) {
-			current = current.InnerException;
-		}
-
-		return current.Message;
-	}
+	private static string RootCauseMessage(Exception exception) =>
+		exception.GetBaseException().Message;
 
 	private ApplicationSectionCreateResult LoadCreatedSection(
 		string environmentName,
 		ApplicationInfoResult beforeInfo,
 		ResolvedApplicationSectionCreateRequest request,
 		IApplicationClient client,
-		EnvironmentSettings environmentSettings) {
+		EnvironmentSettings environmentSettings,
+		int readbackTimeout = Timeout.Infinite) {
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
 			try {
@@ -571,9 +604,11 @@ public sealed class ApplicationSectionCreateService(
 					client,
 					environmentSettings,
 					request.ApplicationId,
+					request.Id,
 					request.SectionCode,
-					entitySchemaName: request.EntitySchemaName);
-				SetIconBackground(client, environmentSettings, createdSection, request.IconBackground);
+					entitySchemaName: request.EntitySchemaName,
+					requestTimeout: readbackTimeout);
+				SetIconBackground(client, environmentSettings, createdSection, request.IconBackground, readbackTimeout);
 				string? entitySchemaName = string.IsNullOrWhiteSpace(createdSection.EntitySchemaName)
 					? request.EntitySchemaName
 					: createdSection.EntitySchemaName;
@@ -616,11 +651,13 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		ApplicationSectionRecord section,
-		string iconBackground) {
+		string iconBackground,
+		int requestTimeout = Timeout.Infinite) {
 		string body = JsonSerializer.Serialize(BuildIconBackgroundUpdateBody(section, iconBackground), JsonOptions);
 		string responseBody = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update, environmentSettings),
-			body);
+			body,
+			requestTimeout);
 		UpdateQueryResponseDto response = JsonSerializer.Deserialize<UpdateQueryResponseDto>(responseBody, JsonOptions)
 			?? throw new InvalidOperationException("Icon background UpdateQuery returned an empty response.");
 		if (!response.Success) {
@@ -699,16 +736,23 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string applicationId,
+		string sectionId,
 		string sectionCode,
-		string? entitySchemaName = null) {
+		string? entitySchemaName = null,
+		int requestTimeout = Timeout.Infinite) {
 		ApplicationSectionSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 			client,
 			serviceUrlBuilderFactory.Create(environmentSettings),
-			BuildSectionSelectQuery(applicationId));
+			BuildSectionSelectQuery(applicationId),
+			requestTimeout);
 		string searchDescription = string.IsNullOrWhiteSpace(entitySchemaName)
 			? $"'{sectionCode}'"
 			: $"'{sectionCode}' or entity schema name '{entitySchemaName}'";
+		// Prefer the identifier generated for this call: it can never match a pre-existing
+		// section, unlike the code/entity fallback kept for servers that rewrite the section id.
 		return response.Rows
+				.FirstOrDefault(row => string.Equals(row.Id, sectionId, StringComparison.OrdinalIgnoreCase))
+			?? response.Rows
 				.FirstOrDefault(row =>
 					string.Equals(row.Code, sectionCode, StringComparison.OrdinalIgnoreCase)
 					|| (!string.IsNullOrWhiteSpace(entitySchemaName)
