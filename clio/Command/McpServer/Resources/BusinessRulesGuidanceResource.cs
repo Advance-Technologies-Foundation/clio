@@ -55,11 +55,10 @@ public sealed class BusinessRulesGuidanceResource {
 		          - `apply-filter` targets one lookup field, compares it to one source lookup field on the current record, and may auto-generate child clear/populate rules.
 		          - `apply-static-filter` narrows a target lookup by a static ESQ filter expressed in a friendly contract (constants, lookup values by GUID or display name, AND/OR groups, EXISTS/NOT_EXISTS backward references). `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller.
 		          - When the requirement sounds like a standard dependent lookup UX, prefer `populateValue=true` by default unless the user explicitly asks for one-way filtering only or the selected source/target path shape makes populate unsupported.
-
-		       apply-static-filter friendly filter contract
-		       - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
-		       - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
-		       - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
+		          - apply-static-filter friendly filter contract:
+		            - The FULL filter contract lives in a dedicated guide — call `get-guidance` with name `business-rule-filters` before building any apply-static-filter `filter`.
+		            - It covers: action shape, leaf comparisons, lookup values (GUID/display-name), forward paths, nested AND/OR groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the no-assumptions discovery flow.
+		            - Key reminder: `rootSchemaName` is inferred from the target lookup's reference schema — never sent by the caller; `columnPath` is rooted on that reference schema, not the rule entity.
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
@@ -68,19 +67,30 @@ public sealed class BusinessRulesGuidanceResource {
 		          - Use when the rule should apply only on a specific page.
 		          - Element names come from `get-page` bundle.viewConfig (recursive). Attribute names come from bundle.viewModelConfig.attributes.
 
-		       Decision tree — when to use business rules vs handlers/validators
-		       - If the requirement is "when field X equals Y, then hide/show/enable/disable/require/unrequire field Z" (the field itself appears/disappears or becomes editable/required) → use a BUSINESS RULE with hide-element/show-element/make-* actions.
-		       - If the requirement is "when field X equals Y, set field Z to value W" → use an ENTITY BUSINESS RULE with set-values action. Do NOT write a handler for this.
-		       - If the requirement is "when field X equals Y, clear field Z" → use an ENTITY BUSINESS RULE with set-values action and an empty value for Z. Clearing a field is the same action as setting one — NO handler is needed.
-		       - If the requirement is "filter lookup A by the current value of another lookup B on the same record (dependent lookups)" → use an ENTITY BUSINESS RULE with apply-filter action.
-		       - If the requirement is "limit / restrict a lookup field to records matching a fixed condition" (e.g. "let users select only records whose <field> equals <value>", "only records where a status flag is set", "show only <records> in the <lookup> field that <condition>", "show the <field> only for <records> where <condition>", "show only <records> that have at least one / more than N <children>") → use an ENTITY BUSINESS RULE with apply-static-filter action. The condition can be unconditional (always filter) or gated: "WHEN field X is Y, limit lookup Z to ..." → put X=Y in the rule's condition group and the apply-static-filter action on Z.
-		         - This holds for ANY constraint mechanism, not a fixed list of phrases — classify the requirement into one mechanism and map it to a filter field: attribute value -> a value leaf; now-relative period -> a date macro (valueMacros); fixed calendar/clock part such as a time of day -> datePart; existence/count of related child records -> backwardReferenceFilters; dependent on another field's value -> the gate (X = Y) in the rule's condition group. Every one of these is apply-static-filter, never a handler/crt.InitRequest. Map the mechanism, not the wording; see `business-rule-filters` for the field-by-field contract.
-		         - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rule` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
-		         - DISAMBIGUATION (restriction vs visibility): a phrase like "show the <LookupField> only for <records> where <condition>" / "show the Assignee field only for contacts where Age = 30" means RESTRICT which records the lookup OFFERS (apply-static-filter on that lookup, rooted on its reference schema), NOT toggle the field's visibility. Do NOT set the field `visible:false`, do NOT use hide-element/show-element, and do NOT add a page attribute for this. hide-element/show-element are only for requirements about the field itself appearing or disappearing (e.g. "hide the Discount field when Type = Internal"), never about which records a lookup lists. For "...Assignee only for contacts where Age = 30": targetAttribute = the Assignee lookup, filter = { logicalOperation: AND, filters: [ { columnPath: "Age", comparisonType: "EQUAL", value: 30 } ] } (root schema Contact, inferred).
-		       - If the requirement is field-value format validation (length, regex, range) → use a VALIDATOR, not a business rule.
-		       - If the requirement is cross-field orchestration with side effects (API calls, process launch, data loading) → use a HANDLER.
-		       - If the requirement is display-only value transformation → use a CONVERTER.
-		       - When in doubt, prefer business rules over handlers for simple conditional visibility/editability/required logic.
+		       Decision tree — match the requirement to a tool by what it does
+
+		       A. Conditional field/element STATE (visible/hidden, editable/read-only, required/optional) → BUSINESS RULE with hide-element/show-element/make-* (entity or page). What drives the condition:
+		          - a field value ("when field X equals Y, hide/show/enable/require field Z") → condition compares the field to a value or another field.
+		          - the current user's ROLE ("Resolved visible only for administrators") → condition CurrentUserRoles CONTAIN <role id>, plus the inverse NOT_CONTAIN → opposite action. Do NOT write a HandleViewModelInitRequest handler or use column access rights just to hide a control — role-based field state IS a business rule. Use column/object permissions only to restrict the underlying DATA, not just the UI control.
+		          - WHO the current user is ("Assignee group visible only for Supervisor") → condition compares CurrentUser / CurrentUserContact / CurrentUserAccount to the target id. Not a handler.
+
+		       B. Conditional field VALUE → ENTITY BUSINESS RULE with set-values. Do NOT write a handler.
+		          - set a field ("when field X equals Y, set field Z to W") → set-values with the value.
+		          - clear a field ("when field X equals Y, clear field Z") → set-values with an empty value (clearing is the same action as setting).
+
+		       C. Lookup filtering → ENTITY BUSINESS RULE.
+		          - dependent lookups (filter lookup A by the current value of another lookup B on the same record) → apply-filter.
+		          - restrict which records a lookup OFFERS by a fixed condition ("only contacts that have a mobile phone", "only accounts where Type = Customer", "only active users", "show the <Field> field only for <records> where ...", "only <records> that have more than N <children>") → apply-static-filter. The condition group may be empty (always filter) or gated ("WHEN field X is Y, limit lookup Z to ...").
+		            - This holds for ANY constraint mechanism, not a fixed list of phrases — classify the requirement into one mechanism and map it to a filter field: attribute value -> a value leaf; now-relative period -> a date macro (valueMacros); fixed calendar/clock part such as a time of day -> datePart; existence/count of related child records -> backwardReferenceFilters; dependent on another field's value -> the gate (X = Y) in the rule's condition group. Every one of these is apply-static-filter, never a handler/crt.InitRequest. Map the mechanism, not the wording; see `business-rule-filters` for the field-by-field contract.
+		            - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rule` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
+		            - DISAMBIGUATION (restriction vs visibility): a phrase like "show the <LookupField> only for <records> where <condition>" / "show the Assignee field only for contacts where Age = 30" means RESTRICT which records the lookup OFFERS (apply-static-filter on that lookup, rooted on its reference schema), NOT toggle the field's visibility. Do NOT set the field `visible:false`, do NOT use hide-element/show-element, and do NOT add a page attribute for this. hide-element/show-element are only for requirements about the field itself appearing or disappearing (e.g. "hide the Discount field when Type = Internal"), never about which records a lookup lists. For "...Assignee only for contacts where Age = 30": targetAttribute = the Assignee lookup, filter = { logicalOperation: AND, filters: [ { columnPath: "Age", comparisonType: "EQUAL", value: 30 } ] } (root schema Contact, inferred).
+
+		       D. NOT a business rule:
+		          - field-value FORMAT validation (length, regex, range) → VALIDATOR.
+		          - side effects / cross-field orchestration (API calls, process launch, data loading) → HANDLER.
+		          - display-only value transformation → CONVERTER.
+
+		       When in doubt, prefer a business rule over a handler for conditional visibility/editability/required/value logic.
 
 		       Workflow
 		       1. Call `get-tool-contract` for `create-entity-business-rule` or `create-page-business-rule`.
@@ -98,6 +108,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
 		       - Do NOT confuse business rules with business logic. Business rules are declarative condition→action pairs, not imperative code.
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
+		       - Do NOT try to assign the current user/contact/account or current date to a field via set-values — system variables (CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles, CurrentDate/Time/DateTime) are condition operands only, not set-values sources.
 		       - Do NOT duplicate entity-level rules on every page. If the rule applies to the entity globally, create it at the entity level.
 		       - Do NOT assume a state-changing business rule automatically reverses itself. Use an explicit inverse rule when both directions are required.
 		       - Do NOT call a business-rule creation tool before reading its `get-tool-contract` entry.
