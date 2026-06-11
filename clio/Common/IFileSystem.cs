@@ -147,6 +147,9 @@ namespace Clio.Common
 		/// <remarks>Enforces UTF No BOM encoding</remarks>
 		void WriteAllTextToFile(string filePath, string contents);
 
+		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
+		void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
+
 		/// <summary>
 		/// Writes <paramref name="contents"/> to <paramref name="filePath"/> with owner-read/write
 		/// permissions set at creation time (Unix mode <c>0600</c>), eliminating the race window that
@@ -155,9 +158,6 @@ namespace Clio.Common
 		/// boundary there, mirroring <see cref="FileSecurityHardening"/>).
 		/// </summary>
 		void WriteOwnerOnlyTextToFile(string filePath, string contents);
-
-		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
-		void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
 
 		void ClearOrCreateDirectory(string directoryPath);
 
