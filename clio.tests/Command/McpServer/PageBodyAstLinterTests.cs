@@ -168,6 +168,85 @@ internal class PageBodyAstLinterTests {
 			because: "the `crt.*` namespace is reserved for Creatio built-in converters; agents occasionally invent `crt.UsrX` custom converters and they collide with future platform-level names");
 	}
 
+	[Test]
+	[Description("`crt.*` keys nested inside a converter function body (e.g. a local lookup map) must NOT raise converter-crt-prefix-reserved — the rule is scoped to direct property entries of the converters object, and the lookup table is opaque from the rule's perspective")]
+	public void Lint_ShouldNotEmitError_WhenCrtKeyAppearsInsideConverterFunctionBody() {
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: { " +
+			"\"usr.Label\": function(v) { var labels = { \"crt.A\": \"Alpha\", \"crt.B\": \"Beta\" }; return labels[v] || v; } " +
+			"}, validators: {} }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleConverterCrtPrefixReserved,
+			because: "the `crt.A` / `crt.B` keys are inside a private lookup map declared in a legitimate converter function body — they are not custom converter declarations, so the rule must not block the save");
+	}
+
+	[Test]
+	[Description("Validator factory with a nested helper function declared inside its body (`function isEmpty(v) { if (!v) return true; return false; }`) must NOT raise validator-bad-return-literal — the helper's `return true / false` belongs to the helper, not the validator-instance function, and blocking it would reject legitimate JavaScript")]
+	public void Lint_ShouldNotEmitError_WhenValidatorFactoryDeclaresNestedHelperFunction() {
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: { " +
+			"\"usr.Phone\": { validator: function(config) { " +
+			"function isEmpty(v) { if (!v) return true; return false; } " +
+			"return function(control) { return isEmpty(control.value) ? null : { \"usr.Phone\": { message: config.message } }; }; " +
+			"}, params: [{ name: \"message\" }] } } }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorBadReturnLiteral,
+			because: "the `return true / return false` here belong to the nested `isEmpty` helper, not the validator-instance function; scoping the rule by enclosing-function identity is what keeps the gate from rejecting legitimate JS");
+	}
+
+	[Test]
+	[Description("`params: []` constructed inside a validator factory body (e.g. an imperative request payload via `executeRequest({ type, params: [] })`) must NOT raise validator-params-empty — the rule is scoped to direct `params` properties of the validator entry config object, not arbitrary properties named `params` deep in the factory body")]
+	public void Lint_ShouldNotEmitError_WhenParamsEmptyAppearsInsideValidatorFactoryBody() {
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: {}, validators: { " +
+			"\"usr.V\": { validator: function(c) { return function(value) { " +
+			"var req = { type: \"usr.X\", params: [] }; " +
+			"return value ? null : { \"usr.V\": { message: c.message } }; " +
+			"}; }, params: [{ name: \"message\" }] } } }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorParamsEmpty,
+			because: "the `params: []` lives inside a request payload object constructed in the validator body, not on the validator entry's own params declaration; the rule must scope to direct entries to avoid this false-positive");
+	}
+
+	[Test]
+	[Description("`params: []` declared outside the validators subtree (e.g. inside `viewConfigDiff` or a request handler) must NOT raise validator-params-empty — the rule scope is bounded to validator entry configs")]
+	public void Lint_ShouldNotEmitError_WhenParamsEmptyAppearsOutsideValidatorsSubtree() {
+		string body =
+			"define(\"X\", [], function() { return { " +
+			"viewConfigDiff: [{ operation: \"insert\", name: \"UsrBtn\", values: { type: \"crt.Button\", clicked: { request: \"usr.X\", params: [] } } }], " +
+			"handlers: [{ request: \"usr.X\", handler: async function(request, next) { return next?.handle(request); } }], " +
+			"converters: {}, validators: {} " +
+			"}; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleValidatorParamsEmpty,
+			because: "`params: []` outside the validators object is a request-payload param list (a legitimate empty arg list), not a custom validator's params declaration; the rule must not flag it");
+	}
+
+	[Test]
+	[Description("A pathologically deep AST (synthesized via a deeply-nested array literal) is short-circuited by the lint pass under `body-too-deeply-nested` rather than crashing the MCP server with StackOverflowException")]
+	public void Lint_ShouldEmitError_WhenBodyAstNestingExceedsDepthCap() {
+		// Build a body whose markers parse cleanly but whose body's expression
+		// nests Array literals 1200 deep — past the linter's MaxAstDepth.
+		int depth = PageBodyAstLinter.MaxAstDepth + 200;
+		string nested = new string('[', depth) + new string(']', depth);
+		string body =
+			"define(\"X\", [], function() { var x = " + nested + "; return { handlers: [], converters: {}, validators: {} }; });";
+
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		findings.Should().Contain(f =>
+			f.Rule == PageBodyAstLinter.RuleBodyTooDeeplyNested && f.Severity == LintSeverity.Error,
+			because: "the lint pass must cap recursion before .NET's uncatchable StackOverflowException kills the MCP server process — the cap turns the overflow into a structured Error response the agent can read");
+	}
+
 	#endregion
 
 	#region Tests: behavioural warnings (non-blocking severity)

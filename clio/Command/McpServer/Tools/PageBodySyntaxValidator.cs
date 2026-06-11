@@ -92,6 +92,17 @@ internal static class PageBodySyntaxValidator {
 				line: ex.LineNumber,
 				column: ex.Column + 1,
 				message: ex.Description ?? ex.Message);
+		} catch (InsufficientExecutionStackException) {
+			// Acornima's parser is stack-guarded and may convert deep-nesting
+			// overflow into InsufficientExecutionStackException. A
+			// StackOverflowException itself cannot be caught at all, so this
+			// catch only handles the "softer" CLR-emitted variant. Either way,
+			// the body is unsafe to walk further — map to a validation failure
+			// instead of letting the process die mid-call.
+			return PageBodySyntaxValidationResult.Invalid(
+				line: 1,
+				column: 1,
+				message: "JavaScript body nesting depth exceeds the safe parser limit (potential hostile input or LLM truncation artifact).");
 		}
 	}
 

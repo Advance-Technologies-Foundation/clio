@@ -52,6 +52,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleValidatorParamsEmpty = "validator-params-empty";
 	internal const string RuleValidatorBadReturnLiteral = "validator-bad-return-literal";
 	internal const string RuleConverterCrtPrefixReserved = "converter-crt-prefix-reserved";
+	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
 	internal const string RuleHandlerUsesDeprecatedContextApi = "handler-uses-deprecated-context-api";
 	internal const string RuleHandlerUsesNonexistentRequestApi = "handler-uses-nonexistent-request-api";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
@@ -69,7 +70,7 @@ internal static class PageBodyAstLinter {
 			return Array.Empty<PageBodyLintFinding>();
 		}
 		var findings = new List<PageBodyLintFinding>();
-		Visit(ast, default, findings);
+		Visit(ast, default, depth: 0, findings);
 		return findings;
 	}
 
@@ -93,9 +94,31 @@ internal static class PageBodyAstLinter {
 
 	#region AST traversal
 
-	private readonly record struct VisitContext(bool InsideValidators, bool InsideConverters, int ValidatorFunctionDepth);
+	// AST traversal depth cap: prevents StackOverflowException on adversarial
+	// or LLM-truncated bodies with extreme bracket nesting that Acornima's
+	// stack-guarded parser accepts (it reports a clean AST) but a naive
+	// recursive visitor would crash on. A .NET StackOverflowException cannot
+	// be caught, so the MCP server process would die mid-call. The cap maps
+	// the overflow into a blocking lint finding instead.
+	internal const int MaxAstDepth = 1000;
 
-	private static void Visit(Node node, VisitContext ctx, List<PageBodyLintFinding> findings) {
+	// Per-recursion context propagated to children to bound rule scopes.
+	// The flags are orthogonal — each addresses one rule's scoping problem.
+	private readonly record struct VisitContext(
+		bool InsideValidators,
+		bool InsideConverters,
+		bool EnclosingFunctionIsValidatorInstance);
+
+	private static void Visit(Node node, VisitContext ctx, int depth, List<PageBodyLintFinding> findings) {
+		if (depth > MaxAstDepth) {
+			findings.Add(new PageBodyLintFinding(
+				Rule: RuleBodyTooDeeplyNested,
+				Severity: LintSeverity.Error,
+				Line: node.Location.Start.Line,
+				Column: node.Location.Start.Column + 1,
+				Message: $"Page body AST exceeds the safe traversal depth ({MaxAstDepth}). The lint pass refuses to walk further to avoid a StackOverflowException that would kill the MCP server process."));
+			return;
+		}
 		switch (node) {
 			case ObjectExpression obj:
 				CheckSchemaSectionShapes(obj, findings);
@@ -115,37 +138,60 @@ internal static class PageBodyAstLinter {
 		}
 		foreach (Node child in node.ChildNodes) {
 			VisitContext childCtx = ComputeChildContext(node, child, ctx);
-			Visit(child, childCtx, findings);
+			Visit(child, childCtx, depth + 1, findings);
 		}
 	}
 
 	// Compute the VisitContext for `child` when descending from `parent`.
-	// Two orthogonal pieces of state are tracked:
-	//   1) InsideValidators / InsideConverters — flipped on Property -> Value
-	//      transitions where the Property key is "validators" / "converters".
-	//      Nested occurrences are not a documented shape, so we do not pop the
-	//      flag mid-walk; recursion exits naturally when each subtree finishes.
-	//   2) ValidatorFunctionDepth — counts function-bearing parents we have
-	//      descended through while InsideValidators is true. The validator
-	//      factory is depth 1; the inner validator function returned by the
-	//      factory is depth 2; anything deeper (a `.filter(function(i){ ... })`
-	//      predicate inside the validator body) is depth 3+. Returns at depth
-	//      3+ are intentionally NOT flagged by `validator-bad-return-literal`
-	//      — they belong to nested callbacks and the rule must not block
-	//      legitimate JS just because it sits inside the validators subtree.
+	// Three rules currently depend on context:
+	//   1) `validator-bad-return-literal` (CheckReturnStatement) fires only
+	//      when `EnclosingFunctionIsValidatorInstance` is true — i.e. the
+	//      nearest enclosing function IS the validator-instance function
+	//      (the function returned by `validator: function(...) { return fn; }`).
+	//      Returns inside nested helpers or `.filter(...)` callbacks must not
+	//      be flagged because they belong to the helper/callback, not the
+	//      validator contract.
+	//   2) `converter-fetch-call` (CheckCallExpression) fires on `fetch(...)`
+	//      anywhere under `converters` — `InsideConverters` is sufficient
+	//      because the anti-pattern is render-time HTTP regardless of
+	//      function nesting depth.
+	//   3) `handler-uses-context-execute-request` (CheckCallExpression) has
+	//      no schema-section gate — handler dispatch through `$context` is
+	//      wrong in any deployed page-body location.
+	// `params-empty` and `crt-prefix-reserved` are now driven directly off
+	// the validators/converters ObjectExpression in CheckSchemaSectionShape
+	// (direct-child walk), not through this context — see the comments on
+	// CheckValidatorParamsEmptyOnDirectEntries / CheckConvertersDirectKeys.
 	private static VisitContext ComputeChildContext(Node parent, Node child, VisitContext currentCtx) {
 		if (parent is Property prop && ReferenceEquals(child, prop.Value)) {
 			string key = TryGetStaticPropertyName(prop);
 			if (key == "validators") {
-				return currentCtx with { InsideValidators = true };
+				return currentCtx with { InsideValidators = true, EnclosingFunctionIsValidatorInstance = false };
 			}
 			if (key == "converters") {
 				return currentCtx with { InsideConverters = true };
 			}
 			return currentCtx;
 		}
-		if (currentCtx.InsideValidators && parent is IFunction) {
-			return currentCtx with { ValidatorFunctionDepth = currentCtx.ValidatorFunctionDepth + 1 };
+		// Identify the validator-instance function: the IFunction that is the
+		// `Argument` of a `return` statement (so the enclosing factory's body
+		// `return function(value) { ... }` shape is matched). Whenever we
+		// descend INTO any IFunction node inside the validators subtree we
+		// recompute the flag from scratch — `true` only if the parent
+		// transition is a ReturnStatement.Argument transition, otherwise
+		// `false`. This handles:
+		//   - The factory itself (descended via Property -> IFunction): false.
+		//   - The validator-instance (descended via ReturnStatement -> IFunction): true.
+		//   - A nested helper declared in the factory body (e.g.
+		//     `function isEmpty(v) { ... }` or `[].filter(function(i){...})`):
+		//     false, because its parent is a BlockStatement / CallExpression,
+		//     not a ReturnStatement.Argument.
+		// Non-IFunction children keep the parent's flag — recursion into the
+		// body, params, etc. inherits whichever scope we're currently in.
+		if (currentCtx.InsideValidators && child is IFunction) {
+			bool isValidatorInstance = parent is ReturnStatement ret
+				&& ReferenceEquals(child, ret.Argument);
+			return currentCtx with { EnclosingFunctionIsValidatorInstance = isValidatorInstance };
 		}
 		return currentCtx;
 	}
@@ -194,6 +240,7 @@ internal static class PageBodyAstLinter {
 			_ => (null, null, true)
 		};
 		if (rule is null || expectedShape || IsNullOrUndefined(prop.Value)) {
+			ApplyDirectChildRules(prop, key, findings);
 			return;
 		}
 		findings.Add(new PageBodyLintFinding(
@@ -204,31 +251,88 @@ internal static class PageBodyAstLinter {
 			Message: message));
 	}
 
-	private static void CheckProperty(Property prop, VisitContext ctx, List<PageBodyLintFinding> findings) {
-		string key = TryGetStaticPropertyName(prop);
-		if (key is null) {
+	// Section-bounded rules whose intent is "applies only to direct property
+	// entries of the validators/converters object, not to nested object
+	// literals". Running them off the section's ObjectExpression avoids the
+	// false-positive class of "fires anywhere under the subtree" that a
+	// VisitContext-only gate would suffer from.
+	private static void ApplyDirectChildRules(Property prop, string key, List<PageBodyLintFinding> findings) {
+		if (prop.Value is not ObjectExpression sectionObj) {
 			return;
 		}
-		// Rule 5: `params: []` — empty array literal — guidance says NEVER valid.
-		if (key == "params" && prop.Value is ArrayExpression arr && arr.Elements.Count == 0) {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleValidatorParamsEmpty,
-				Severity: LintSeverity.Error,
-				Line: prop.Location.Start.Line,
-				Column: prop.Location.Start.Column + 1,
-				Message: "`params: []` is never valid; every custom validator requires at minimum `{ name: \"message\" }` so the user sees an error message"));
+		switch (key) {
+			case "validators":
+				CheckValidatorParamsEmptyOnDirectEntries(sectionObj, findings);
+				break;
+			case "converters":
+				CheckConvertersDirectKeys(sectionObj, findings);
+				break;
 		}
-		// Rule 7: custom converter key uses reserved `crt.*` namespace. Bounded
-		// to keys that sit directly inside the `converters` object via the
-		// VisitContext flag set by ComputeChildContext.
-		if (ctx.InsideConverters && key.StartsWith("crt.", StringComparison.Ordinal)) {
+	}
+
+	// `params: []` on a custom validator's own configuration object — the
+	// shape is `{ "<name>": { validator: fn, params: [...] } }`, and the
+	// `params` we care about is the sibling of `validator`, not some
+	// arbitrary `params: []` deep inside a factory body (e.g. a request
+	// payload constructed by the validator itself). Walks the validators
+	// object's direct entries and inspects each entry value's direct
+	// `params` property only.
+	private static void CheckValidatorParamsEmptyOnDirectEntries(ObjectExpression validatorsObj, List<PageBodyLintFinding> findings) {
+		foreach (Node element in validatorsObj.Properties) {
+			if (!TryGetInitProperty(element, out Property entry, out _)) {
+				continue;
+			}
+			if (entry.Value is not ObjectExpression entryObj) {
+				continue;
+			}
+			foreach (Node entryChild in entryObj.Properties) {
+				if (!TryGetInitProperty(entryChild, out Property inner, out string innerKey) || innerKey != "params") {
+					continue;
+				}
+				if (inner.Value is ArrayExpression arr && arr.Elements.Count == 0) {
+					findings.Add(new PageBodyLintFinding(
+						Rule: RuleValidatorParamsEmpty,
+						Severity: LintSeverity.Error,
+						Line: inner.Location.Start.Line,
+						Column: inner.Location.Start.Column + 1,
+						Message: "`params: []` on a custom validator is never valid; every entry requires at minimum `{ name: \"message\" }` so the user sees an error message"));
+				}
+			}
+		}
+	}
+
+	// Custom converter names declared with the reserved `crt.*` namespace.
+	// The rule applies only to keys that ARE direct entries of the
+	// converters object; a lookup-table inside a converter's closure such
+	// as `{ "crt.X": "label" }` is unrelated and must not be flagged.
+	private static void CheckConvertersDirectKeys(ObjectExpression convertersObj, List<PageBodyLintFinding> findings) {
+		foreach (Node element in convertersObj.Properties) {
+			if (!TryGetInitProperty(element, out Property entry, out string entryKey)) {
+				continue;
+			}
+			if (!entryKey.StartsWith("crt.", StringComparison.Ordinal)) {
+				continue;
+			}
 			findings.Add(new PageBodyLintFinding(
 				Rule: RuleConverterCrtPrefixReserved,
 				Severity: LintSeverity.Error,
-				Line: prop.Location.Start.Line,
-				Column: prop.Location.Start.Column + 1,
-				Message: $"Custom converter `{key}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
+				Line: entry.Location.Start.Line,
+				Column: entry.Location.Start.Column + 1,
+				Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
 		}
+	}
+
+	// CheckProperty intentionally has no rules left: `params-empty` and
+	// `converter-crt-prefix-reserved` now run inside CheckSchemaSectionShape
+	// against the validators/converters ObjectExpression's direct property
+	// children (see CheckValidatorParamsEmptyOnDirectEntries and
+	// CheckConvertersDirectKeys). That removes the false-positive surface
+	// of the previous "fires anywhere under the validators/converters
+	// subtree" gates (e.g. `executeRequest({type, params:[]})` inside a
+	// factory body or a `"crt.X"` lookup-table key inside a converter's
+	// closure no longer wrongly trigger an Error).
+	private static void CheckProperty(Property prop, VisitContext ctx, List<PageBodyLintFinding> findings) {
+		// kept as an extension point for future Property-level rules
 	}
 
 	private static void CheckCallExpression(CallExpression call, VisitContext ctx, List<PageBodyLintFinding> findings) {
@@ -314,18 +418,19 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, List<PageBodyLintFinding> findings) {
-		// Rule 6: validator declaration must not return a literal. Bounded by
-		// VisitContext to two checks:
-		//   - InsideValidators — the rule only fires inside the `validators`
-		//     schema section; `return true` elsewhere is fine.
-		//   - ValidatorFunctionDepth <= 2 — only the validator factory (depth 1)
-		//     and the validator-instance function returned by the factory
-		//     (depth 2) own a meaningful `return`. Nested callbacks such as
-		//     `.filter(function(i){ return true; })` sit at depth 3+ and must
-		//     NOT be flagged; otherwise the rule rejects legitimate JS just
-		//     because it lives inside the validators subtree (regression
-		//     reported by reviewer on 2026-06-11).
-		if (!ctx.InsideValidators || ctx.ValidatorFunctionDepth > 2) {
+		// Rule 6: validator declaration must not return a literal. Bounded
+		// to returns whose nearest enclosing function is THE validator-
+		// instance function (the function returned by the factory). Other
+		// returns in the validators subtree — inside the factory before its
+		// own `return function(...)`, inside a `function isEmpty(v)` helper
+		// declared in the factory body, inside a `.filter(function(i){...})`
+		// predicate inside the instance body — must not be flagged because
+		// their returns are not part of the validator contract. The
+		// `EnclosingFunctionIsValidatorInstance` flag is set exactly once on
+		// descent into the validator-instance function (parent is a
+		// ReturnStatement whose Argument IS the IFunction). Nested IFunction
+		// descents inside that subtree reset the flag to false.
+		if (!ctx.EnclosingFunctionIsValidatorInstance) {
 			return;
 		}
 		if (!IsBadValidatorReturnLiteral(ret.Argument)) {
