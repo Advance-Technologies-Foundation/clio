@@ -64,16 +64,16 @@ public sealed record AppSectionSearchResult(
 	[property: JsonPropertyName("description")] string? Description);
 
 /// <summary>
-/// Finds installed applications and their sections within a single command invocation. Loads all
-/// applications with one <c>SysInstalledApp</c> query, then loads each application's sections with a
-/// per-application <c>ApplicationSection</c> query filtered by <c>ApplicationId</c> — the
-/// <c>ApplicationSection</c> object returns no rows for an unfiltered query, so sections must be read
-/// per application (the same path <c>list-app-sections</c> uses). Results are filtered by an optional
-/// case-insensitive pattern (matched across application name/code/description and section
-/// captions/codes) and/or an exact application code; an empty pattern returns every application with
-/// its sections. The whole sweep happens behind a single tool call, removing the N+1
-/// <c>list-apps</c> + per-app <c>list-app-sections</c> round-trips an agent would otherwise make to
-/// map an imprecise application name to its code.
+/// Finds installed applications and their sections within a single command invocation. Issues exactly
+/// two DataService queries: one <c>SysInstalledApp</c> query for all applications, then one batch
+/// <c>ApplicationSection</c> query with an OR-grouped <c>ApplicationId</c> filter that loads sections
+/// for all candidate applications at once. Results are filtered by an optional case-insensitive pattern
+/// (matched across application name/code/description and section captions/codes) and/or an exact
+/// application code; an empty pattern returns every application with its sections. The whole sweep
+/// happens behind a single tool call, removing the N+1 <c>list-apps</c> + per-app
+/// <c>list-app-sections</c> round-trips an agent would otherwise make to map an imprecise application
+/// name to its code. When <c>--code</c> is supplied together with <c>--search-pattern</c>, both
+/// conditions must hold; the code filter runs first to skip section loading for non-matching apps.
 /// </summary>
 public class FindAppCommand : Command<FindAppOptions> {
 	private const string DescriptionColumn = "Description";
@@ -164,20 +164,32 @@ public class FindAppCommand : Command<FindAppOptions> {
 			_serviceUrlBuilder,
 			BuildSelectQuery("SysInstalledApp", AppColumns, NoFilters));
 
-		List<AppSearchResult> results = [];
-		foreach (InstalledAppRowDto app in appsResponse.Rows) {
-			// An exact code filter lets us skip loading sections for every other application.
-			if (code is not null && !string.Equals(app.Code, code, StringComparison.OrdinalIgnoreCase)) {
-				continue;
-			}
+		// An exact code filter lets us skip loading sections for every other application.
+		List<InstalledAppRowDto> candidates = code is null
+			? appsResponse.Rows
+			: appsResponse.Rows
+				.Where(app => string.Equals(app.Code, code, StringComparison.OrdinalIgnoreCase))
+				.ToList();
 
+		IReadOnlyList<string> candidateIds = candidates
+			.Where(app => !string.IsNullOrWhiteSpace(app.Id))
+			.Select(app => app.Id!)
+			.ToList();
+		IReadOnlyDictionary<string, IReadOnlyList<AppSectionSearchResult>> sectionsByAppId =
+			LoadSectionsBatch(candidateIds);
+
+		List<AppSearchResult> results = [];
+		foreach (InstalledAppRowDto app in candidates) {
+			string appId = app.Id ?? string.Empty;
+			IReadOnlyList<AppSectionSearchResult> sections =
+				sectionsByAppId.TryGetValue(appId, out IReadOnlyList<AppSectionSearchResult>? s) ? s : [];
 			AppSearchResult result = new(
-				app.Id ?? string.Empty,
+				appId,
 				app.Code ?? string.Empty,
 				app.Name ?? string.Empty,
 				string.IsNullOrWhiteSpace(app.Version) ? null : app.Version,
 				string.IsNullOrWhiteSpace(app.Description) ? null : app.Description,
-				LoadSections(app.Id));
+				sections);
 			if (MatchesPattern(result, pattern)) {
 				results.Add(result);
 			}
@@ -190,32 +202,48 @@ public class FindAppCommand : Command<FindAppOptions> {
 	}
 
 	/// <summary>
-	/// Loads the sections of a single installed application. <c>ApplicationSection</c> returns no rows
-	/// for an unfiltered query, so it is read per application filtered by <c>ApplicationId</c>.
+	/// Loads sections for all candidate applications in a single batch query using an OR-grouped
+	/// <c>ApplicationId</c> filter, then groups the rows by application identifier for in-memory
+	/// lookup. On query failure, logs a warning and returns an empty dictionary so callers still
+	/// receive applications — just without sections.
 	/// </summary>
-	/// <param name="applicationId">Installed application identifier.</param>
-	/// <returns>The application's sections, ordered by caption then code.</returns>
-	private IReadOnlyList<AppSectionSearchResult> LoadSections(string? applicationId) {
-		if (string.IsNullOrWhiteSpace(applicationId)) {
-			return [];
+	/// <param name="applicationIds">Identifiers of the applications whose sections to fetch.</param>
+	/// <returns>Dictionary keyed by application identifier, each value ordered by caption then code.</returns>
+	private IReadOnlyDictionary<string, IReadOnlyList<AppSectionSearchResult>> LoadSectionsBatch(
+		IReadOnlyList<string> applicationIds) {
+		if (applicationIds.Count == 0) {
+			return new Dictionary<string, IReadOnlyList<AppSectionSearchResult>>();
 		}
-
-		SectionsResponse response = ExecuteSelectQuery<SectionsResponse>(
-			_applicationClient,
-			_serviceUrlBuilder,
-			BuildSelectQuery(
-				"ApplicationSection",
-				SectionColumns,
-				[new SelectQueryFilterDefinition("ApplicationId", applicationId.Trim(), GuidDataValueType)]));
-		return response.Rows
-			.Select(section => new AppSectionSearchResult(
-				section.Code ?? string.Empty,
-				section.Caption ?? string.Empty,
-				string.IsNullOrWhiteSpace(section.EntitySchemaName) ? null : section.EntitySchemaName,
-				string.IsNullOrWhiteSpace(section.Description) ? null : section.Description))
-			.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
-			.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		try {
+			SectionsResponse response = ExecuteSelectQuery<SectionsResponse>(
+				_applicationClient,
+				_serviceUrlBuilder,
+				BuildSelectQueryWithOrFilter(
+					"ApplicationSection",
+					SectionColumns,
+					"ApplicationId",
+					applicationIds,
+					GuidDataValueType));
+			return response.Rows
+				.GroupBy(row => row.ApplicationId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+				.ToDictionary(
+					group => group.Key,
+					group => (IReadOnlyList<AppSectionSearchResult>)group
+						.Select(section => new AppSectionSearchResult(
+							section.Code ?? string.Empty,
+							section.Caption ?? string.Empty,
+							string.IsNullOrWhiteSpace(section.EntitySchemaName)
+								? null
+								: section.EntitySchemaName,
+							string.IsNullOrWhiteSpace(section.Description) ? null : section.Description))
+						.OrderBy(section => section.Caption, StringComparer.OrdinalIgnoreCase)
+						.ThenBy(section => section.Code, StringComparer.OrdinalIgnoreCase)
+						.ToList(),
+					StringComparer.OrdinalIgnoreCase);
+		} catch (Exception ex) {
+			_logger.WriteWarning($"Failed to load sections: {ex.Message}. Applications will be returned without sections.");
+			return new Dictionary<string, IReadOnlyList<AppSectionSearchResult>>();
+		}
 	}
 
 	private static bool MatchesPattern(AppSearchResult app, string? pattern) {

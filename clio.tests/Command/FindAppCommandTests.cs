@@ -146,8 +146,8 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 	}
 
 	[Test]
-	[Description("FindApplications issues one SysInstalledApp query and one ApplicationSection query per application — ApplicationSection returns nothing unfiltered, so sections are read per application inside the single command call.")]
-	public void FindApplications_IssuesOneAppQueryAndOneSectionQueryPerApplication() {
+	[Description("FindApplications issues exactly two DataService queries: one SysInstalledApp and one batch ApplicationSection — no per-app round-trips.")]
+	public void FindApplications_IssuesExactlyTwoSelectQueries_WhenMultipleApplicationsExist() {
 		// Arrange
 		ArrangeApps([
 			new AppRow("11111111-1111-1111-1111-111111111111", "AppOne", "App One", null, "1.0.0"),
@@ -162,12 +162,12 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 
 		// Assert
 		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("SysInstalledApp")));
-		_applicationClient.Received(3).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")));
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")));
 	}
 
 	[Test]
-	[Description("FindApplications skips the section query for applications excluded by an exact code filter, loading sections only for the matched application.")]
-	public void FindApplications_SkipsSectionQueriesForUnmatchedApps_WhenCodeProvided() {
+	[Description("FindApplications sends only the matched application's ID in the sections batch query when an exact code is supplied.")]
+	public void FindApplications_SendsOnlyMatchedAppIdInSectionsBatch_WhenCodeProvided() {
 		// Arrange
 		ArrangeApps([
 			new AppRow("11111111-1111-1111-1111-111111111111", "CrtCaseManagementApp", "Case Management", null, "1.0.0"),
@@ -184,6 +184,28 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 			body.Contains("ApplicationSection") && body.Contains("22222222-2222-2222-2222-222222222222")));
 		_applicationClient.DidNotReceive().ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
 			body.Contains("ApplicationSection") && body.Contains("11111111-1111-1111-1111-111111111111")));
+	}
+
+	[Test]
+	[Description("FindApplications returns applications without sections and logs a warning when the sections batch query fails.")]
+	public void FindApplications_ReturnsAppsWithEmptySectionsAndLogsWarning_WhenSectionsBatchFails() {
+		// Arrange
+		const string appId = "11111111-1111-1111-1111-111111111111";
+		ArrangeApps([new AppRow(appId, "CrtCaseManagementApp", "Case Management", null, "1.0.0")]);
+		_applicationClient
+			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
+			.Returns(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = "DB timeout" } }));
+		FindAppOptions options = new();
+
+		// Act
+		IReadOnlyList<AppSearchResult> results = _command.FindApplications(options);
+
+		// Assert
+		results.Should().ContainSingle(
+			because: "the application must still be returned even when sections fail");
+		results[0].Sections.Should().BeEmpty(
+			because: "sections are unavailable when the batch query fails");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(msg => msg.Contains("Failed to load sections")));
 	}
 
 	[Test]
@@ -239,6 +261,64 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 		_logger.Received(1).WriteError(Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("Execute outputs indented JSON with WhenWritingNull and returns 0 when --json is supplied.")]
+	public void Execute_OutputsJsonAndReturnsZero_WhenJsonFormatRequested() {
+		// Arrange
+		const string appId = "11111111-1111-1111-1111-111111111111";
+		ArrangeApps([new AppRow(appId, "CrtCaseManagementApp", "Case Management", null, "1.0.0")]);
+		ArrangeSections([new SectionRow("aaaa", appId, "Cases", "Cases", null, "Case")]);
+		FindAppOptions options = new() { JsonFormat = true };
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "JSON output is a successful result");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(output =>
+			output.StartsWith("[") && output.Contains("\"code\"") && !output.Contains("\"description\"")));
+	}
+
+	[Test]
+	[Description("FindApplications honours the --pattern alias as equivalent to --search-pattern.")]
+	public void FindApplications_HonoursPatternAlias_WhenAliasIsSet() {
+		// Arrange
+		ArrangeApps([
+			new AppRow("11111111-1111-1111-1111-111111111111", "CrtCaseManagementApp", "Case Management", null, "1.0.0"),
+			new AppRow("22222222-2222-2222-2222-222222222222", "UsrSalesApp", "Sales", null, "2.0.0")
+		]);
+		ArrangeSections([]);
+		FindAppOptions options = new();
+		options.SearchPatternAlias = "Case Management";
+
+		// Act
+		IReadOnlyList<AppSearchResult> results = _command.FindApplications(options);
+
+		// Assert
+		results.Should().ContainSingle(
+			because: "the --pattern alias must be treated identically to --search-pattern");
+		results[0].Code.Should().Be("CrtCaseManagementApp",
+			because: "the alias-driven search must select the matching application");
+	}
+
+	[Test]
+	[Description("FindApplications maps null version and description fields to null in the result record.")]
+	public void FindApplications_MapsNullFieldsToNull_WhenRowsHaveNullVersionAndDescription() {
+		// Arrange
+		ArrangeApps([new AppRow("11111111-1111-1111-1111-111111111111", "CrtCaseManagementApp", "Case Management", null, null)]);
+		ArrangeSections([]);
+		FindAppOptions options = new();
+
+		// Act
+		IReadOnlyList<AppSearchResult> results = _command.FindApplications(options);
+
+		// Assert
+		results.Should().ContainSingle(because: "one application row was returned");
+		results[0].Version.Should().BeNull(because: "a null version column must map to null, not an empty string");
+		results[0].Description.Should().BeNull(because: "a null description column must map to null, not an empty string");
+	}
+
 	private void ArrangeApps(IEnumerable<AppRow> rows) {
 		_applicationClient
 			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("SysInstalledApp")))
@@ -246,24 +326,16 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 	}
 
 	private void ArrangeSections(IEnumerable<SectionRow> rows) {
-		// ApplicationSection is queried per application (filtered by ApplicationId), so the default
-		// response is empty and each application's id-filtered query returns just that app's sections.
+		// The batch query returns all sections in a single response; rows are associated to apps by ApplicationId.
 		_applicationClient
 			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
-			.Returns(BuildSuccessJson([]));
-		foreach (IGrouping<string, SectionRow> group in rows.GroupBy(section => section.ApplicationId)) {
-			string applicationId = group.Key;
-			_applicationClient
-				.ExecutePostRequest(SelectUrl, Arg.Is<string>(body =>
-					body.Contains("ApplicationSection") && body.Contains(applicationId)))
-				.Returns(BuildSuccessJson(group.Cast<object>()));
-		}
+			.Returns(BuildSuccessJson(rows.Cast<object>()));
 	}
 
 	private static string BuildSuccessJson(IEnumerable<object> rows) =>
 		JsonSerializer.Serialize(new { success = true, rows });
 
-	private sealed record AppRow(string Id, string Code, string Name, string? Description, string Version);
+	private sealed record AppRow(string Id, string Code, string Name, string? Description, string? Version);
 
 	private sealed record SectionRow(
 		string Id,
