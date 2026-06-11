@@ -47,6 +47,8 @@ internal static class McpServerInstructions
 		- After `create-entity-schema` / `create-lookup` — these tools apply DDL AND publish the schema themselves,
 		  so the new entity is immediately visible to lookup pickers and sys-setting reference schema lists.
 		- After `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		  Note: unlike `create-entity-schema`, these tools do not re-publish the full configuration (by design — the schema is already published).
+		  If a newly added lookup column must appear in reference schema lists immediately, run `compile-creatio`.
 		- After `create-data-binding` / `add-data-binding-row` / `upsert-data-binding-row-db` — data seeding does not change compiled artifacts.
 		Calling `compile-creatio` in these cases only wastes time and may trigger an unnecessary restart.
 

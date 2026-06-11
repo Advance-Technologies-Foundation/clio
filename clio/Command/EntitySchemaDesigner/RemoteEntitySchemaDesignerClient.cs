@@ -43,6 +43,11 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
 
+	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
+	// which is a compile-class operation. Use the same long timeout as compile-configuration
+	// so a slow-but-successful build is not mistaken for a failure.
+	internal static readonly int PublishConfigurationTimeoutMs = (int)TimeSpan.FromMinutes(60).TotalMilliseconds;
+
 	public RemoteEntitySchemaDesignerClient(IApplicationClient applicationClient, IJsonConverter jsonConverter,
 		IServiceUrlBuilder serviceUrlBuilder) {
 		_applicationClient = applicationClient;
@@ -112,13 +117,17 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	}
 
 	public BaseResponse PublishConfigurationChanges(RemoteCommandOptions options) {
+		// Build POST is non-idempotent: retrying a timed-out build may stack concurrent full compiles.
+		// Use the build-class timeout and retryCount=0 regardless of the command-level defaults.
 		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
 			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
 			new SchemaDesignerRequestDto {
 				BuildWorkspace = true,
 				BuildChangedConfiguration = true
 			},
-			options,
+			PublishConfigurationTimeoutMs,
+			retryCount: 0,
+			options.RetryDelay,
 			"PublishConfigurationChanges");
 	}
 
@@ -178,9 +187,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string methodName)
 		where TRequest : class
 		where TResponse : BaseResponse {
+		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.RetryCount, options.RetryDelay,
+			methodName);
+	}
+
+	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int retryCount,
+		int retryDelay, string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
-			options.RetryDelay);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, retryCount, retryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
