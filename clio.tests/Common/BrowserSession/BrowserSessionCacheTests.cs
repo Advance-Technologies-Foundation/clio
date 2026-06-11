@@ -156,7 +156,13 @@ public sealed class BrowserSessionCacheTests {
 	[Category("Integration")]
 	[Description("Write rejects an --output-path whose parent directory is a symlink, to prevent a bearer token being written through a planted link.")]
 	public void Write_ShouldThrowAndWriteNothing_WhenParentDirectoryIsSymlink() {
-		// Arrange — create a real symlink in the temp directory (requires OS support).
+		// Symbolic-link creation requires SeCreateSymbolicLinkPrivilege on Windows, which the CI
+		// runner does not hold. Skip early rather than letting CreateSymbolicLink throw IOException.
+		if (OperatingSystem.IsWindows()) {
+			Assert.Ignore("Symlink creation requires elevation on this Windows configuration.");
+		}
+
+		// Arrange — create a real symlink in the temp directory.
 		string tempDir = System.IO.Path.GetTempPath();
 		string realTarget = System.IO.Path.Combine(tempDir, "clio-cache-test-real-" + System.Guid.NewGuid().ToString("N"));
 		string symlinkDir = System.IO.Path.Combine(tempDir, "clio-cache-test-link-" + System.Guid.NewGuid().ToString("N"));
@@ -169,11 +175,6 @@ public sealed class BrowserSessionCacheTests {
 			Action act = () => _sut.Write("key", "{}", overridePath);
 
 			// Assert
-			if (OperatingSystem.IsWindows()) {
-				// Symbolic-link creation requires elevated privileges on most Windows configurations
-				// — skip rather than fail on a machine where the test cannot be set up.
-				Assert.Ignore("Symlink creation requires elevation on this Windows configuration.");
-			}
 			act.Should().Throw<ArgumentException>(
 				because: "a parent-directory symlink must be rejected before any write to prevent token exfiltration");
 			_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
