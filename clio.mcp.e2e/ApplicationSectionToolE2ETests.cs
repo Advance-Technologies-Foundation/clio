@@ -10,6 +10,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -478,6 +479,55 @@ public sealed class ApplicationSectionToolE2ETests {
 		response.Error.Should().MatchRegex(
 			$"(?is)(does not exist|{missingEntitySchemaName})",
 			because: "the failure should explain that the requested object was not found");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server with a small heartbeat interval and verifies that a long-running application tool streams at least one notifications/progress message, so MCP clients reset their inactivity timeout instead of timing out mid-operation (ENG-91274).")]
+	[AllureFeature("mcp-progress-heartbeat")]
+	[AllureTag("mcp-progress-heartbeat")]
+	[AllureName("Application tools stream progress notifications for long-running calls")]
+	[AllureDescription("Forces a tiny CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS, calls list-app-sections through the real clio MCP server with an IProgress sink, and asserts the client observed at least one progress notification — proving the keep-alive path is wired end to end.")]
+	public async Task ApplicationTool_Should_Stream_Progress_For_LongRunning_Call() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		// Force a tiny heartbeat interval so a single backend round-trip deterministically yields a beat.
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		CollectingProgress progress = new();
+
+		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
+		// heartbeat fires while it works even when the application does not exist.
+		CallToolResult callResult = await session.CallToolAsync(
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode
+				}
+			},
+			progress,
+			cancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"a structured list-app-sections result should not surface as an MCP-level error. Actual: {DescribeCallResult(callResult)}");
+		progress.Count.Should().BeGreaterThanOrEqualTo(1,
+			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
+	}
+
+	/// <summary>
+	/// Thread-safe <see cref="IProgress{T}"/> sink that records progress notifications synchronously
+	/// as the SDK delivers them, so the count is deterministic by the time the tool call returns.
+	/// </summary>
+	private sealed class CollectingProgress : IProgress<ProgressNotificationValue> {
+		private int _count;
+
+		public int Count => Volatile.Read(ref _count);
+
+		public void Report(ProgressNotificationValue value) => Interlocked.Increment(ref _count);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

@@ -48,6 +48,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Use `get-schema-name-prefix` to discover the active SchemaNamePrefix before naming schemas when you need the prefix before calling `create-app` (e.g. working with an existing app or planning schema names upfront). When `create-app` is the first call, its response already includes `schema-name-prefix`.
 
 			       Preferred workflow
+			       - The application tools (`create-app`, `create-app-section`, `update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`) are long-running backend calls that stream `notifications/progress` while working. Await completion — a progress notification means the server is still working, not a stall, so do not cancel/retry or fall back to raw SQL or manual UI on a perceived client timeout.
 			       - Use `create-app` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Use `create-app-section` when the workflow must add a section to an existing installed app instead of creating a new app shell.
 			       - Use `update-app-section` when the workflow must change metadata of an existing section instead of creating a new one.

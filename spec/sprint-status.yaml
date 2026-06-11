@@ -7,7 +7,7 @@ stories:
     title: "Culture resolver service + singleton cache"
     feature: "user-profile-language-detection"
     size: M
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-1.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -26,7 +26,7 @@ stories:
     title: "get-user-culture CLI verb"
     feature: "user-profile-language-detection"
     size: S
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-2.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -39,7 +39,7 @@ stories:
     title: "get-user-culture read-only MCP tool"
     feature: "user-profile-language-detection"
     size: M
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-3.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -52,7 +52,7 @@ stories:
     title: "Entity-schema creator write path + Cultures array + NormalizeTitleLocalizations signature"
     feature: "user-profile-language-detection"
     size: L
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-4a.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -65,7 +65,7 @@ stories:
     title: "Column manager WRITE path; READ paths stay on host locale"
     feature: "user-profile-language-detection"
     size: M
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-4b.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -78,7 +78,7 @@ stories:
     title: "Page / client-unit / resource / schema-designer-helper creation uses effective culture"
     feature: "user-profile-language-detection"
     size: L
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-5.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -91,7 +91,7 @@ stories:
     title: "Section / application creation uses effective culture"
     feature: "user-profile-language-detection"
     size: M
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-6.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
@@ -104,11 +104,43 @@ stories:
     title: "MCP guidance: detect-once / reuse / ask-on-failure"
     feature: "user-profile-language-detection"
     size: M
-    status: in-progress
+    status: done
     file: spec/stories/story-user-profile-language-detection-7.md
     prd: spec/prd/prd-user-profile-language-detection.md
     adr: spec/adr/adr-user-profile-language-detection.md
     fr: [FR-07, FR-08, FR-09]
     ac: [AC-05, AC-07]
     depends_on: [story-user-profile-language-detection-3]
+    blocks: []
+
+  - id: mcp-progress-heartbeat-1
+    title: "Reusable progress-heartbeat helper"
+    feature: "mcp-progress-heartbeat"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-progress-heartbeat-1.md
+    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    depends_on: []
+    blocks:
+      - mcp-progress-heartbeat-2
+
+  - id: mcp-progress-heartbeat-2
+    title: "Wire heartbeat into application tool family + contract docs"
+    feature: "mcp-progress-heartbeat"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-progress-heartbeat-2.md
+    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    depends_on: [mcp-progress-heartbeat-1]
+    blocks:
+      - mcp-progress-heartbeat-3
+
+  - id: mcp-progress-heartbeat-3
+    title: "E2E progress coverage + docs/capability map"
+    feature: "mcp-progress-heartbeat"
+    size: S
+    status: review
+    file: spec/stories/story-mcp-progress-heartbeat-3.md
+    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    depends_on: [mcp-progress-heartbeat-2]
     blocks: []
