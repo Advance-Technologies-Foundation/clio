@@ -3564,3 +3564,10 @@ Decision: Fixed M4 (early --code validation before GetApplicationInfo), M5 (pref
 Discovery: NSubstitute `.Throws()` requires `NSubstitute.ExceptionExtensions` import not present in test file; used `.Returns(_ => throw ...)` lambda pattern instead.
 Files: clio/Command/ApplicationSectionCreateCommand.cs (ValidateRequest + ResolveSectionCode), clio.tests/Command/ApplicationSectionCreateServiceTests.cs (+4 tests), clio/docs/commands/create-app-section.md, clio/help/en/create-app-section.txt.
 Impact: CI 4/4, Sonar 0, 27/27 ApplicationSectionCreate tests, 1354/1354 Module=Command unit tests pass. Review reply posted; b-horodyskyi re-requested.
+
+## 2026-06-11 13:45 – ENG-90679 PR #692: merge conflicts resolved, tests fixed
+Context: drive-pr-green run on PR #692. Branch was DIRTY vs master (2 concurrent master merges).
+Decision: Merged origin/master twice (first merge: ENG-91212 CheckEntitySchemaExists + user-profile-language-detection; second merge: ENG-91275 find-app batch fix). Each merge had only diary conflicts — kept all entries from both sides. Fixed 3 test issues post-merge: (1) SetUpCommonReadMocks added StubExistingEntitySchema("UsrOrders") so CheckEntitySchemaExists probe gets 1 row back for reuse-entity tests; (2) culture caption test insert stub + (3) entity probe test insert stub both needed Arg.Any<int>() for 3-arg ExecutePostRequest. Re-requested review from b-horodyskyi.
+Discovery: NSubstitute 2-arg stubs DO match 3-arg calls when the 3rd arg has a default value (the default is filled in at setup time, exact match). Only insert stubs with variable timeout failed — CheckEntitySchemaDoesNotExist/Exists use SelectQueryHelper.ExecuteSelectQuery(requestTimeout=Timeout.Infinite) so those stubs work correctly with 2 args.
+Files: .codex/workspace-diary.md, clio.tests/Command/ApplicationSectionCreateServiceTests.cs
+Impact: PR #692 is CLEAN, MERGEABLE, all CI green (Unit/Integration/Sonar), 0 Sonar issues; awaiting re-review from b-horodyskyi.
