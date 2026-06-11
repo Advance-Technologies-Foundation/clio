@@ -98,12 +98,12 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		path.Replace('\\', '/').Should().EndWith("sessions/dev-creatio-com-0_0123456789abcdef.storageState.json",
 			because: "the cache lives under {clio-home}/sessions/{key}.storageState.json");
-		_fileSystem.DidNotReceiveWithAnyArgs().WriteAllTextToFile(default, default);
+		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
 		_fileSystem.DidNotReceiveWithAnyArgs().CreateDirectoryIfNotExists(default);
 	}
 
 	[Test]
-	[Description("Write creates the sessions directory, writes the JSON to the keyed path, and hardens both to owner-only.")]
+	[Description("Write creates the sessions directory, writes the JSON to the keyed path owner-only, and hardens both.")]
 	public void Write_ShouldWriteKeyedPathAndHardenOwnerOnly_WhenNoOverride() {
 		// Arrange
 		const string key = "dev-creatio-com-0_0123456789abcdef";
@@ -116,13 +116,13 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		_fileSystem.Received(1).CreateDirectoryIfNotExists(
 			Arg.Is<string>(d => d.Replace('\\', '/').EndsWith("sessions")));
-		_fileSystem.Received(1).WriteAllTextToFile(expectedPath, json);
+		_fileSystem.Received(1).WriteOwnerOnlyTextToFile(expectedPath, json);
 		_hardening.Received(1).HardenDirectory(Arg.Is<string>(d => d.Replace('\\', '/').EndsWith("sessions")));
 		_hardening.Received(1).HardenFile(expectedPath);
 	}
 
 	[Test]
-	[Description("Write to a valid --output-path writes there (not the cache path) and hardens it owner-only.")]
+	[Description("Write to a valid --output-path writes there (not the cache path) owner-only and hardens it.")]
 	public void Write_ShouldWriteToOverridePath_WhenValidOverrideProvided() {
 		// Arrange
 		string overridePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "clio-session-test.json");
@@ -132,7 +132,7 @@ public sealed class BrowserSessionCacheTests {
 		_sut.Write("ignored-key", json, overridePath);
 
 		// Assert
-		_fileSystem.Received(1).WriteAllTextToFile(System.IO.Path.GetFullPath(overridePath), json);
+		_fileSystem.Received(1).WriteOwnerOnlyTextToFile(System.IO.Path.GetFullPath(overridePath), json);
 		_hardening.Received(1).HardenFile(System.IO.Path.GetFullPath(overridePath));
 	}
 
@@ -148,7 +148,7 @@ public sealed class BrowserSessionCacheTests {
 		// Assert
 		act.Should().Throw<ArgumentException>(
 			because: "a path-traversal --output-path must be refused before any write");
-		_fileSystem.DidNotReceiveWithAnyArgs().WriteAllTextToFile(default, default);
+		_fileSystem.DidNotReceiveWithAnyArgs().WriteOwnerOnlyTextToFile(default, default);
 		_hardening.DidNotReceiveWithAnyArgs().HardenFile(default);
 	}
 

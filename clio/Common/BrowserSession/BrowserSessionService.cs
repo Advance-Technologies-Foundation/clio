@@ -70,7 +70,10 @@ public sealed class BrowserSessionService : IBrowserSessionService {
 		}
 		try {
 			HttpClient http = _httpClientFactory.CreateClient(CreatioAuthClient.HttpClientName);
-			using var request = new HttpRequestMessage(HttpMethod.Get, env.Uri);
+			// Probe the Shell path, not the bare root: the root can render the login page even with
+			// a valid session cookie on some Creatio editions, causing valid sessions to appear expired.
+			using var request = new HttpRequestMessage(HttpMethod.Get,
+				AuthenticatedBrowserLauncher.BuildShellUrl(env));
 			request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
 			using HttpResponseMessage response = await http.SendAsync(request, ct).ConfigureAwait(false);
 			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) {

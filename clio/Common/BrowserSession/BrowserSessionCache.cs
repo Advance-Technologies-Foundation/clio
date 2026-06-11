@@ -66,7 +66,10 @@ public sealed class BrowserSessionCache : IBrowserSessionCache {
 				_fileSecurityHardening.HardenDirectory(directory);
 			}
 		}
-		_fileSystem.WriteAllTextToFile(targetPath, storageStateJson);
+		// Write with owner-only mode at creation time to eliminate the race window between
+		// a world-readable create and the subsequent HardenFile chmod. HardenFile is kept
+		// as belt-and-suspenders (e.g. for path collisions with pre-existing files).
+		_fileSystem.WriteOwnerOnlyTextToFile(targetPath, storageStateJson);
 		_fileSecurityHardening.HardenFile(targetPath);
 	}
 
