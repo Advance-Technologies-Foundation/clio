@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -123,7 +124,10 @@ internal class PageBodySyntaxValidatorTests {
 	[Test]
 	[Description("Body with leading UTF-8 BOM (U+FEFF) parses successfully — clio test fixtures and editor-produced files commonly carry BOMs")]
 	public void Validate_ShouldReturnValid_WhenBodyHasLeadingUtf8Bom() {
-		// Arrange
+		// Arrange — use the `﻿` escape (NOT a raw BOM in the source
+		// literal) so an editor / formatter cannot silently strip the leading
+		// zero-width character and turn this case into a duplicate of the
+		// plain-define case.
 		string body = "﻿define('X', [], function() { return {}; });";
 
 		// Act
@@ -163,6 +167,8 @@ internal class PageBodySyntaxValidatorTests {
 			because: "rejecting the exact incident body that motivated this validator is its reason to exist — letting it through would be a regression to the pre-fix behaviour update-page silently writing a broken page");
 		result.Line.Should().Be(6,
 			because: "the await-as-assignment-target sits on line 6 of the fixture and the parser must report the line accurately so the operator can jump to it in their editor");
+		result.Column.Should().Be(17,
+			because: "the `await` keyword sits at 1-based column 17 (16 leading spaces in the fixture + the `a` of `await`); pinning the column proves the +1 normalisation from Acornima's 0-based ParseError.Column into the canonical 1-based wire format stays correct");
 		result.Message.Should().NotBeNullOrEmpty(
 			because: "an actionable failure response per the AC requires a human-readable message alongside the line/column");
 	}
@@ -258,26 +264,59 @@ internal class PageBodySyntaxValidatorTests {
 	#region Tests: performance bound (<50 ms on 50 KB per AC)
 
 	[Test]
-	[Description("Performance bound from the AC: a 50 KB body must parse in <50 ms on CI. Validated with a comment-only filler so the bound is on parser throughput rather than on the validity of any particular construct")]
+	[Description("Performance bound from the AC: a 50 KB body must parse in <50 ms on CI. Fixture is built from repeated populated create-page sections so the bound is exercised on real parsing work (handler arrays, validator/converter object literals, viewConfigDiff entries), not on the lexer's comment-skip fast path.")]
 	public void Validate_ShouldCompleteUnder50Ms_WhenBodyIs50KbInSize() {
-		// Arrange — 50 KB single-line comment is syntactically valid JS and the
-		// fastest-to-parse 50 KB payload, exercising the lexer's main loop.
-		string body = "// " + string.Concat(Enumerable.Repeat('x', 50_000 - 3));
+		// Arrange — repeat a populated create-page body fragment until the
+		// resulting payload crosses 50 KB. Each repeat contributes real AST
+		// work (Property, ObjectExpression, ArrayExpression, FunctionExpression
+		// nodes) so a parser regression on any of those code paths would
+		// surface here, unlike a comment-only filler which only exercises the
+		// lexer's comment-skip loop.
+		const string Fragment =
+			"{ operation: \"insert\", name: \"UsrField_X\", values: { type: \"crt.Input\", control: \"$UsrField_X\", layoutConfig: { column: 1, row: 1, colSpan: 1, rowSpan: 1 } } }, ";
+		var viewConfigItems = new StringBuilder();
+		var validatorEntries = new StringBuilder();
+		var converterEntries = new StringBuilder();
+		var handlerEntries = new StringBuilder();
+		int fragmentIndex = 0;
+		while (viewConfigItems.Length + validatorEntries.Length + converterEntries.Length + handlerEntries.Length < 50_000) {
+			viewConfigItems.Append(Fragment.Replace("UsrField_X", $"UsrField_{fragmentIndex}"));
+			validatorEntries.Append($"\"usr.V{fragmentIndex}\": {{ validator: function() {{ return function(v) {{ return null; }}; }}, params: [{{ name: \"message\" }}] }}, ");
+			converterEntries.Append($"\"usr.C{fragmentIndex}\": function(v) {{ return v; }}, ");
+			handlerEntries.Append($"{{ request: \"usr.H{fragmentIndex}Request\", handler: async function(request, next) {{ return next?.handle(request); }} }}, ");
+			fragmentIndex++;
+		}
+		string body =
+			"define(\"Perf_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" + viewConfigItems.ToString().TrimEnd(' ', ',') + "]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[" + handlerEntries.ToString().TrimEnd(' ', ',') + "]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{" + converterEntries.ToString().TrimEnd(' ', ',') + "}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{" + validatorEntries.ToString().TrimEnd(' ', ',') + "}/**SCHEMA_VALIDATORS*/ }; });";
+		body.Length.Should().BeGreaterOrEqualTo(50_000,
+			because: "the AC pins the parsing bound at 50 KB — the fixture must actually reach that size to test the right thing");
 
 		// Warm-up (cold-start JIT compilation of Acornima is amortised once per
 		// process; the AC's bound is the warm parse cost).
 		PageBodySyntaxValidator.Validate(body);
 
-		// Act
-		Stopwatch sw = Stopwatch.StartNew();
-		PageBodySyntaxValidationResult result = PageBodySyntaxValidator.Validate(body);
-		sw.Stop();
+		// Act — take min of 3 measurements so a transient GC pause or system
+		// hiccup on a noisy CI runner does not flake the test.
+		var samples = new double[3];
+		for (int i = 0; i < samples.Length; i++) {
+			Stopwatch sw = Stopwatch.StartNew();
+			PageBodySyntaxValidationResult run = PageBodySyntaxValidator.Validate(body);
+			sw.Stop();
+			run.IsValid.Should().BeTrue(
+				because: "the populated create-page fixture must parse successfully on every measurement");
+			samples[i] = sw.Elapsed.TotalMilliseconds;
+		}
 
 		// Assert
-		result.IsValid.Should().BeTrue(
-			because: "a 50 KB body of valid JavaScript must parse successfully");
-		sw.Elapsed.TotalMilliseconds.Should().BeLessThan(50.0,
-			because: "the AC pins a <50 ms ceiling for a 50 KB body on CI; Day-0 probe showed <1 ms warm, so 50 ms leaves an order-of-magnitude headroom for CI runner variance");
+		samples.Min().Should().BeLessThan(50.0,
+			because: "the AC pins a <50 ms ceiling for a 50 KB body on CI; taking min of 3 isolates the steady-state parse cost from transient GC / system noise while keeping the bound honest about real parser work, not a comment-skip fast path");
 	}
 
 	#endregion

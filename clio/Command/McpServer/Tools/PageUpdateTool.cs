@@ -129,7 +129,7 @@ public sealed class PageUpdateTool(
 		}
 		string[] warnings = findings
 			.Where(f => f.Severity == LintSeverity.Warning)
-			.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 		return (null, warnings);
 	}

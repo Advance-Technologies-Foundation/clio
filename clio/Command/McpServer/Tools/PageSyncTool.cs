@@ -423,6 +423,16 @@ public sealed class PageSyncTool(
 			// is the mobile-side async validator (web bodies already cleared
 			// regex upstream) plus appending lint Warnings to the final
 			// validation envelope.
+			//
+			// Nit (followup): for the surviving web pages this runs the regex
+			// content chain a second time inside TryValidatePage so its
+			// Warnings list can be captured into the per-page Validation
+			// envelope. The duplicate work is pure-text and fast (~1-5 ms per
+			// page), and the alternative — caching the result of the
+			// deterministic-pass regex run on PageSyncPrePassEntry — adds a
+			// new field that only the warnings path reads. A future cleanup
+			// could thread the cached PageSyncValidationResult through
+			// PageSyncOperationOptions and skip the second run.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
 				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, out validationResult);
@@ -515,7 +525,7 @@ public sealed class PageSyncTool(
 	private static IReadOnlyList<string> GetLintWarningMessages(IReadOnlyList<PageBodyLintFinding> findings) =>
 		findings
 			.Where(f => f.Severity == LintSeverity.Warning)
-			.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}")
+			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 
 	private static PageSyncValidationResult ValidateBody(string body, string? resources) {

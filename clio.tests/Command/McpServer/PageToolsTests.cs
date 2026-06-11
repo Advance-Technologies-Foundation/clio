@@ -3846,7 +3846,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD validation.")]
+	[Description("PageUpdateTool.UpdatePage accepts a valid mobile JSON body (plain JSON starting with '{'), skips AMD validation, AND reaches the save path so the schema lookup is attempted — proves the mobile bypass is not silently short-circuited at any upstream gate (a regression that swallowed the mobile body before TryUpdatePage would now fail the SelectQuery assertion below, where the old NOT-CONTAIN form would still pass on a null Error).")]
 	[Category("Unit")]
 	public void PageUpdateTool_UpdatePage_Accepts_Valid_Mobile_Json_Body() {
 		// Arrange
@@ -3874,11 +3874,93 @@ public class PageToolsTests
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
-		// Assert
+		// Assert — the mobile body must reach the save path. The mock here
+		// intentionally does NOT wire the full SelectQuery / SaveSchema chain
+		// (that's exercised by other tests), so the response surfaces a
+		// downstream "Schema 'UsrMobile_FormPage' not found" once schema
+		// lookup runs. Asserting on that downstream error string is the
+		// strongest available "no upstream short-circuit happened" signal in
+		// this fixture: any regression that swallowed the mobile body before
+		// TryUpdatePage would surface a different error (or none at all) and
+		// the test would fail. The old NOT-CONTAIN form passed on a null
+		// Error too, which is exactly why the reviewer flagged it as
+		// structurally unable to fail.
+		response.Error.Should().Contain("not found",
+			because: "TryUpdatePage must reach the SelectQuery step and surface the lookup failure from the deliberately-thin mock — proves the mobile body got past every upstream validation gate");
 		response.Error.Should().NotContain("AMD",
-			because: "mobile JSON bodies should not trigger AMD marker validation");
+			because: "mobile JSON bodies must NOT trigger AMD marker validation");
 		response.Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
-			because: "AMD marker validation errors must not appear for mobile bodies");
+			because: "AMD marker validation errors must NOT appear for mobile bodies");
+		response.Error.Should().NotContain("Mobile page validation failed",
+			because: "the body is well-formed mobile JSON; the mobile validator must accept it");
+	}
+
+	[Test]
+	[Description("AC4 positive: a valid web body that passes the deterministic syntax + lint pre-pass MUST invoke the LLM sampling service via the injected IPageBodySamplingService seam. The downstream save path is exercised by other tests — this one focuses only on the sampling-call observability.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Should_Invoke_Sampling_For_Valid_Body() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		samplingService
+			.TrySamplingReviewAsync(Arg.Any<ModelContextProtocol.Server.McpServer>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+			.Returns((PageSamplingReview)null);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService);
+		string body = CreatePageBody();
+		PageUpdateArgs args = new("UsrValid_FormPage", body, "{\"caption\":\"Hello\"}", null, null, null, null, null);
+
+		// Act
+		_ = tool.UpdatePage(args, null).Result;
+
+		// Assert — focus on AC4 only. The body's deterministic gates passed,
+		// so sampling MUST be invoked with the exact schemaName / body /
+		// resources triple the caller submitted. Whether the downstream
+		// TryUpdatePage call eventually persists or fails is exercised by
+		// other PageUpdateTool save-path tests in this file.
+		samplingService.Received(1).TrySamplingReviewAsync(
+			Arg.Any<ModelContextProtocol.Server.McpServer>(),
+			Arg.Is<string>(n => n == "UsrValid_FormPage"),
+			Arg.Is<string>(b => b == body),
+			Arg.Is<string>(r => r == "{\"caption\":\"Hello\"}"),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	[Test]
+	[Description("AC4 negative: when the body fails the deterministic syntax gate, sampling is NOT invoked — proves the gate short-circuits BEFORE LLM tokens are spent on a doomed body.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Should_NotInvoke_Sampling_When_Syntax_Fails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService);
+		PageUpdateArgs args = new("UsrBad_FormPage", "define('BadPage', {})}", null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the syntax gate must reject the body");
+		samplingService.DidNotReceive().TrySamplingReviewAsync(
+			Arg.Any<ModelContextProtocol.Server.McpServer>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<System.Threading.CancellationToken>());
 	}
 
 	[Test]

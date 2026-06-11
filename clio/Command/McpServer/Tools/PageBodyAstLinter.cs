@@ -91,10 +91,20 @@ internal static class PageBodyAstLinter {
 				"FormatErrors is only meaningful when at least one error finding is present.",
 				nameof(errors));
 		}
-		string lines = string.Join("; ",
-			errors.Select(f => $"line {f.Line}, column {f.Column}: {f.Rule} — {f.Message}"));
+		string lines = string.Join("; ", errors.Select(FormatFinding));
 		return $"Page body lint failed: {lines}. The body was NOT sent to Creatio.";
 	}
+
+	/// <summary>
+	/// Canonical operator-facing rendering of a single lint finding —
+	/// <c>line {Line}, column {Column}: {Rule} — {Message}</c>. Centralised so the
+	/// wire format stays stable across every call site (the linter's own
+	/// FormatErrors, the per-warning lists rendered by PageUpdateTool / PageSyncTool /
+	/// PageValidateTool) — drift between sites would silently change what tests
+	/// and operators key on.
+	/// </summary>
+	public static string FormatFinding(PageBodyLintFinding finding) =>
+		$"line {finding.Line}, column {finding.Column}: {finding.Rule} — {finding.Message}";
 
 	#endregion
 

@@ -144,20 +144,33 @@ internal class PageBodyAstLinterTests {
 	}
 
 	[Test]
-	[Description("A pathologically deep AST (synthesized via a deeply-nested array literal) is short-circuited by the lint pass under `body-too-deeply-nested` rather than crashing the MCP server with StackOverflowException")]
-	public void Lint_ShouldEmitError_WhenBodyAstNestingExceedsDepthCap() {
-		// Build a body whose markers parse cleanly but whose body's expression
-		// nests Array literals 1200 deep — past the linter's MaxAstDepth.
+	[Description("A pathologically deep AST is rejected by SOME deterministic gate (the parser's stack guard OR the linter's depth cap) — the test pins the either/or contract that a deep body cannot kill the MCP process, not which specific gate fires. The exact stack threshold is platform-dependent (1 MB on Windows vs 8 MB on macOS/Linux), so asserting only one specific gate would make the test platform-conditional.")]
+	public void Lint_ShouldShortCircuit_WhenBodyAstNestingExceedsParserOrLinterCap() {
+		// Body whose expression literal nests Array literals 1200 deep — past
+		// the linter's MaxAstDepth and (on a 1 MB Windows stack) also past the
+		// Acornima parser's own stack guard.
 		int depth = PageBodyAstLinter.MaxAstDepth + 200;
 		string nested = new string('[', depth) + new string(']', depth);
 		string body =
 			"define(\"X\", [], function() { var x = " + nested + "; return { handlers: [], converters: {}, validators: {} }; });";
 
-		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+		PageBodySyntaxValidationResult parserResult = PageBodySyntaxValidator.ValidateAndParse(body, out Script ast);
 
+		if (!parserResult.IsValid) {
+			// Parser stack guard fired first — the body is rejected before the
+			// lint pass ever sees it. The either/or contract is satisfied: the
+			// process did not die.
+			parserResult.Message.Should().NotBeNullOrEmpty(
+				because: "the syntax validator must surface a structured error rather than crash when the parser stack guard fires");
+			return;
+		}
+
+		// Parser accepted the body (e.g. on a runner with the default macOS /
+		// Linux 8 MB stack). The lint cap must now reject it.
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(ast);
 		findings.Should().Contain(f =>
 			f.Rule == PageBodyAstLinter.RuleBodyTooDeeplyNested && f.Severity == LintSeverity.Error,
-			because: "the lint pass must cap recursion before .NET's uncatchable StackOverflowException kills the MCP server process — the cap turns the overflow into a structured Error response the agent can read");
+			because: "when the parser stack guard does not fire, the linter cap must reject the body before .NET's uncatchable StackOverflowException kills the MCP server process");
 	}
 
 	#endregion
