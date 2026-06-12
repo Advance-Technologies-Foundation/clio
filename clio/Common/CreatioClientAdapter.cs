@@ -26,7 +26,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	// rather than resolved from DI. Tests pass a non-null executor through the internal
 	// constructor below to exercise the adapter in isolation from CreatioClient.
 	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
-		JsonConverter jsonConverter, ILogger logger, IReauthExecutor reauthExecutor) {
+		JsonConverter jsonConverter, IReauthExecutor reauthExecutor) {
 		_lazyClient = lazyClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
@@ -34,7 +34,7 @@ public class CreatioClientAdapter : IApplicationClient{
 		// shared across a long-lived MCP process can otherwise keep sending a stale cookie
 		// after long-running operations and start receiving the HTML login page instead of
 		// JSON for every subsequent request.
-		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(() => _lazyClient.Value.Login(), logger);
+		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(() => _lazyClient.Value.Login());
 	}
 
 	#endregion
@@ -44,22 +44,19 @@ public class CreatioClientAdapter : IApplicationClient{
 	public CreatioClientAdapter(string appUrl, string userName, string userPassword, bool isNetCore = false,
 		IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() => new CreatioClient(appUrl, userName, userPassword, true, isNetCore)),
-			serviceUrlBuilder, null, null, null) { }
+			serviceUrlBuilder, null, null) { }
 
 	public CreatioClientAdapter(string appUrl, string clientId, string clientSecret, string authAppUrl,
 		bool isNetCore = false, IServiceUrlBuilder serviceUrlBuilder = null)
 		: this(new Lazy<CreatioClient>(() =>
 			CreatioClient.CreateOAuth20Client(appUrl, authAppUrl, clientId, clientSecret, isNetCore)),
-			serviceUrlBuilder, null, null, null) { }
+			serviceUrlBuilder, null, null) { }
 
 	public CreatioClientAdapter(CreatioClient creatioClient)
-		: this(new Lazy<CreatioClient>(() => creatioClient), null, null, null, null) { }
+		: this(new Lazy<CreatioClient>(() => creatioClient), null, null, null) { }
 
 	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient)
-		: this(lazyClient, null, null, null, null) { }
-
-	public CreatioClientAdapter(Lazy<CreatioClient> lazyClient, ILogger logger)
-		: this(lazyClient, null, null, logger, null) { }
+		: this(lazyClient, null, null, null) { }
 
 	#endregion
 
@@ -70,7 +67,7 @@ public class CreatioClientAdapter : IApplicationClient{
 	// null in tests because the substituted executor never invokes the wrapped callback.
 	// reauthExecutor is required so tests cannot silently fall back to the default executor.
 	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IReauthExecutor reauthExecutor)
-		: this(lazyClient, null, null, null,
+		: this(lazyClient, null, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor))) { }
 
 	#endregion
