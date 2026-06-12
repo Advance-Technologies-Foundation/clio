@@ -30,7 +30,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use the `raw.body` field from the `get-page` response as the editable source of truth and preserve the outer AMD module structure.
 		       - `SCHEMA_HANDLERS` must remain a JavaScript array section, not a JSON-only payload.
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
-		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
+		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `sdk.HandlerChainService.instance.process(...)`, SDK services, `sdk.Model`, or `fetch`.
 
 		       BUSINESS RULES FIRST — mandatory triage before authoring any handler
 		       - Before writing a handler, check whether the task can be closed with a business rule. If it can, CLOSE IT WITH A BUSINESS RULE — do NOT write a handler. A handler is only justified when no business rule covers the requirement.
@@ -76,12 +76,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | Use case | Shape | Canonical example |
 		         | --- | --- | --- |
 		         | declarative page config | `request` + `params` | `"clicked": { "request": "usr.AlertRequest", "params": { "message": "$AlertMessage" } }` |
-		         | imperative dispatch from handler code | `type` + flat payload fields + `$context` + usually `scopes` | `await request.$context.executeRequest({ type: "usr.AlertRequest", message: "Handler Chain works!", $context: request.$context, scopes: [...request.scopes] });` |
+		         | imperative dispatch from handler code | `type` + flat payload fields + `$context` + usually `scopes` | `await sdk.HandlerChainService.instance.process({ type: "usr.AlertRequest", message: "Handler Chain works!", $context: request.$context, scopes: [...request.scopes] });` |
 		       - API choice rules:
 		         | Context | Prefer | Why |
 		         | --- | --- | --- |
-		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` | page-body handlers already work through the live view-model context and this is the default authoring API for page edits |
-		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
+		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` | this is the documented `@creatio-devkit/common` dispatcher used uniformly by Creatio Academy SCHEMA_HANDLERS examples; `request.$context.executeRequest(...)` is reachable from handler code but not part of the public SDK surface |
+		       - Do NOT default to `request.$context.executeRequest(...)` in deployed page-body handlers; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })`. `executeRequest` is an internal handler-chain shortcut that may shift between minor versions; `HandlerChainService.instance.process(...)` is exported from `@creatio-devkit/common` and is the supported contract. Add `"@creatio-devkit/common"` to `SCHEMA_DEPS` and bind the import as `sdk` in `SCHEMA_ARGS`.
 
 		       Server-side compilation
 		       - Handlers live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
@@ -95,6 +95,11 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Keep field validation in validators and simple value transforms in converters, not in handlers.
 		       - Read and write page state through `request.$context`.
 		       - Keep handler edits minimal and coupled: usually `SCHEMA_HANDLERS`, the triggering `viewConfigDiff` action, and `SCHEMA_DEPS` / `SCHEMA_ARGS` only when imports are actually required.
+
+		       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+		       - Note: anti-shape detection that overlaps the existing regex content validators is handled by the regex layer with its own established wording, NOT by the lint pass. Handler-side examples already covered by the regex layer (and therefore NOT in the lint catalogue): `handlers` written as an object literal, and the forbidden handler-API patterns `request.viewModel` / `request.sender` / `request.$context.get(...)` / `request.$get(...)` / `request.$set(...)` (all five are rejected with their own Errors by `SchemaHandlerValidationService.ForbiddenHandlerApiRules`).
+		       - WARNING (reported alongside the response, write still proceeds): `request.$context.executeRequest(...)` is flagged with `handler-uses-context-execute-request`. Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` instead — `executeRequest` is reachable from handler code but is NOT part of the documented `@creatio-devkit/common` public surface, while `HandlerChainService.instance.process(...)` is the canonical SCHEMA_HANDLERS dispatcher per Creatio Academy.
+		       - Fix the underlying body to clear any finding; do not strip the offending block to silence the diagnostic.
 
 		       Page-body runtime shape
 		       - The deployed page-body handler shape is an array of objects like:
@@ -236,7 +241,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		             request: "crt.SaveRecordRequest",
 		             handler: async (request, next) => {
 		               const saveResult = await next?.handle(request);
-		               await request.$context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "usr.AfterSaveRequest",
 		                 $context: request.$context,
 		                 scopes: [...request.scopes]
@@ -252,11 +257,10 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           {
 		             request: "usr.RunCustomActionRequest",
 		             handler: async (request, next) => {
-		               const { $context } = request;
-		               await $context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "crt.RunBusinessProcessRequest",
 		                 processName: "<ProcessName>",
-		                 $context,
+		                 $context: request.$context,
 		                 scopes: [...request.scopes]
 		               });
 		               const result = await next?.handle(request);
@@ -331,7 +335,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           {
 		             request: "usr.RunCustomActionRequest",
 		             handler: async (request, next) => {
-		               await request.$context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "crt.RunBusinessProcessRequest",
 		                 processName: "<ProcessName>",
 		                 $context: request.$context,
@@ -347,7 +351,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Compatibility note: existing product code may also use `request.$context.attributes[...]` or direct property assignment. Keep newly generated page-body handlers on the canonical pattern above unless the task explicitly requires matching local legacy style.
 
 		       Orchestration patterns
-		       - Use `await request.$context.executeRequest(...)` when a deployed page-body handler forwards into another page-scoped request.
+		       - Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` when a deployed page-body handler forwards into another page-scoped request. This is the canonical SCHEMA_HANDLERS dispatcher per Creatio Academy.
 		       - Use SDK/domain services such as `sdk.ProcessEngineService` when the task is direct service orchestration rather than request forwarding.
 
 		       Request selection hints
@@ -406,7 +410,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 
 		       Standard handler parameter catalog
 		       - Read this catalog as the MCP-safe payload contract extracted from `creatio-ui` source.
-		       - `config` means fields you author in direct request wiring or `$context.executeRequest(...)`.
+		       - `config` means fields you author in direct request wiring or `sdk.HandlerChainService.instance.process(...)`.
 		       - `runtime` means fields the platform injects before your handler receives the request.
 		       - `none` means there are no meaningful custom fields beyond base request/context.
 		       - Core page/action requests:
@@ -454,7 +458,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | --- | --- | --- | --- |
 		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
 		       - Minimal `dialogConfig` shape:
-		         await request.$context.executeRequest({
+		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
 		             title: "<OptionalTitle>",

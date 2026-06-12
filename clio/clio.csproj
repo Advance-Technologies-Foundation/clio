@@ -139,6 +139,7 @@
 		<PackageReference Include="JsonhCs" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
 		<PackageReference Include="Newtonsoft.Json" />
+		<PackageReference Include="Acornima" />
 		<PackageReference Include="FluentValidation" />
 		<PackageReference Include="ConsoleTables" />
 		<PackageReference Include="Spectre.Console" />

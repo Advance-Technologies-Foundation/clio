@@ -1734,6 +1734,31 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
+	/// Validates the shape of every <c>validators</c> binding declared on a view-model attribute
+	/// (under <c>viewModelConfig.attributes.&lt;name&gt;.validators</c> or the equivalent merge
+	/// inside <c>viewModelConfigDiff</c>). Catches anti-shapes that the other validator checks
+	/// silently skip because their helpers gate on the property already being a well-shaped object:
+	/// <list type="bullet">
+	///   <item><c>validators: [...]</c> — array instead of object map.</item>
+	///   <item><c>validators: { "required": [...] }</c> — named entry as array.</item>
+	///   <item><c>validators: { "required": "usr.NotEmpty" }</c> — named entry as bare string instead of <c>{ type: "usr.NotEmpty" }</c>.</item>
+	///   <item>entry object missing the required string <c>type</c> property.</item>
+	/// </list>
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorBindingShape(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		CheckValidatorBindingShapeInMarker(jsBody, SchemaViewModelConfig, false, result);
+		CheckValidatorBindingShapeInMarker(jsBody, SchemaViewModelConfigDiff, true, result);
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
 	/// Validates that validator <c>params</c> values do not use the reactive binding syntax
 	/// <c>$Resources.Strings.KeyName</c>. Validator params are evaluated as plain JavaScript values
 	/// and are not processed by the reactive binding engine — the correct format is
@@ -2302,6 +2327,66 @@ public static class SchemaValidationService
 			isArray,
 			attributes => ScanAttributesForInvalidParamBindings(attributes, result));
 	}
+
+	private static void CheckValidatorBindingShapeInMarker(
+		string jsBody, string markerName, bool isArray, SchemaValidationResult result) {
+		ForEachMarkerAttributesContainer(
+			jsBody,
+			markerName,
+			isArray,
+			attributes => ScanAttributesForValidatorBindingShape(attributes, result));
+	}
+
+	private static void ScanAttributesForValidatorBindingShape(
+		JsonElement attributesElement, SchemaValidationResult result) {
+		if (attributesElement.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesElement.EnumerateObject()) {
+			CheckSingleAttributeValidatorBindingShape(attr, result);
+		}
+	}
+
+	private static void CheckSingleAttributeValidatorBindingShape(
+		JsonProperty attr, SchemaValidationResult result) {
+		if (attr.Value.ValueKind != JsonValueKind.Object ||
+			!attr.Value.TryGetProperty(ValidatorsPropertyName, out JsonElement validators)) {
+			return;
+		}
+		if (validators.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attr.Name}' has 'validators' declared as {DescribeJsonKindForValidatorError(validators.ValueKind)}; declare it as an object map keyed by validator name, e.g. \"validators\": {{ \"required\": {{ \"type\": \"usr.NotEmpty\" }} }}.");
+			return;
+		}
+		foreach (JsonProperty entry in validators.EnumerateObject()) {
+			CheckSingleValidatorEntryShape(attr.Name, entry, result);
+		}
+	}
+
+	private static void CheckSingleValidatorEntryShape(
+		string attributeName, JsonProperty entry, SchemaValidationResult result) {
+		if (entry.Value.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is declared as {DescribeJsonKindForValidatorError(entry.Value.ValueKind)}; each named validator entry must be an object such as {{ \"type\": \"usr.NotEmpty\" }}.");
+			return;
+		}
+		if (!entry.Value.TryGetProperty(TypePropertyName, out JsonElement typeEl) ||
+			typeEl.ValueKind != JsonValueKind.String ||
+			string.IsNullOrWhiteSpace(typeEl.GetString())) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is missing a non-empty string 'type' property; declare it as {{ \"type\": \"<ValidatorType>\" }} pointing at a SCHEMA_VALIDATORS entry.");
+		}
+	}
+
+	private static string DescribeJsonKindForValidatorError(JsonValueKind kind) =>
+		kind switch {
+			JsonValueKind.Array => "an array",
+			JsonValueKind.String => "a string",
+			JsonValueKind.Number => "a number",
+			JsonValueKind.True or JsonValueKind.False => "a boolean",
+			JsonValueKind.Null => "null",
+			_ => "a non-object value"
+		};
 
 	private static void ScanAttributesForInvalidParamBindings(
 		JsonElement attributesElement, SchemaValidationResult result) {
