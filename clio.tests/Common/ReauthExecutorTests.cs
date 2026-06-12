@@ -1,13 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
 using Newtonsoft.Json;
-using NSubstitute;
 using NUnit.Framework;
-using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
 
@@ -37,8 +34,8 @@ internal class ReauthExecutorTests {
 	// readable of the two.
 	private const string LoginPageBody = NetFrameworkLoginPageBody;
 
-	private static ReauthExecutor CreateExecutor(Action login, ILogger logger = null) {
-		return new ReauthExecutor(login, logger);
+	private static ReauthExecutor CreateExecutor(Action login) {
+		return new ReauthExecutor(login);
 	}
 
 	#endregion
@@ -141,30 +138,6 @@ internal class ReauthExecutorTests {
 			because: "a single successful Login must bump the version by exactly one so concurrent stale-session callers observing the bumped value correctly skip their own Login — bumping by more or less would either let extra Logins through (login storm) or starve genuine retries");
 		loginCount.Should().Be(1,
 			because: "the executor must invoke the login callback exactly once for the observed expiry");
-	}
-
-	[Test]
-	[Description("Execute writes a single warning when a re-authentication is performed")]
-	public void Execute_ShouldLogSingleWarning_WhenReauthIsPerformed() {
-		// Arrange
-		ILogger logger = Substitute.For<ILogger>();
-		List<string> warnings = [];
-		logger.When(l => l.WriteWarning(Arg.Any<string>()))
-			.Do(ci => warnings.Add(ci.Arg<string>()));
-		ReauthExecutor sut = CreateExecutor(() => { }, logger);
-		int callCount = 0;
-		string[] responses = { LoginPageBody, "{}" };
-
-		// Act
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
-
-		// Assert — capture+inspect pattern (instead of logger.Received(1)) so the
-		// FluentAssertions `because:` rationale is recorded on the assertion itself,
-		// per AGENTS.md test-style policy.
-		warnings.Should().ContainSingle(
-			because: "the reauth path must emit exactly one operator-facing warning so a session refresh is visible without flooding the log on serial kick-outs");
-		warnings[0].Should().Contain("re-authenticated",
-			because: "the warning text must name the action that was performed so the operator can correlate it with the response delay");
 	}
 
 	[Test]
