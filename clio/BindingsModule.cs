@@ -151,8 +151,8 @@ public class BindingsModule {
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(sp =>
-				new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<ILogger>()));
+			services.AddSingleton<IApplicationClient>(_ =>
+				new CreatioClientAdapter(lazyCreatioClient));
 			services.AddTransient<SysSettingsManager>();
 		}
 
