@@ -92,9 +92,12 @@ public class PageBaselineStoreTests {
 		string metaPath = PageBaselineStore.ResolveMetaFilePath(
 			fs, "/elsewhere", "/home/user", "/home/user/.clio", null, bodyFile, SchemaName);
 
-		// Assert
-		string expectedPath = fs.Path.Combine("/custom/anchor", ".clio-pages", SchemaName, "meta.json");
-		metaPath.Should().Be(expectedPath,
+		// Assert — normalize both sides so the comparison is OS-agnostic (Windows adds a drive
+		// prefix and uses backslashes; macOS/Linux do not). The code resolves the sibling via
+		// GetFullPath, so the expectation must pass through the same normalization.
+		string expectedPath = fs.Path.Combine(
+			fs.Path.GetDirectoryName(fs.Path.GetFullPath(bodyFile)), "meta.json");
+		fs.Path.GetFullPath(metaPath).Should().Be(fs.Path.GetFullPath(expectedPath),
 			because: "a body-file inside .clio-pages pins the baseline to its sibling meta.json regardless of the anchor");
 	}
 
@@ -110,9 +113,10 @@ public class PageBaselineStoreTests {
 		string metaPath = PageBaselineStore.ResolveMetaFilePath(
 			fs, "/ws/src", "/home/user", "/home/user/.clio", null, "/tmp/body.js", SchemaName);
 
-		// Assert
+		// Assert — normalize both sides (see sibling test): the anchor is resolved via GetFullPath,
+		// so the expectation must be normalized identically to stay OS-agnostic on the Windows CI.
 		string expectedPath = fs.Path.Combine("/ws", ".clio-pages", SchemaName, "meta.json");
-		metaPath.Should().Be(expectedPath,
+		fs.Path.GetFullPath(metaPath).Should().Be(fs.Path.GetFullPath(expectedPath),
 			because: "a body-file outside .clio-pages must not override the workspace-root anchor resolution");
 	}
 
