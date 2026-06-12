@@ -777,6 +777,128 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "the error must name the missing 'values' wrapper so the caller can correct the format");
 	}
 
+	[Test]
+	[Description("Round-trips the get-entity read shape through sync-schemas update-entity: adds via the columns coercion path and the data-value-type alias, modifies via the name alias, and removes via the name alias, then verifies all three on a real environment (ENG-90313).")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas round-trips the read shape for add, modify, and remove")]
+	[AllureDescription("Creates an entity with two columns, reads the column shape back, then sends that read shape back to sync-schemas update-entity — adding a column through the columns coercion path (using the data-value-type alias), modifying an existing column via the name alias, and removing one via the name alias — and verifies the materialized add/modify/remove via get-entity-schema-properties.")]
+	public async Task SchemaSyncTool_Should_RoundTrip_Read_Shape_For_Add_Modify_Remove() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		string keepColumnName = "UsrKeep";
+		string dropColumnName = "UsrDrop";
+		string addedColumnName = "UsrAdded";
+
+		// Seed an entity with two columns to later modify and remove.
+		CallToolResult seedResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Round Trip Entity"),
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = keepColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Keep")
+								},
+								new Dictionary<string, object?> {
+									["name"] = dropColumnName,
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Drop")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ExtractSchemaSyncResponse(seedResult).GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the entity and its initial columns must be created before the read-modify-write round trip");
+
+		// Capture the read shape that an agent would echo back.
+		EntitySchemaPropertiesInfo beforeReadback = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		beforeReadback.Columns.Should().Contain(column => column.Name == keepColumnName,
+			because: "the column to modify must exist before the round trip");
+
+		// Act - send the read shape back verbatim: columns-coercion add (data-value-type alias),
+		// name-alias modify, and name-alias remove, all in one sync-schemas call.
+		CallToolResult roundTripResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						// Add via the columns coercion path using the read shape verbatim: the data-value-type
+						// alias for the type, the scalar caption (promoted to title-localizations), and the
+						// is-required alias for the required flag.
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = addedColumnName,
+									["data-value-type"] = "Integer",
+									["caption"] = "Added",
+									["is-required"] = true
+								}
+							}
+						},
+						// Modify + remove echoing only the read-shape "name" identity field.
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "modify",
+									["name"] = keepColumnName,
+									["required"] = true
+								},
+								new Dictionary<string, object?> {
+									["action"] = "remove",
+									["name"] = dropColumnName
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		JsonElement roundTripResponse = ExtractSchemaSyncResponse(roundTripResult);
+		roundTripResponse.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "the get-entity read shape must round-trip into update-entity without manual field translation");
+
+		EntitySchemaPropertiesInfo afterReadback = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		afterReadback.Columns.Should().Contain(
+			column => column.Name == addedColumnName && column.Type == "Integer" && column.Required,
+			because: "the columns-coercion add path using the data-value-type alias, scalar caption, and is-required alias must materialize a required new column");
+		afterReadback.Columns.Should().Contain(
+			column => column.Name == keepColumnName && column.Required,
+			because: "the name-alias modify must set the required flag on the existing column");
+		afterReadback.Columns.Should().NotContain(
+			column => column.Name == dropColumnName,
+			because: "the name-alias remove must drop the existing column");
+	}
+
 	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {
 		Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase) {
 			["en-US"] = enUs

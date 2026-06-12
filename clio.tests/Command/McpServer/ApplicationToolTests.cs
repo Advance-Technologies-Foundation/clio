@@ -258,7 +258,8 @@ public sealed class ApplicationToolTests {
 								"Text",
 								null,
 								"Const",
-								"Default")
+								"Default",
+								Required: true)
 						])
 				],
 				[
@@ -306,6 +307,10 @@ public sealed class ApplicationToolTests {
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the Clio response should preserve application column types");
+		result.Entities![0].Columns[0].Type.Should().Be("Text",
+			because: "the canonical 'type' field must mirror data-value-type so the read shape round-trips to the write surfaces (ENG-90313)");
+		result.Entities![0].Columns[0].Required.Should().BeTrue(
+			because: "the runtime required flag must be surfaced so the read shape carries the field the write surfaces accept (ENG-90313)");
 		result.Pages.Should().ContainSingle(
 			because: "get-app-info should now return the primary-package page summaries");
 		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
@@ -759,7 +764,8 @@ public sealed class ApplicationToolTests {
 								"Text",
 								null,
 								"Const",
-								"Default")
+								"Default",
+								Required: true)
 						])
 				],
 				[
@@ -878,7 +884,8 @@ public sealed class ApplicationToolTests {
 							Name: "Name",
 							Caption: "Name",
 							DataValueType: "Text",
-							ReferenceSchema: "Contact")
+							ReferenceSchema: "Contact",
+							Required: true)
 					])
 			],
 			Pages: [
@@ -929,9 +936,15 @@ public sealed class ApplicationToolTests {
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
 		json.Should().Contain("\"data-value-type\":\"Text\"",
-			because: "column payloads should keep Clio kebab-case payload fields");
+			because: "column payloads should keep the legacy data-value-type field for backward compatibility");
 		json.Should().Contain("\"reference-schema\":\"Contact\"",
-			because: "lookup payloads should keep Clio kebab-case payload fields");
+			because: "lookup payloads should keep the legacy reference-schema field for backward compatibility");
+		json.Should().Contain("\"type\":\"Text\"",
+			because: "the unified vocabulary adds the canonical 'type' field that mirrors the write surfaces (ENG-90313)");
+		json.Should().Contain("\"reference-schema-name\":\"Contact\"",
+			because: "the unified vocabulary adds the canonical 'reference-schema-name' field that mirrors the write surfaces (ENG-90313)");
+		json.Should().Contain("\"required\":true",
+			because: "the unified vocabulary adds the 'required' flag the write surfaces accept (ENG-90313)");
 		json.Should().Contain("\"dataforge\"",
 			because: "create-app responses should serialize the optional Data Forge diagnostics block");
 		json.Should().Contain("\"context-summary\"",

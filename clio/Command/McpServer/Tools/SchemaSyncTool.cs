@@ -36,7 +36,11 @@ public sealed class SchemaSyncTool(
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
-		"Stops on first failure because subsequent operations may depend on earlier ones.")]
+		"Stops on first failure because subsequent operations may depend on earlier ones. " +
+		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
+		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
+		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
+		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch.")]
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
@@ -221,18 +225,19 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args) {
 		try {
-				if (op.UpdateOperations?.Any() != true) {
+				IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
+				if (updateOperations.Count == 0) {
 					return new SchemaSyncOperationResult {
 						Type = UpdateEntityOperationName,
 					SchemaName = op.SchemaName,
-					Success = false, Error = "update-entity requires at least one operation in update-operations"
+					Success = false, Error = BuildMissingUpdateOperationsError()
 				};
 			}
 			UpdateEntitySchemaOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = op.SchemaName,
-				Operations = UpdateEntitySchemaTool.SerializeOperations(op.UpdateOperations, op.SchemaName)
+				Operations = UpdateEntitySchemaTool.SerializeOperations(updateOperations, op.SchemaName)
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
@@ -253,6 +258,74 @@ public sealed class SchemaSyncTool(
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
+	}
+
+	/// <summary>
+	/// Resolves the column mutation operations for an <c>update-entity</c> operation. Prefers the explicit
+	/// <c>update-operations</c> array; when it is absent, coerces a read/create-shape <c>columns</c> payload
+	/// (no <c>action</c> verbs) into an implicit add-batch so the natural read-modify-write workflow round-trips
+	/// without manual field translation (ENG-90313, Option A).
+	/// </summary>
+	private static IReadOnlyList<UpdateEntitySchemaOperationArgs> ResolveUpdateOperations(SchemaSyncOperation op) {
+		if (op.UpdateOperations?.Any() == true) {
+			return op.UpdateOperations.ToList();
+		}
+		if (op.Columns?.Any() == true) {
+			return op.Columns.Select(CoerceColumnToAddOperation).ToList();
+		}
+		return [];
+	}
+
+	/// <summary>
+	/// Maps a read/create-shape column onto an <c>add</c> column-mutation operation. Read-shape aliases
+	/// (<c>data-value-type</c>, <c>reference-schema</c>, <c>is-required</c>) are resolved to their canonical
+	/// names, and the read-shape scalar <c>caption</c> is promoted to <c>title-localizations</c> so a column
+	/// read verbatim from <c>get-app-info</c> (which reports its caption as a scalar) round-trips into an add
+	/// without manual field translation (ENG-90313).
+	/// </summary>
+	private static UpdateEntitySchemaOperationArgs CoerceColumnToAddOperation(CreateEntitySchemaColumnArgs column) {
+		return new UpdateEntitySchemaOperationArgs(
+			Action: "add",
+			ColumnName: column.Name,
+			Type: column.ResolveType(),
+			TitleLocalizations: ResolveAddBatchTitleLocalizations(column),
+			ReferenceSchemaName: column.ResolveReferenceSchemaName(),
+			IsRequired: column.ResolveRequired(),
+			DefaultValue: column.DefaultValue,
+			DefaultValueSource: column.DefaultValueSource,
+			Masked: column.Masked) {
+			LegacyTitle = column.LegacyTitle,
+			DefaultValueConfig = column.DefaultValueConfig
+		};
+	}
+
+	/// <summary>
+	/// Resolves the title localizations for a coerced add operation. Prefers the explicit
+	/// <c>title-localizations</c> map; when it is absent but the read-shape scalar <c>caption</c> is present,
+	/// promotes that caption to an <c>en-US</c> localization so the <c>get-app-info</c> read shape round-trips
+	/// without manual translation (ENG-90313).
+	/// </summary>
+	private static Dictionary<string, string>? ResolveAddBatchTitleLocalizations(CreateEntitySchemaColumnArgs column) {
+		if (column.TitleLocalizations?.Count > 0) {
+			return column.TitleLocalizations;
+		}
+		if (!string.IsNullOrWhiteSpace(column.LegacyCaption)) {
+			return new Dictionary<string, string> { ["en-US"] = column.LegacyCaption.Trim() };
+		}
+		return column.TitleLocalizations;
+	}
+
+	private static string BuildMissingUpdateOperationsError() {
+		return "sync-schemas update-entity requires either an 'update-operations' array "
+			+ "(each item: 'action' = add|modify|remove, 'column-name' [alias 'name'], 'type' [alias 'data-value-type'], "
+			+ "'reference-schema-name' [alias 'reference-schema'], 'required' [alias 'is-required'], plus optional flags) "
+			+ "or a 'columns' array (read/create shape: 'name', 'type' [alias 'data-value-type'], "
+			+ "'title-localizations' [the read-shape scalar 'caption' is also accepted], "
+			+ "'required' [alias 'is-required'], 'reference-schema-name' [alias 'reference-schema']) "
+			+ "which is treated as an implicit add-batch. "
+			+ "A column read from get-app-info ('name', 'type'/'data-value-type', "
+			+ "'reference-schema-name'/'reference-schema', 'caption', 'required') can be sent back directly — "
+			+ "add an 'action' for modify/remove.";
 	}
 
 	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args) {
