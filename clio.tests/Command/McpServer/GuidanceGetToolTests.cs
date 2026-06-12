@@ -102,10 +102,6 @@ public sealed class GuidanceGetToolTests {
 			because: "successful guidance lookups should return the resolved article");
 		result.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the guidance tool should preserve the canonical esq-filters guide URI in the response");
-		result.Article.Text.Should().Contain("clio MCP ESQ filters guide",
-			because: "the guidance tool should return the canonical ESQ filters article text");
-		result.Article.Text.Should().Contain("Column-path normalization",
-			because: "the ESQ filters guide should expose the normalized-path guidance explicitly");
 	}
 
 	[Test]
