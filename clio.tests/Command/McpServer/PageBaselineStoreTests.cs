@@ -169,8 +169,17 @@ public class PageBaselineStoreTests {
 
 		// Act
 		PageBaselineStore.RefreshExistingBaseline(
-			fs, MetaPath, SchemaName, "local", null,
-			"99999999-8888-7777-6666-555555555555", "new-checksum", "new-modified", "2026-06-12T11:00:00Z");
+			fs,
+			MetaPath,
+			new PageBaselineInfo {
+				SchemaName = SchemaName,
+				EnvironmentName = "local",
+				EditableSchemaExists = true,
+				EditableSchemaUId = "99999999-8888-7777-6666-555555555555",
+				Checksum = "new-checksum",
+				ModifiedOn = "new-modified",
+				CapturedAt = "2026-06-12T11:00:00Z"
+			});
 
 		// Assert
 		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fs.GetFile(MetaPath).TextContents);
@@ -191,7 +200,17 @@ public class PageBaselineStoreTests {
 
 		// Act
 		PageBaselineStore.RefreshExistingBaseline(
-			fs, MetaPath, SchemaName, "local", null, "uid", "checksum", "modified", "2026-06-12T11:00:00Z");
+			fs,
+			MetaPath,
+			new PageBaselineInfo {
+				SchemaName = SchemaName,
+				EnvironmentName = "local",
+				EditableSchemaExists = true,
+				EditableSchemaUId = "uid",
+				Checksum = "checksum",
+				ModifiedOn = "modified",
+				CapturedAt = "2026-06-12T11:00:00Z"
+			});
 
 		// Assert
 		fs.FileExists(MetaPath).Should().BeFalse(because: "the refresh path must never materialize .clio-pages directories");
