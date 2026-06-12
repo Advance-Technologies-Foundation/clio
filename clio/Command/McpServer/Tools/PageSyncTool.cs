@@ -448,33 +448,11 @@ public sealed class PageSyncTool(
 					return validationFailure;
 			}
 			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
-			if (opOptions.SamplingReview is { Ok: false, Skipped: false } && opOptions.SamplingReview.Issues?.Count > 0) {
-				return new PageSyncPageResult {
-					SchemaName = page.SchemaName,
-					Success = false,
-					Validation = validationResult,
-					SamplingReview = opOptions.SamplingReview,
-					Error = "Sampling review found issues: " + string.Join("; ", opOptions.SamplingReview.Issues)
-						+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
-				};
-			}
-			string metaFilePath = ResolveBaselineMetaPath(page.SchemaName, opOptions.OutputDirectory);
-			PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
-			bool baselineArmed = baseline != null
-				&& PageBaselineStore.MatchesEnvironment(baseline, opOptions.EnvironmentName, null);
-			PageUpdateOptions updateOptions = new() {
-				SchemaName = page.SchemaName,
-				Body = page.Body,
-				DryRun = false,
-				Resources = page.Resources,
-				OptionalProperties = page.OptionalProperties,
-				Force = page.Force ?? false
-			};
-			if (baselineArmed) {
-				updateOptions.ExpectedChecksum = baseline.Checksum;
-				updateOptions.ExpectedSchemaUId = baseline.EditableSchemaUId;
-				updateOptions.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
-			}
+			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
+			if (samplingFailure != null)
+				return samplingFailure;
+			(string metaFilePath, bool baselineArmed, PageUpdateOptions updateOptions) =
+				BuildUpdateRequest(page, opOptions);
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
 				return new PageSyncPageResult {
@@ -487,45 +465,8 @@ public sealed class PageSyncTool(
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
-			if (opOptions.Verify && opOptions.GetCommand != null) {
-				PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
-				opOptions.GetCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
-				if (!getResponse.Success) {
-					return new PageSyncPageResult {
-						SchemaName = page.SchemaName,
-						Success = false,
-						BodyLength = updateResponse.BodyLength,
-						Validation = validationResult,
-						Error = $"Page saved but verification failed: {getResponse.Error}"
-					};
-				}
-				string? verifiedBodyFile = null;
-				if (getResponse.Raw?.Body is not null) {
-					string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-						fileSystem,
-						fileSystem.Directory.GetCurrentDirectory(),
-						Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-						ClioRuntimePaths.Home,
-						opOptions.OutputDirectory);
-					string schemaDir = fileSystem.Path.Combine(
-						anchor, ".clio-pages", page.SchemaName);
-					fileSystem.Directory.CreateDirectory(schemaDir);
-					string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
-					fileSystem.File.WriteAllText(bodyFile, getResponse.Raw.Body);
-					verifiedBodyFile = bodyFile;
-					WriteFreshMetaAfterVerify(schemaDir, page.SchemaName, opOptions.EnvironmentName, getResponse);
-				}
-				return new PageSyncPageResult {
-					SchemaName = page.SchemaName,
-					Success = true,
-					BodyLength = updateResponse.BodyLength,
-					Validation = validationResult,
-					SamplingReview = opOptions.SamplingReview,
-					ResourcesRegistered = updateResponse.ResourcesRegistered,
-					Page = getResponse.Page,
-					VerifiedBodyFile = verifiedBodyFile
-				};
-			}
+			if (opOptions.Verify && opOptions.GetCommand != null)
+				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
 			if (baselineArmed) {
 				RefreshOrDropBaseline(metaFilePath, page.SchemaName, opOptions.EnvironmentName, updateResponse);
 			}
@@ -561,6 +502,99 @@ public sealed class PageSyncTool(
 		}
 	}
 
+	private PageSyncPageResult CreateSamplingFailure(
+		PageSyncPageInput page,
+		PageSamplingReview samplingReview,
+		PageSyncValidationResult validationResult) {
+		if (samplingReview is not { Ok: false, Skipped: false } || samplingReview.Issues?.Count <= 0) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = validationResult,
+			SamplingReview = samplingReview,
+			Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+				+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
+		};
+	}
+
+	private (string MetaFilePath, bool BaselineArmed, PageUpdateOptions UpdateOptions) BuildUpdateRequest(
+		PageSyncPageInput page,
+		PageSyncOperationOptions opOptions) {
+		string metaFilePath = ResolveBaselineMetaPath(page.SchemaName, opOptions.OutputDirectory);
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
+		bool baselineArmed = baseline != null
+			&& PageBaselineStore.MatchesEnvironment(baseline, opOptions.EnvironmentName, null);
+		PageUpdateOptions updateOptions = new() {
+			SchemaName = page.SchemaName,
+			Body = page.Body,
+			DryRun = false,
+			Resources = page.Resources,
+			OptionalProperties = page.OptionalProperties,
+			Force = page.Force ?? false
+		};
+		if (baselineArmed) {
+			updateOptions.ExpectedChecksum = baseline.Checksum;
+			updateOptions.ExpectedSchemaUId = baseline.EditableSchemaUId;
+			updateOptions.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+		}
+		return (metaFilePath, baselineArmed, updateOptions);
+	}
+
+	private PageSyncPageResult VerifySavedPage(
+		PageSyncPageInput page,
+		PageSyncOperationOptions opOptions,
+		PageUpdateResponse updateResponse,
+		PageSyncValidationResult validationResult) {
+		PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
+		opOptions.GetCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
+		if (!getResponse.Success) {
+			return new PageSyncPageResult {
+				SchemaName = page.SchemaName,
+				Success = false,
+				BodyLength = updateResponse.BodyLength,
+				Validation = validationResult,
+				Error = $"Page saved but verification failed: {getResponse.Error}"
+			};
+		}
+		string? verifiedBodyFile = WriteVerifiedBodyFile(page.SchemaName, opOptions.OutputDirectory, getResponse.Raw?.Body);
+		if (verifiedBodyFile != null) {
+			WriteFreshMetaAfterVerify(
+				fileSystem.Path.GetDirectoryName(verifiedBodyFile),
+				page.SchemaName,
+				opOptions.EnvironmentName,
+				getResponse);
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = true,
+			BodyLength = updateResponse.BodyLength,
+			Validation = validationResult,
+			SamplingReview = opOptions.SamplingReview,
+			ResourcesRegistered = updateResponse.ResourcesRegistered,
+			Page = getResponse.Page,
+			VerifiedBodyFile = verifiedBodyFile
+		};
+	}
+
+	private string? WriteVerifiedBodyFile(string schemaName, string? outputDirectory, string body) {
+		if (body is null) {
+			return null;
+		}
+		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
+			fileSystem,
+			fileSystem.Directory.GetCurrentDirectory(),
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			ClioRuntimePaths.Home,
+			outputDirectory);
+		string schemaDir = fileSystem.Path.Combine(anchor, ".clio-pages", schemaName);
+		fileSystem.Directory.CreateDirectory(schemaDir);
+		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
+		fileSystem.File.WriteAllText(bodyFile, body);
+		return bodyFile;
+	}
+
 	// FR-13: the verify read-back already rewrites body.js; without also rewriting meta.json the
 	// stored baseline would keep the PRE-save checksum and the next write would false-conflict.
 	// The fresh meta carries the page metadata and the baseline captured by the verify get-page.
@@ -568,17 +602,7 @@ public sealed class PageSyncTool(
 		string schemaDir, string schemaName, string? environmentName, PageGetResponse getResponse) {
 		try {
 			string fetchedAt = DateTime.UtcNow.ToString("o");
-			PageBaselineInfo baseline = getResponse.Editable is null
-				? null
-				: new PageBaselineInfo {
-					SchemaName = schemaName,
-					EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
-					EditableSchemaExists = getResponse.Editable.EditableSchemaExists,
-					EditableSchemaUId = getResponse.Editable.EditableSchemaUId,
-					Checksum = getResponse.Editable.Checksum,
-					ModifiedOn = getResponse.Editable.ModifiedOn,
-					CapturedAt = fetchedAt
-				};
+			PageBaselineInfo baseline = BuildBaseline(schemaName, environmentName, getResponse.Editable, fetchedAt);
 			string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
 			fileSystem.File.WriteAllText(metaFile, System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
 				FetchedAt = fetchedAt,
@@ -601,13 +625,34 @@ public sealed class PageSyncTool(
 		PageBaselineStore.RefreshExistingBaseline(
 			fileSystem,
 			metaFilePath,
-			schemaName,
-			environmentName,
-			environmentUri: null,
-			updateResponse.SavedSchemaUId,
-			updateResponse.NewChecksum,
-			updateResponse.NewModifiedOn,
-			DateTime.UtcNow.ToString("o"));
+			new PageBaselineInfo {
+				SchemaName = schemaName,
+				EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
+				EditableSchemaExists = true,
+				EditableSchemaUId = updateResponse.SavedSchemaUId,
+				Checksum = updateResponse.NewChecksum,
+				ModifiedOn = updateResponse.NewModifiedOn,
+				CapturedAt = DateTime.UtcNow.ToString("o")
+			});
+	}
+
+	private static PageBaselineInfo BuildBaseline(
+		string schemaName,
+		string? environmentName,
+		PageEditableSchemaInfo editableSchema,
+		string capturedAt) {
+		if (editableSchema is null) {
+			return null;
+		}
+		return new PageBaselineInfo {
+			SchemaName = schemaName,
+			EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
+			EditableSchemaExists = editableSchema.EditableSchemaExists,
+			EditableSchemaUId = editableSchema.EditableSchemaUId,
+			Checksum = editableSchema.Checksum,
+			ModifiedOn = editableSchema.ModifiedOn,
+			CapturedAt = capturedAt
+		};
 	}
 
 	private static IReadOnlyList<string> GetLintWarningMessages(IReadOnlyList<PageBodyLintFinding> findings) =>

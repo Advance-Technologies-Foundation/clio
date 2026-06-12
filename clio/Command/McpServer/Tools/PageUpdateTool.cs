@@ -50,45 +50,16 @@ public sealed class PageUpdateTool(
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
-		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
-		if (!bodyLoaded)
-			return new PageUpdateResponse { Success = false, Error = bodyLoadError };
-		if (string.IsNullOrWhiteSpace(options.Body))
-			return new PageUpdateResponse {
-				Success = false,
-				Error = "Either 'body' or 'body-file' must provide page body content."
-			};
-		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
-		// JSON and are handled by their own validator below; for web bodies we
-		// parse the body with Acornima BEFORE invoking the regex-based content
-		// validators or the sampling service. A syntax error means the page
-		// would not load in the browser — failing fast surfaces the precise
-		// {line, column, message} to the operator without sinking time into
-		// model-side review or persisting a broken body. The parsed AST is
-		// then fed into PageBodyAstLinter further down (AFTER the regex
-		// validators ran) so the established regex error messages still win
-		// on overlapping detections; lint findings only ADD detections.
-		Script parsedAst = null;
-		if (PageSchemaTypeExtensions.FromBody(options.Body) != PageSchemaType.Mobile) {
-			PageBodySyntaxValidationResult syntaxResult =
-				PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
-			if (!syntaxResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = PageBodySyntaxValidator.FormatError(syntaxResult)
-				};
-			}
-		}
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
-		if (validationFailure != null)
-			return validationFailure;
-		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
-		if (lintFailure != null)
-			return lintFailure;
-		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
-			await TryRunSamplingAsync(options, args, server, cancellationToken);
-		if (samplingFailure != null)
-			return samplingFailure;
+		(PageUpdateResponse earlyFailure,
+			IReadOnlyList<string> validationWarnings,
+			IReadOnlyList<string> lintWarnings,
+			PageSamplingReview samplingReview) = await TryCreatePreExecutionFailureAsync(
+				options,
+				args,
+				server,
+				cancellationToken);
+		if (earlyFailure != null)
+			return earlyFailure;
 		(string metaFilePath, bool baselineArmed) = TryArmBaseline(options, args);
 		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
@@ -102,7 +73,7 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
-		if (baselineArmed && response.Success && options.DryRun == false)
+		if (baselineArmed && response.Success && !options.DryRun)
 			RefreshOrDropBaseline(metaFilePath, args, response);
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
@@ -110,6 +81,61 @@ public sealed class PageUpdateTool(
 			lintWarnings);
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
+	}
+
+	private async Task<(PageUpdateResponse Failure,
+		IReadOnlyList<string> ValidationWarnings,
+		IReadOnlyList<string> LintWarnings,
+		PageSamplingReview SamplingReview)> TryCreatePreExecutionFailureAsync(
+			PageUpdateOptions options,
+			PageUpdateArgs args,
+			McpServerLib.McpServer server,
+			CancellationToken cancellationToken) {
+		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+		if (!bodyLoaded)
+			return (new PageUpdateResponse { Success = false, Error = bodyLoadError }, null, null, null);
+		if (string.IsNullOrWhiteSpace(options.Body)) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Either 'body' or 'body-file' must provide page body content."
+			}, null, null, null);
+		}
+		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
+		if (syntaxFailure != null)
+			return (syntaxFailure, null, null, null);
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (validationFailure != null)
+			return (validationFailure, null, null, null);
+		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
+		if (lintFailure != null)
+			return (lintFailure, null, null, null);
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
+	}
+
+	private static PageUpdateResponse TryValidateBodySyntax(PageUpdateOptions options, out Script parsedAst) {
+		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
+		// JSON and are handled by their own validator below; for web bodies we
+		// parse the body with Acornima BEFORE invoking the regex-based content
+		// validators or the sampling service. A syntax error means the page
+		// would not load in the browser — failing fast surfaces the precise
+		// {line, column, message} to the operator without sinking time into
+		// model-side review or persisting a broken body. The parsed AST is
+		// then fed into PageBodyAstLinter further down (AFTER the regex
+		// validators ran) so the established regex error messages still win
+		// on overlapping detections; lint findings only ADD detections.
+		parsedAst = null;
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile)
+			return null;
+		PageBodySyntaxValidationResult syntaxResult =
+			PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
+		if (syntaxResult.IsValid)
+			return null;
+		return new PageUpdateResponse {
+			Success = false,
+			Error = PageBodySyntaxValidator.FormatError(syntaxResult)
+		};
 	}
 
 	// AST lint pass runs on the success path of the regex validators so the
@@ -255,13 +281,16 @@ public sealed class PageUpdateTool(
 		PageBaselineStore.RefreshExistingBaseline(
 			fileSystem,
 			metaFilePath,
-			args.SchemaName,
-			args.EnvironmentName,
-			args.Uri,
-			response.SavedSchemaUId,
-			response.NewChecksum,
-			response.NewModifiedOn,
-			DateTime.UtcNow.ToString("o"));
+			new PageBaselineInfo {
+				SchemaName = args.SchemaName,
+				EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
+				EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
+				EditableSchemaExists = true,
+				EditableSchemaUId = response.SavedSchemaUId,
+				Checksum = response.NewChecksum,
+				ModifiedOn = response.NewModifiedOn,
+				CapturedAt = DateTime.UtcNow.ToString("o")
+			});
 	}
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {

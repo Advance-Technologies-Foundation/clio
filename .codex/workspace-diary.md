@@ -3724,3 +3724,10 @@ Decision: Fetched the PR head as local branch `pr-699`, merged `origin/master` i
 Discovery: The merge touched master changes in `Directory.Packages.props`, `BindingsModule`, `CreatioClientAdapter`, `ReauthExecutor`, and `ReauthExecutorTests`, but the only conflict was the diary. `dotnet build clio/clio.csproj -c Release --no-incremental` succeeded and produced `clio/bin/Release/clio.8.1.0.58.nupkg`; build still reports the pre-existing CS0168 warning in `clio/Package/PackageDownloader.cs:93` for both `net8.0` and `net10.0`.
 Files: .codex/workspace-diary.md, clio/clio.csproj
 Impact: PR #699 is now based on current `master`, has the next fallback version for testing, and has a fresh Release package ready for installation or manual validation.
+
+## 2026-06-12 19:40 – PR #699 Sonar cleanup before push
+Context: Drive PR #699 to green required fixing the 12 SonarCloud new-code issues that remained despite a passing quality gate.
+Decision: Refactored page MCP helpers without changing behavior: collapsed PageBaselineStore refresh arguments into a baseline object, extracted baseline-building and pre-validation helpers from PageGetTool/PageUpdateTool/PageSyncTool to reduce complexity and nested ternaries, and replaced repeated schema metadata literals in PageSchemaMetadataHelper and PageUpdateCommand with constants.
+Discovery: The only local regression introduced during refactoring was a stale call site to `PageBaselineStore.RefreshExistingBaseline` in `PageUpdateTool`; after updating it, `dotnet build clio/clio.csproj -c Debug --no-incremental` and `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=McpServer)" --no-build` both passed.
+Files: clio/Command/McpServer/Tools/PageBaselineStore.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/PageSchemaMetadataHelper.cs, clio/Command/PageUpdateOptions.cs, .codex/workspace-diary.md
+Impact: The PR should re-analyze with zero Sonar new issues while preserving the conflict-detection flow and current MCP/CLI behavior.

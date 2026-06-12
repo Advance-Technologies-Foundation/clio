@@ -101,13 +101,7 @@ internal static class PageBaselineStore {
 	internal static void RefreshExistingBaseline(
 		IFileSystem fileSystem,
 		string metaFilePath,
-		string schemaName,
-		string environmentName,
-		string environmentUri,
-		string savedSchemaUId,
-		string newChecksum,
-		string newModifiedOn,
-		string capturedAt) {
+		PageBaselineInfo baseline) {
 		try {
 			if (string.IsNullOrWhiteSpace(metaFilePath) || !fileSystem.File.Exists(metaFilePath)) {
 				return;
@@ -120,16 +114,7 @@ internal static class PageBaselineStore {
 			PageMetaFileModel updated = new() {
 				FetchedAt = meta.FetchedAt,
 				Page = meta.Page,
-				Baseline = new PageBaselineInfo {
-					SchemaName = schemaName,
-					EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
-					EnvironmentUri = string.IsNullOrWhiteSpace(environmentUri) ? null : environmentUri,
-					EditableSchemaExists = true,
-					EditableSchemaUId = savedSchemaUId,
-					Checksum = newChecksum,
-					ModifiedOn = newModifiedOn,
-					CapturedAt = capturedAt
-				}
+				Baseline = baseline
 			};
 			fileSystem.File.WriteAllText(metaFilePath, JsonSerializer.Serialize(updated));
 		} catch {

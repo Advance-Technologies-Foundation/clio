@@ -87,18 +87,7 @@ public sealed class PageGetTool(
 		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
 		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
 		string fetchedAt = DateTime.UtcNow.ToString("o");
-		PageBaselineInfo baseline = response.Editable is null
-			? null
-			: new PageBaselineInfo {
-				SchemaName = schemaName,
-				EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
-				EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
-				EditableSchemaExists = response.Editable.EditableSchemaExists,
-				EditableSchemaUId = response.Editable.EditableSchemaUId,
-				Checksum = response.Editable.Checksum,
-				ModifiedOn = response.Editable.ModifiedOn,
-				CapturedAt = fetchedAt
-			};
+		PageBaselineInfo baseline = BuildBaseline(args, response, fetchedAt);
 		try {
 			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
 			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
@@ -135,6 +124,22 @@ public sealed class PageGetTool(
 		} catch {
 			// ignore — gitignore is best-effort hygiene; never block a successful get-page.
 		}
+	}
+
+	private static PageBaselineInfo BuildBaseline(PageGetArgs args, PageGetResponse response, string fetchedAt) {
+		if (response.Editable is null) {
+			return null;
+		}
+		return new PageBaselineInfo {
+			SchemaName = args.SchemaName,
+			EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
+			EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
+			EditableSchemaExists = response.Editable.EditableSchemaExists,
+			EditableSchemaUId = response.Editable.EditableSchemaUId,
+			Checksum = response.Editable.Checksum,
+			ModifiedOn = response.Editable.ModifiedOn,
+			CapturedAt = fetchedAt
+		};
 	}
 }
 

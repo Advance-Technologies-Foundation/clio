@@ -16,6 +16,10 @@ namespace Clio.Command {
 		private const string FiltersKey = "filters";
 		private const string ColumnsKey = "columns";
 		private const string RowCountKey = "rowCount";
+		private const string ExpressionKey = "expression";
+		private const string SysSchemaName = "SysSchema";
+		private const string ManagerNameColumnPath = "ManagerName";
+		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 
 		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
@@ -54,7 +58,7 @@ namespace Clio.Command {
 			new JObject {
 				[ItemsKey] = new JObject {
 					["UId"] = new JObject {
-						["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
 					}
 				}
 			};
@@ -94,10 +98,10 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(schemaName) || string.IsNullOrWhiteSpace(packageUId))
 				return (null, null);
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, schemaName)),
-					("byManager", BuildEqFilter("ManagerName", 1, "ClientUnitSchemaManager")),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName)),
 					("byPackage", BuildEqFilter("SysPackage.UId", 0, packageUId))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
@@ -119,7 +123,7 @@ namespace Clio.Command {
 				[FiltersKey] = BuildFilterGroup(("byUId", BuildEqFilter("UId", 0, packageUId))),
 				[ColumnsKey] = new JObject {
 					[ItemsKey] = new JObject {
-						["Name"] = new JObject { ["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" } }
+						["Name"] = new JObject { [ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" } }
 					}
 				},
 				[RowCountKey] = 1
@@ -154,10 +158,10 @@ namespace Clio.Command {
 			IServiceUrlBuilder serviceUrlBuilder,
 			string entitySchemaName) {
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, entitySchemaName)),
-					("byManager", BuildEqFilter("ManagerName", 1, "EntitySchemaManager"))),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, "EntitySchemaManager"))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
@@ -203,14 +207,14 @@ namespace Clio.Command {
 			var columnsItems = new JObject();
 			foreach ((string alias, string path) in columns) {
 				columnsItems[alias] = new JObject {
-					["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+					[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
 				};
 			}
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byUId", BuildEqFilter("UId", 0, schemaUId)),
-					("byManager", BuildEqFilter("ManagerName", 1, "ClientUnitSchemaManager"))),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName))),
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
 				[RowCountKey] = 1
 			};
@@ -230,11 +234,11 @@ namespace Clio.Command {
 			var columnsItems = new JObject();
 			foreach ((string alias, string path) in columns) {
 				columnsItems[alias] = new JObject {
-					["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+					[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
 				};
 			}
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = new JObject {
 					[FilterTypeKey] = 6, ["logicalOperation"] = 0, [IsEnabledKey] = true,
 					["trimDateTimeParameterToDate"] = false,
@@ -249,9 +253,9 @@ namespace Clio.Command {
 						["filter1"] = new JObject {
 							[FilterTypeKey] = 1, ["comparisonType"] = 3, [IsEnabledKey] = true,
 							["trimDateTimeParameterToDate"] = false,
-							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
+							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = ManagerNameColumnPath},
 							["rightExpression"] = new JObject {[ExpressionTypeKey] = 2,
-								["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
+								["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = ClientUnitSchemaManagerName}}
 						}
 					}
 				},

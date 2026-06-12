@@ -112,6 +112,8 @@ namespace Clio.Command {
 	public class PageUpdateCommand : Command<PageUpdateOptions>
 	{
 		private const string LocalizableStringsKey = "localizableStrings";
+		private const string ChecksumColumnName = "Checksum";
+		private const string ModifiedOnColumnName = "ModifiedOn";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -221,7 +223,7 @@ namespace Clio.Command {
 			}
 			(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
 				_applicationClient, _serviceUrlBuilder, context.EditableSchemaUId,
-				("Checksum", "Checksum"), ("ModifiedOn", "ModifiedOn"));
+				(ChecksumColumnName, ChecksumColumnName), (ModifiedOnColumnName, ModifiedOnColumnName));
 			if (row is null) {
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.SchemaDeletedExternally,
@@ -230,7 +232,7 @@ namespace Clio.Command {
 				});
 				return false;
 			}
-			string actualChecksum = row["Checksum"]?.ToString();
+			string actualChecksum = row[ChecksumColumnName]?.ToString();
 			if (!string.Equals(actualChecksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.ChecksumMismatch,
@@ -238,7 +240,7 @@ namespace Clio.Command {
 					ActualChecksum = actualChecksum,
 					ExpectedSchemaUId = options.ExpectedSchemaUId ?? context.EditableSchemaUId,
 					ActualSchemaUId = context.EditableSchemaUId,
-					ModifiedOn = row["ModifiedOn"]?.ToString()
+					ModifiedOn = row[ModifiedOnColumnName]?.ToString()
 				});
 				return false;
 			}
@@ -273,10 +275,10 @@ namespace Clio.Command {
 			try {
 				(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
 					_applicationClient, _serviceUrlBuilder, context.EditableSchemaUId,
-					("Checksum", "Checksum"), ("ModifiedOn", "ModifiedOn"));
+					(ChecksumColumnName, ChecksumColumnName), (ModifiedOnColumnName, ModifiedOnColumnName));
 				if (row is null) return;
-				response.NewChecksum = row["Checksum"]?.ToString();
-				response.NewModifiedOn = row["ModifiedOn"]?.ToString();
+				response.NewChecksum = row[ChecksumColumnName]?.ToString();
+				response.NewModifiedOn = row[ModifiedOnColumnName]?.ToString();
 			} catch {
 				// best-effort — the save already succeeded; null NewChecksum signals the MCP layer
 				// to delete the on-disk baseline rather than keep a stale one.
