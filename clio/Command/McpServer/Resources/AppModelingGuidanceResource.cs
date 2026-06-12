@@ -26,6 +26,12 @@ public sealed class AppModelingGuidanceResource {
 			Text = """
 			       clio MCP app modeling guide
 
+			       Profile language (detect once, reuse, ask on failure)
+			       - Before creating ANY entity (application, object, page, section, lookup, column), call `get-user-culture` ONCE per session to detect the connected user's profile language.
+			       - Reuse that detected culture for all generated names, labels, and captions for the rest of the session; do not re-detect per entity (the server caches it per environment). Re-detect only when the active environment changes.
+			       - If `get-user-culture` returns `success:false`, ASK the user which language to use before creating anything. Do NOT silently fall back to the host machine locale or to `en-US`.
+			       - To force a specific language for one creation, pass `caption-culture` (precedence: `caption-culture` > detected profile culture > `en-US`).
+
 			       Core contract
 			       - clio MCP is a stdio MCP server, not an HTTP or browser API.
 			       - Use discovered tool names exactly as advertised.
@@ -42,11 +48,13 @@ public sealed class AppModelingGuidanceResource {
 			       - Use `get-schema-name-prefix` to discover the active SchemaNamePrefix before naming schemas when you need the prefix before calling `create-app` (e.g. working with an existing app or planning schema names upfront). When `create-app` is the first call, its response already includes `schema-name-prefix`.
 
 			       Preferred workflow
+			       - The application tools (`create-app`, `create-app-section`, `update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`) are long-running backend calls that stream `notifications/progress` while working. Await completion — a progress notification means the server is still working, not a stall, so do not cancel/retry or fall back to raw SQL or manual UI on a perceived client timeout.
 			       - Use `create-app` when the workflow is modeling a new app shell rather than editing an existing installed app.
 			       - Use `create-app-section` when the workflow must add a section to an existing installed app instead of creating a new app shell.
 			       - Use `update-app-section` when the workflow must change metadata of an existing section instead of creating a new one.
 			       - Prefer `sync-schemas` for multi-step schema work and `sync-pages` for multi-page saves.
 			       - Canonical new-app entity flow: `create-app` -> `sync-schemas` -> `get-app-info`.
+			       - Prefer `find-app` as the discovery front door for the existing-app flows below: it searches app name/code/description and section captions and returns matching apps WITH their sections in one call, so you can usually skip the separate `list-apps` and `list-app-sections` steps when mapping an imprecise name to a code.
 			       - Canonical existing-app section flow: `list-apps` -> `get-app-info` -> `create-app-section` -> `get-app-info`.
 			       - Canonical existing-section metadata update flow: `list-apps` -> `get-app-info` -> `update-app-section`.
 			       - Canonical section discovery flow: `list-apps` -> `get-app-info` -> `list-app-sections`.
@@ -78,6 +86,7 @@ public sealed class AppModelingGuidanceResource {
 			       - `create-app` already creates the default section for the canonical main entity — no separate `create-app-section` call is needed for it. Use `create-app-section` only when the app needs an additional section backed by a new, separately named entity; Creatio derives the new entity code from the `caption` you provide (e.g. caption `Customer Profile` → entity `{prefix}CustomerProfile`, for example `UsrCustomerProfile` when prefix is `Usr` or `AbcCustomerProfile` when prefix is `Abc`). For the primary record type, extend the canonical main entity returned by `create-app` — do not create a synonym section for it.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When `create-app-section` receives `entity-schema-name`, it reuses that existing entity. Otherwise omit that field and let Creatio create a new object for the section.
+			       - When `create-app-section` fails, read `error-class` before deciding what to do next: `transport` means the request never reached Creatio (retry is safe); `creatio-timeout` means Creatio produced no response within the budget and the section may still be created server-side — wait, run `list-app-sections`, and retry only if the section is still absent; `server-error` means Creatio rejected the operation (fix inputs or server state first). The `section-created` field reports the verified side-effect state (`true`/`false`/`unknown`). Follow the returned `retry-guidance` and never blind-retry the same call.
 			       - `update-app-section` is scalar-only for section metadata fields. Keep `caption`, `description`, `icon-id`, and `icon-background` as plain top-level scalar values and omit any field that should remain unchanged.
 			       - Use `update-app-section` with `application-code` plus `section-code` to target one existing section inside the app.
 			       - Do not send localization-map fields such as `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `update-app-section`.
@@ -105,7 +114,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Pass `resources` as a JSON object string when edited bodies introduce `#ResourceString(key)#` macros.
 			       - For new apps or extended main entities, perform page edits after `sync-schemas` and `get-app-info` refresh so that page bindings reference materialized columns.
 			       - Example: if the app context already contains `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, add the Related Knowledge detail by wiring the page to that existing schema. Do not create `UsrSupportCaseKnowledgeBase`.
-			       - For adding a related/child list (a "detail") to a record page, or for filtering a list by the current page record (master-detail "filter by page data"), call `get-guidance` with `name` set to `related-list`. A detail is a composite (`crt.ExpansionPanel` + `crt.DataGrid`) and the page-data filter is a page-scoped `crt.EntityDataSource` + an `isCollection` attribute + a separate filter attribute referenced via `modelConfig.filterAttributes` — never an inline `filter` on the list attribute.
+			       - For adding a related/child list (a "detail") to a record page, or for filtering a list by the current page record (master-detail "filter by page data"), call `get-guidance` with `name` set to `related-list`. A detail is a composite (`crt.ExpansionPanel` + `crt.DataGrid`) and the page-data filter is declarative: a child `crt.EntityDataSource` + an `isCollection` attribute + a `modelConfig.dependencies` entry linking the child foreign-key column to the master record (`attributePath`/`relationPath`) — no handler. Never scope with an init handler or a seeded filter.
 			       """
 		};
 }

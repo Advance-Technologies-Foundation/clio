@@ -95,6 +95,63 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Posts buildWorkspace and buildChangedConfiguration flags to SchemaDesignerRequest so saved schemas get published on every runtime generation (ENG-90403).")]
+	public void PublishConfigurationChanges_PostsBuildFlagsToSchemaDesignerRequest() {
+		// Arrange
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest)
+			.Returns("http://local/DataService/json/SyncReply/SchemaDesignerRequest");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true}");
+
+		// Act
+		BaseResponse response = _client.PublishConfigurationChanges(new RemoteCommandOptions());
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a successful publish response must surface to the caller");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/DataService/json/SyncReply/SchemaDesignerRequest",
+			Arg.Is<string>(body => ContainsJsonFlag(body, "buildWorkspace")
+				&& ContainsJsonFlag(body, "buildChangedConfiguration")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Publish uses the build-class timeout and retryCount=0 so a slow-but-successful legacy BuildWorkspace is not mistaken for a failure and not re-issued (ENG-90403).")]
+	public void PublishConfigurationChanges_UsesBuildClassTimeout_AndZeroRetries() {
+		// Arrange
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest)
+			.Returns("http://local/DataService/json/SyncReply/SchemaDesignerRequest");
+		int capturedTimeout = 0;
+		int capturedRetryCount = -1;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedTimeout = callInfo.ArgAt<int>(2);
+				capturedRetryCount = callInfo.ArgAt<int>(3);
+				return "{\"success\":true}";
+			});
+
+		// Act
+		_client.PublishConfigurationChanges(new RemoteCommandOptions());
+
+		// Assert
+		capturedTimeout.Should().Be(RemoteEntitySchemaDesignerClient.PublishConfigurationTimeoutMs,
+			because: "a full server-side BuildWorkspace on a legacy instance can exceed 100s; publish must use the build-class timeout");
+		capturedRetryCount.Should().Be(0,
+			because: "the build POST is non-idempotent — retrying a timed-out build may stack concurrent compiles");
+	}
+
+	private static bool ContainsJsonFlag(string body, string flagName) {
+		string normalizedBody = body.Replace(" ", string.Empty)
+			.Replace("\r", string.Empty)
+			.Replace("\n", string.Empty);
+		return normalizedBody.Contains($"\"{flagName}\":true", StringComparison.Ordinal);
+	}
+
+	[Test]
 	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
 	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
 		// Arrange

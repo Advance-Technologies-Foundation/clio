@@ -27,7 +27,8 @@ internal static class McpServerInstructions
 		3. `get-schema` → inspect a specific schema
 
 		### Create a new entity
-		1. `create-entity-schema` → define the table
+		1. `create-entity-schema` → define the table (applies DDL and publishes the schema, so it is immediately
+		   usable as a Lookup reference in sys-settings and lookup pickers)
 		2. `update-entity-schema` → add columns (already applies DDL to the database and refreshes the runtime schema; no separate compile needed)
 		3. `create-data-binding` + `add-data-binding-row` → seed lookup data
 
@@ -43,7 +44,11 @@ internal static class McpServerInstructions
 
 		## When `compile-creatio` is NOT required
 		- After `create-app`, `create-app-section`, `create-page`, `update-page` — Freedom UI bodies are AMD modules served at runtime.
-		- After `create-entity-schema` / `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		- After `create-entity-schema` / `create-lookup` — these tools apply DDL AND publish the schema themselves,
+		  so the new entity is immediately visible to lookup pickers and sys-setting reference schema lists.
+		- After `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
+		  Note: unlike `create-entity-schema`, these tools do not re-publish the full configuration (by design — the schema is already published).
+		  If a newly added lookup column must appear in reference schema lists immediately, run `compile-creatio`.
 		- After `create-data-binding` / `add-data-binding-row` / `upsert-data-binding-row-db` — data seeding does not change compiled artifacts.
 		Calling `compile-creatio` in these cases only wastes time and may trigger an unnecessary restart.
 
@@ -58,6 +63,14 @@ internal static class McpServerInstructions
 		  and `*-by-credentials` (takes raw URL/username/password). Prefer the environment-name variant.
 		- Read the `docs://help/command/{CommandName}` resources for detailed usage of any command.
 
+		### Freedom UI components — discover and version-check BEFORE planning page work
+		Before you propose components or generate an implementation plan for a Freedom UI page, do BOTH of these — do not rely on memory or assume a component set:
+		1. **Resolve the target platform version.** Call `get-component-info` with `environment-name` set to the environment you will edit, and read `resolvedFrom` on the response:
+		   - `resolvedFrom: "environment"` — the platform version is KNOWN and the exact per-version catalog was loaded; the catalog is authoritative, proceed with no confirmation.
+		   - `resolvedFrom: "environment-superset"` — the platform version was known (probe-success or explicit `--version`) but the exact per-version catalog was not published on the CDN, so `latest` was served as the closest available. The response carries `versionWarning` with a soft caveat. Flag this to the user and verify critical component types against the actual environment before committing to an implementation plan — a type listed in `latest` may not exist in the target’s actual platform version.
+		   - `resolvedFrom: "latest-fallback"` — the version could NOT be determined (no active environment, probe failed, or unparseable version). Do NOT silently assume a component set. Tell the user the platform version is unknown and request explicit confirmation before proceeding, or fix the upstream signal (register/activate the environment, upgrade cliogate). The response's `versionWarning` carries this caveat.
+		2. **Discover the full component set proactively.** Call `get-component-info` with no `component-type` (list mode) to enumerate every component available for that version. Non-obvious components (e.g. `crt.Gallery`) live in the catalog and must be considered and suggested when relevant — never conclude a capability is missing, or wait for the user to ask you to search, without listing the catalog first. Pass `schema-type: "mobile"` to discover the separate mobile component set.
+
 		### Edit a page from a Creatio designer URL
 		A Freedom UI designer URL is one of:
 		- `#/PageDesigner/<pageUId>` — first edit of a page that lives in a locked package; the backend will create a virtual replacing package automatically on first save.
@@ -68,6 +81,27 @@ internal static class McpServerInstructions
 		2. Call `list-pages uid=<pageUId>` — returns the exact page with its `schema-name` and `packageName` in one call.
 		3. Call `get-page schema-name=<matched schema-name>` to retrieve the editable body and bundle.
 		4. Call `update-page schema-name=<matched schema-name> body=<...>` to save. Do NOT pass `target-package-uid`: the backend's `GetDesignPackageUId` resolves the correct package automatically — it materializes a virtual package on first save (locked-source case) or reuses the existing replacing package (already-substituted case). Each platform package has a deterministic owning app, so there is no ambiguity to override.
+
+		## Long-running tools (await — do not retry on a perceived timeout)
+		- `create-app`, `create-app-section`, `update-app-section`, `delete-app-section`,
+		  `list-app-sections`, and `get-app-info` call the Creatio backend and can take minutes on
+		  a cold or busy environment. They stream `notifications/progress` while working.
+		- A progress notification means the server is still working — it is NOT a stall. Do not
+		  cancel and retry, and do not fall back to raw SQL or manual UI on a perceived client
+		  timeout; that duplicates work and can leave partial state.
+		- If your client surfaces a hard timeout while progress is still arriving, treat the call
+		  as in-flight: read back state with `get-app-info` / `list-app-sections` before any retry.
+
+		## Profile language for created entities (detect once, reuse, ask on failure)
+		- Before creating ANY entity (application, object, page, section, lookup, column), call
+		  `get-user-culture` ONCE per session to detect the connected user's profile language, and
+		  reuse that result for all generated names, labels, and captions for the rest of the session.
+		- If `get-user-culture` returns `success:false`, ASK the user which language to use before
+		  proceeding. Do NOT silently fall back to the host machine locale or to `en-US`.
+		- Re-detect only when the active environment changes within the session (the result is keyed
+		  by environment). Do not re-detect per entity — the server caches it per environment.
+		- To force a specific language for a single creation, pass the `caption-culture` argument
+		  (precedence: `caption-culture` > detected profile culture > `en-US`).
 
 		## Error handling
 		- Every tool response includes a `correlation-id` for tracing.

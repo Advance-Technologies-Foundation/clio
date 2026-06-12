@@ -64,6 +64,7 @@ public static class EntitySchemaPrompt {
 		 normalizes it to GUID before save.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
+		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the schema and column captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 """;
 
 	/// <summary>
@@ -122,7 +123,11 @@ public static class EntitySchemaPrompt {
 		 changes in the ordered `operations` array. Each operation uses clio-native fields such as `action`,
 		 `column-name`, `type`, `title-localizations`, `description-localizations`,
 		 `reference-schema-name`, and `default-value-config`; keep legacy `default-value-source` and
-		 `default-value` only for shorthand `Const` and `None`. Do not send legacy scalar `title` or
+		 `default-value` only for shorthand `Const` and `None`. The `get-app-info` read-shape aliases are also
+		 accepted so a column read from `get-app-info` can be sent back without translation: `name` for
+		 `column-name`, `data-value-type` for `type`, `reference-schema` for `reference-schema-name`, and
+		 `is-required` for `required`.
+		 Do not send legacy scalar `title` or
 		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
 		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
 		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for

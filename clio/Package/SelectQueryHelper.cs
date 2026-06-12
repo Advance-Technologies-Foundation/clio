@@ -121,6 +121,86 @@ internal static class SelectQueryHelper
 		};
 	}
 
+	/// <summary>
+	/// Builds a SelectQuery where all <paramref name="filterValues"/> for <paramref name="filterColumn"/>
+	/// are combined with an OR logical operator, producing an IN-style batch filter in a single request.
+	/// </summary>
+	internal static object BuildSelectQueryWithOrFilter(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		string filterColumn,
+		IReadOnlyList<string> filterValues,
+		int dataValueType,
+		int rowCount = 10000)
+	{
+		Dictionary<string, object> columnItems = columns
+			.ToDictionary(
+				column => column.Alias,
+				column => (object)new
+				{
+					expression = new
+					{
+						expressionType = 0,
+						columnPath = column.Path
+					},
+					orderDirection = 0,
+					orderPosition = -1,
+					isVisible = true
+				},
+				StringComparer.Ordinal);
+
+		Dictionary<string, object> filterItems = filterValues
+			.Select((value, index) => new { value, index })
+			.ToDictionary(
+				item => $"filter{item.index}",
+				item => (object)new
+				{
+					filterType = 1,
+					comparisonType = 3,
+					isEnabled = true,
+					trimDateTimeParameterToDate = false,
+					leftExpression = new
+					{
+						expressionType = 0,
+						columnPath = filterColumn
+					},
+					rightExpression = new
+					{
+						expressionType = 2,
+						parameter = new
+						{
+							value = item.value,
+							dataValueType
+						}
+					}
+				},
+				StringComparer.Ordinal);
+
+		return new
+		{
+			rootSchemaName,
+			operationType = 0,
+			allColumns = false,
+			isDistinct = false,
+			ignoreDisplayValues = false,
+			rowCount,
+			rowsOffset = -1,
+			isPageable = false,
+			columns = new
+			{
+				items = columnItems
+			},
+			filters = new
+			{
+				filterType = 6,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				logicalOperation = 1,
+				items = filterItems
+			}
+		};
+	}
+
 	internal sealed record SelectQueryColumnDefinition(string Path, string Alias);
 
 	internal sealed record SelectQueryFilterDefinition(

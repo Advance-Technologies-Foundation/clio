@@ -119,6 +119,14 @@ public sealed class PageSchemaConvertersGuidanceResource {
 			       - The converter binding syntax uses a pipe: `"$Attr | converterName"`.
 			       - Async converters are allowed. SDK services from SCHEMA_DEPS closure are allowed. Do NOT call non-cached HTTP endpoints — they fire on every render. `SysSettingsService` is safe: OOTB settings are cached at startup; custom `usr.*` settings are cached after the first call.
 
+			       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+			       - Note: anti-shape detection that overlaps the existing regex content validators is handled by the regex layer with its own established wording, NOT by the lint pass. Example already covered by the regex layer (and therefore NOT in the lint catalogue): `converters` written as an array literal (rejected by `ValidateMarkerContent` → `ValidateJavaScriptObjectMarkers`).
+			       - ERROR (blocks the save; body is NOT sent to Creatio):
+			         - `converter-crt-prefix-reserved` — any converter key that is a direct entry of the `converters` object and starts with `crt.` (the reserved built-in namespace). Rename to `usr.<Name>`. The rule is scoped to direct entries of the `converters` object, so `\"crt.X\"` keys inside a lookup map declared in a converter's closure are not flagged.
+			       - WARNING (reported alongside the response, write still proceeds):
+			         - `converter-fetch-call` — direct `fetch(...)`, `globalThis.fetch(...)`, or `window.fetch(...)` invoked anywhere inside the `converters` subtree. Replace with a cached SDK service such as `SysSettingsService` (see the template above) — converters fire on every render of the bound control.
+			       - Fix the underlying converter body to clear a finding; do not strip the offending converter to silence the diagnostic.
+
 			       Minimal canonical template (custom converter)
 			       - Replace `<AttrName>` and `<ConverterName>` with live schema names.
 			         viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[

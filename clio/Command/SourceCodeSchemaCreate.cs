@@ -18,6 +18,9 @@ namespace Clio.Command {
 
 		[Option("description", Required = false, HelpText = "Optional schema description")]
 		public string Description { get; set; }
+
+		[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated schema caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+		public string? CaptionCulture { get; set; }
 	}
 
 	public class SourceCodeSchemaCreateResponse {
@@ -37,14 +40,17 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
+		private readonly Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver _captionCultureResolver;
 
 		public SourceCodeSchemaCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
-			ILogger logger) {
+			ILogger logger,
+			Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+			_captionCultureResolver = captionCultureResolver;
 		}
 
 		public bool TryCreate(SourceCodeSchemaCreateOptions options, out SourceCodeSchemaCreateResponse response) {
@@ -90,7 +96,8 @@ namespace Clio.Command {
 					LogFailure(response.Error);
 					return false;
 				}
-				SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description);
+				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
+				SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description, captionCulture);
 				string saveError = SchemaDesignerHelper.SaveSchema(_applicationClient, _serviceUrlBuilder, schema, Kind);
 				if (saveError != null) {
 					response = new SourceCodeSchemaCreateResponse { Success = false, Error = saveError };

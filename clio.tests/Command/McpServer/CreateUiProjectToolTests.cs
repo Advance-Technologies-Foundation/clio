@@ -22,6 +22,12 @@ public class CreateUiProjectToolTests {
 		_workspaceDirectory = Path.Combine(Path.GetTempPath(), "clio-ui-tool-tests-" + Path.GetRandomFileName());
 		Directory.CreateDirectory(Path.Combine(_workspaceDirectory, ".clio"));
 		File.WriteAllText(Path.Combine(_workspaceDirectory, ".clio", "workspaceSettings.json"), "{}");
+		// Resolve any symlinks (e.g. /var → /private/var on macOS) so path comparisons
+		// that use Directory.GetCurrentDirectory() are stable across platforms.
+		string savedCwd = Directory.GetCurrentDirectory();
+		Directory.SetCurrentDirectory(_workspaceDirectory);
+		_workspaceDirectory = Directory.GetCurrentDirectory();
+		Directory.SetCurrentDirectory(savedCwd);
 	}
 
 	[TearDown]

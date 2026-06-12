@@ -67,6 +67,11 @@ public sealed class PageSchemaValidatorsGuidanceResource {
 			       - The error return MUST be `{ "<ValidatorType>": { message: config.message } }`. Never return `true`, `false`, `{}`, or a hardcoded string.
 			       - Treat the binding-location, control-binding, resource-string, in-place-fix, and async CRITICAL sections below as hard requirements.
 
+			       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+			       - Note: anti-shape detection that overlaps the existing regex content validators is handled by the regex layer with its own established wording, NOT by the lint pass. Validator-side examples already covered by the regex layer (and therefore NOT in the lint catalogue): `validators` written as an array literal (rejected by `ValidateMarkerContent` → `ValidateJavaScriptObjectMarkers`), `params: []` on a custom validator entry (rejected by `ValidateCustomValidatorParamCompleteness`), and the validator-binding-shape anti-patterns at the view-model attribute level (rejected by `ValidateValidatorBindingShape`).
+			       - ERROR (blocks the save; body is NOT sent to Creatio):
+			         - `validator-bad-return-literal` — a validator-instance function (the function returned by the factory) returns literal `true`, `false`, a string, or empty `{}`. Returning `null` or `undefined` is allowed and signals "no error". The rule is bounded to the validator-instance function's own returns; nested helpers inside the factory body (e.g. `function isEmpty(v) { return false; }` or `[].filter(function(i){ return true; })` predicates) are not flagged.
+
 			       CRITICAL — Validator binding location
 			       - Validators MUST be bound to the model attribute in `viewModelConfig` or `viewModelConfigDiff`, NOT to the UI element in `viewConfigDiff`.
 			       - Binding to the `crt.Input` (or any UI element) in `viewConfigDiff` with a `validators` array does NOT invoke the validator at runtime — Creatio ignores it.

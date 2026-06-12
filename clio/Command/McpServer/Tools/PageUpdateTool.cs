@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Acornima.Ast;
 using Clio.Common;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
@@ -18,10 +19,12 @@ public sealed class PageUpdateTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
-	IComponentInfoCatalog webComponentCatalog)
+	IComponentInfoCatalog webComponentCatalog,
+	IPageBodySamplingService samplingService)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
+	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";
 
@@ -30,9 +33,10 @@ public sealed class PageUpdateTool(
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
 			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
+			"This holds for ANY constraint mechanism \u2014 an attribute value, a now-relative period (date macro), a fixed calendar/clock part such as a time of day (datePart), the existence or count of related child records, or a constraint gated by another field's value \u2014 classify the mechanism, not the wording; all are apply-static-filter, never a handler or crt.InitRequest. A gated constraint puts the gate (X = Y) into the rule's condition group and the apply-static-filter action on the target lookup. " +
 		"Section authoring rules for the body payload: " +
 		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
-		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first — NOTE: restricting which records a lookup/ComboBox offers is NEVER handler business logic, regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter), so use create-entity-business-rule, not crt.InitRequest; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
@@ -57,6 +61,27 @@ public sealed class PageUpdateTool(
 				Success = false,
 				Error = "Either 'body' or 'body-file' must provide page body content."
 			};
+		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
+		// JSON and are handled by their own validator below; for web bodies we
+		// parse the body with Acornima BEFORE invoking the regex-based content
+		// validators or the sampling service. A syntax error means the page
+		// would not load in the browser — failing fast surfaces the precise
+		// {line, column, message} to the operator without sinking time into
+		// model-side review or persisting a broken body. The parsed AST is
+		// then fed into PageBodyAstLinter further down (AFTER the regex
+		// validators ran) so the established regex error messages still win
+		// on overlapping detections; lint findings only ADD detections.
+		Script parsedAst = null;
+		if (PageSchemaTypeExtensions.FromBody(options.Body) != PageSchemaType.Mobile) {
+			PageBodySyntaxValidationResult syntaxResult =
+				PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
+			if (!syntaxResult.IsValid) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = PageBodySyntaxValidator.FormatError(syntaxResult)
+				};
+			}
+		}
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return validationFailure;
@@ -66,6 +91,9 @@ public sealed class PageUpdateTool(
 			return runProcessFailure;
 		}
 		validationWarnings = MergeWarnings(validationWarnings, runProcessWarnings);
+		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
+		if (lintFailure != null)
+			return lintFailure;
 		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		if (samplingFailure != null)
@@ -83,9 +111,38 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		response.SamplingReview = samplingReview;
-		IReadOnlyList<string> mergedWarnings = MergeWarnings(validationWarnings, response.Warnings);
+		IReadOnlyList<string> mergedWarnings = MergeWarnings(
+			MergeWarnings(validationWarnings, response.Warnings),
+			lintWarnings);
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
+	}
+
+	// AST lint pass runs on the success path of the regex validators so the
+	// regex messages — which existing tests and operator habits depend on —
+	// remain authoritative for overlapping detections. Lint findings cover
+	// only what the regex layer does not. The returned Failure value is
+	// non-null when at least one Error-severity finding triggered; the
+	// returned Warnings list carries any Warning-severity findings on the
+	// success path.
+	private static (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) RunAstLintPass(Script parsedAst) {
+		if (parsedAst is null) {
+			return (null, Array.Empty<string>());
+		}
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
+		IReadOnlyList<PageBodyLintFinding> errors =
+			findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+		if (errors.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = PageBodyAstLinter.FormatErrors(errors)
+			}, Array.Empty<string>());
+		}
+		string[] warnings = findings
+			.Where(f => f.Severity == LintSeverity.Warning)
+			.Select(PageBodyAstLinter.FormatFinding)
+			.ToArray();
+		return (null, warnings);
 	}
 
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {
@@ -125,12 +182,12 @@ public sealed class PageUpdateTool(
 		return (null, webWarnings);
 	}
 
-	private static async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+	private async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
 		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
 		if (options.DryRun || args.SkipSampling == true) {
 			return (null, null);
 		}
-		PageSamplingReview samplingReview = await PageBodySamplingService.TrySamplingReviewAsync(
+		PageSamplingReview samplingReview = await _samplingService.TrySamplingReviewAsync(
 			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
 		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
 			return (new PageUpdateResponse {
@@ -263,6 +320,7 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
+		Collect(SchemaValidationService.ValidateValidatorBindingShape(body), errors);
 		Collect(SchemaValidationService.ValidateStandardValidatorUsage(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorParamCompleteness(body), errors);
 		Collect(SchemaValidationService.ValidateCustomValidatorFactoryShape(body), errors);

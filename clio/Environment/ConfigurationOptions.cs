@@ -171,7 +171,7 @@ namespace Clio
 		//[Newtonsoft.Json.JsonIgnore]
 		public string EnvironmentPath { get; set; } = string.Empty;
 
-		public EnvironmentSettings Fill(EnvironmentOptions options) {
+		public EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
@@ -183,56 +183,42 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
-			if (this.Safe.HasValue && this.Safe.Value) {
-				Console.WriteLine($"You try to apply the action on the production site {this.Uri}");
-				Console.Write($"Do you want to continue? [Y/N]:");
-				var answer = Console.ReadKey();
-				Console.WriteLine();
-				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
-					Console.WriteLine("Operation was canceled by user");
-					System.Environment.Exit(1);
-				}
+			if (this.Safe.HasValue && this.Safe.Value
+				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
+				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on
+				// Console.ReadKey() or killing the process via Environment.Exit(). A dedicated
+				// exception lets the MCP BaseTool convert this into a structured error.
+				throw new SafeEnvironmentConfirmationRequiredException(this.Uri);
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? this.WorkspacePathes : options.WorkspacePathes;
 
-			bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if (isUri) {
+			ApplyDbServerOptions(result, options);
+			return result;
+		}
 
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
+			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
+				result.DbServer ??= new DbServer();
 				result.DbServer.Uri = uri;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.WorkingFolder = options.DbWorknigFolder;
-
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Login = options.DbUser;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Password = options.DbPassword;
 			}
-
 			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
 				result.BackupFilePath = options.BackUpFilePath;
 			}
 			if (!string.IsNullOrEmpty(options.DbName)) {
 				result.DbName = options.DbName;
 			}
-			return result;
 		}
 	}
 
@@ -358,6 +344,10 @@ namespace Clio
 		private static readonly object SchemaFileLock = new ();
 
 		private Settings _settings = new ();
+		// Used by GetEnvironment to confirm Safe-environment operations without deadlocking a
+		// non-interactive host. Null only for the internal/direct (non-DI) construction sites that
+		// never call GetEnvironment; those fall back to RealInteractiveConsole.Shared.
+		private readonly IInteractiveConsole _interactiveConsole;
 		public static string AppSettingsFolderPath {
 			get {
 				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
@@ -389,7 +379,8 @@ namespace Clio
 
 		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
-		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null) {
+		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null, IInteractiveConsole interactiveConsole = null) {
+	_interactiveConsole = interactiveConsole;
 	if (fileSystem != null) {
 		FileSystem = fileSystem;
 	}
@@ -584,7 +575,7 @@ namespace Clio
 					envSettings = new EnvironmentSettings();
 				}
 			}
-			EnvironmentSettings result = envSettings.Fill(options);
+			EnvironmentSettings result = envSettings.Fill(options, _interactiveConsole ?? RealInteractiveConsole.Shared);
 			return result;
 		}
 

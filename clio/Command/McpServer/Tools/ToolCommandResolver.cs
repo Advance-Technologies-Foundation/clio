@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
+using Clio.Common;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,7 +31,8 @@ public interface IToolCommandResolver {
 /// </summary>
 public class ToolCommandResolver(
 	ISettingsRepository settingsRepository,
-	ISettingsBootstrapService settingsBootstrapService) : IToolCommandResolver {
+	ISettingsBootstrapService settingsBootstrapService,
+	IInteractiveConsole interactiveConsole) : IToolCommandResolver {
 
 	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -56,10 +56,10 @@ public class ToolCommandResolver(
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
 				?? throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
-			settings = settings.Fill(options);
+			settings = settings.Fill(options, interactiveConsole);
 		} 
 		else {
-			settings = new EnvironmentSettings().Fill(options);
+			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new InvalidOperationException(
@@ -85,7 +85,7 @@ public class ToolCommandResolver(
 				?? new EnvironmentSettings {
 					Login = "default"
 				};
-		settings = settings.Fill(options);
+		settings = settings.Fill(options, interactiveConsole);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
 	}
@@ -103,20 +103,6 @@ public class ToolCommandResolver(
 		return $"{identity}:{Convert.ToHexString(hash)[..16]}";
 	}
 
-	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) {
-		string availableHint;
-		try {
-			var all = settingsRepository.GetAllEnvironments();
-			var names = all?.Keys?
-				.Where(name => !string.IsNullOrWhiteSpace(name))
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-				.ToList() ?? [];
-			availableHint = names.Count == 0
-				? " No environments are registered. Use `list-environments` or `reg-web-app` to configure one."
-				: $" Available environments: {string.Join(", ", names)}. Call `list-environments` to inspect them.";
-		} catch {
-			availableHint = " Use `list-environments` to see available environments.";
-		}
-		return $"Environment with key '{missingEnvironmentName}' not found." + availableHint;
-	}
+	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) =>
+		EnvironmentNotFoundError.Build(missingEnvironmentName, settingsRepository);
 }

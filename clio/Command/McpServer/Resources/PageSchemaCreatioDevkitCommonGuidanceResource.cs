@@ -76,10 +76,10 @@ public sealed class PageSchemaCreatioDevkitCommonGuidanceResource {
 		         | `sdk.ComparisonType` | specify comparison operators inside `FilterGroup` |
 		         | `sdk.ModelParameterType` | declare parameter kinds such as `Filter` in `model.load(...)` |
 		         | `sdk.ViewModelCollectionActionType` | filter collection change callbacks by action such as `Add` or `Remove` |
-		       - Advanced schema-body pattern:
+		       - Canonical request-chain dispatch from handler code:
 		         | Need | Prefer | Typical members |
 		         | --- | --- | --- |
-		         | low-level request-chain dispatch in SDK-oriented schema code | `sdk.HandlerChainService.instance.process(...)` | `process({ type, $context, scopes })` |
+		         | imperative request dispatch inside SCHEMA_HANDLERS | `sdk.HandlerChainService.instance.process(...)` | `process({ type, $context, scopes })` |
 
 		       Page-body templates
 		       - SysSettingsService inside a handler:
@@ -273,13 +273,13 @@ public sealed class PageSchemaCreatioDevkitCommonGuidanceResource {
 		         });
 		       - Rule: if a handler is already dispatching requests, do NOT use `DialogService`; use `crt.ShowDialogRequest`. Use `DialogService` only when the task explicitly matches existing SDK-style schema code.
 
-		       - Inner handler/body snippet only: HandlerChainService from advanced SDK-oriented schema code:
+		       - Inner handler/body snippet: canonical HandlerChainService dispatch from page-body handler code (per Creatio Academy SCHEMA_HANDLERS examples):
 		         return await sdk.HandlerChainService.instance.process({
 		           type: "usr.OpenCustomPageRequest",
 		           $context: request.$context,
 		           scopes: [...request.scopes]
 		         });
-		       - Rule: in deployed page-body handlers, prefer `await request.$context.executeRequest(...)`. Use `sdk.HandlerChainService.instance.process(...)` only when the schema already follows an SDK-oriented orchestration pattern or the task explicitly requires low-level chain dispatch.
+		       - Rule: in deployed page-body handlers, use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` for imperative request dispatch. This is the documented `@creatio-devkit/common` API and the form used uniformly by Creatio Academy SCHEMA_HANDLERS examples. Do NOT use `request.$context.executeRequest(...)`: it is reachable from handler code but not part of the public SDK surface and may shift between minor versions.
 
 		       Anti-patterns
 		       - Do NOT add `@creatio-devkit/common` when no SDK symbol is used after the edit.
@@ -294,7 +294,7 @@ public sealed class PageSchemaCreatioDevkitCommonGuidanceResource {
 		       - Do NOT invent collection helper APIs beyond `createItem(...)`, `registerOnCollectionChangeCallback(...)`, `registerOnItemAttributesChangesCallback(...)`, and their matching unregister methods shown here.
 		       - Do NOT fire-and-forget SDK promises with `void somePromise`, `.then()` without error handling, or any other pattern that drops failures silently in schema-body code.
 		       - Do NOT use internal `ɵ*` exports from the package.
-		       - Do NOT mix `sdk.HandlerChainService.instance.process(...)` into deployed page-body code unless the task explicitly matches an existing SDK-oriented pattern.
+		       - Do NOT use `request.$context.executeRequest(...)` in deployed page-body code — it is reachable but not part of the public `@creatio-devkit/common` surface. Use `sdk.HandlerChainService.instance.process({ type, $context, scopes })` instead (per Creatio Academy SCHEMA_HANDLERS examples).
 		       - Existing product code may still use `request.$context.attributes[...]` or direct property assignment. Do not prefer those forms in newly generated schema-body code unless the local schema already follows that pattern.
 
 		       BEFORE SAVE CHECKLIST

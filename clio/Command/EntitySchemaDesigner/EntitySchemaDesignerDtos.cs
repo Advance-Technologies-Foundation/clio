@@ -61,6 +61,12 @@ internal sealed class SchemaDesignerRequestDto
 {
 	[JsonProperty("saveSchemaDBStructure")]
 	public List<Guid> SaveSchemaDbStructure { get; set; } = [];
+
+	[JsonProperty("buildWorkspace")]
+	public bool BuildWorkspace { get; set; }
+
+	[JsonProperty("buildChangedConfiguration")]
+	public bool BuildChangedConfiguration { get; set; }
 }
 
 internal sealed class RuntimeEntitySchemaRequestDto

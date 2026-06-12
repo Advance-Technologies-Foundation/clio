@@ -31,10 +31,13 @@ public sealed class CreateEntitySchemaTool(
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote entity schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
-				 
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
@@ -88,7 +91,8 @@ public sealed class CreateEntitySchemaTool(
 			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName)) ? "BaseEntity" : parentSchemaName,
 			ExtendParent = extendParent,
 			Columns = SerializeColumns(args.Columns, context),
-			Environment = args.EnvironmentName
+			Environment = args.EnvironmentName,
+			CaptionCulture = args.CaptionCulture
 		};
 	}
 
@@ -106,14 +110,15 @@ public sealed class CreateEntitySchemaTool(
 			column.LegacyTitle,
 			column.LegacyCaption,
 			context);
+		string? resolvedReferenceSchemaName = column.ResolveReferenceSchemaName();
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
 			["name"] = column.Name?.Trim(),
-			["type"] = column.Type?.Trim(),
+			["type"] = column.ResolveType()?.Trim(),
 			["title-localizations"] = titleLocalizations,
-			["reference-schema-name"] = string.IsNullOrWhiteSpace(column.ReferenceSchemaName)
+			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
 				? null
-				: column.ReferenceSchemaName.Trim(),
-			["required"] = column.Required,
+				: resolvedReferenceSchemaName.Trim(),
+			["required"] = column.ResolveRequired(),
 		    ["default-value-source"] = column.DefaultValueSource,
 		    ["default-value"] = column.DefaultValue,
 			["default-value-config"] = column.DefaultValueConfig,
@@ -151,10 +156,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 		OpenWorld = false)]
 	[Description("""
 				 Creates a remote lookup schema in an existing Creatio package through EntitySchemaDesignerService.
-				 
+
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
 				 not send them as custom columns.
+
+				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
+				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
@@ -266,8 +274,8 @@ public sealed class UpdateEntitySchemaTool(
 		return new[] { args.SchemaName }
 			.Concat(args.Operations
 				.Where(op => string.Equals(op.Action, "add", StringComparison.OrdinalIgnoreCase)
-					&& !string.IsNullOrWhiteSpace(op.ColumnName))
-				.Select(op => op.ColumnName!.Trim()))
+					&& !string.IsNullOrWhiteSpace(op.ResolveColumnName()))
+				.Select(op => op.ResolveColumnName()!.Trim()))
 			.Where(term => !string.IsNullOrWhiteSpace(term))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -276,8 +284,8 @@ public sealed class UpdateEntitySchemaTool(
 	private static IReadOnlyList<string> BuildLookupHints(UpdateEntitySchemaArgs args) {
 		return args.Operations
 			.Where(op => string.Equals(op.Action, "add", StringComparison.OrdinalIgnoreCase)
-				&& !string.IsNullOrWhiteSpace(op.ReferenceSchemaName))
-			.Select(op => op.ReferenceSchemaName!.Trim())
+				&& !string.IsNullOrWhiteSpace(op.ResolveReferenceSchemaName()))
+			.Select(op => op.ResolveReferenceSchemaName()!.Trim())
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
 	}
@@ -309,13 +317,13 @@ public sealed class UpdateEntitySchemaTool(
 				context);
 		return new Dictionary<string, object?> {
 			["action"] = operation.Action,
-			["column-name"] = operation.ColumnName,
+			["column-name"] = operation.ResolveColumnName(),
 			["new-name"] = operation.NewName,
-			["type"] = operation.Type,
+			["type"] = operation.ResolveType(),
 			["title-localizations"] = titleLocalizations,
 			["description-localizations"] = descriptionLocalizations,
-			["reference-schema-name"] = operation.ReferenceSchemaName,
-			["required"] = operation.IsRequired,
+			["reference-schema-name"] = operation.ResolveReferenceSchemaName(),
+			["required"] = operation.ResolveRequired(),
 			["indexed"] = operation.Indexed,
 			["cloneable"] = operation.Cloneable,
 			["track-changes"] = operation.TrackChanges,
@@ -461,7 +469,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
-			string context = $"Column '{args.ColumnName}' action '{args.Action}'";
+			string resolvedColumnName = args.ResolveColumnName();
+			string context = $"Column '{resolvedColumnName}' action '{args.Action}'";
 			IReadOnlyDictionary<string, string>? titleLocalizations =
 				EntitySchemaLocalizationContract.NormalizeMutationTitleLocalizations(
 					args.Action,
@@ -478,9 +487,9 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				Package = args.PackageName,
 				SchemaName = args.SchemaName,
 				Action = args.Action,
-				ColumnName = args.ColumnName,
+				ColumnName = resolvedColumnName,
 				NewName = args.NewName,
-				Type = args.Type,
+				Type = args.ResolveType(),
 				Title = titleNormalization.EffectiveTitle,
 				TitleLocalizations = titleNormalization.Localizations,
 				DescriptionLocalizations = EntitySchemaLocalizationContract.NormalizeMutationDescriptionLocalizations(
@@ -488,8 +497,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 					args.DescriptionLocalizations,
 					args.LegacyDescription,
 					context),
-				ReferenceSchemaName = args.ReferenceSchemaName,
-				Required = args.IsRequired,
+				ReferenceSchemaName = args.ResolveReferenceSchemaName(),
+				Required = args.ResolveRequired(),
 				Indexed = args.Indexed,
 				Cloneable = args.Cloneable,
 				TrackChanges = args.TrackChanges,
@@ -504,7 +513,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				UseSeconds = args.UseSeconds,
 				SimpleLookup = args.SimpleLookup,
 				Cascade = args.Cascade,
-				DoNotControlIntegrity = args.DoNotControlIntegrity
+				DoNotControlIntegrity = args.DoNotControlIntegrity,
+				CaptionCulture = args.CaptionCulture
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
@@ -551,6 +561,10 @@ public abstract record EntitySchemaCreateArgsBase(
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
 	public string? LegacyTitle { get; init; }
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for generated captions (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>
@@ -687,6 +701,53 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("masked")]
 	[property: Description("Optional masked flag. Allowed for Text and SecureText columns.")]
 	public bool? Masked { get; init; }
+
+	/// <summary>
+	/// Gets the read-shape alias for <c>type</c>. <c>get-app-info</c> reports the column type as
+	/// <c>data-value-type</c>, so this lets that read shape be reused for a create/add without translation (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("data-value-type")]
+	[property: Description("Alias for type. Accepts the get-app-info read shape (which reports the column type as 'data-value-type').")]
+	public string? DataValueTypeAlias { get; init; }
+
+	/// <summary>
+	/// Gets the read-shape alias for <c>reference-schema-name</c>. <c>get-app-info</c> reports the lookup
+	/// reference as <c>reference-schema</c>, so this lets that read shape be reused without translation (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("reference-schema")]
+	[property: Description("Alias for reference-schema-name. Accepts the get-app-info read shape (which reports the lookup reference as 'reference-schema').")]
+	public string? ReferenceSchemaAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective column type, preferring the canonical <c>type</c> and falling back to the
+	/// <c>data-value-type</c> read-shape alias.
+	/// </summary>
+	/// <returns>The canonical type, or the alias when the canonical field is absent.</returns>
+	public string? ResolveType() =>
+		!string.IsNullOrWhiteSpace(Type) ? Type : DataValueTypeAlias;
+
+	/// <summary>
+	/// Resolves the effective lookup reference schema name, preferring the canonical
+	/// <c>reference-schema-name</c> and falling back to the <c>reference-schema</c> read-shape alias.
+	/// </summary>
+	/// <returns>The canonical reference schema name, or the alias when the canonical field is absent.</returns>
+	public string? ResolveReferenceSchemaName() =>
+		!string.IsNullOrWhiteSpace(ReferenceSchemaName) ? ReferenceSchemaName : ReferenceSchemaAlias;
+
+	/// <summary>
+	/// Gets the kebab-cased alias for <c>required</c>. Agents naturally spell the <c>IsRequired</c> flag as
+	/// <c>is-required</c>, so this accepts that spelling instead of silently dropping it (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("is-required")]
+	[property: Description("Alias for required. Accepts the 'is-required' spelling agents commonly send.")]
+	public bool? IsRequiredAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective required flag, preferring the canonical <c>required</c> and falling back to the
+	/// <c>is-required</c> alias.
+	/// </summary>
+	/// <returns>The canonical required flag, or the alias when the canonical field is absent.</returns>
+	public bool? ResolveRequired() => Required ?? IsRequiredAlias;
 }
 
 /// <summary>
@@ -811,6 +872,73 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("default-value-config")]
 	[property: Description("Structured default value metadata. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID.")]
 	public EntitySchemaDefaultValueConfig? DefaultValueConfig { get; init; }
+
+	/// <summary>
+	/// Gets the read-shape alias for <c>column-name</c>. <c>get-app-info</c> reports the column identity as
+	/// <c>name</c>, so this lets that read shape be sent back to <c>update-entity</c> without translation (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("name")]
+	[property: Description("Alias for column-name. Accepts the get-app-info read shape (which reports the column identity as 'name').")]
+	public string? NameAlias { get; init; }
+
+	/// <summary>
+	/// Gets the read-shape alias for <c>type</c>. <c>get-app-info</c> reports the column type as
+	/// <c>data-value-type</c>, so this lets that read shape be sent back without translation (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("data-value-type")]
+	[property: Description("Alias for type. Accepts the get-app-info read shape (which reports the column type as 'data-value-type').")]
+	public string? DataValueTypeAlias { get; init; }
+
+	/// <summary>
+	/// Gets the read-shape alias for <c>reference-schema-name</c>. <c>get-app-info</c> reports the lookup
+	/// reference as <c>reference-schema</c>, so this lets that read shape be sent back without translation (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("reference-schema")]
+	[property: Description("Alias for reference-schema-name. Accepts the get-app-info read shape (which reports the lookup reference as 'reference-schema').")]
+	public string? ReferenceSchemaAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective target column name, preferring the canonical <c>column-name</c> and falling
+	/// back to the <c>name</c> read-shape alias.
+	/// </summary>
+	/// <returns>The canonical column name, or the alias when the canonical field is absent.</returns>
+	public string? ResolveColumnName() =>
+		!string.IsNullOrWhiteSpace(ColumnName) ? ColumnName : NameAlias;
+
+	/// <summary>
+	/// Resolves the effective column type, preferring the canonical <c>type</c> and falling back to the
+	/// <c>data-value-type</c> read-shape alias.
+	/// </summary>
+	/// <returns>The canonical type, or the alias when the canonical field is absent.</returns>
+	public string? ResolveType() =>
+		!string.IsNullOrWhiteSpace(Type) ? Type : DataValueTypeAlias;
+
+	/// <summary>
+	/// Resolves the effective lookup reference schema name, preferring the canonical
+	/// <c>reference-schema-name</c> and falling back to the <c>reference-schema</c> read-shape alias.
+	/// </summary>
+	/// <returns>The canonical reference schema name, or the alias when the canonical field is absent.</returns>
+	public string? ResolveReferenceSchemaName() =>
+		!string.IsNullOrWhiteSpace(ReferenceSchemaName) ? ReferenceSchemaName : ReferenceSchemaAlias;
+
+	/// <summary>
+	/// Gets the kebab-cased alias for <c>required</c>. Agents naturally spell the <c>IsRequired</c> flag as
+	/// <c>is-required</c>, so this accepts that spelling instead of silently dropping it (ENG-90313).
+	/// </summary>
+	[property: JsonPropertyName("is-required")]
+	[property: Description("Alias for required. Accepts the 'is-required' spelling agents commonly send.")]
+	public bool? IsRequiredAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective required flag, preferring the canonical <c>required</c> and falling back to the
+	/// <c>is-required</c> alias.
+	/// </summary>
+	/// <returns>The canonical required flag, or the alias when the canonical field is absent.</returns>
+	public bool? ResolveRequired() => IsRequired ?? IsRequiredAlias;
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	public string? CaptionCulture { get; init; }
 }
 
 /// <summary>
