@@ -3717,3 +3717,10 @@ Decision: повне прибирання логування. Видалено _
 Discovery: warning був ЄДИНИМ споживачем logger у CreatioClientAdapter; поведінковий re-auth (login×1 + retry, version-dedupe) лишається покритим CreatioClientAdapterReauthTests + рештою ReauthExecutorTests. Емуляція збою для ретесту: clear-redis-db у MCP-процесі (singleton тримає старий cookie). update-sys-setting на .NET FW — поганий probe (Invalid response format quirk + ховає логи).
 Files: clio/Common/ReauthExecutor.cs, clio/Common/CreatioClientAdapter.cs, clio/BindingsModule.cs, clio.tests/Common/ReauthExecutorTests.cs
 Impact: re-auth тепер повністю прозорий — жодного сліду в нормальному виводі. MCP reviewed, no update required (ReauthExecutor — внутрішній HTTP-шар, не команда). Build 0 warnings, повний Unit 3757 passed.
+
+## 2026-06-12 19:05 – PR #699 branch refresh, version bump, and test build
+Context: User requested refreshing GitHub PR #699 (`feature/ENG-91317_detect-external-schema-changes`), bumping the local build version, and producing a testable build artifact.
+Decision: Fetched the PR head as local branch `pr-699`, merged `origin/master` into it, resolved the only merge conflict by keeping both `.codex/workspace-diary.md` entries, then bumped `clio/clio.csproj` fallback `AssemblyVersion` from `8.1.0.57` to `8.1.0.58` and ran a Release build.
+Discovery: The merge touched master changes in `Directory.Packages.props`, `BindingsModule`, `CreatioClientAdapter`, `ReauthExecutor`, and `ReauthExecutorTests`, but the only conflict was the diary. `dotnet build clio/clio.csproj -c Release --no-incremental` succeeded and produced `clio/bin/Release/clio.8.1.0.58.nupkg`; build still reports the pre-existing CS0168 warning in `clio/Package/PackageDownloader.cs:93` for both `net8.0` and `net10.0`.
+Files: .codex/workspace-diary.md, clio/clio.csproj
+Impact: PR #699 is now based on current `master`, has the next fallback version for testing, and has a fresh Release package ready for installation or manual validation.
