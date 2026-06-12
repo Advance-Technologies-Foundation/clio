@@ -899,11 +899,12 @@ public static class SchemaValidationService
 	/// </summary>
 	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
 		SchemaValidationResult result = new() { IsValid = true };
-		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)
-			.Where(config => string.IsNullOrWhiteSpace(config.ProcessName))) {
-			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
+		foreach (string buttonName in RunProcessButtonConfigReader.Read(jsBody)
+			.Where(config => string.IsNullOrWhiteSpace(config.ProcessName))
+			.Select(config => config.ButtonName)) {
+			string buttonLabel = string.IsNullOrWhiteSpace(buttonName)
 				? "a crt.RunBusinessProcessRequest button"
-				: $"run-process button '{config.ButtonName}'";
+				: $"run-process button '{buttonName}'";
 			result.IsValid = false;
 			result.Errors.Add(
 				$"{buttonLabel} is missing the required 'processName' (the process schema code). "
