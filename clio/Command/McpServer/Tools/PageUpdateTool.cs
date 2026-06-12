@@ -20,7 +20,8 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService)
+	IPageBodySamplingService samplingService,
+	System.IO.Abstractions.IFileSystem fileSystem)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -30,6 +31,7 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, this tool blocks the save with `conflict: true` + `conflictDetails` if the schema was modified outside this session (e.g. the user edited the page in the Creatio designer). On a conflict: do NOT retry with the same body — re-run get-page, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set force=true ONLY after they explicitly confirm overwriting them. A small race window between the check and the save remains (last write wins). " +
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
 			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
@@ -87,6 +89,7 @@ public sealed class PageUpdateTool(
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		if (samplingFailure != null)
 			return samplingFailure;
+		(string metaFilePath, bool baselineArmed) = TryArmBaseline(options, args);
 		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -99,6 +102,8 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
+		if (baselineArmed && response.Success && options.DryRun == false)
+			RefreshOrDropBaseline(metaFilePath, args, response);
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
 			MergeWarnings(validationWarnings, response.Warnings),
@@ -203,8 +208,61 @@ public sealed class PageUpdateTool(
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
-			Password = args.Password
+			Password = args.Password,
+			Force = args.Force ?? false
 		};
+
+	/// <summary>
+	/// Discovers the on-disk conflict baseline written by <c>get-page</c> and, when it targets the
+	/// same environment as this call, arms the external-modification check on the options. Returns
+	/// the resolved meta.json path plus whether the baseline is in play (drives the post-save
+	/// refresh). Missing/legacy/foreign-environment baselines leave the check disarmed (FR-07/FR-08).
+	/// </summary>
+	private (string MetaFilePath, bool BaselineArmed) TryArmBaseline(PageUpdateOptions options, PageUpdateArgs args) {
+		string metaFilePath;
+		try {
+			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				args.OutputDirectory,
+				args.BodyFile,
+				args.SchemaName);
+		} catch {
+			return (null, false);
+		}
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
+		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, args.EnvironmentName, args.Uri)) {
+			return (metaFilePath, false);
+		}
+		options.ExpectedChecksum = baseline.Checksum;
+		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+		return (metaFilePath, true);
+	}
+
+	/// <summary>
+	/// After a successful save with an armed baseline: persists the fresh post-save checksum into
+	/// the existing meta.json, or removes the baseline block when the command could not obtain
+	/// fresh metadata — so the next write never compares against a stale checksum (FR-09).
+	/// </summary>
+	private void RefreshOrDropBaseline(string metaFilePath, PageUpdateArgs args, PageUpdateResponse response) {
+		if (string.IsNullOrWhiteSpace(response.NewChecksum)) {
+			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
+			return;
+		}
+		PageBaselineStore.RefreshExistingBaseline(
+			fileSystem,
+			metaFilePath,
+			args.SchemaName,
+			args.EnvironmentName,
+			args.Uri,
+			response.SavedSchemaUId,
+			response.NewChecksum,
+			response.NewModifiedOn,
+			DateTime.UtcNow.ToString("o"));
+	}
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
 		var errors = new List<string>();
@@ -301,5 +359,11 @@ public sealed record PageUpdateArgs(
 	string? TargetPackageUId = null,
 	[property: JsonPropertyName("target-schema-uid")]
 	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
-	string? TargetSchemaUId = null
+	string? TargetSchemaUId = null,
+	[property: JsonPropertyName("force")]
+	[property: Description("Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
+	bool? Force = null,
+	[property: JsonPropertyName("output-directory")]
+	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
+	string? OutputDirectory = null
 );

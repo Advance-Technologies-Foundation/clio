@@ -33,6 +33,7 @@ public sealed class PageSyncTool(
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
+		             "CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, a page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
@@ -197,7 +198,7 @@ public sealed class PageSyncTool(
 				verify,
 				args.OutputDirectory,
 				prePass,
-				samplingResults);
+				samplingResults) { EnvironmentName = args.EnvironmentName };
 			try {
 				foreach (int idx in pendingIndices) {
 					results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
@@ -331,7 +332,7 @@ public sealed class PageSyncTool(
 			ctx.Verify,
 			samplingReview,
 			ctx.OutputDirectory,
-			prePassEntry.LintFindings);
+			prePassEntry.LintFindings) { EnvironmentName = ctx.EnvironmentName };
 		return SyncSinglePage(page, opOptions);
 	}
 
@@ -342,7 +343,11 @@ public sealed class PageSyncTool(
 		bool Verify,
 		string? OutputDirectory,
 		PageSyncPrePassResults PrePass,
-		IReadOnlyList<PageSamplingReview?> SamplingResults);
+		IReadOnlyList<PageSamplingReview?> SamplingResults) {
+		// Environment identity for the conflict-baseline guard. Init-only property (not a
+		// positional parameter) to keep the primary constructor under Sonar S107's limit.
+		public string? EnvironmentName { get; init; }
+	}
 
 	private sealed record PageSyncPrePassResults(IReadOnlyList<PageSyncPrePassEntry> Entries);
 
@@ -375,7 +380,10 @@ public sealed class PageSyncTool(
 		bool Verify,
 		PageSamplingReview SamplingReview,
 		string? OutputDirectory,
-		IReadOnlyList<PageBodyLintFinding> LintFindings);
+		IReadOnlyList<PageBodyLintFinding> LintFindings) {
+		// Environment identity for the conflict-baseline guard — see PageSyncBatchContext.
+		public string? EnvironmentName { get; init; }
+	}
 
 	private PageSyncPageResult TryValidatePage(
 		PageSyncPageInput page,
@@ -450,20 +458,32 @@ public sealed class PageSyncTool(
 						+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
 				};
 			}
+			string metaFilePath = ResolveBaselineMetaPath(page.SchemaName, opOptions.OutputDirectory);
+			PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
+			bool baselineArmed = baseline != null
+				&& PageBaselineStore.MatchesEnvironment(baseline, opOptions.EnvironmentName, null);
 			PageUpdateOptions updateOptions = new() {
 				SchemaName = page.SchemaName,
 				Body = page.Body,
 				DryRun = false,
 				Resources = page.Resources,
-				OptionalProperties = page.OptionalProperties
+				OptionalProperties = page.OptionalProperties,
+				Force = page.Force ?? false
 			};
+			if (baselineArmed) {
+				updateOptions.ExpectedChecksum = baseline.Checksum;
+				updateOptions.ExpectedSchemaUId = baseline.EditableSchemaUId;
+				updateOptions.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+			}
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
 					Validation = validationResult,
-					Error = updateResponse.Error
+					Error = updateResponse.Error,
+					Conflict = updateResponse.Conflict,
+					ConflictDetails = updateResponse.ConflictDetails
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
@@ -493,6 +513,7 @@ public sealed class PageSyncTool(
 					string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
 					fileSystem.File.WriteAllText(bodyFile, getResponse.Raw.Body);
 					verifiedBodyFile = bodyFile;
+					WriteFreshMetaAfterVerify(schemaDir, page.SchemaName, opOptions.EnvironmentName, getResponse);
 				}
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
@@ -504,6 +525,9 @@ public sealed class PageSyncTool(
 					Page = getResponse.Page,
 					VerifiedBodyFile = verifiedBodyFile
 				};
+			}
+			if (baselineArmed) {
+				RefreshOrDropBaseline(metaFilePath, page.SchemaName, opOptions.EnvironmentName, updateResponse);
 			}
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
@@ -520,6 +544,70 @@ public sealed class PageSyncTool(
 				Error = ex.Message
 			};
 		}
+	}
+
+	private string ResolveBaselineMetaPath(string schemaName, string? outputDirectory) {
+		try {
+			return PageBaselineStore.ResolveMetaFilePath(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				outputDirectory,
+				bodyFile: null,
+				schemaName);
+		} catch {
+			return null;
+		}
+	}
+
+	// FR-13: the verify read-back already rewrites body.js; without also rewriting meta.json the
+	// stored baseline would keep the PRE-save checksum and the next write would false-conflict.
+	// The fresh meta carries the page metadata and the baseline captured by the verify get-page.
+	private void WriteFreshMetaAfterVerify(
+		string schemaDir, string schemaName, string? environmentName, PageGetResponse getResponse) {
+		try {
+			string fetchedAt = DateTime.UtcNow.ToString("o");
+			PageBaselineInfo baseline = getResponse.Editable is null
+				? null
+				: new PageBaselineInfo {
+					SchemaName = schemaName,
+					EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
+					EditableSchemaExists = getResponse.Editable.EditableSchemaExists,
+					EditableSchemaUId = getResponse.Editable.EditableSchemaUId,
+					Checksum = getResponse.Editable.Checksum,
+					ModifiedOn = getResponse.Editable.ModifiedOn,
+					CapturedAt = fetchedAt
+				};
+			string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
+			fileSystem.File.WriteAllText(metaFile, System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
+				FetchedAt = fetchedAt,
+				Page = getResponse.Page,
+				Baseline = baseline
+			}));
+		} catch {
+			// best-effort — meta refresh must never fail a verified save.
+		}
+	}
+
+	// FR-09: non-verify path — persist the post-save checksum into the existing baseline, or drop
+	// the baseline when fresh metadata could not be obtained (fail toward no-check).
+	private void RefreshOrDropBaseline(
+		string metaFilePath, string schemaName, string? environmentName, PageUpdateResponse updateResponse) {
+		if (string.IsNullOrWhiteSpace(updateResponse.NewChecksum)) {
+			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
+			return;
+		}
+		PageBaselineStore.RefreshExistingBaseline(
+			fileSystem,
+			metaFilePath,
+			schemaName,
+			environmentName,
+			environmentUri: null,
+			updateResponse.SavedSchemaUId,
+			updateResponse.NewChecksum,
+			updateResponse.NewModifiedOn,
+			DateTime.UtcNow.ToString("o"));
 	}
 
 	private static IReadOnlyList<string> GetLintWarningMessages(IReadOnlyList<PageBodyLintFinding> findings) =>
@@ -765,7 +853,10 @@ public sealed record PageSyncPageInput(
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]
-	string? OptionalProperties = null
+	string? OptionalProperties = null,
+	[property: JsonPropertyName("force")]
+	[property: Description("Skip the external-modification (checksum) conflict check for THIS page and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
+	bool? Force = null
 );
 
 /// <summary>
@@ -818,6 +909,20 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string VerifiedBodyFile { get; init; }
+
+	/// <summary>
+	/// <c>true</c> when this page's save was blocked because the schema was modified outside the
+	/// current agent session (external-modification conflict). Other pages in the batch are
+	/// unaffected.
+	/// </summary>
+	[JsonPropertyName("conflict")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool Conflict { get; init; }
+
+	/// <summary>Conflict details when <see cref="Conflict"/> is <c>true</c>.</summary>
+	[JsonPropertyName("conflict-details")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageConflictDetails ConflictDetails { get; init; }
 }
 
 /// <summary>

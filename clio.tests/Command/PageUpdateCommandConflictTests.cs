@@ -1,0 +1,257 @@
+namespace Clio.Tests.Command;
+
+using Clio.Command;
+using Clio.Common;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class PageUpdateCommandConflictTests
+{
+	private const string SelectQueryUrl = "http://test/DataService/json/SyncReply/SelectQuery";
+	private const string GetSchemaUrl = "http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema";
+	private const string SaveSchemaUrl = "http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema";
+	private const string SchemaUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+	private const string SchemaName = "Test_FormPage";
+
+	private const string ValidBody =
+		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private IApplicationClient _applicationClient;
+	private IServiceUrlBuilder _serviceUrlBuilder;
+	private PageUpdateCommand _command;
+
+	[SetUp]
+	public void SetUp() {
+		_applicationClient = Substitute.For<IApplicationClient>();
+		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
+		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		StubNameMetadata();
+		StubDesignerEndpoints();
+		_command = new PageUpdateCommand(
+			_applicationClient, _serviceUrlBuilder, logger, CreateHierarchyClient());
+	}
+
+	private void StubNameMetadata() {
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl,
+				Arg.Is<string>(body => !body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "rows": [{"UId": "{{SchemaUId}}"}]}""");
+	}
+
+	private void StubChecksumRow(string checksum) {
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl,
+				Arg.Is<string>(body => body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "rows": [{"Checksum": "{{checksum}}", "ModifiedOn": "2026-06-12T09:00:00"}]}""");
+	}
+
+	private void StubChecksumRowMissing() {
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl,
+				Arg.Is<string>(body => body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+	}
+
+	private void StubDesignerEndpoints() {
+		_applicationClient.ExecutePostRequest(
+				GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "schema": {"body": "old body", "name": "{{SchemaName}}" } }""");
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true}""");
+	}
+
+	private static IPageDesignerHierarchyClient CreateHierarchyClient(bool isCreateReplacing = false) {
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		string designPackageUId = isCreateReplacing ? "design-pkg-uid" : "test-pkg-uid";
+		hierarchyClient.GetDesignPackageUId(SchemaUId).Returns(designPackageUId);
+		hierarchyClient.GetParentSchemas(SchemaUId, designPackageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
+		]);
+		return hierarchyClient;
+	}
+
+	private static PageUpdateOptions CreateOptions(
+		string expectedChecksum = null,
+		string expectedSchemaUId = null,
+		bool expectedSchemaAbsent = false,
+		bool force = false,
+		bool dryRun = false) =>
+		new() {
+			SchemaName = SchemaName,
+			Body = ValidBody,
+			DryRun = dryRun,
+			ExpectedChecksum = expectedChecksum,
+			ExpectedSchemaUId = expectedSchemaUId,
+			ExpectedSchemaAbsent = expectedSchemaAbsent,
+			Force = force
+		};
+
+	[Test]
+	[Description("TryUpdatePage must return a checksum-mismatch conflict and skip SaveSchema when the server checksum differs from the baseline.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenExpectedChecksumDiffersFromServer() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum");
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an external modification must block the save");
+		response.Conflict.Should().BeTrue(because: "the response must carry the machine-readable conflict marker");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
+			because: "the server checksum differs from the baseline checksum");
+		response.ConflictDetails.ExpectedChecksum.Should().Be("baseline-checksum",
+			because: "the details must show what the caller expected");
+		response.ConflictDetails.ActualChecksum.Should().Be("server-checksum",
+			because: "the details must show what the server currently holds");
+		response.Error.Should().Contain("Re-run get-page",
+			because: "the error must guide the agent to reload and rebase instead of retrying blindly");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage must save despite a checksum mismatch when force=true, and populate the post-save checksum fields.")]
+	public void TryUpdatePage_ShouldSaveSchemaAndReturnNewChecksum_WhenForceTrueDespiteChecksumMismatch() {
+		// Arrange
+		StubChecksumRow("fresh-after-save");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum", force: true);
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "force=true deliberately bypasses the conflict check");
+		response.Success.Should().BeTrue(because: "the save must proceed when forced");
+		response.Conflict.Should().BeFalse(because: "no conflict is reported on a forced overwrite");
+		response.NewChecksum.Should().Be("fresh-after-save",
+			because: "a forced save must still return the fresh checksum so the caller can refresh its baseline");
+		response.SavedSchemaUId.Should().Be(SchemaUId,
+			because: "the caller needs to know which schema the save wrote to");
+		_applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage must skip the conflict check and the post-save checksum query when no baseline options are supplied (regression-safe default).")]
+	public void TryUpdatePage_ShouldSkipConflictCheck_WhenNoBaselineOptionsProvided() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions();
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the legacy no-baseline flow must be unaffected");
+		response.Success.Should().BeTrue(because: "the save must proceed exactly as before the feature");
+		response.Conflict.Should().BeFalse(because: "no baseline means nothing to conflict with");
+		response.NewChecksum.Should().BeNull(because: "the no-baseline path must cost zero extra SysSchema queries");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SelectQueryUrl, Arg.Is<string>(body => body.Contains("byUId")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage must proceed and return the fresh checksum when the server checksum matches the baseline.")]
+	public void TryUpdatePage_ShouldSaveSchema_WhenChecksumMatchesBaseline() {
+		// Arrange
+		StubChecksumRow("same-checksum");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "same-checksum");
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a matching checksum proves no external modification happened");
+		response.Success.Should().BeTrue(because: "the save must proceed on a clean baseline");
+		response.NewChecksum.Should().Be("same-checksum",
+			because: "the post-save refresh must report the current server checksum");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must return a schema-created-externally conflict when the baseline says absent but a replacing schema now exists.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineSaysAbsentButReplacingSchemaExists() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions(expectedSchemaAbsent: true);
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a replacing schema created outside the session is an external modification");
+		response.Conflict.Should().BeTrue(because: "the response must carry the conflict marker");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaCreatedExternally,
+			because: "the baseline recorded no editable schema but the design package now contains one");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must return a schema-deleted-externally conflict when the baseline has a checksum but the editable schema row no longer exists.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineHasChecksumButSchemaRowMissing() {
+		// Arrange
+		StubChecksumRowMissing();
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum");
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "deletion of the editable schema outside the session is an external modification");
+		response.Conflict.Should().BeTrue(because: "the response must carry the conflict marker");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaDeletedExternally,
+			because: "the baseline expected an existing schema that is no longer in SysSchema");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must return a schema-uid-mismatch conflict when the resolved editable schema UId differs from the baseline UId.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenEditableSchemaUIdDiffersFromBaseline() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions(
+			expectedChecksum: "baseline-checksum",
+			expectedSchemaUId: "11111111-0000-0000-0000-000000000000");
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a different editable schema identity means the baseline no longer applies");
+		response.Conflict.Should().BeTrue(because: "the response must carry the conflict marker");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaUIdMismatch,
+			because: "the resolved editable UId does not match the baseline UId");
+		response.ConflictDetails.ActualSchemaUId.Should().Be(SchemaUId,
+			because: "the details must show which schema the write would actually target");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must report conflicts on dry-run too, before the dry-run short-circuit.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenDryRunWithStaleChecksum() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum", dryRun: true);
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "dry-run must surface the conflict so the agent learns about it before a real save");
+		response.Conflict.Should().BeTrue(because: "dry-run reports the same conflict contract as a real save");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
+			because: "the conflict reason is identical regardless of dry-run");
+	}
+}

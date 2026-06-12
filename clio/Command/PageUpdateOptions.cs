@@ -75,6 +75,35 @@ namespace Clio.Command {
 		/// </summary>
 		[Option("target-schema-uid", Required = false, HelpText = "Explicit schema UId to save into (bypasses hierarchy resolution)")]
 		public string? TargetSchemaUId { get; set; }
+
+		/// <summary>
+		/// Gets or sets the baseline <c>SysSchema.Checksum</c> of the editable schema. When set,
+		/// the save is blocked with a structured conflict when the server-side checksum differs —
+		/// i.e. the schema was modified outside the current session.
+		/// </summary>
+		[Option("expected-checksum", Required = false, HelpText = "Baseline SysSchema checksum of the editable schema; blocks the save with a conflict when the server value differs")]
+		public string? ExpectedChecksum { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the external-modification check is skipped,
+		/// deliberately overwriting any out-of-band changes.
+		/// </summary>
+		[Option("force", Required = false, HelpText = "Skip the external-modification check and deliberately overwrite")]
+		public bool Force { get; set; }
+
+		/// <summary>
+		/// Gets or sets the editable schema UId recorded in the baseline. MCP-internal: populated
+		/// from <c>.clio-pages/{schema}/meta.json</c> by the MCP layer; not exposed as a CLI option
+		/// because it only makes sense together with the on-disk baseline.
+		/// </summary>
+		public string? ExpectedSchemaUId { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating that the baseline recorded NO editable schema (a write
+		/// was expected to create a new replacing schema). MCP-internal — see
+		/// <see cref="ExpectedSchemaUId"/>.
+		/// </summary>
+		public bool ExpectedSchemaAbsent { get; set; }
 	}
 
 	/// <summary>
@@ -122,6 +151,7 @@ namespace Clio.Command {
 					options, out Dictionary<string, string> explicitResources, out JArray parsedOptionalProperties);
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
+				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
@@ -132,10 +162,124 @@ namespace Clio.Command {
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
+				PopulatePostSaveChecksum(options, context, response);
 				return true;
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
+			}
+		}
+
+		/// <summary>
+		/// Builds the user-facing conflict guidance shown when an external modification is detected.
+		/// </summary>
+		private static string BuildConflictErrorMessage(string schemaName) =>
+			$"Page schema '{schemaName}' was modified outside this session (external modification detected). " +
+			"Do NOT retry with the same body. Re-run get-page for this schema, re-apply your change on top of the fresh body, then retry. " +
+			"Use force=true ONLY after the user explicitly confirms overwriting the external changes.";
+
+		/// <summary>
+		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
+		/// against the resolved editable schema state and blocks the save with a structured conflict
+		/// when the schema was modified outside the current session. Skipped entirely when
+		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
+		/// </summary>
+		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
+		private bool TryCheckForExternalModification(
+				PageUpdateOptions options,
+				EditableSchemaContext context,
+				out PageUpdateResponse response) {
+			response = null;
+			if (options.Force) return true;
+			bool hasChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
+			if (!hasChecksum && !options.ExpectedSchemaAbsent) return true;
+			if (options.ExpectedSchemaAbsent) {
+				if (context.IsCreateReplacing) return true;
+				response = CreateConflictResponse(options, new PageConflictDetails {
+					Reason = PageConflictReasons.SchemaCreatedExternally,
+					ActualSchemaUId = context.EditableSchemaUId
+				});
+				return false;
+			}
+			if (context.IsCreateReplacing) {
+				response = CreateConflictResponse(options, new PageConflictDetails {
+					Reason = PageConflictReasons.SchemaDeletedExternally,
+					ExpectedChecksum = options.ExpectedChecksum,
+					ExpectedSchemaUId = options.ExpectedSchemaUId
+				});
+				return false;
+			}
+			if (!string.IsNullOrWhiteSpace(options.ExpectedSchemaUId)
+				&& !string.Equals(options.ExpectedSchemaUId, context.EditableSchemaUId, StringComparison.OrdinalIgnoreCase)) {
+				response = CreateConflictResponse(options, new PageConflictDetails {
+					Reason = PageConflictReasons.SchemaUIdMismatch,
+					ExpectedChecksum = options.ExpectedChecksum,
+					ExpectedSchemaUId = options.ExpectedSchemaUId,
+					ActualSchemaUId = context.EditableSchemaUId
+				});
+				return false;
+			}
+			(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				_applicationClient, _serviceUrlBuilder, context.EditableSchemaUId,
+				("Checksum", "Checksum"), ("ModifiedOn", "ModifiedOn"));
+			if (row is null) {
+				response = CreateConflictResponse(options, new PageConflictDetails {
+					Reason = PageConflictReasons.SchemaDeletedExternally,
+					ExpectedChecksum = options.ExpectedChecksum,
+					ExpectedSchemaUId = options.ExpectedSchemaUId ?? context.EditableSchemaUId
+				});
+				return false;
+			}
+			string actualChecksum = row["Checksum"]?.ToString();
+			if (!string.Equals(actualChecksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
+				response = CreateConflictResponse(options, new PageConflictDetails {
+					Reason = PageConflictReasons.ChecksumMismatch,
+					ExpectedChecksum = options.ExpectedChecksum,
+					ActualChecksum = actualChecksum,
+					ExpectedSchemaUId = options.ExpectedSchemaUId ?? context.EditableSchemaUId,
+					ActualSchemaUId = context.EditableSchemaUId,
+					ModifiedOn = row["ModifiedOn"]?.ToString()
+				});
+				return false;
+			}
+			return true;
+		}
+
+		private static PageUpdateResponse CreateConflictResponse(PageUpdateOptions options, PageConflictDetails details) =>
+			new() {
+				Success = false,
+				Conflict = true,
+				ConflictDetails = details,
+				SchemaName = options.SchemaName,
+				Error = BuildConflictErrorMessage(options.SchemaName)
+			};
+
+		/// <summary>
+		/// Best-effort post-save checksum refresh: queries the fresh <c>SysSchema.Checksum</c> /
+		/// <c>ModifiedOn</c> of the schema the save wrote to. Runs only when the caller supplied
+		/// baseline information (or <c>force</c>) so the no-baseline path costs zero extra queries.
+		/// Query failure leaves the fields <c>null</c> — callers holding an on-disk baseline must
+		/// then discard it instead of keeping a stale checksum.
+		/// </summary>
+		private void PopulatePostSaveChecksum(
+				PageUpdateOptions options,
+				EditableSchemaContext context,
+				PageUpdateResponse response) {
+			bool baselineInPlay = options.Force
+				|| options.ExpectedSchemaAbsent
+				|| !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
+			if (!baselineInPlay) return;
+			response.SavedSchemaUId = context.EditableSchemaUId;
+			try {
+				(JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+					_applicationClient, _serviceUrlBuilder, context.EditableSchemaUId,
+					("Checksum", "Checksum"), ("ModifiedOn", "ModifiedOn"));
+				if (row is null) return;
+				response.NewChecksum = row["Checksum"]?.ToString();
+				response.NewModifiedOn = row["ModifiedOn"]?.ToString();
+			} catch {
+				// best-effort — the save already succeeded; null NewChecksum signals the MCP layer
+				// to delete the on-disk baseline rather than keep a stale one.
 			}
 		}
 

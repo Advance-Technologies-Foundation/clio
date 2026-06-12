@@ -21,6 +21,29 @@ The command resolves the design package for the schema and uses the top of
 the parent-schema hierarchy to load the editable version. This ensures that
 raw.body is always read from the package where the schema can be modified.
 
+## Conflict-Detection Baseline
+
+The response carries an `editable` block with the editable schema state captured at
+fetch time (best-effort — a failed capture never fails get-page):
+
+```jsonc
+{
+  "editable": {
+    "editableSchemaExists": true,
+    "editableSchemaUId": "…",
+    "checksum": "…",        // SysSchema.Checksum at fetch time
+    "modifiedOn": "…"        // informational only
+  }
+}
+```
+
+Pass `checksum` as `--expected-checksum` to `update-page` to detect modifications made
+outside your session before overwriting them. When the command runs through the MCP
+`get-page` tool, this state is persisted automatically as a `baseline` block in
+`.clio-pages/{schema-name}/meta.json` (together with the environment identity), and the
+MCP `update-page` / `sync-pages` tools arm the conflict check from it without extra
+arguments.
+
 ## Synopsis
 
 ```bash

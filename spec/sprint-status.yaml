@@ -288,3 +288,78 @@ stories:
     adr: spec/adr/adr-mcp-progress-heartbeat.md
     depends_on: [mcp-progress-heartbeat-2]
     blocks: []
+
+  # --- detect-external-schema-changes stories (ENG-91317), added 2026-06-12 ---
+  # Order: 1 -> 2 -> 3 -> 4 -> 5 (linear; no story depends on a later one)
+  # OQ-02/A-01 (designer saves bump SysSchema.Checksum) is verified by the FIRST E2E scenario in story 5;
+  # OQ-01 (SaveSchema response checksum) is resolved inside story 3.
+  - id: story-detect-external-schema-changes-1
+    title: "Foundation — UId-filtered SysSchema query + conflict/baseline models"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-1.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-04, FR-06]
+    depends_on: []
+    blocks:
+      - story-detect-external-schema-changes-2
+      - story-detect-external-schema-changes-3
+
+  - id: story-detect-external-schema-changes-2
+    title: "Baseline capture — get-page checksum fetch, typed meta.json, PageBaselineStore"
+    feature: "detect-external-schema-changes"
+    size: L
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-2.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-01, FR-07, FR-08, FR-10]
+    ac: [AC-09]
+    depends_on: [story-detect-external-schema-changes-1]
+    blocks:
+      - story-detect-external-schema-changes-3
+
+  - id: story-detect-external-schema-changes-3
+    title: "Conflict gate — PageUpdateCommand chokepoint + PageUpdateTool plumbing"
+    feature: "detect-external-schema-changes"
+    size: L
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-3.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-02, FR-04, FR-05, FR-06, FR-08, FR-09, FR-11, FR-12]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-08, AC-10, AC-ERR]
+    depends_on: [story-detect-external-schema-changes-1, story-detect-external-schema-changes-2]
+    blocks:
+      - story-detect-external-schema-changes-4
+      - story-detect-external-schema-changes-5
+
+  - id: story-detect-external-schema-changes-4
+    title: "sync-pages — per-page conflict surfacing, per-page force, meta.json refresh"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-4.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-03, FR-05, FR-08, FR-09, FR-13]
+    ac: [AC-07]
+    depends_on: [story-detect-external-schema-changes-3]
+    blocks:
+      - story-detect-external-schema-changes-5
+
+  - id: story-detect-external-schema-changes-5
+    title: "Docs, MCP guidance artifacts, and E2E coverage"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    note: "clio.mcp.e2e is NOT in CI — manual run against a live stand; first E2E scenario verifies A-01/OQ-02 (designer saves bump SysSchema.Checksum)."
+    file: spec/stories/story-detect-external-schema-changes-5.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-14]
+    ac: [AC-01, AC-02, AC-07, AC-11]
+    depends_on: [story-detect-external-schema-changes-3, story-detect-external-schema-changes-4]
+    blocks: []

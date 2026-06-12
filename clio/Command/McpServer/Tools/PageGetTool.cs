@@ -57,13 +57,15 @@ public sealed class PageGetTool(
 			}
 			resolvedCommand.TryGetPage(options, out PageGetResponse response);
 			if (response.Success) {
-				return WriteFilesAndCompact(response, args.SchemaName, args.OutputDirectory);
+				return WriteFilesAndCompact(response, args);
 			}
 			return response;
 		});
 	}
 
-	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, string schemaName, string? outputDirectory) {
+	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, PageGetArgs args) {
+		string schemaName = args.SchemaName;
+		string? outputDirectory = args.OutputDirectory;
 		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 			fileSystem,
 			fileSystem.Directory.GetCurrentDirectory(),
@@ -85,12 +87,25 @@ public sealed class PageGetTool(
 		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
 		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
 		string fetchedAt = DateTime.UtcNow.ToString("o");
+		PageBaselineInfo baseline = response.Editable is null
+			? null
+			: new PageBaselineInfo {
+				SchemaName = schemaName,
+				EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
+				EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
+				EditableSchemaExists = response.Editable.EditableSchemaExists,
+				EditableSchemaUId = response.Editable.EditableSchemaUId,
+				Checksum = response.Editable.Checksum,
+				ModifiedOn = response.Editable.ModifiedOn,
+				CapturedAt = fetchedAt
+			};
 		try {
 			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
 			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new {
-				fetchedAt,
-				page = response.Page
+			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
+				FetchedAt = fetchedAt,
+				Page = response.Page,
+				Baseline = baseline
 			}));
 		} catch (Exception ex) {
 			return new PageGetResponse { Success = false, Error = $"Failed to write page files: {ex.Message}" };
@@ -98,6 +113,7 @@ public sealed class PageGetTool(
 		return new PageGetResponse {
 			Success = true,
 			Page = response.Page,
+			Editable = response.Editable,
 			Files = new PageGetFilesInfo {
 				BodyFile = bodyFile,
 				BundleFile = bundleFile,

@@ -759,6 +759,187 @@ public sealed class PageUpdateToolE2ETests {
 			because: "the error message must identify the offending parameter");
 	}
 
+	[Test]
+	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
+	[AllureDescription("Uses the real clio MCP server against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory stores the baseline; (2) a second update-page anchored at a DIFFERENT temp directory simulates the out-of-band modification (no baseline there, so no conflict check and no refresh of the first baseline); (3) update-page anchored at the first directory must fail with conflict:true / checksum-mismatch — this is the live proof that Creatio bumps SysSchema.Checksum on SaveSchema; (4) re-running get-page refreshes the baseline and the retry succeeds, restoring the original body (built-in cleanup).")]
+	public async Task PageUpdateTool_Should_Detect_OutOfBand_Modification_And_Recover_Via_GetPage() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page conflict-detection test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-session-").FullName;
+		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-oob-").FullName;
+		try {
+			// Act 1: get-page anchored at sessionDir — captures the checksum baseline.
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+			string metaJson = await File.ReadAllTextAsync(getResponse.Files.MetaFile);
+			metaJson.Should().Contain("\"baseline\"",
+				because: "get-page must persist the conflict-detection baseline into meta.json (story 2 contract, live)");
+
+			// Act 2: out-of-band modification — update-page anchored at a DIFFERENT directory
+			// (no baseline there → no conflict check, and the session baseline stays untouched).
+			string outOfBandBody = originalBody.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
+				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
+			outOfBandResponse.Success.Should().BeTrue(
+				because: $"the simulated out-of-band save must succeed to set up the conflict. Error: {outOfBandResponse.Error}");
+
+			// Act 3: update-page with the stale session baseline — must surface the conflict.
+			PageUpdateResponse conflictResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir);
+
+			// Assert: structured conflict, proving Creatio bumped SysSchema.Checksum on save (A-01).
+			conflictResponse.Success.Should().BeFalse(
+				because: "the schema changed outside the session, so the stale-baseline write must be blocked");
+			conflictResponse.Conflict.Should().BeTrue(
+				because: "the response must carry the machine-readable conflict marker through the real MCP transport");
+			conflictResponse.ConflictDetails.Should().NotBeNull(
+				because: "the conflict must explain itself with structured details");
+			conflictResponse.ConflictDetails.Reason.Should().Be("checksum-mismatch",
+				because: "the out-of-band SaveSchema must have bumped SysSchema.Checksum — the load-bearing assumption (A-01) of the whole feature");
+			conflictResponse.Error.Should().Contain("Re-run get-page",
+				because: "the error must guide the agent toward the reload-and-rebase recovery");
+
+			// Act 4: recovery — re-run get-page (fresh baseline), retry the save (restores the
+			// original blank body, doubling as cleanup of the out-of-band container).
+			PageGetResponse refreshedGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			refreshedGet.Success.Should().BeTrue(
+				because: $"the recovery get-page must succeed. Error: {refreshedGet.Error}");
+			PageUpdateResponse retryResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir);
+			retryResponse.Success.Should().BeTrue(
+				because: $"after reloading the baseline the retry must succeed and restore the seed body. Error: {retryResponse.Error}");
+			retryResponse.Conflict.Should().BeFalse(
+				because: "the refreshed baseline matches the server state, so no conflict remains");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	[Test]
+	[Description("ENG-91317: update-page with force=true overwrites an out-of-band modification deliberately, and a no-baseline flow stays unaffected (regression guard).")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page force=true overwrites out-of-band changes; no-baseline flow unaffected")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: stores a baseline via get-page, makes an out-of-band save from a different anchor, then saves the original body with force=true from the session anchor — the overwrite must succeed (restoring the seed body). A final save without any baseline directory proves the legacy no-baseline flow is unaffected.")]
+	public async Task PageUpdateTool_Should_Overwrite_With_Force_And_Keep_NoBaseline_Flow_Unaffected() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page force-overwrite test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-force-session-").FullName;
+		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-force-oob-").FullName;
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+			string outOfBandBody = originalBody.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EForceContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
+				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
+			outOfBandResponse.Success.Should().BeTrue(
+				because: $"the simulated out-of-band save must succeed to set up the overwrite. Error: {outOfBandResponse.Error}");
+
+			// Act 1: force=true from the stale session anchor — deliberate overwrite (also restores the seed body).
+			PageUpdateResponse forceResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+
+			// Assert
+			forceResponse.Success.Should().BeTrue(
+				because: $"force=true must bypass the conflict check after explicit user confirmation. Error: {forceResponse.Error}");
+			forceResponse.Conflict.Should().BeFalse(
+				because: "a forced overwrite reports no conflict");
+
+			// Act 2: regression guard — a save with no baseline anywhere must behave exactly as before the feature.
+			string noBaselineDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-").FullName;
+			try {
+				PageUpdateResponse noBaselineResponse = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, noBaselineDir);
+				noBaselineResponse.Success.Should().BeTrue(
+					because: $"the legacy no-baseline flow must stay unaffected (AC-11). Error: {noBaselineResponse.Error}");
+				noBaselineResponse.Conflict.Should().BeFalse(
+					because: "without a baseline there is nothing to conflict with");
+			} finally {
+				TryDeleteDirectory(noBaselineDir);
+			}
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	private static async Task<PageGetResponse> GetPageAsync(
+		ArrangeContext arrangeContext, string schemaName, string environmentName, string outputDirectory) {
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName,
+					["output-directory"] = outputDirectory
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "get-page must return a structured payload, not an MCP transport error");
+		return EntitySchemaStructuredResultParser.Extract<PageGetResponse>(result);
+	}
+
+	private static async Task<PageUpdateResponse> UpdatePageAsync(
+		ArrangeContext arrangeContext,
+		string schemaName,
+		string body,
+		string environmentName,
+		string outputDirectory,
+		bool? force = null) {
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = schemaName,
+			["body"] = body,
+			["environment-name"] = environmentName,
+			["output-directory"] = outputDirectory,
+			["skip-sampling"] = true
+		};
+		if (force == true) {
+			args["force"] = true;
+		}
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "update-page must return a structured payload, not an MCP transport error");
+		return EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+	}
+
+	private static void TryDeleteDirectory(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, recursive: true);
+			}
+		} catch {
+			// best-effort temp cleanup; never fail the test on it.
+		}
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();

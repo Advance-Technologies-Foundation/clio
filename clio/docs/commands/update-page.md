@@ -48,6 +48,39 @@ name instead of trying to edit a non-existent local `insert`.
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
 
+## Conflict Detection (external modifications)
+
+When `--expected-checksum` is supplied, update-page compares it against the current
+`SysSchema.Checksum` of the editable schema **before** saving. If the schema was modified
+outside your session (for example, a user edited the page in the Creatio designer),
+the save is blocked and the response carries a structured conflict:
+
+```jsonc
+{
+  "success": false,
+  "conflict": true,
+  "conflictDetails": {
+    "reason": "checksum-mismatch",          // or schema-created-externally |
+                                            //    schema-deleted-externally | schema-uid-mismatch
+    "expectedChecksum": "…", "actualChecksum": "…",
+    "expectedSchemaUId": "…", "actualSchemaUId": "…",
+    "modifiedOn": "…"                       // informational only
+  },
+  "error": "Page schema '…' was modified outside this session …"
+}
+```
+
+Recovery: re-run `get-page`, re-apply your change on top of the fresh body, then retry.
+Pass `--force` to deliberately overwrite the external changes instead.
+
+After a successful save with a baseline in play, the response carries `newChecksum`,
+`newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
+
+The MCP `update-page` tool arms this check automatically from the baseline that the MCP
+`get-page` tool stores in `.clio-pages/{schema-name}/meta.json` (matching environment
+required); the CLI verb arms it only when `--expected-checksum` is passed explicitly.
+A small race window between the check and the save remains (last write wins).
+
 ## Synopsis
 
 ```bash
@@ -71,6 +104,14 @@ validation
 --optional-properties              JSON array of {key, value} objects to
 merge into schema optionalProperties,
 e.g. '[{"key":"entitySchemaName","value":"UsrMyEntity"}]'
+
+--expected-checksum                Baseline SysSchema checksum of the editable
+schema (from get-page). Blocks the save with
+a structured conflict when the server-side
+checksum differs
+
+--force                            Skip the external-modification check and
+deliberately overwrite out-of-band changes
 
 --uri                    -u       Application uri
 

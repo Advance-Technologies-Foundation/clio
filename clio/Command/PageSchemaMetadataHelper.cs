@@ -187,6 +187,41 @@ namespace Clio.Command {
 			return errorMessage;
 		}
 
+		/// <summary>
+		/// Queries a single <c>SysSchema</c> row by schema <c>UId</c> via the DataService SelectQuery endpoint.
+		/// </summary>
+		/// <param name="applicationClient">Authenticated Creatio HTTP client.</param>
+		/// <param name="serviceUrlBuilder">Environment-aware URL builder.</param>
+		/// <param name="schemaUId">Schema identifier (GUID string) used as the filter value.</param>
+		/// <param name="columns">Column projections as (alias, columnPath) pairs, e.g. ("Checksum", "Checksum").</param>
+		/// <returns>The first matching row, or <c>null</c> with a non-empty error when the query fails or no row matches.</returns>
+		internal static (JToken row, string error) QuerySysSchemaRowByUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaUId,
+			params (string alias, string path)[] columns) {
+			var columnsItems = new JObject();
+			foreach ((string alias, string path) in columns) {
+				columnsItems[alias] = new JObject {
+					["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+				};
+			}
+			var query = new JObject {
+				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byUId", BuildEqFilter("UId", 0, schemaUId)),
+					("byManager", BuildEqFilter("ManagerName", 1, "ClientUnitSchemaManager"))),
+				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
+				[RowCountKey] = 1
+			};
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query schema metadata");
+			if (rows.Count == 0)
+				return (null, $"Schema '{schemaUId}' not found");
+			return (rows[0], null);
+		}
+
 		internal static (JToken row, string error) QuerySysSchemaRow(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
