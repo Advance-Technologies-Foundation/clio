@@ -86,14 +86,15 @@ public class PageBaselineStoreTests {
 	public void ResolveMetaFilePath_ShouldUseBodyFileSibling_WhenBodyFileInsideClioPages() {
 		// Arrange
 		MockFileSystem fs = new();
-		string bodyFile = "/custom/anchor/.clio-pages/UsrCase_FormPage/body.js";
+		string bodyFile = fs.Path.Combine("/custom/anchor", ".clio-pages", SchemaName, "body.js");
 
 		// Act
 		string metaPath = PageBaselineStore.ResolveMetaFilePath(
 			fs, "/elsewhere", "/home/user", "/home/user/.clio", null, bodyFile, SchemaName);
 
 		// Assert
-		metaPath.Should().Be("/custom/anchor/.clio-pages/UsrCase_FormPage/meta.json",
+		string expectedPath = fs.Path.Combine("/custom/anchor", ".clio-pages", SchemaName, "meta.json");
+		metaPath.Should().Be(expectedPath,
 			because: "a body-file inside .clio-pages pins the baseline to its sibling meta.json regardless of the anchor");
 	}
 
@@ -110,7 +111,8 @@ public class PageBaselineStoreTests {
 			fs, "/ws/src", "/home/user", "/home/user/.clio", null, "/tmp/body.js", SchemaName);
 
 		// Assert
-		metaPath.Should().Be("/ws/.clio-pages/UsrCase_FormPage/meta.json",
+		string expectedPath = fs.Path.Combine("/ws", ".clio-pages", SchemaName, "meta.json");
+		metaPath.Should().Be(expectedPath,
 			because: "a body-file outside .clio-pages must not override the workspace-root anchor resolution");
 	}
 

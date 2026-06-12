@@ -3731,3 +3731,10 @@ Decision: Refactored page MCP helpers without changing behavior: collapsed PageB
 Discovery: The only local regression introduced during refactoring was a stale call site to `PageBaselineStore.RefreshExistingBaseline` in `PageUpdateTool`; after updating it, `dotnet build clio/clio.csproj -c Debug --no-incremental` and `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=McpServer)" --no-build` both passed.
 Files: clio/Command/McpServer/Tools/PageBaselineStore.cs, clio/Command/McpServer/Tools/PageGetTool.cs, clio/Command/McpServer/Tools/PageSyncTool.cs, clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/PageSchemaMetadataHelper.cs, clio/Command/PageUpdateOptions.cs, .codex/workspace-diary.md
 Impact: The PR should re-analyze with zero Sonar new issues while preserving the conflict-detection flow and current MCP/CLI behavior.
+
+## 2026-06-12 19:55 – PR #699 CI follow-up for PageBaselineStore tests
+Context: After the Sonar cleanup push, GitHub Unit Tests failed twice on PR #699: first from stale test call sites after the `RefreshExistingBaseline` signature change, then from Windows-only path separator assertions in `PageBaselineStoreTests`.
+Decision: Updated `PageBaselineStoreTests` to build `PageBaselineInfo` inputs explicitly for refresh calls and switched the two `ResolveMetaFilePath` expectations to use `MockFileSystem.Path.Combine(...)` so the assertions are path-separator agnostic across Unix and Windows runners.
+Discovery: The initial local `--no-build` test rerun masked the compile failure in CI; the reliable local gate for this area is `dotnet test clio.tests/clio.tests.csproj --filter "FullyQualifiedName~PageBaselineStoreTests"` plus the broader `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&(Module=Command|Module=McpServer)"`.
+Files: clio.tests/Command/McpServer/PageBaselineStoreTests.cs, .codex/workspace-diary.md
+Impact: The PR’s test fixture now matches the production refactor and no longer bakes Unix-style paths into assertions, which should stabilize the Windows GitHub runner.
