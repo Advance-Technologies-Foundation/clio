@@ -7,6 +7,7 @@ using Clio.Package;
 using Clio.Package.Responses;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -30,6 +31,7 @@ public class PackageDependencyManagerTests
 	private IApplicationPackageListProvider _packageListProvider;
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
+	private ILogger _logger;
 	private PackageDependencyManager _manager;
 	private Guid _targetUId;
 	private Guid _dependencyUId;
@@ -44,8 +46,9 @@ public class PackageDependencyManagerTests
 		_packageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns(callInfo => $"https://stub{callInfo.Arg<string>()}");
-		_manager = new PackageDependencyManager(_packageListProvider, _applicationClient, _serviceUrlBuilder);
+		_manager = new PackageDependencyManager(_packageListProvider, _applicationClient, _serviceUrlBuilder, _logger);
 		_targetUId = Guid.NewGuid();
 		_dependencyUId = Guid.NewGuid();
 		_savedRequestBody = null;
@@ -197,6 +200,30 @@ public class PackageDependencyManagerTests
 		act.Should().Throw<Exception>()
 			.WithMessage("*Save failed*Validation errors*bad*",
 				because: "save failures must surface both the error message and the validation details");
+	}
+
+	[Test]
+	[Description("Preserves server-owned AdditionalData fields when round-tripping through SavePackageProperties.")]
+	public void AddDependencies_ShouldRoundTripAdditionalData_WhenPackageHasExtraFields() {
+		// Arrange
+		WorkspacePackageDto package = new() { UId = _targetUId, Name = TargetPackageName };
+		package.AdditionalData = new Dictionary<string, JToken> {
+			["description"] = "keep me",
+			["installBehavior"] = 1
+		};
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(package);
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		_manager.AddDependencies(TargetPackageName, [new PackageDependencySpec(DependencyPackageName)]);
+
+		// Assert
+		WorkspacePackageDto saved = DeserializeSavedPackage();
+		saved.AdditionalData["description"].Value<string>().Should().Be("keep me",
+			because: "server-owned fields must round-trip so the save does not wipe package metadata");
+		saved.AdditionalData["installBehavior"].Value<int>().Should().Be(1,
+			because: "server-owned fields must round-trip so the save does not wipe package metadata");
 	}
 
 }

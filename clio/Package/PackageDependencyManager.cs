@@ -15,15 +15,17 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 	#region Fields: Private
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly ILogger _logger;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public PackageDependencyManager(IApplicationPackageListProvider applicationPackageListProvider,
-		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger)
 		: base(applicationPackageListProvider, applicationClient, serviceUrlBuilder) {
 		_applicationPackageListProvider = applicationPackageListProvider;
+		_logger = logger;
 	}
 
 	#endregion
@@ -57,14 +59,14 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 
 		List<PackageInfo> installedPackages = _applicationPackageListProvider.GetPackages("{}").ToList();
 		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
-			?? throw new Exception($"Package with name \"{packageName}\" not found in the environment.");
+			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
 
 		WorkspacePackageDto package = LoadPackageProperties(targetPackage.Descriptor.UId, packageName);
 		package.DependsOnPackages ??= [];
 
 		foreach (PackageDependencySpec dependency in requestedDependencies) {
 			PackageInfo dependencyPackage = FindPackage(installedPackages, dependency.Name)
-				?? throw new Exception(
+				?? throw new InvalidOperationException(
 					$"Dependency package with name \"{dependency.Name}\" not found in the environment.");
 			if (package.DependsOnPackages.Any(existing => existing.UId == dependencyPackage.Descriptor.UId)) {
 				continue;
@@ -98,17 +100,25 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			SendRequest<Guid, PackagePropertiesResponse>(PackageServiceUrl, "GetPackageProperties", packageUId);
 		ThrowsErrorIfUnsuccessfulResponseReceived(response);
 		return response.Package
-			?? throw new Exception($"Could not read properties of package \"{packageName}\".");
+			?? throw new InvalidOperationException($"Could not read properties of package \"{packageName}\".");
 	}
 
 	private void SavePackageProperties(WorkspacePackageDto package) {
 		SavePackagePropertiesResponse response =
 			SendRequest<WorkspacePackageDto, SavePackagePropertiesResponse>(
 				PackageServiceUrl, "SavePackageProperties", package);
-		if (response.Success) {
-			return;
+		if (response.ValidationErrors is { Length: > 0 }) {
+			_logger.WriteWarning("Validation warnings from server: "
+				+ string.Join("; ", response.ValidationErrors
+					.Select(e => $"{e.PackageName}/{e.ItemName}: {e.Message}")));
 		}
-		throw new Exception(BuildSaveErrorMessage(response));
+		if (!response.Success) {
+			throw new InvalidOperationException(BuildSaveErrorMessage(response));
+		}
+		if (response.CompilationRequired) {
+			_logger.WriteInfo(
+				"The dependency change requires a configuration compilation. Run compile-configuration to apply.");
+		}
 	}
 
 	private static string BuildSaveErrorMessage(SavePackagePropertiesResponse response) {
