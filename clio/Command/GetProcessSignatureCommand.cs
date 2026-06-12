@@ -35,7 +35,7 @@ public class GetProcessSignatureOptions : EnvironmentOptions {
 /// The <see cref="Name"/> is the parameter CODE — the value that must be used as the key in
 /// <c>processParameters</c> / <c>parameterMappings</c> / <c>recordIdProcessParameterName</c>.
 /// The display <see cref="Caption"/> must NOT be used as the key (the core silently drops values
-/// keyed by an unknown code — see ENG-91168).
+/// keyed by an unknown code).
 /// </summary>
 public sealed class ProcessSignatureParameter {
 

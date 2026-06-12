@@ -6,7 +6,7 @@ using System.Linq;
 
 /// <summary>
 /// Pure validation of a single <c>crt.RunBusinessProcessRequest</c> button config against a resolved
-/// process signature (ENG-91168). Kept free of MCP/environment concerns so it is unit-testable.
+/// process signature. Kept free of MCP/environment concerns so it is unit-testable.
 /// </summary>
 internal static class RunProcessButtonSignatureValidator {
 

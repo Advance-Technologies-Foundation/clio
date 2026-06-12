@@ -18,7 +18,7 @@ internal sealed record RunProcessButtonConfig(
 
 /// <summary>
 /// Extracts <c>crt.RunBusinessProcessRequest</c> button configurations from the
-/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> section of a Freedom UI page body (ENG-91168). Best-effort: returns
+/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> section of a Freedom UI page body. Best-effort: returns
 /// an empty list when the section is missing or is not parseable as JSON, so callers never throw on
 /// non-run-process bodies.
 /// </summary>

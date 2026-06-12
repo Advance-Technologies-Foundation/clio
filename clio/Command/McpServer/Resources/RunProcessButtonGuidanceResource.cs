@@ -6,7 +6,7 @@ namespace Clio.Command.McpServer.Resources;
 
 /// <summary>
 /// Canonical AI-facing guidance for adding a Freedom UI button that runs a business process
-/// (<c>crt.RunBusinessProcessRequest</c>) into a page schema via <c>update-page</c> (ENG-91168).
+/// (<c>crt.RunBusinessProcessRequest</c>) into a page schema via <c>update-page</c>.
 /// </summary>
 [McpServerResourceType]
 public sealed class RunProcessButtonGuidanceResource {
@@ -154,16 +154,10 @@ public sealed class RunProcessButtonGuidanceResource {
 			         - DateTime: ISO-8601 "2026-12-31T23:59:59Z" (Z is converted to local) — works
 			         - Date:     "2026-12-31" — works;  Time: "18:45:00" — works
 
-			       Variant V4 — values from selected DataGrid rows (NOT IN SCOPE — separate Jira task)
-			       processRunType `ForTheSelectedRecords` with dataSourceName + parameterMappings + filters +
-			       sorting + selectionStateAttributeName. The filters/sorting/selectionState expressions are
-			       non-trivial (built by several front-end services). Do not hand-author V4 from this guide yet;
-			       it is tracked separately.
 
 			       processRunType reference
 			       - `RegardlessOfThePage` — run globally, no record context (V1/V2).
 			       - `ForTheSelectedPage` — run for the current form record (V3).
-			       - `ForTheSelectedRecords` — run for selected list rows (V4, out of scope).
 
 			       resources parameter
 			       - Register the caption key you used, e.g. resources = {"RunBusinessProcessButton_caption":"Run process"}.

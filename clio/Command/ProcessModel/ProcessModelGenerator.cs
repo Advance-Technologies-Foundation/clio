@@ -79,8 +79,8 @@ public class ProcessModelGenerator(ILogger logger, IApplicationClient applicatio
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
 
 			currentStep = "QueryCreatio";
-			// Data access: exact Name match first; the Caption fallback (what a no-code user types,
-			// ENG-91168) is queried only when there is no Name match. Selection/ambiguity logic lives
+			// Data access: exact Name match first; the Caption fallback (what a no-code user types)
+			// is queried only when there is no Name match. Selection/ambiguity logic lives
 			// in the unit-testable ProcessLibResolver.
 			VwProcessLib byName = ctx.Models<VwProcessLib>()
 				.FirstOrDefault(p => p.Name == processNameOrCaption);

@@ -7,7 +7,7 @@ using ErrorOr;
 
 /// <summary>
 /// Pure selection logic for resolving a process from <see cref="VwProcessLib"/> rows by system
-/// <c>Name</c> (process code) with a fallback to display <c>Caption</c> (ENG-91168). Kept free of data
+/// <c>Name</c> (process code) with a fallback to display <c>Caption</c>. Kept free of data
 /// access so it is unit-testable with plain in-memory rows.
 /// </summary>
 internal static class ProcessLibResolver {
