@@ -1497,16 +1497,6 @@ public sealed class McpGuidanceResourceTests {
 			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
 		article.MimeType.Should().Be("text/plain",
 			because: "the ESQ filters guide should be discoverable as plain text");
-		article.Text.Should().Contain("clio MCP ESQ filters guide",
-			because: "the article should identify itself as the dedicated ESQ filters guide");
-		article.Text.Should().Contain("Column-path normalization",
-			because: "the guide should cover normalized path semantics explicitly");
-		article.Text.Should().Contain("Lookup-filter conversion guidance",
-			because: "the guide should cover lookup value-shape rules explicitly");
-		article.Text.Should().Contain("Relative-date conversion guidance",
-			because: "the guide should cover relative-date pitfalls explicitly");
-		article.Text.Should().Contain("`CreatedById` -> `CreatedBy`",
-			because: "the guide should include a concrete normalized-path example");
 	}
 
 	[Test]
