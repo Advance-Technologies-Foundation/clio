@@ -532,7 +532,8 @@ public sealed class PageSyncTool(
 			DryRun = false,
 			Resources = page.Resources,
 			OptionalProperties = page.OptionalProperties,
-			Force = page.Force ?? false
+			Force = page.Force ?? false,
+			NotifyDesignerPresence = false
 		};
 		if (baselineArmed) {
 			updateOptions.ExpectedChecksum = baseline.Checksum;

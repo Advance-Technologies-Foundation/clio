@@ -16,6 +16,14 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+After a successful non-dry-run save, update-page also attempts a
+best-effort live Designer Presence notification so active Creatio designers
+can be warned that the page was saved outside their session. This live push
+reuses the browser-session/forms-auth path and therefore requires
+login/password-backed cookies. In OAuth-only or credential-less environments,
+the page save still succeeds; the response simply carries a warning when the
+live notification is skipped or fails.
+
 When the body contains #ResourceString(key)# macros, update-page can
 register missing child-schema localizableStrings before saving. Pass
 --resources when you need explicit captions, or let clio derive captions
@@ -75,6 +83,9 @@ Pass `--force` to deliberately overwrite the external changes instead.
 
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
+
+Successful saves may also return a `warnings` entry about the live Designer Presence
+push. Treat that warning as informational only: the schema save already succeeded.
 
 The MCP `update-page` tool arms this check automatically from the baseline that the MCP
 `get-page` tool stores in `.clio-pages/{schema-name}/meta.json` (matching environment

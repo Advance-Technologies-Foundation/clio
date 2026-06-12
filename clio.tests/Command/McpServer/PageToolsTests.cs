@@ -319,6 +319,10 @@ public class PageToolsTests
 			because: "update-page description should surface the handler section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-handlers` first",
 			because: "update-page description should make handler guidance a mandatory precondition before handler authoring");
+		description.Should().Contain("Designer Presence",
+			because: "update-page should disclose the best-effort live designer notification behaviour in its MCP description");
+		description.Should().Contain("forms-auth",
+			because: "update-page should disclose the forms-auth prerequisite for the live notification path");
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "update-page description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators` first",

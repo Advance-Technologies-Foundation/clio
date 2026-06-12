@@ -12,6 +12,14 @@ DESCRIPTION
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
 
+    After a successful non-dry-run save, update-page also attempts a
+    best-effort live Designer Presence notification so active Creatio
+    designers can be warned that the page was saved outside their session.
+    This live push requires forms-auth browser-session cookies (login/password
+    backed flow). In OAuth-only or credential-less environments the page save
+    still succeeds, and the structured response includes a warning when the
+    live notification is skipped or fails.
+
     When the body contains #ResourceString(key)# macros, update-page can
     register missing child-schema localizableStrings before saving. Pass
     --resources when you need explicit captions, or let clio derive captions

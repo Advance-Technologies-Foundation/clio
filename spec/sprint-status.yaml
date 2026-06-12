@@ -257,6 +257,18 @@ stories:
     depends_on: [story-user-profile-language-detection-3]
     blocks: []
 
+  - id: story-update-page-designer-presence-push-1
+    title: "update-page best-effort Designer Presence save push"
+    feature: "update-page-designer-presence-push"
+    size: M
+    status: in-progress
+    file: spec/stories/story-update-page-designer-presence-push-1.md
+    prd: spec/prd/spec-update-page-designer-presence-push.md
+    adr: spec/adr/adr-update-page-designer-presence-push.md
+    test_plan: spec/test-plans/tp-update-page-designer-presence-push.md
+    depends_on: []
+    blocks: []
+
   - id: mcp-progress-heartbeat-1
     title: "Reusable progress-heartbeat helper"
     feature: "mcp-progress-heartbeat"

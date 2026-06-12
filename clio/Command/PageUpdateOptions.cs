@@ -104,6 +104,13 @@ namespace Clio.Command {
 		/// <see cref="ExpectedSchemaUId"/>.
 		/// </summary>
 		public bool ExpectedSchemaAbsent { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the successful save path should attempt a
+		/// best-effort Designer Presence push. Internal orchestration flag; not exposed as a CLI
+		/// option and enabled only by the dedicated <c>update-page</c> entry points.
+		/// </summary>
+		internal bool NotifyDesignerPresence { get; set; }
 	}
 
 	/// <summary>
@@ -119,6 +126,7 @@ namespace Clio.Command {
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
 		private readonly IPageDesignerHierarchyClient _hierarchyClient;
+		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -127,15 +135,19 @@ namespace Clio.Command {
 		/// <param name="serviceUrlBuilder">Service URL builder.</param>
 		/// <param name="logger">Logger used for CLI output.</param>
 		/// <param name="hierarchyClient">Designer hierarchy client used to resolve replacing schemas.</param>
+		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
+		/// entry points to publish Designer Presence save events.</param>
 		public PageUpdateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ILogger logger,
-			IPageDesignerHierarchyClient hierarchyClient = null) {
+			IPageDesignerHierarchyClient hierarchyClient = null,
+			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
 			_hierarchyClient = hierarchyClient;
+			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
 		}
 
 		/// <summary>
@@ -165,6 +177,7 @@ namespace Clio.Command {
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
 				PopulatePostSaveChecksum(options, context, response);
+				AppendDesignerPresenceWarning(options, response);
 				return true;
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
@@ -332,9 +345,23 @@ namespace Clio.Command {
 		/// <param name="options">Command options.</param>
 		/// <returns>Command exit code.</returns>
 		public override int Execute(PageUpdateOptions options) {
+			options.NotifyDesignerPresence = true;
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		private void AppendDesignerPresenceWarning(PageUpdateOptions options, PageUpdateResponse response) {
+			if (!options.NotifyDesignerPresence || _pageDesignerPresenceNotifier is null) {
+				return;
+			}
+			string? warning = _pageDesignerPresenceNotifier.TryNotifyPageSaved(options.SchemaName, options.SchemaName);
+			if (string.IsNullOrWhiteSpace(warning)) {
+				return;
+			}
+			List<string> warnings = response.Warnings?.ToList() ?? [];
+			warnings.Add(warning);
+			response.Warnings = warnings;
 		}
 
 		private string TargetPackageUIdOverride { get; set; }

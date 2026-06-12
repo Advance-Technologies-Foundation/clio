@@ -701,6 +701,7 @@ public class BindingsModule {
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
 					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
 					|| implementedInterface == typeof(IDbOperationLogSession)
+					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
 					|| implementedInterface == typeof(IReauthExecutor)) {

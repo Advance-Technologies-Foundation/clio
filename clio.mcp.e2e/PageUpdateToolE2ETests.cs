@@ -2,12 +2,16 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
+using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -830,6 +834,52 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("A successful update-page save pushes a Designer Presence save event that a second session can receive for the page sender.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page publishes Designer Presence save event")]
+	[AllureDescription("Starts the real MCP server, connects a second authenticated session to the page Designer Presence sender, performs a real update-page save against the seeded page ClioMcp_BlankPageToSave, and verifies receipt of a Designer Presence save event.")]
+	public async Task PageUpdateTool_Should_Publish_DesignerPresence_Save_Event() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping live Designer Presence save-event E2E.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-presence-").FullName;
+		await using var listener = await DesignerPresenceListener.StartAsync(environmentName, savePage);
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}' before the save-event probe. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(
+				arrangeContext,
+				savePage,
+				originalBody,
+				environmentName,
+				outputDirectory);
+			DesignerPresenceServerEvent receivedEvent = await listener.WaitForSaveEventAsync(TimeSpan.FromSeconds(30));
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"the seeded page save must succeed before Designer Presence can rebroadcast it. Error: {saveResponse.Error}");
+			receivedEvent.SchemaName.Should().Be(savePage,
+				because: "the save event should be scoped to the same page sender that the listener joined");
+			receivedEvent.SchemaType.Should().Be("page",
+				because: "update-page publishes page designer presence only in this iteration");
+			receivedEvent.Users.Should().Contain(user => string.Equals(user.Mode, "save", StringComparison.OrdinalIgnoreCase),
+				because: "the aggregated presence event should contain a collaborator in save mode after update-page succeeds");
+		} finally {
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	[Test]
 	[Description("ENG-91317: update-page with force=true overwrites an out-of-band modification deliberately, and a no-baseline flow stays unaffected (regression guard).")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page force=true overwrites out-of-band changes; no-baseline flow unaffected")]
@@ -1061,5 +1111,202 @@ public sealed class PageUpdateToolE2ETests {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
 		}
+	}
+
+	private sealed class DesignerPresenceListener : IAsyncDisposable {
+		private readonly IApplicationClient _applicationClient;
+		private readonly IServiceProvider _provider;
+		private readonly CancellationTokenSource _listenCancellationTokenSource;
+		private readonly Task _listenTask;
+		private readonly TaskCompletionSource<bool> _connectedTcs =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly TaskCompletionSource<DesignerPresenceServerEvent> _saveEventTcs =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly string _senderName;
+		private readonly EventHandler<System.Net.WebSockets.WebSocketState> _connectionHandler;
+		private readonly EventHandler<Creatio.Client.Dto.WsMessage> _messageHandler;
+
+		private DesignerPresenceListener(
+			IServiceProvider provider,
+			IApplicationClient applicationClient,
+			string senderName,
+			CancellationTokenSource listenCancellationTokenSource) {
+			_provider = provider;
+			_applicationClient = applicationClient;
+			_senderName = senderName;
+			_listenCancellationTokenSource = listenCancellationTokenSource;
+			_connectionHandler = (_, state) => {
+				if (state == System.Net.WebSockets.WebSocketState.Open) {
+					_connectedTcs.TrySetResult(true);
+				}
+			};
+			_messageHandler = (_, message) => OnMessageReceived(message);
+			_applicationClient.ConnectionStateChanged += _connectionHandler;
+			_applicationClient.MessageReceived += _messageHandler;
+			_listenTask = Task.Run(() => _applicationClient.Listen(_listenCancellationTokenSource.Token));
+		}
+
+		public static async Task<DesignerPresenceListener> StartAsync(string environmentName, string schemaName) {
+			EnvironmentSettings environmentSettings = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+			IServiceProvider provider = new BindingsModule().Register(environmentSettings);
+			IApplicationClient applicationClient = provider.GetRequiredService<IApplicationClient>();
+			var listenCancellationTokenSource = new CancellationTokenSource();
+			string senderName = $"DesignerPresence_page_{schemaName.ToLowerInvariant()}";
+			var listener = new DesignerPresenceListener(
+				provider,
+				applicationClient,
+				senderName,
+				listenCancellationTokenSource);
+			await listener.WaitUntilConnectedAsync(TimeSpan.FromSeconds(30));
+			await listener.SendViewJoinAsync(schemaName);
+			return listener;
+		}
+
+		public async Task<DesignerPresenceServerEvent> WaitForSaveEventAsync(TimeSpan timeout) {
+			using CancellationTokenSource timeoutTokenSource = new(timeout);
+			using CancellationTokenRegistration _ = timeoutTokenSource.Token.Register(() =>
+					   _saveEventTcs.TrySetCanceled(timeoutTokenSource.Token));
+			{
+				return await _saveEventTcs.Task.ConfigureAwait(false);
+			}
+		}
+
+		private async Task WaitUntilConnectedAsync(TimeSpan timeout) {
+			using CancellationTokenSource timeoutTokenSource = new(timeout);
+			using CancellationTokenRegistration _ = timeoutTokenSource.Token.Register(() =>
+					   _connectedTcs.TrySetCanceled(timeoutTokenSource.Token));
+			{
+				await _connectedTcs.Task.ConfigureAwait(false);
+			}
+		}
+
+		private void OnMessageReceived(Creatio.Client.Dto.WsMessage? message) {
+			if (message is null) {
+				return;
+			}
+			if (!string.Equals(message.Header?.Sender, _senderName, StringComparison.Ordinal)) {
+				return;
+			}
+			if (string.IsNullOrWhiteSpace(message.Body)) {
+				return;
+			}
+			try {
+				DesignerPresenceServerEvent? payload = JsonSerializer.Deserialize<DesignerPresenceServerEvent>(message.Body);
+				if (payload is null) {
+					return;
+				}
+				if (payload.Users.Any(user => string.Equals(user.Mode, "save", StringComparison.OrdinalIgnoreCase))) {
+					_saveEventTcs.TrySetResult(payload);
+				}
+			} catch (JsonException) {
+				// Ignore unrelated or malformed channel messages; the listener is scoped by sender.
+			}
+		}
+
+		private async Task SendViewJoinAsync(string schemaName) {
+			IBrowserSessionService browserSessionService = _provider.GetRequiredService<IBrowserSessionService>();
+			IServiceUrlBuilder serviceUrlBuilder = _provider.GetRequiredService<IServiceUrlBuilder>();
+			IReadOnlyList<IMessageChannelPublisher> publishers = _provider.GetServices<IMessageChannelPublisher>().ToArray();
+			string sessionPath = await browserSessionService
+				.GetSessionPathAsync(_provider.GetRequiredService<EnvironmentSettings>(), forceRefresh: false, ct: CancellationToken.None)
+				.ConfigureAwait(false);
+			string storageStateJson = await File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
+			IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
+			(JsonDocument applicationInfo, JsonDocument userInfo) = ReadPresenceContext(serviceUrlBuilder);
+			string? clientConnectionClassName = applicationInfo.RootElement
+				.GetProperty("applicationInfo")
+				.GetProperty("clientConnectionClassName")
+				.GetString();
+			string rawServiceUrl = applicationInfo.RootElement
+				.GetProperty("applicationInfo")
+				.GetProperty("serviceUrl")
+				.GetString()!;
+			Uri serviceUrl = ResolvePresenceServiceUrl(_provider.GetRequiredService<EnvironmentSettings>().Uri, rawServiceUrl, clientConnectionClassName);
+			IMessageChannelPublisher publisher = publishers.Single(p => p.ClientConnectionClassName == clientConnectionClassName);
+			string sessionId = userInfo.RootElement.GetProperty("userInfo").GetProperty("sessionId").GetString()!;
+			string body = JsonSerializer.Serialize(new {
+				mode = "view",
+				schemaType = "page",
+				schemaName = schemaName,
+				schemaCaption = schemaName,
+				user = new {
+					sessionId,
+					id = userInfo.RootElement.GetProperty("userInfo").GetProperty("id").GetString(),
+					name = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactName").GetString(),
+					contactId = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactId").GetString(),
+					contactName = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactName").GetString(),
+					photoId = userInfo.RootElement.GetProperty("userInfo").GetProperty("photoId").GetString(),
+					email = userInfo.RootElement.GetProperty("userInfo").GetProperty("email").GetString()
+				},
+				sessionId
+			});
+			await publisher.PublishAsync(new MessageChannelPublishRequest(
+				serviceUrl,
+				cookies,
+				MessageChannelEnvelope.Create("DesignerPresence", "ServerMsg", body))).ConfigureAwait(false);
+		}
+
+		private (JsonDocument ApplicationInfo, JsonDocument UserInfo) ReadPresenceContext(IServiceUrlBuilder serviceUrlBuilder) {
+			string applicationInfoJson = _applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(CreatioServicePaths.GetApplicationInfo),
+				"{}");
+			string userInfoJson = _applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(CreatioServicePaths.GetCurrentUserInfo),
+				"{}");
+			return (JsonDocument.Parse(applicationInfoJson), JsonDocument.Parse(userInfoJson));
+		}
+
+		private static Uri ResolvePresenceServiceUrl(string environmentUri, string rawServiceUrl, string? transportClassName) {
+			Uri resolved = Uri.TryCreate(rawServiceUrl, UriKind.Absolute, out Uri? absolute)
+				? absolute
+				: new Uri(new Uri(environmentUri.TrimEnd('/') + "/", UriKind.Absolute), rawServiceUrl);
+			if (string.Equals(transportClassName, WebSocketMessageChannelPublisher.TransportClassName, StringComparison.Ordinal)
+				&& (resolved.Scheme == Uri.UriSchemeHttp || resolved.Scheme == Uri.UriSchemeHttps)) {
+				var builder = new UriBuilder(resolved) {
+					Scheme = resolved.Scheme == Uri.UriSchemeHttps ? "wss" : "ws"
+				};
+				if (resolved.IsDefaultPort) {
+					builder.Port = -1;
+				}
+				return builder.Uri;
+			}
+			return resolved;
+		}
+
+		public async ValueTask DisposeAsync() {
+			_applicationClient.ConnectionStateChanged -= _connectionHandler;
+			_applicationClient.MessageReceived -= _messageHandler;
+			_listenCancellationTokenSource.Cancel();
+			try {
+				await _listenTask.ConfigureAwait(false);
+			} catch (OperationCanceledException) {
+				// Expected when the listener is disposed.
+			} catch (AggregateException ex) when (ex.InnerExceptions.All(inner => inner is OperationCanceledException)) {
+				// Expected when the listener is disposed.
+			}
+			_listenCancellationTokenSource.Dispose();
+			if (_provider is IDisposable disposable) {
+				disposable.Dispose();
+			}
+		}
+	}
+
+	private sealed class DesignerPresenceServerEvent {
+		[System.Text.Json.Serialization.JsonPropertyName("schemaName")]
+		public string SchemaName { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("schemaType")]
+		public string SchemaType { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("schemaCaption")]
+		public string SchemaCaption { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("users")]
+		public List<DesignerPresenceServerUser> Users { get; set; } = [];
+	}
+
+	private sealed class DesignerPresenceServerUser {
+		[System.Text.Json.Serialization.JsonPropertyName("mode")]
+		public string Mode { get; set; } = string.Empty;
 	}
 }

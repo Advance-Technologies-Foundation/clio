@@ -31,6 +31,7 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"On successful non-dry-run saves, update-page also attempts a best-effort live Designer Presence `save` notification so active Creatio designers can be warned about outdated pages. This live notification requires forms-auth browser-session cookies (login/password-backed flow); in OAuth-only or credential-less environments the page save still succeeds and the response carries a warning when the live notification is skipped or fails. " +
 		"CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, this tool blocks the save with `conflict: true` + `conflictDetails` if the schema was modified outside this session (e.g. the user edited the page in the Creatio designer). On a conflict: do NOT retry with the same body — re-run get-page, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set force=true ONLY after they explicitly confirm overwriting them. A small race window between the check and the save remains (last write wins). " +
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
@@ -235,7 +236,8 @@ public sealed class PageUpdateTool(
 			Uri = args.Uri,
 			Login = args.Login,
 			Password = args.Password,
-			Force = args.Force ?? false
+			Force = args.Force ?? false,
+			NotifyDesignerPresence = true
 		};
 
 	/// <summary>
