@@ -248,44 +248,68 @@ public sealed class PageUpdateTool(
 		var warnings = new List<string>();
 		var signatures = new Dictionary<string, GetProcessSignatureResponse>(StringComparer.OrdinalIgnoreCase);
 		foreach (RunProcessButtonConfig config in configs) {
-			if (string.IsNullOrWhiteSpace(config.ProcessName)) {
-				continue; // structural validation already reported the missing processName
+			(PageUpdateResponse failure, IReadOnlyList<string> buttonWarnings) =
+				EvaluateButtonSignature(options, config, signatures);
+			if (failure != null) {
+				return (failure, null);
 			}
-			if (!signatures.TryGetValue(config.ProcessName, out GetProcessSignatureResponse signature)) {
-				if (!TryResolveSignature(options, config.ProcessName, out signature, out string resolveWarning)) {
-					if (resolveWarning != null) {
-						warnings.Add(resolveWarning);
-					}
-					continue;
-				}
-				signatures[config.ProcessName] = signature;
-			}
-			if (signature is null) {
-				continue;
-			}
-			if (!signature.Success) {
-				if (signature.ProcessResolutionFailed) {
-					return (new PageUpdateResponse {
-						Success = false,
-						Error = $"Run-process button references process '{config.ProcessName}' which could not be "
-							+ $"uniquely resolved on the environment: {signature.Error} "
-							+ "Resolve it with get-process-signature and use the returned processCode."
-					}, null);
-				}
-				// Transient/transport failure — do not block the write on a backend hiccup.
-				warnings.Add($"Run-process button parameter codes for process '{config.ProcessName}' were not "
-					+ $"validated: {signature.Error}");
-				continue;
-			}
-			RunProcessButtonSignatureValidator.Result validation =
-				RunProcessButtonSignatureValidator.Validate(config, signature.Parameters);
-			if (validation.Error != null) {
-				return (new PageUpdateResponse { Success = false, Error = validation.Error }, null);
-			}
-			warnings.AddRange(validation.Warnings);
+			warnings.AddRange(buttonWarnings);
 		}
 		return (null, warnings.Count > 0 ? warnings : null);
 	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) EvaluateButtonSignature(
+		PageUpdateOptions options, RunProcessButtonConfig config,
+		IDictionary<string, GetProcessSignatureResponse> signatures) {
+		if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+			return (null, []); // structural validation already reported the missing processName
+		}
+		if (!TryGetCachedSignature(options, config.ProcessName, signatures,
+				out GetProcessSignatureResponse signature, out string resolveWarning)) {
+			return (null, resolveWarning is null ? [] : [resolveWarning]);
+		}
+		if (!signature.Success) {
+			if (signature.ProcessResolutionFailed) {
+				return (ProcessNotResolvedFailure(config, signature), null);
+			}
+			// Transient/transport failure — do not block the write on a backend hiccup.
+			return (null, [TransientValidationWarning(config, signature)]);
+		}
+		RunProcessButtonSignatureValidator.Result validation =
+			RunProcessButtonSignatureValidator.Validate(config, signature.Parameters);
+		if (validation.Error != null) {
+			return (new PageUpdateResponse { Success = false, Error = validation.Error }, null);
+		}
+		return (null, validation.Warnings);
+	}
+
+	private bool TryGetCachedSignature(PageUpdateOptions options, string processName,
+		IDictionary<string, GetProcessSignatureResponse> signatures,
+		out GetProcessSignatureResponse signature, out string warning) {
+		warning = null;
+		if (signatures.TryGetValue(processName, out signature)) {
+			return signature is not null;
+		}
+		if (!TryResolveSignature(options, processName, out signature, out warning)) {
+			return false;
+		}
+		signatures[processName] = signature;
+		return signature is not null;
+	}
+
+	private static PageUpdateResponse ProcessNotResolvedFailure(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		new() {
+			Success = false,
+			Error = $"Run-process button references process '{config.ProcessName}' which could not be "
+				+ $"uniquely resolved on the environment: {signature.Error} "
+				+ "Resolve it with get-process-signature and use the returned processCode."
+		};
+
+	private static string TransientValidationWarning(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		$"Run-process button parameter codes for process '{config.ProcessName}' were not validated: "
+		+ signature.Error;
 
 	private bool TryResolveSignature(PageUpdateOptions options, string processName,
 		out GetProcessSignatureResponse signature, out string warning) {

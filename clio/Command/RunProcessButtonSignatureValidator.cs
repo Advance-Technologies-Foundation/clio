@@ -24,10 +24,9 @@ internal static class RunProcessButtonSignatureValidator {
 	public static Result Validate(RunProcessButtonConfig config, IReadOnlyList<ProcessSignatureParameter> parameters) {
 		IReadOnlyList<ProcessSignatureParameter> signatureParameters = parameters ?? [];
 		var byCode = new Dictionary<string, ProcessSignatureParameter>(StringComparer.Ordinal);
-		foreach (ProcessSignatureParameter parameter in signatureParameters) {
-			if (!string.IsNullOrWhiteSpace(parameter.Name)) {
-				byCode[parameter.Name] = parameter;
-			}
+		foreach (ProcessSignatureParameter parameter in signatureParameters
+			.Where(parameter => !string.IsNullOrWhiteSpace(parameter.Name))) {
+			byCode[parameter.Name] = parameter;
 		}
 
 		string label = string.IsNullOrWhiteSpace(config.ButtonName)

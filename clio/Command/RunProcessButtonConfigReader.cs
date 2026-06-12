@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 /// <summary>
@@ -128,11 +129,9 @@ internal static class RunProcessButtonConfigReader {
 	private static void CollectObjectKeys(JsonElement paramsElement, string propertyName, List<string> codes) {
 		if (paramsElement.TryGetProperty(propertyName, out JsonElement objectElement)
 			&& objectElement.ValueKind == JsonValueKind.Object) {
-			foreach (JsonProperty property in objectElement.EnumerateObject()) {
-				if (!string.IsNullOrWhiteSpace(property.Name)) {
-					codes.Add(property.Name);
-				}
-			}
+			codes.AddRange(objectElement.EnumerateObject()
+				.Select(property => property.Name)
+				.Where(name => !string.IsNullOrWhiteSpace(name)));
 		}
 	}
 }
