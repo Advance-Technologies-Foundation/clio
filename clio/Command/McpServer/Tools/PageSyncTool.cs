@@ -530,7 +530,16 @@ public sealed class PageSyncTool(
 
 	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
-		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
+		// The legacy brace-counter ValidateJsSyntax is intentionally NOT
+		// called here. Every web body reaching this method already parsed
+		// through Acornima in BuildPrePassEntry — the deterministic syntax
+		// gate is the active source of truth for JS syntax on this path,
+		// and the brace counter can no longer fail (its only possible
+		// rejections — empty body, unbalanced braces — are caught upstream
+		// by the syntax gate or by the markers validator). Same justification
+		// as PageValidateTool.Validate (see comment at its post-Acornima
+		// branch). JsSyntaxOk is reported true unconditionally in
+		// BuildValidationResult below.
 		SchemaValidationResult contentResult = GetContentValidationResult(body, markerResult);
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		SchemaValidationResult fieldResult = RunContentValidation(
@@ -567,7 +576,6 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateContextAccessAwait(body));
 		List<string> errors = CollectErrors(
 			markerResult,
-			syntaxResult,
 			contentResult,
 			fieldResult,
 			insertSelfConsistencyResult,
@@ -598,7 +606,7 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		return BuildValidationResult(markerResult, syntaxResult, contentOk, errors, warnings);
+		return BuildValidationResult(markerResult, contentOk, errors, warnings);
 	}
 
 	private static SchemaValidationResult GetContentValidationResult(
@@ -691,13 +699,16 @@ public sealed class PageSyncTool(
 
 	private static PageSyncValidationResult BuildValidationResult(
 		SchemaValidationResult markerResult,
-		SchemaValidationResult syntaxResult,
 		bool contentOk,
 		List<string> errors,
 		List<string> warnings) =>
 		new() {
 			MarkersOk = markerResult.IsValid,
-			JsSyntaxOk = syntaxResult.IsValid,
+			// Acornima already parsed the body successfully in BuildPrePassEntry
+			// before this method runs, so JS syntax is true unconditionally on
+			// this path. The dead brace-counter ValidateJsSyntax call was
+			// removed (mirrors PageValidateTool.BuildResult).
+			JsSyntaxOk = true,
 			ContentOk = contentOk,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
