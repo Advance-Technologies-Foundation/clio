@@ -13,12 +13,12 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     
-    <MsPackageVersion>10.0.8</MsPackageVersion>
+    <MsPackageVersion>10.0.9</MsPackageVersion>
     <SIOVersion>22.1.1</SIOVersion>
     
   </PropertyGroup>
   <ItemGroup Label="Used in production">
-    <PackageVersion Include="ModelContextProtocol" Version="1.3.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="$(MsPackageVersion)" />
@@ -37,7 +37,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="ErrorOr" Version="2.1.1" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="NRedisStack" Version="1.5.0" />
-    <PackageVersion Include="Spectre.Console" Version="0.55.2" />
+    <PackageVersion Include="Spectre.Console" Version="0.57.0" />
     <PackageVersion Include="ConsoleTables" Version="2.7.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
