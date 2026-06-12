@@ -71,28 +71,38 @@ public class ProcessModelGenerator(ILogger logger, IApplicationClient applicatio
 		}
 	}
 	
-	private ErrorOr<ProcessModel> GetProcessIdFromName(string processCode) {
-		
+	private ErrorOr<ProcessModel> GetProcessIdFromName(string processNameOrCaption) {
+
 		string currentStep = string.Empty;
 		try {
 			currentStep = "AppDataContext";
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(dataProvider);
-			
+
 			currentStep = "QueryCreatio";
-			VwProcessLib processLibItem = ctx.Models<VwProcessLib>()
-				.FirstOrDefault(p => p.Name == processCode);
-			
-			if (processLibItem is null) {
-				return Error.Failure("GetProcessIdFromName", $"Could not find process with name:{processCode}");
+			// Data access: exact Name match first; the Caption fallback (what a no-code user types,
+			// ENG-91168) is queried only when there is no Name match. Selection/ambiguity logic lives
+			// in the unit-testable ProcessLibResolver.
+			VwProcessLib byName = ctx.Models<VwProcessLib>()
+				.FirstOrDefault(p => p.Name == processNameOrCaption);
+			List<VwProcessLib> byCaption = byName is null
+				? ctx.Models<VwProcessLib>().Where(p => p.Caption == processNameOrCaption).ToList()
+				: [];
+
+			ErrorOr<VwProcessLib> resolved = ProcessLibResolver.Resolve(processNameOrCaption, byName, byCaption);
+			if (resolved.IsError) {
+				return resolved.Errors;
 			}
+			VwProcessLib processLibItem = resolved.Value;
 
 			if (processLibItem.Id == Guid.Empty || string.IsNullOrWhiteSpace(processLibItem.Caption) ) {
-				string message =  processLibItem.Id == Guid.Empty ? "Empty Id" : 
-					string.IsNullOrWhiteSpace(processLibItem.Caption) ? "Empty Caption" : "Unknown error"; 
-				return Error.Failure("GetProcessIdFromName", $"Error at step: {currentStep}. Process with name:{processCode} has invalid data. {message}");	
+				string message =  processLibItem.Id == Guid.Empty ? "Empty Id" :
+					string.IsNullOrWhiteSpace(processLibItem.Caption) ? "Empty Caption" : "Unknown error";
+				return Error.Failure("GetProcessIdFromName", $"Error at step: {currentStep}. Process '{processNameOrCaption}' has invalid data. {message}");
 			}
-			
-			return new ProcessModel(processLibItem.Id, processCode) {
+
+			// Code is always the resolved system Name (process code), even when the caller passed a caption,
+			// so callers can put the correct code into the run-process button's processName.
+			return new ProcessModel(processLibItem.Id, processLibItem.Name) {
 				Name = processLibItem.Caption,
 			};
 		}

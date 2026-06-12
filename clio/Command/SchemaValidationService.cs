@@ -892,6 +892,27 @@ public static class SchemaValidationService
 		return SchemaHandlerValidationService.Validate(jsBody);
 	}
 
+	/// <summary>
+	/// Body-only structural validation for <c>crt.RunBusinessProcessRequest</c> buttons (ENG-91168):
+	/// every such button must carry a non-empty <c>processName</c>. Parameter-code correctness is
+	/// validated separately against the live process signature (it needs the environment).
+	/// </summary>
+	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
+		SchemaValidationResult result = new() { IsValid = true };
+		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
+			if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+				string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
+					? "a crt.RunBusinessProcessRequest button"
+					: $"run-process button '{config.ButtonName}'";
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} is missing the required 'processName' (the process schema code). "
+					+ "Resolve it with get-process-signature and set params.processName.");
+			}
+		}
+		return result;
+	}
+
 	private static bool ValidateMarkers(
 		string jsBody,
 		IEnumerable<string> markers,

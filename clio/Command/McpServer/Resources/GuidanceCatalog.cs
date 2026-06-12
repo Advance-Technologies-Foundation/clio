@@ -109,7 +109,14 @@ internal static class GuidanceCatalog {
 			["ui-project"] = Create(
 				"ui-project",
 				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
-				WorkspaceUiProjectGuidanceResource.Guide)
+				WorkspaceUiProjectGuidanceResource.Guide),
+			["run-process-button"] = Create(
+				"run-process-button",
+				"Canonical MCP guidance for adding a Freedom UI button that runs a business process "
+				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
+				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
+				+ "view-model-attribute-binding / current-record variants.",
+				RunProcessButtonGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
