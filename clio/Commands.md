@@ -124,6 +124,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-package-dependency"></a>
+<a id="add-pkg-dependency"></a>
+<a id="add-pkg-dep"></a>
+- [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>

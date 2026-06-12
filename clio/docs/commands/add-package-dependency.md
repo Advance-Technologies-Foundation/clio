@@ -1,0 +1,78 @@
+# add-package-dependency
+
+## Name
+
+add-package-dependency - Add one or more package dependencies to a package
+
+## Description
+
+Adds one or more package dependencies to a Creatio package via the `PackageService.svc` endpoint, then persists the change.
+
+Use this command when the schema designer or compiler fails for a package because it extends objects owned by an app/package that is not in the target package's dependency list. The classic symptom is `GetSchemaDesignItem returned an HTML error page` when opening a designer for a layered object (for example an app extending the Opportunity layer without depending on `CrtLeadOppMgmtApp`). Add the owning app/package as a dependency and the designer works.
+
+The operation is idempotent: adding a dependency that is already present is a no-op. When a dependency version is omitted, the installed version of the dependency package is used.
+
+## Synopsis
+
+```bash
+clio add-package-dependency --package-name <PACKAGE> --dependencies <DEP[,DEP...]> [OPTIONS]
+```
+
+Aliases: `add-pkg-dependency`, `add-pkg-dep`.
+
+## Options
+
+```bash
+--package-name <PACKAGE>
+Target package whose dependency list is extended (required)
+
+--dependencies <DEP[,DEP...]>
+One or more dependency package names to add (required). Each entry is 'name' or 'name:version'.
+Multiple entries can be comma-separated or passed as separate values.
+
+-e, --environment <ENVIRONMENT_NAME>
+Target environment name
+
+-u, --uri <URI>
+Application URI (instead of -e)
+
+-l, --Login <LOGIN>
+User login (administrator permission required)
+
+-p, --Password <PASSWORD>
+User password
+```
+
+## Examples
+
+```bash
+clio add-package-dependency --package-name MyApp --dependencies CrtLeadOppMgmtApp -e dev
+Add a single dependency using a configured environment
+
+clio add-package-dependency --package-name MyApp --dependencies CrtLeadOppMgmtApp,CrtCase -e dev
+Add several dependencies at once
+
+clio add-package-dependency --package-name MyApp --dependencies CrtLeadOppMgmtApp:8.2.1.123 -e dev
+Pin an explicit dependency version
+
+clio add-pkg-dep --package-name MyApp --dependencies CrtLeadOppMgmtApp -e dev
+Using the shortest alias
+```
+
+## Notes
+
+- Administrator permissions are required on the target environment.
+- The dependency package must already be installed in the environment.
+- After adding a dependency that introduces compilable schemas, a configuration compilation may be required.
+
+## See Also
+
+install-gate - Install clio API gateway package to Creatio environment
+list-packages - List packages in a Creatio environment
+compile-package - Compile a package in Creatio
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+- [Clio Command Reference](../../Commands.md#add-package-dependency)

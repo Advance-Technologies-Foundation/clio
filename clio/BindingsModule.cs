@@ -354,6 +354,7 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
@@ -529,6 +530,8 @@ public class BindingsModule {
 		services.AddTransient<ActivatePackageCommand>();
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
+		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
 		services.AddTransient<CloneEnvironmentCommand>();
