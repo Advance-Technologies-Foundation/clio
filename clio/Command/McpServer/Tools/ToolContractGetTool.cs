@@ -185,6 +185,9 @@ internal static class ToolContractCatalog {
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
+	private const string ConstDefaultValueSourceName = "Const";
+	private const string DefaultValueConfigFieldName = "default-value-config";
+	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
 	private const string DryRunFieldName = "dry-run";
 	private const string ConfirmFieldName = "confirm";
@@ -3121,7 +3124,7 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field("default-value-config", ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."))),
+					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
@@ -3151,8 +3154,8 @@ internal static class ToolContractCatalog {
 					[SchemaNameFieldName] = ExamplePackageName,
 					[ActionFieldName] = "modify",
 					[ColumnNameFieldName] = "UsrStartDate",
-					["default-value-config"] = new Dictionary<string, object?> {
-						["source"] = "SystemValue",
+					[DefaultValueConfigFieldName] = new Dictionary<string, object?> {
+						[DefaultValueConfigSourceKey] = "SystemValue",
 						["value-source"] = "Current Time and Date"
 					}
 				}),
@@ -3162,8 +3165,8 @@ internal static class ToolContractCatalog {
 					[SchemaNameFieldName] = ExamplePackageName,
 					[ActionFieldName] = "modify",
 					[ColumnNameFieldName] = "UsrColor",
-					["default-value-config"] = new Dictionary<string, object?> {
-						["source"] = "Const",
+					[DefaultValueConfigFieldName] = new Dictionary<string, object?> {
+						[DefaultValueConfigSourceKey] = ConstDefaultValueSourceName,
 						["value"] = "d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50"
 					}
 				})
@@ -3514,7 +3517,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractAlias DefaultValueConfigParameterAlias() {
-		return Alias(ParameterScope, "default-value-config", "defaultValueConfig", RejectedStatus,
+		return Alias(ParameterScope, DefaultValueConfigFieldName, "defaultValueConfig", RejectedStatus,
 			"Use 'default-value-config' instead of 'defaultValueConfig'.");
 	}
 

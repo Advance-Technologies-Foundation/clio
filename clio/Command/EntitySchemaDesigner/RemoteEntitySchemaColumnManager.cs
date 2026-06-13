@@ -64,56 +64,32 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
+	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private readonly ILogger _logger;
-	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
-	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
 		ILookupDefaultDisplayValueResolver lookupDefaultDisplayValueResolver,
-		ILogger logger,
-		ICurrentUserCultureResolverFactory cultureResolverFactory,
-		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
+		IEntitySchemaCaptionCultureResolver captionCultureResolver,
+		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
 		_lookupDefaultDisplayValueResolver = lookupDefaultDisplayValueResolver;
+		_captionCultureResolver = captionCultureResolver;
 		_logger = logger;
-		_cultureResolverFactory = cultureResolverFactory;
-		_settingsRepository = settingsRepository;
 	}
 
 	/// <summary>
-	/// Resolves the effective caption culture for a column WRITE batch: an explicit
-	/// <c>--caption-culture</c> override wins; otherwise the connected user's profile culture
-	/// (cached); otherwise the <c>en-US</c> fallback. Never reads the host
-	/// <c>CultureInfo.CurrentCulture</c>. Resolution failure is non-fatal (M-4): it degrades to
-	/// <c>en-US</c> so scripted/CI column writes keep working.
+	/// Resolves the effective caption culture for a column WRITE batch via
+	/// <see cref="IEntitySchemaCaptionCultureResolver"/>: an explicit <c>--caption-culture</c> override
+	/// wins; otherwise the connected user's profile culture; otherwise the <c>en-US</c> fallback.
 	/// </summary>
 	private string ResolveEffectiveCultureName(ModifyEntitySchemaColumnOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.CaptionCulture)) {
-			string overrideCulture = options.CaptionCulture.Trim();
-			try {
-				return System.Globalization.CultureInfo.GetCultureInfo(overrideCulture).Name;
-			} catch (System.Globalization.CultureNotFoundException) {
-				throw new EntitySchemaDesignerException(
-					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");
-			}
-		}
-
-		try {
-			EnvironmentSettings settings = _settingsRepository.GetEnvironment(options);
-			CultureResolution resolution = _cultureResolverFactory.Create(settings)
-				.ResolveAsync().GetAwaiter().GetResult();
-			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
-		} catch (Exception ex) {
-			_logger.WriteWarning(
-				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
-			return EntitySchemaDesignerSupport.DefaultCultureName;
-		}
+		return _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture);
 	}
 
 	public void ModifyColumn(ModifyEntitySchemaColumnOptions options) {

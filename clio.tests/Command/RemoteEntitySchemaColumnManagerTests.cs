@@ -30,9 +30,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private IRemoteEntitySchemaDesignerClient _designerClient;
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
+	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private ILogger _logger;
-	private ICurrentUserCultureResolverFactory _cultureResolverFactory;
-	private Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
 	private EntityDesignSchemaDto _savedSchema;
@@ -50,16 +49,12 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
 			.Returns(new LookupDefaultResolution(null, null));
 		_logger = Substitute.For<ILogger>();
-		_cultureResolverFactory = Substitute.For<ICurrentUserCultureResolverFactory>();
-		ICurrentUserCultureResolver cultureResolver = Substitute.For<ICurrentUserCultureResolver>();
-		// Default: profile culture unresolved -> effective culture degrades to en-US (parity with
-		// the previous host-locale behavior on CI). Individual tests can re-stub for uk-UA.
-		cultureResolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
-			.Returns(System.Threading.Tasks.Task.FromResult(
-				CultureResolution.Failed(CurrentUserCultureResolver.ReasonUserCultureMissing)));
-		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(cultureResolver);
-		_settingsRepository = Substitute.For<Clio.UserEnvironment.ISettingsRepository>();
-		_settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		_captionCultureResolver = Substitute.For<IEntitySchemaCaptionCultureResolver>();
+		// Default: effective culture is the en-US fallback (parity with the previous default behavior on
+		// CI). Tests that exercise the resolved-profile path re-stub this to return uk-UA.
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("en-US");
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -122,9 +117,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_designerClient,
 			_runtimeEntitySchemaReader,
 			_lookupDefaultDisplayValueResolver,
-			_logger,
-			_cultureResolverFactory,
-			_settingsRepository);
+			_captionCultureResolver,
+			_logger);
 	}
 
 	[Test]
@@ -364,10 +358,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[Description("Anchors a written column caption to the resolved profile culture (uk-UA) when the resolver succeeds (AC-02, WRITE path).")]
 	public void SetLocalizableValue_ShouldUseEffectiveCulture_WhenProfileResolved() {
 		// Arrange — the profile culture resolves to uk-UA for this run.
-		ICurrentUserCultureResolver resolver = Substitute.For<ICurrentUserCultureResolver>();
-		resolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
-			.Returns(System.Threading.Tasks.Task.FromResult(CultureResolution.Resolved("uk-UA")));
-		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("uk-UA");
 		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
 		SetupLoadedSchema();
