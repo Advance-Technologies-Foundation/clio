@@ -63,6 +63,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
+	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private readonly ILogger _logger;
 	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
 	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
@@ -71,6 +72,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
+		ILookupDefaultDisplayValueResolver lookupDefaultDisplayValueResolver,
 		ILogger logger,
 		ICurrentUserCultureResolverFactory cultureResolverFactory,
 		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
@@ -78,6 +80,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
+		_lookupDefaultDisplayValueResolver = lookupDefaultDisplayValueResolver;
 		_logger = logger;
 		_cultureResolverFactory = cultureResolverFactory;
 		_settingsRepository = settingsRepository;
@@ -163,6 +166,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
 			column.DefValue);
+		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, column, options);
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
 			schema.Package?.Name ?? options.Package,
@@ -190,6 +194,31 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			defaultValueConfig);
 	}
 
+	/// <summary>
+	/// Enriches a lookup <c>Const</c> default's GUID-only readback with the referenced record's display
+	/// value (or an honest record-resolution marker). No-op for any other default source, non-lookup
+	/// columns, or a missing/empty GUID. Fail-soft: returns the original config unchanged when enrichment
+	/// yields nothing, so the readback never regresses versus the GUID-only behavior it augments.
+	/// </summary>
+	private EntitySchemaDefaultValueConfig? EnrichLookupConstDefaultValue(
+		EntitySchemaDefaultValueConfig? config,
+		EntitySchemaColumnDto column,
+		GetEntitySchemaColumnPropertiesOptions options) {
+		if (config is null
+			|| column.DefValue?.ValueSourceType != EntitySchemaColumnDefSource.Const
+			|| string.IsNullOrWhiteSpace(column.ReferenceSchema?.Name)
+			|| !Guid.TryParse(config.Value?.ToString(), out Guid recordId)
+			|| recordId == Guid.Empty) {
+			return config;
+		}
+		LookupDefaultResolution resolution = _lookupDefaultDisplayValueResolver.Resolve(
+			column.ReferenceSchema!.Name, recordId, options);
+		if (resolution.DisplayValue is null && resolution.RecordResolution is null) {
+			return config;
+		}
+		return config.WithDisplay(resolution.DisplayValue, resolution.RecordResolution);
+	}
+
 	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		EntitySchemaColumnPropertiesInfo column = GetColumnProperties(options);
 		WriteInfo("Entity schema column properties");
@@ -207,6 +236,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Default value source: {FormatText(column.DefaultValueSource)}");
 		WriteInfo($"Default value: {FormatText(column.DefaultValue)}");
 		WriteInfo($"Reference schema: {FormatText(column.ReferenceSchemaName)}");
+		if (column.DefaultValueConfig?.DisplayValue != null) {
+			WriteInfo($"Default value display: {column.DefaultValueConfig.DisplayValue}");
+		}
+		if (column.DefaultValueConfig?.RecordResolution != null) {
+			WriteInfo($"Default value record resolution: {column.DefaultValueConfig.RecordResolution}");
+		}
 		WriteInfo($"Simple lookup: {FormatBoolean(column.SimpleLookup)}");
 		WriteInfo($"Cascade: {FormatBoolean(column.Cascade)}");
 		WriteInfo($"Do not control integrity: {FormatBoolean(column.DoNotControlIntegrity)}");
@@ -892,7 +927,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			defaultValueConfig,
 			column.DataValueType ?? 0,
 			$"Column '{options.ColumnName}'",
-			remoteOptions);
+			remoteOptions,
+			column.ReferenceSchema?.Name);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{options.ColumnName}'");
 	}

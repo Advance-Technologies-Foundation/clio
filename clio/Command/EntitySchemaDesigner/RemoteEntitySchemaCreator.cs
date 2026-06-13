@@ -242,7 +242,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			defaultValueConfig,
 			column.DataValueType ?? 0,
 			$"Column '{parsedColumn.Name}'",
-			options);
+			options,
+			column.ReferenceSchema?.Name);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{parsedColumn.Name}'");
 	}

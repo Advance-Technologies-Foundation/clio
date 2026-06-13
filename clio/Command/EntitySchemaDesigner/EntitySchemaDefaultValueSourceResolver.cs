@@ -8,11 +8,26 @@ namespace Clio.Command.EntitySchemaDesigner;
 
 internal interface IEntitySchemaDefaultValueSourceResolver
 {
+	/// <summary>
+	/// Normalizes and validates a default-value configuration before it is persisted. <c>SystemValue</c> and
+	/// <c>Settings</c> selectors are resolved to canonical identifiers; for a lookup <c>Const</c> default the
+	/// referenced record's existence is validated when <paramref name="referenceSchemaName"/> is supplied.
+	/// </summary>
+	/// <param name="config">Default-value configuration to resolve.</param>
+	/// <param name="dataValueType">Creatio runtime data-value-type identifier of the target column.</param>
+	/// <param name="context">Human-readable context (e.g. <c>Column 'UsrColor'</c>) for error messages.</param>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <param name="referenceSchemaName">
+	/// Referenced lookup schema name for a lookup column, enabling <c>Const</c>-GUID existence validation.
+	/// Null for non-lookup columns or when the reference is not yet known (validation is skipped).
+	/// </param>
+	/// <returns>The resolved (and validated) default-value configuration.</returns>
 	EntitySchemaDefaultValueConfig Resolve(
 		EntitySchemaDefaultValueConfig config,
 		int dataValueType,
 		string context,
-		RemoteCommandOptions options);
+		RemoteCommandOptions options,
+		string? referenceSchemaName = null);
 }
 
 internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefaultValueSourceResolver
@@ -46,14 +61,40 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 		EntitySchemaDefaultValueConfig config,
 		int dataValueType,
 		string context,
-		RemoteCommandOptions options) {
+		RemoteCommandOptions options,
+		string? referenceSchemaName = null) {
 		EntitySchemaColumnDefSource source = EntitySchemaDesignerSupport.ParseDefaultValueSource(config.Source)
 			?? throw new EntitySchemaDesignerException($"{context} requires default-value-config.source.");
 		return source switch {
 			EntitySchemaColumnDefSource.SystemValue => ResolveSystemValue(config, dataValueType, context, options),
 			EntitySchemaColumnDefSource.Settings => ResolveSettings(config, dataValueType, context, options),
+			EntitySchemaColumnDefSource.Const => ResolveConst(config, referenceSchemaName, context, options),
 			_ => config
 		};
+	}
+
+	/// <summary>
+	/// Validates a lookup <c>Const</c> default: when the referenced schema is known and the value is a record
+	/// GUID, the referenced record must exist, otherwise the write is rejected. Non-lookup <c>Const</c> defaults
+	/// and unverifiable checks pass through unchanged. The check is point-in-time (TOCTOU): a record deleted
+	/// between validation and use can still leave a dangling default.
+	/// </summary>
+	private EntitySchemaDefaultValueConfig ResolveConst(
+		EntitySchemaDefaultValueConfig config,
+		string? referenceSchemaName,
+		string context,
+		RemoteCommandOptions options) {
+		if (string.IsNullOrWhiteSpace(referenceSchemaName)
+			|| !Guid.TryParse(config.Value?.ToString(), out Guid recordId)
+			|| recordId == Guid.Empty) {
+			return config;
+		}
+		LookupRecordExistence existence = _designerClient.CheckRecordExists(referenceSchemaName!, recordId, options);
+		if (existence == LookupRecordExistence.NotFound) {
+			throw new EntitySchemaDesignerException(
+				$"{context} default value record '{recordId:D}' was not found in referenced schema '{referenceSchemaName}'.");
+		}
+		return config;
 	}
 
 	private EntitySchemaDefaultValueConfig ResolveSystemValue(

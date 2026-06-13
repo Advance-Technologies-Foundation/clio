@@ -92,6 +92,12 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 		_logger.WriteInfo($"Default value source: {FormatText(properties.DefaultValueSource)}");
 		_logger.WriteInfo($"Default value: {FormatText(properties.DefaultValue)}");
 		_logger.WriteInfo($"Reference schema: {FormatText(properties.ReferenceSchemaName)}");
+		if (properties.DefaultValueConfig?.DisplayValue != null) {
+			_logger.WriteInfo($"Default value display: {properties.DefaultValueConfig.DisplayValue}");
+		}
+		if (properties.DefaultValueConfig?.RecordResolution != null) {
+			_logger.WriteInfo($"Default value record resolution: {properties.DefaultValueConfig.RecordResolution}");
+		}
 		_logger.WriteInfo($"Simple lookup: {FormatBoolean(properties.SimpleLookup)}");
 		_logger.WriteInfo($"Cascade: {FormatBoolean(properties.Cascade)}");
 		_logger.WriteInfo($"Do not control integrity: {FormatBoolean(properties.DoNotControlIntegrity)}");

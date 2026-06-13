@@ -284,4 +284,97 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 			.WithMessage("*has no system variables available*",
 				because: "missing system value options should produce a direct error for the caller");
 	}
+
+	[Test]
+	[Description("Rejects a lookup Const default whose referenced record does not exist (DRAFT-AC-06).")]
+	public void Resolve_LookupConst_Should_Throw_When_RecordNotFound() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_designerClient.CheckRecordExists("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(LookupRecordExistence.NotFound);
+
+		// Act
+		Action act = () => _resolver.Resolve(
+			new EntitySchemaDefaultValueConfig {
+				Source = "Const",
+				Value = recordId.ToString("D")
+			},
+			dataValueType: 10,
+			context: "Column 'UsrColor'",
+			options: new RemoteCommandOptions(),
+			referenceSchemaName: "UsrEng91318Color");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not found in referenced schema 'UsrEng91318Color'*",
+				because: "a Const lookup default pointing at a nonexistent record must be rejected before save");
+	}
+
+	[Test]
+	[Description("Accepts a lookup Const default whose referenced record exists, returning the config unchanged.")]
+	public void Resolve_LookupConst_Should_ReturnConfig_When_RecordExists() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_designerClient.CheckRecordExists("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(LookupRecordExistence.Exists);
+
+		// Act
+		EntitySchemaDefaultValueConfig result = _resolver.Resolve(
+			new EntitySchemaDefaultValueConfig {
+				Source = "Const",
+				Value = recordId.ToString("D")
+			},
+			dataValueType: 10,
+			context: "Column 'UsrColor'",
+			options: new RemoteCommandOptions(),
+			referenceSchemaName: "UsrEng91318Color");
+
+		// Assert
+		result.Value.Should().Be(recordId.ToString("D"),
+			because: "an existing referenced record passes validation and the Const config is returned unchanged");
+	}
+
+	[Test]
+	[Description("Accepts a lookup Const default when existence cannot be verified, so an unverifiable check never blocks a write.")]
+	public void Resolve_LookupConst_Should_NotThrow_When_ExistenceUnknown() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_designerClient.CheckRecordExists(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(LookupRecordExistence.Unknown);
+
+		// Act
+		Action act = () => _resolver.Resolve(
+			new EntitySchemaDefaultValueConfig {
+				Source = "Const",
+				Value = recordId.ToString("D")
+			},
+			dataValueType: 10,
+			context: "Column 'UsrColor'",
+			options: new RemoteCommandOptions(),
+			referenceSchemaName: "UsrEng91318Color");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an unverifiable existence check (e.g. no read access) must degrade to acceptance, not block the write");
+	}
+
+	[Test]
+	[Description("Does not check record existence for a Const default when no reference schema is supplied.")]
+	public void Resolve_Const_Should_NotCheckExistence_When_NoReferenceSchema() {
+		// Act
+		EntitySchemaDefaultValueConfig result = _resolver.Resolve(
+			new EntitySchemaDefaultValueConfig {
+				Source = "Const",
+				Value = "Vehicle"
+			},
+			dataValueType: 27,
+			context: "Column 'Name'",
+			options: new RemoteCommandOptions());
+
+		// Assert
+		result.Value.Should().Be("Vehicle",
+			because: "a non-lookup Const default passes through unchanged with no existence query");
+		_designerClient.DidNotReceive()
+			.CheckRecordExists(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+	}
 }
