@@ -60,6 +60,7 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 	private const string BroadcastMessageChannelType = "BroadcastMsg";
 	private const string WebSocketChannelClassName = "Terrasoft.WebSocketChannel";
 	private const string SignalRChannelClassName = "Terrasoft.SignalRChannel";
+	private const char UriPathSeparator = '/';
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IBrowserSessionService _browserSessionService;
@@ -127,7 +128,7 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 			return BuildSkipWarning("browser-session storageState was not available.");
 		}
 
-		string storageStateJson = _fileSystem.File.ReadAllText(sessionPath);
+		string storageStateJson = await _fileSystem.File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
 		IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
 		if (cookies.Count == 0) {
 			return BuildSkipWarning("browser-session storageState did not contain usable cookies.");
@@ -155,6 +156,24 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 			return BuildSkipWarning($"message-channel serviceUrl is invalid: {ex.Message}");
 		}
 
+		MessageChannelEnvelope envelope = BuildSaveEnvelope(schemaName, schemaCaption, userInfo);
+
+		try {
+			await publisher.PublishAsync(new MessageChannelPublishRequest(serviceUrl, cookies, envelope), CancellationToken.None)
+				.ConfigureAwait(false);
+			return null;
+		} catch (Exception ex) {
+			string warning = BuildFailureWarning($"live notification publish failed: {ex.Message}");
+			_logger.WriteDebug(warning);
+			return warning;
+		}
+	}
+
+	/// <summary>
+	/// Builds the Designer Presence save broadcast envelope (per-schema sender + server-event
+	/// payload whose single <c>users[]</c> element carries the saving user with <c>mode="save"</c>).
+	/// </summary>
+	private static MessageChannelEnvelope BuildSaveEnvelope(string schemaName, string? schemaCaption, UserInfoPayload userInfo) {
 		var payload = new DesignerPresenceServerPayload {
 			SchemaType = PageSchemaType,
 			SchemaName = schemaName,
@@ -172,21 +191,10 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 				}
 			]
 		};
-
-		MessageChannelEnvelope envelope = MessageChannelEnvelope.Create(
+		return MessageChannelEnvelope.Create(
 			BuildPerSchemaSender(PageSchemaType, schemaName),
 			BroadcastMessageChannelType,
 			JsonSerializer.Serialize(payload));
-
-		try {
-			await publisher.PublishAsync(new MessageChannelPublishRequest(serviceUrl, cookies, envelope), CancellationToken.None)
-				.ConfigureAwait(false);
-			return null;
-		} catch (Exception ex) {
-			string warning = BuildFailureWarning($"live notification publish failed: {ex.Message}");
-			_logger.WriteDebug(warning);
-			return warning;
-		}
 	}
 
 	private ApplicationInfoPayload? TryReadApplicationInfo() {
@@ -219,7 +227,7 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		}
 		Uri resolved = Uri.TryCreate(rawServiceUrl, UriKind.Absolute, out Uri? absolute)
 			? absolute
-			: new Uri(new Uri(_environmentSettings.Uri.TrimEnd('/') + "/", UriKind.Absolute), rawServiceUrl);
+			: new Uri(new Uri(_environmentSettings.Uri.TrimEnd(UriPathSeparator) + UriPathSeparator, UriKind.Absolute), rawServiceUrl);
 		if (string.Equals(clientConnectionClassName, WebSocketChannelClassName, StringComparison.Ordinal)
 			&& (resolved.Scheme == Uri.UriSchemeHttp || resolved.Scheme == Uri.UriSchemeHttps)) {
 			var builder = new UriBuilder(resolved) {
