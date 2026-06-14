@@ -30,7 +30,13 @@ public interface IMeasurementService
 /// <inheritdoc />
 public sealed class MeasurementService : IMeasurementService
 {
-	private const string ConsentGranted = "granted";
+	internal const string ConsentGranted = "granted";
+
+	/// <summary>
+	/// Result status returned when an event has been persisted to the local spool.
+	/// </summary>
+	internal const string StatusStored = "stored";
+
 	private const string ConsentDenied = "denied";
 	private const string Unknown = "unknown";
 	private const string SessionStartedEvent = "session_started";
@@ -40,11 +46,6 @@ public sealed class MeasurementService : IMeasurementService
 	/// so downstream consumers can parse events without relying on their creation date.
 	/// </summary>
 	private const string SchemaVersion = "1";
-
-	/// <summary>
-	/// Environment variable that redirects the local telemetry storage root (used by tests).
-	/// </summary>
-	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
 
 	private static readonly object SyncRoot = new();
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -138,7 +139,7 @@ public sealed class MeasurementService : IMeasurementService
 			OpenTelemetryLogEvent logEvent = BuildLogEvent(enrichedRequest, eventId, eventTimestamp, durationSinceSessionStartMs);
 			WriteEvent(eventId, logEvent);
 			UpdateSessionState(sessionState, request.EventName, eventTimestamp);
-			return new MeasurementResult(true, "stored", eventId);
+			return new MeasurementResult(true, StatusStored, eventId);
 		}
 	}
 
@@ -341,16 +342,7 @@ public sealed class MeasurementService : IMeasurementService
 		return Unknown;
 	}
 
-	private static string DefaultTelemetryRoot
-	{
-		get {
-			string overridePath = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
-			return string.IsNullOrWhiteSpace(overridePath)
-				? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-					".creatio-ai-app-development-toolkit", "telemetry")
-				: overridePath;
-		}
-	}
+	private static string DefaultTelemetryRoot => TelemetryStoragePaths.ResolveRoot();
 
 	private string TelemetryRoot => _telemetryRoot;
 	private string ConsentPath => Path.Combine(TelemetryRoot, "consent.json");
@@ -363,5 +355,5 @@ public sealed class MeasurementService : IMeasurementService
 		new(value.Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_')
 			.ToArray());
 
-	private string EventsDirectory => Path.Combine(TelemetryRoot, "events");
+	private string EventsDirectory => TelemetryStoragePaths.EventsDirectory(TelemetryRoot);
 }

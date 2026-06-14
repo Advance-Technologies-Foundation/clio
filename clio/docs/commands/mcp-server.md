@@ -30,6 +30,12 @@ Available MCP tool categories:
   - get-measurements-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
   - send-measurements         Store one workflow measurement as a local OpenTelemetry-shaped event once consent is granted
 
+When a telemetry endpoint is configured (settings file "telemetry" section or the
+CLIO_TELEMETRY_ENDPOINT / CLIO_TELEMETRY_INGEST_KEY environment variables) and consent
+is granted, stored events are uploaded in the background (on server start and after
+each stored event) as OTLP/HTTP JSON and removed locally on success. Without an
+endpoint nothing is sent; the local spool is only pruned (age and size caps).
+
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling
 - docs://mcp/guides/data-bindings

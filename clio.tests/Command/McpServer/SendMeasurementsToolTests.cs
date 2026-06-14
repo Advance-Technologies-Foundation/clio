@@ -98,10 +98,11 @@ public sealed class SendMeasurementsToolTests
 	{
 		// Arrange
 		IMeasurementService service = Substitute.For<IMeasurementService>();
+		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
 		MeasurementRequest request = CreateRequest() with { TelemetryConsent = "granted" };
 		MeasurementResult expected = new(true, "stored", "event-id");
 		service.Send(request).Returns(expected);
-		SendMeasurementsTool tool = new(service);
+		SendMeasurementsTool tool = new(service, scheduler);
 
 		// Act
 		MeasurementResult actual = tool.SendMeasurements(request);
@@ -110,6 +111,47 @@ public sealed class SendMeasurementsToolTests
 		actual.Should().BeSameAs(expected,
 			because: "the MCP tool should return the service result directly for clients");
 		service.Received(1).Send(request);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Schedules a background telemetry flush after an event is stored locally.")]
+	public void SendMeasurements_Should_Schedule_Flush_When_Event_Stored()
+	{
+		// Arrange
+		IMeasurementService service = Substitute.For<IMeasurementService>();
+		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
+		MeasurementRequest request = CreateRequest();
+		service.Send(request).Returns(new MeasurementResult(true, "stored", "event-id"));
+		SendMeasurementsTool tool = new(service, scheduler);
+
+		// Act
+		tool.SendMeasurements(request);
+
+		// Assert
+		scheduler.Received(1).TryScheduleFlush();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not schedule a background flush when the measurement is rejected or consent is denied.")]
+	public void SendMeasurements_Should_Not_Schedule_Flush_When_Event_Not_Stored()
+	{
+		// Arrange
+		IMeasurementService service = Substitute.For<IMeasurementService>();
+		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
+		MeasurementRequest request = CreateRequest();
+		service.Send(request).Returns(
+			new MeasurementResult(false, "rejected", Error: new MeasurementError("unknown-event-name", "bad")),
+			new MeasurementResult(true, "consent-denied"));
+		SendMeasurementsTool tool = new(service, scheduler);
+
+		// Act
+		tool.SendMeasurements(request);
+		tool.SendMeasurements(request);
+
+		// Assert
+		scheduler.DidNotReceive().TryScheduleFlush();
 	}
 
 	[Test]

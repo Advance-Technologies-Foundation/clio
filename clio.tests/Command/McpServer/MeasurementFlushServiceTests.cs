@@ -1,0 +1,394 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Clio.Common.Telemetry;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.McpServer;
+
+[TestFixture]
+[Property("Module", "McpServer")]
+public sealed class MeasurementFlushServiceTests
+{
+	private const string DefaultEndpoint = "https://telemetry.example.com/v1/logs";
+	private static readonly DateTimeOffset BaseTime = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+	private string _telemetryHome;
+
+	[SetUp]
+	public void SetUp()
+	{
+		_telemetryHome = Path.Combine(Path.GetTempPath(), "clio-telemetry-flush-tests", Guid.NewGuid().ToString("N"));
+	}
+
+	[TearDown]
+	public void TearDown()
+	{
+		if (Directory.Exists(_telemetryHome)) {
+			Directory.Delete(_telemetryHome, recursive: true);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps spooled events local and sends nothing when no telemetry endpoint is configured.")]
+	public async Task FlushAsync_Should_Not_Post_When_Endpoint_Not_Configured()
+	{
+		// Arrange
+		WriteEventFile(BaseTime);
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler, endpoint: null);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().BeEmpty(
+			because: "uploading is disabled by default until an endpoint is configured");
+		EventFiles().Should().ContainSingle(
+			because: "spooled events must stay local while uploading is disabled");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends nothing when the locally stored telemetry consent is not granted.")]
+	public async Task FlushAsync_Should_Not_Post_When_Consent_Not_Granted()
+	{
+		// Arrange
+		WriteEventFile(BaseTime);
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler, consent: "denied");
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().BeEmpty(
+			because: "events must never leave the machine unless consent is granted");
+		EventFiles().Should().ContainSingle(
+			because: "the flusher must not destroy events when it skips sending for consent reasons");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Posts a spec-conformant OTLP/HTTP JSON envelope and deletes the sent files on success.")]
+	public async Task FlushAsync_Should_Post_Spec_Conformant_Otlp_Envelope_When_Server_Accepts()
+	{
+		// Arrange
+		WriteEventFile(BaseTime, "session_started");
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		CapturedRequest request = handler.Requests.Should().ContainSingle(
+			because: "one spooled event fits in a single OTLP batch").Subject;
+		request.Uri!.AbsoluteUri.Should().Be(DefaultEndpoint,
+			because: "the flusher must post to the configured OTLP logs endpoint");
+		request.IngestKey.Should().BeNull(
+			because: "no ingest-key header should be sent when none is configured");
+		using JsonDocument document = JsonDocument.Parse(request.Body!);
+		JsonElement resourceLogs = document.RootElement.GetProperty("resourceLogs");
+		JsonElement resourceAttributes = resourceLogs[0].GetProperty("resource").GetProperty("attributes");
+		resourceAttributes[0].GetProperty("key").GetString().Should().Be("service.name",
+			because: "OTLP consumers group telemetry by the service.name resource attribute");
+		resourceAttributes[0].GetProperty("value").GetProperty("stringValue").GetString().Should().Be("clio",
+			because: "clio is the emitting service");
+		JsonElement logRecord = resourceLogs[0].GetProperty("scopeLogs")[0].GetProperty("logRecords")[0];
+		logRecord.GetProperty("timeUnixNano").ValueKind.Should().Be(JsonValueKind.String,
+			because: "the OTLP JSON encoding maps int64 fields to JSON strings");
+		logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
+			because: "the stored snake_case body must map onto the camelCase OTLP body");
+		JsonElement durationAttribute = logRecord.GetProperty("attributes").EnumerateArray()
+			.Single(attribute => attribute.GetProperty("key").GetString() == "duration_ms");
+		durationAttribute.GetProperty("value").GetProperty("intValue").ValueKind.Should().Be(JsonValueKind.String,
+			because: "OTLP intValue is an int64 and therefore a JSON string");
+		EventFiles().Should().BeEmpty(
+			because: "delivered events must be removed from the local spool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uploads a large spool as ordered batches, oldest events first.")]
+	public async Task FlushAsync_Should_Send_Batches_Oldest_First_When_Spool_Exceeds_Batch_Size()
+	{
+		// Arrange
+		for (int index = 0; index < 120; index++) {
+			WriteEventFile(BaseTime.AddSeconds(index), $"evt_{index:D3}");
+		}
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(
+			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().HaveCount(3,
+			because: "120 events should upload as batches of 50, 50, and 20");
+		handler.Requests.Select(request => LogRecordBodies(request.Body!).Count)
+			.Should().Equal([50, 50, 20], because: "each batch is capped at the maximum batch size");
+		LogRecordBodies(handler.Requests[0].Body!)[0].Should().Be("evt_000",
+			because: "the flusher must upload the oldest spooled events first");
+		LogRecordBodies(handler.Requests[2].Body!)[^1].Should().Be("evt_119",
+			because: "the newest event should be in the final batch");
+		EventFiles().Should().BeEmpty(
+			because: "all delivered batches must be removed from the spool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries transient server failures, then stops the run and keeps the spool intact.")]
+	public async Task FlushAsync_Should_Stop_And_Keep_Files_When_Transient_Failures_Exhaust_Attempts()
+	{
+		// Arrange
+		for (int index = 0; index < 60; index++) {
+			WriteEventFile(BaseTime.AddSeconds(index));
+		}
+		FakeHttpHandler handler = new();
+		handler.Enqueue(HttpStatusCode.ServiceUnavailable, HttpStatusCode.ServiceUnavailable,
+			HttpStatusCode.ServiceUnavailable);
+		MeasurementFlushService service = CreateService(
+			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().HaveCount(MeasurementFlushService.PostAttempts,
+			because: "a transient failure should be retried up to the attempt cap and never bleed into the next batch");
+		EventFiles().Should().HaveCount(60,
+			because: "undelivered events must stay spooled so the next trigger can retry");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Delivers the batch on a later attempt when a transient failure recovers.")]
+	public async Task FlushAsync_Should_Deliver_After_Retry_When_Server_Recovers()
+	{
+		// Arrange
+		WriteEventFile(BaseTime);
+		FakeHttpHandler handler = new();
+		handler.Enqueue(HttpStatusCode.TooManyRequests, HttpStatusCode.OK);
+		MeasurementFlushService service = CreateService(handler);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().HaveCount(2,
+			because: "429 is throttling and should be retried with backoff");
+		EventFiles().Should().BeEmpty(
+			because: "the batch was accepted on the second attempt and must leave the spool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Drops a permanently rejected batch without retrying and continues with the next batch.")]
+	public async Task FlushAsync_Should_Drop_Rejected_Batch_And_Continue_When_Server_Rejects_Permanently()
+	{
+		// Arrange
+		for (int index = 0; index < 60; index++) {
+			WriteEventFile(BaseTime.AddSeconds(index));
+		}
+		FakeHttpHandler handler = new();
+		handler.Enqueue(HttpStatusCode.BadRequest, HttpStatusCode.OK);
+		MeasurementFlushService service = CreateService(
+			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().HaveCount(2,
+			because: "a 4xx rejection is permanent: no retry, but the next batch is still attempted");
+		EventFiles().Should().BeEmpty(
+			because: "telemetry is loss-tolerant by design — a poison batch must not wedge the spool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Prunes expired and excess spool files even when uploading is disabled.")]
+	public async Task FlushAsync_Should_Prune_Spool_When_Sending_Disabled()
+	{
+		// Arrange
+		MutableTimeProvider time = new(BaseTime);
+		for (int index = 0; index < 5; index++) {
+			WriteEventFile(BaseTime.AddDays(-(MeasurementFlushService.MaxSpoolAgeDays + 5)).AddSeconds(index));
+		}
+		for (int index = 0; index < MeasurementFlushService.MaxSpoolFiles + 10; index++) {
+			WriteEventFile(BaseTime.AddHours(-1).AddSeconds(index));
+		}
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler, endpoint: null, timeProvider: time);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().BeEmpty(
+			because: "pruning must not depend on a configured endpoint");
+		EventFiles().Should().HaveCount(MeasurementFlushService.MaxSpoolFiles,
+			because: "expired files and the oldest files above the size cap must be deleted locally");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Skips in-progress .json.tmp partials and deletes unparseable event files instead of sending them.")]
+	public async Task FlushAsync_Should_Skip_Tmp_Files_And_Drop_Unparseable_Events()
+	{
+		// Arrange
+		WriteEventFile(BaseTime, "session_started");
+		WriteEventFile(BaseTime.AddSeconds(1), content: "{ not json ");
+		string tmpPath = Path.Combine(EventsDirectory, $"{BaseTime.AddSeconds(2):yyyyMMddTHHmmssfffZ}_partial.json.tmp");
+		File.WriteAllText(tmpPath, "partial");
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		CapturedRequest request = handler.Requests.Should().ContainSingle(
+			because: "only the valid event should be uploaded").Subject;
+		LogRecordBodies(request.Body!).Should().Equal(["session_started"],
+			because: "tmp partials and corrupt files must never reach the collector");
+		File.Exists(tmpPath).Should().BeTrue(
+			because: "an in-progress .json.tmp file belongs to the writer and must be left alone");
+		EventFiles().Should().BeEmpty(
+			because: "the delivered event and the corrupt poison file should both leave the spool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends the configured ingest key as the X-Ingest-Key request header.")]
+	public async Task FlushAsync_Should_Send_Ingest_Key_Header_When_Configured()
+	{
+		// Arrange
+		WriteEventFile(BaseTime);
+		FakeHttpHandler handler = new();
+		MeasurementFlushService service = CreateService(handler, ingestKey: "public-key-123");
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().ContainSingle(
+				because: "one event uploads as one batch").Subject
+			.IngestKey.Should().Be("public-key-123",
+				because: "the edge collector filters casual noise by the configured ingest-key header");
+	}
+
+	private MeasurementFlushService CreateService(FakeHttpHandler handler, string endpoint = DefaultEndpoint,
+		string ingestKey = null, string consent = "granted", TimeProvider timeProvider = null)
+	{
+		IMeasurementService measurementService = Substitute.For<IMeasurementService>();
+		measurementService.GetConsentStatus().Returns(new MeasurementConsentResult(true, "known", consent));
+		IMeasurementFlushOptionsProvider optionsProvider = Substitute.For<IMeasurementFlushOptionsProvider>();
+		optionsProvider.Resolve().Returns(new MeasurementFlushOptions(endpoint, ingestKey));
+		return new MeasurementFlushService(
+			new System.IO.Abstractions.FileSystem(),
+			new FakeHttpClientFactory(handler),
+			measurementService,
+			optionsProvider,
+			_telemetryHome,
+			timeProvider ?? new MutableTimeProvider(BaseTime.AddHours(1)),
+			NullLogger<MeasurementFlushService>.Instance);
+	}
+
+	private string EventsDirectory => Path.Combine(_telemetryHome, "events");
+
+	private string WriteEventFile(DateTimeOffset timestamp, string eventName = "session_started", string content = null)
+	{
+		Directory.CreateDirectory(EventsDirectory);
+		string eventId = Guid.NewGuid().ToString("N");
+		string path = Path.Combine(EventsDirectory, $"{timestamp:yyyyMMddTHHmmssfffZ}_{eventId}.json");
+		File.WriteAllText(path, content ?? EventJson(eventName, eventId));
+		return path;
+	}
+
+	private static string EventJson(string eventName, string eventId) =>
+		$$"""
+		{
+			"time_unix_nano": 1767225600000000000,
+			"severity_text": "INFO",
+			"body": { "string_value": "{{eventName}}" },
+			"attributes": [
+				{ "key": "event_id", "value": { "string_value": "{{eventId}}" } },
+				{ "key": "duration_ms", "value": { "int_value": 12345 } }
+			]
+		}
+		""";
+
+	private string[] EventFiles() =>
+		Directory.Exists(EventsDirectory)
+			? Directory.GetFiles(EventsDirectory, "*.json")
+			: [];
+
+	private static List<string> LogRecordBodies(string requestBody)
+	{
+		using JsonDocument document = JsonDocument.Parse(requestBody);
+		return document.RootElement.GetProperty("resourceLogs")[0]
+			.GetProperty("scopeLogs")[0]
+			.GetProperty("logRecords")
+			.EnumerateArray()
+			.Select(record => record.GetProperty("body").GetProperty("stringValue").GetString())
+			.ToList();
+	}
+
+	private sealed class FakeHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+	{
+		public HttpClient CreateClient(string name) => new(handler) {
+			// Short timeout keeps the test fast in case of an accidental real network call.
+			Timeout = TimeSpan.FromSeconds(5)
+		};
+	}
+
+	private sealed record CapturedRequest(Uri Uri, string Body, string IngestKey);
+
+	private sealed class FakeHttpHandler : HttpMessageHandler
+	{
+		private readonly Queue<HttpStatusCode> _statuses = new();
+
+		public List<CapturedRequest> Requests { get; } = [];
+
+		public void Enqueue(params HttpStatusCode[] statuses)
+		{
+			foreach (HttpStatusCode status in statuses) {
+				_statuses.Enqueue(status);
+			}
+		}
+
+		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+			CancellationToken cancellationToken)
+		{
+			string body = request.Content is null
+				? null
+				: await request.Content.ReadAsStringAsync(cancellationToken);
+			request.Headers.TryGetValues(MeasurementFlushService.IngestKeyHeaderName, out IEnumerable<string> values);
+			Requests.Add(new CapturedRequest(request.RequestUri, body, values?.FirstOrDefault()));
+			HttpStatusCode status = _statuses.Count > 0 ? _statuses.Dequeue() : HttpStatusCode.OK;
+			return new HttpResponseMessage(status);
+		}
+	}
+
+	private sealed class MutableTimeProvider : TimeProvider
+	{
+		private DateTimeOffset _utcNow;
+
+		public MutableTimeProvider(DateTimeOffset start) => _utcNow = start;
+
+		public override DateTimeOffset GetUtcNow() => _utcNow;
+	}
+}

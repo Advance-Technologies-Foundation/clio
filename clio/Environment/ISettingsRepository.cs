@@ -121,6 +121,12 @@ namespace Clio.UserEnvironment
 		string GetContainerImageCli();
 
 		/// <summary>
+		/// Gets the product telemetry upload configuration.
+		/// </summary>
+		/// <returns>The configured telemetry settings; never <c>null</c>.</returns>
+		TelemetrySettings GetTelemetrySettings();
+
+		/// <summary>
 		/// Gets a named local database server configuration.
 		/// </summary>
 		/// <param name="name">The configured local database server name.</param>

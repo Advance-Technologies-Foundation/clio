@@ -28,6 +28,7 @@ internal static class McpServerInstructions
 
 		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
 		Call `get-tool-contract` for `get-measurements-consent` and `send-measurements` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
+		When a telemetry endpoint is configured and consent is granted, stored events are uploaded in the background automatically; no agent action is needed.
 
 		### Inspect an environment
 		1. `list-environments` → pick an environment name

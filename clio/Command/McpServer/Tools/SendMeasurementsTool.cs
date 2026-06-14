@@ -18,13 +18,15 @@ public sealed class SendMeasurementsTool
 	internal const string ToolName = "send-measurements";
 
 	private readonly IMeasurementService _measurementService;
+	private readonly IMeasurementFlushScheduler _flushScheduler;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="SendMeasurementsTool"/> class.
 	/// </summary>
-	public SendMeasurementsTool(IMeasurementService measurementService)
+	public SendMeasurementsTool(IMeasurementService measurementService, IMeasurementFlushScheduler flushScheduler)
 	{
 		_measurementService = measurementService ?? throw new ArgumentNullException(nameof(measurementService));
+		_flushScheduler = flushScheduler ?? throw new ArgumentNullException(nameof(flushScheduler));
 	}
 
 	/// <summary>
@@ -42,6 +44,11 @@ public sealed class SendMeasurementsTool
 		[Required]
 		MeasurementRequest args)
 	{
-		return _measurementService.Send(args);
+		MeasurementResult result = _measurementService.Send(args);
+		if (result.Success && result.Status == MeasurementService.StatusStored) {
+			// Opportunistic, fire-and-forget upload of the spooled events; never blocks the tool call.
+			_flushScheduler.TryScheduleFlush();
+		}
+		return result;
 	}
 }

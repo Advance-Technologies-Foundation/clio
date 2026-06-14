@@ -113,7 +113,11 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
-		
+		// Named HttpClient for background telemetry uploads — same registration-time-only
+		// timeout rule as the component-registry client above.
+		services.AddHttpClient(MeasurementFlushService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = MeasurementFlushService.PostTimeout);
+
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
 		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService);
@@ -315,6 +319,17 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<IMeasurementService>(sp => new MeasurementService(
 			sp.GetRequiredService<IFileSystem>(), timeProvider: sp.GetRequiredService<TimeProvider>()));
+		services.AddSingleton<IMeasurementFlushOptionsProvider, MeasurementFlushOptionsProvider>();
+		services.AddSingleton<IMeasurementFlushService>(sp => new MeasurementFlushService(
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<IHttpClientFactory>(),
+			sp.GetRequiredService<IMeasurementService>(),
+			sp.GetRequiredService<IMeasurementFlushOptionsProvider>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MeasurementFlushService>>()));
+		services.AddSingleton<IMeasurementFlushScheduler>(sp => new MeasurementFlushScheduler(
+			sp.GetRequiredService<IMeasurementFlushService>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MeasurementFlushScheduler>>()));
 		services.AddTransient<GetMeasurementsConsentTool>();
 		services.AddTransient<SendMeasurementsTool>();
 		services.AddTransient<PageGetTool>();

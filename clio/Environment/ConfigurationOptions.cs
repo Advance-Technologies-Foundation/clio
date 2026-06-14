@@ -236,6 +236,25 @@ namespace Clio
 		}
 	}
 
+	/// <summary>
+	/// Product telemetry upload configuration stored under the "telemetry" settings key.
+	/// </summary>
+	public class TelemetrySettings
+	{
+		/// <summary>
+		/// Full OTLP/HTTP logs endpoint URL (for example https://telemetry.example.com/v1/logs).
+		/// Empty disables telemetry uploads; locally stored events are only pruned.
+		/// </summary>
+		[JsonProperty("endpoint")]
+		public string Endpoint { get; set; }
+
+		/// <summary>
+		/// Optional public ingest key sent as the X-Ingest-Key request header.
+		/// </summary>
+		[JsonProperty("ingest-key")]
+		public string IngestKey { get; set; }
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -318,7 +337,13 @@ namespace Clio
 
 		[JsonProperty("defaultRedis")]
 		public string DefaultRedisServerName { get; set; }
-		
+
+		/// <summary>
+		/// Gets or sets the product telemetry upload configuration.
+		/// </summary>
+		[JsonProperty("telemetry")]
+		public TelemetrySettings Telemetry { get; set; }
+
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
@@ -702,6 +727,14 @@ namespace Clio
 		/// <returns>The configured container image CLI name.</returns>
 		public string GetContainerImageCli() {
 			return _settings.ContainerImageCli;
+		}
+
+		/// <summary>
+		/// Gets the product telemetry upload configuration.
+		/// </summary>
+		/// <returns>The configured telemetry settings; never <c>null</c>.</returns>
+		public TelemetrySettings GetTelemetrySettings() {
+			return _settings.Telemetry ?? new TelemetrySettings();
 		}
 
 		public LocalDbServerConfiguration GetLocalDbServer(string name) {
