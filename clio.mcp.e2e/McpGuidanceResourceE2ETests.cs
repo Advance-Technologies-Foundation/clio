@@ -249,6 +249,31 @@ public sealed class McpGuidanceResourceE2ETests {
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server publishes the caption-language and script-guard rule in the app-modeling guide")]
+	public async Task McpServer_Should_Publish_Caption_Language_Rule_In_App_Modeling_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(AppModelingUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the app-modeling guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(AppModelingUri,
+			because: "the returned article should preserve the stable app-modeling guidance URI");
+		article.Text.Should().Contain("LANGUAGE OF THE CAPTION TEXT",
+			because: "the guide must state that the profile culture governs the caption text language, not just the localization key (ENG-91044)");
+		article.Text.Should().Contain("Cyrillic text under `en-US`",
+			because: "the guide must warn that non-English text under the en-US key is rejected on the write path");
+		article.Text.Should().Contain("must be ENGLISH text",
+			because: "the guide must require the mandatory en-US localization entry to hold English text");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
 	[AllureName("MCP server returns the data-bindings guidance article")]
 	public async Task McpServer_Should_Return_Data_Bindings_Guidance() {
 		// Arrange

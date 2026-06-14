@@ -170,6 +170,12 @@ public sealed class ApplicationSectionCreateService(
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
 		string effectiveCultureName = captionCultureResolver.Resolve(
 			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
+		// ENG-91044: the stored caption is localized server-side under the connected user's profile, so
+		// reject a caption written in a script that does not match the effective culture (e.g. Cyrillic
+		// text for an 'en-US' profile). Passing 'caption-culture' for the language actually written is
+		// the documented escape hatch.
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCultureName, request.Caption, "caption");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCultureName, request.Description, "description");
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		ApplicationInfoResult beforeInfo;
 		ResolvedApplicationSectionCreateRequest resolvedRequest;

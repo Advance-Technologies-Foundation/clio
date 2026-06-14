@@ -504,6 +504,55 @@ public sealed class ApplicationSectionCreateServiceTests {
 				"ResolveLocalizedCaption must return the effective-culture value, not the en-US fallback");
 	}
 
+	[Test]
+	[Description("Rejects a Cyrillic section caption when the effective culture is the Latin-script en-US profile, before any remote call.")]
+	public void CreateSection_ShouldThrow_WhenCaptionScriptDoesNotMatchEnUsProfileCulture() {
+		// Arrange
+		// The default fixture resolver returns en-US; a Cyrillic caption would be stored under the
+		// English profile and render foreign-language labels (the ENG-91044 regression).
+		ApplicationSectionCreateRequest request = new(
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Заявки");
+
+		// Act
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Cyrillic caption must not be stored under the Latin-script en-US profile culture")
+			.Which.Message.Should().Contain("en-US",
+				because: "the error must name the effective culture so the caller can fix the language");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Description("Allows a Cyrillic section caption when the caption-culture override declares the matching uk-UA language.")]
+	public void CreateSection_ShouldAllowCyrillicCaption_WhenCaptionCultureOverrideIsUkrainian() {
+		// Arrange
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), "uk-UA").Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
+		// A distinctive marker thrown from GetApplicationInfo (the first call AFTER the guard) proves
+		// execution passed the guard: had the guard fired it would throw EntitySchemaDesignerException
+		// first, before GetApplicationInfo was ever reached.
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(_ => throw new NotSupportedException("past-guard-marker"));
+		ApplicationSectionCreateRequest request = new(
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Заявки",
+			CaptionCulture: "uk-UA");
+
+		// Act
+		Action action = () => sut.CreateSection("sandbox", request);
+
+		// Assert
+		action.Should().Throw<NotSupportedException>(
+				because: "the caption-culture override declares uk-UA, so the Cyrillic caption passes the guard and reaches the remote flow")
+			.WithMessage("*past-guard-marker*",
+				because: "execution must reach GetApplicationInfo, which only happens after the guard accepts the caption");
+	}
+
 	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
@@ -1211,13 +1260,18 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Fails fast with an actionable error pointing at --code when the caption has no Latin characters and no explicit code is supplied, instead of sending an invalid non-ASCII section code that Creatio silently rejects.")]
 	public void CreateSection_Should_Throw_Actionable_Error_When_Caption_Has_No_Latin_Characters_And_No_Code() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic caption valid, so the code-generation guidance (not the
+		// caption-script guard) is what fails when no explicit Latin code can be derived.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		ApplicationInfoResult beforeInfo = new(
 			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
 		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
 			.Returns(beforeInfo);
 
 		// Act
-		Action action = () => _sut.CreateSection(
+		Action action = () => sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",
@@ -1237,10 +1291,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Uses the explicit code (with the environment prefix ensured) for the section code when the caption is non-Latin, so the section is created with a valid Latin code while the caption stays localized.")]
 	public void CreateSection_Should_Use_Explicit_Code_When_Caption_Is_Non_Latin() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic caption valid; this test covers the explicit-code path,
+		// not the caption-script guard.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		SetUpPrefixTestMocks("UsrContacts");
 
 		// Act
-		ApplicationSectionCreateResult result = _sut.CreateSection(
+		ApplicationSectionCreateResult result = sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",
@@ -1357,10 +1416,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Salvages the ASCII digit fragment from a mixed caption (e.g. 'Контакти 2024') to produce a valid code, inserting an underscore after the prefix so the identifier does not start with a digit.")]
 	public void CreateSection_Should_Salvage_ASCII_Digit_Fragment_From_Mixed_Caption() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic part of the caption valid; this test covers the
+		// digit-salvage code-generation path, not the caption-script guard.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		SetUpPrefixTestMocks("Usr_2024");
 
 		// Act
-		ApplicationSectionCreateResult result = _sut.CreateSection(
+		ApplicationSectionCreateResult result = sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",

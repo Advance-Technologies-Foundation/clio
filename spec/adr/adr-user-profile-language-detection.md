@@ -1,11 +1,11 @@
 # ADR: User Profile Language Detection for Entity Creation
 
-**Status**: Proposed — **Revision 3** (Rev 2 addressed B-1 / M-1..M-6 / Mi-1..Mi-6; Rev 3 closes re-review NEW-1..NEW-6)
+**Status**: Proposed — **Revision 4** (Rev 2 addressed B-1 / M-1..M-6 / Mi-1..Mi-6; Rev 3 closes re-review NEW-1..NEW-6; Rev 4 adds the post-deploy script/culture write guard — Decision 5)
 **Author**: Architect Agent
 **PRD**: [prd-user-profile-language-detection.md](../prd/prd-user-profile-language-detection.md)
 **Jira**: ENG-91044
 **Created**: 2026-06-09
-**Revised**: 2026-06-09
+**Revised**: 2026-06-12
 **stepsCompleted**: [1, 2, 3, 4]
 
 > **Revision 2 note** — The first draft was reviewed adversarially and found to contain factual
@@ -40,6 +40,14 @@
 > - **NEW-5**: cache key is intentionally `Uri`-only; same-URI-different-user is out of scope.
 > - **NEW-6**: `CultureResolution` consumers MUST branch on `Success` before reading `Culture`
 >   (invariant documented on the record) so the hard-abort path cannot be bypassed.
+>
+> **Revision 4 note** — After the feature shipped (PR clio#682) the bug reproduced: an agent
+> detected the profile culture correctly (`en-US`) but authored caption TEXT in another language
+> (Cyrillic) and stored it under the `en-US` localization key, so the entity rendered foreign-language
+> labels for an English profile. The resolver was never at fault — the gap was that the contract
+> never required the caption *text* to be in the resolved/declared culture's language, only that the
+> `en-US` key be present. Rev 4 closes this with **Decision 5**: a deterministic write-path
+> script/culture guard plus sharpened detect-once guidance.
 
 ---
 
@@ -258,6 +266,51 @@ grepping only the **In** files above. The grep MUST treat these lines as the *on
 Any `GetCurrentCultureName()`/`CurrentCulture`/hardcoded `"en-US"` in an **In** file outside the
 `DefaultCultureName` fallback constant is an AC-08 failure. The allow-list above is the pinned
 exemption set; adding to it requires a documented Out rationale in Decision 4.
+
+## Decision 5 — Caption script/culture consistency guard (Rev 4, ENG-91044 re-open)
+
+Resolution alone does not guarantee correct output: the caption *text* is authored by the caller
+(the agent), and clio cannot synthesize it. The reproduced failure stored Cyrillic text under the
+`en-US` key. Two complementary changes close the loop:
+
+1. **Deterministic write guard (`CaptionCultureScriptGuard`).** A stateless static helper (mirroring
+   `EntitySchemaDesignerSupport`'s style — pure function, no DI, no `new`) that rejects a caption whose
+   letters belong to a script incompatible with its culture key. It is **asymmetric and conservative**:
+   it enforces "no non-Latin letters" ONLY for cultures whose language is on a curated **Latin-script
+   allow-list** (`en`, `de`, `fr`, …). For any other culture — Cyrillic (`uk-UA`/`ru-RU`), CJK, Arabic,
+   or an unrecognised language — it is a no-op, so localized captions and Latin acronyms inside
+   non-Latin captions (`"Email адреса"` under `uk-UA`) are never blocked. False-positive rate is zero;
+   the exact reproduced case (Cyrillic under `en-US`) and every European Latin profile are caught.
+   - **Wiring (two write chokepoints, scoped exactly like Decision 4's In/Out discipline):**
+     - `EntitySchemaLocalizationContract.NormalizeOptionalLocalizations` — the single funnel for
+       `title-localizations`/`description-localizations` shared by `create-entity-schema`,
+       `update-entity-schema`, `modify-entity-schema-column`, `create-lookup`, and `sync-schemas`.
+       Validates each `culture → value` pair after normalization. Read/display paths do NOT pass
+       through this contract, so they are unaffected (same principle as Mi-3).
+     - `ApplicationSectionCreateService.CreateSection` — validates the scalar `caption`/`description`
+       against the resolved effective culture. `--caption-culture` is the documented escape hatch
+       (declaring the caption's real language passes the guard).
+   - **Severity: hard-fail.** Throws `EntitySchemaDesignerException`; on the MCP path the tool's
+     existing catch turns it into a structured `ExitCode 1` failure. Guidance-only was rejected: the
+     guidance had already failed once (the agent read it and still mis-stored the text), so a
+     deterministic backstop independent of prompt-reading is required for "won't happen again".
+   - **Why static, not a DI service.** The guard is a pure, dependency-free validation function called
+     from deep inside existing static normalization helpers; making it an injected service would force
+     a signature change through the same chokepoints with no testability gain. CLIO001 is not triggered
+     (no `new` of a behavior class). This matches the precedent set by the `page-sync` semantic
+     validators (workspace diary 2026-05, "hard-fail the exact broken pattern, warn on the rest").
+
+2. **Sharpened guidance.** `McpServerInstructions`, `AppModelingGuidanceResource`, the entity/
+   application prompts, and the `get-user-culture` tool description now state explicitly that the
+   detected culture is the **language of the caption text**, not just the localization key; that the
+   conversation/task language never overrides the profile language; and that the mandatory `en-US`
+   value must be English. They also announce that clio enforces this on the write path.
+
+**Rejected alternatives for the guard direction.** A *symmetric* guard (also reject Latin under a
+Cyrillic culture) was rejected: Latin acronyms/brand names inside non-Latin captions are common and
+would produce false positives. An *enforce-by-default* model (treat unknown languages as Latin) was
+rejected: a forgotten non-Latin language would wrongly block correct captions. The allow-list model
+fails safe — an omitted language is simply not validated.
 
 ## Resolved Open Questions
 

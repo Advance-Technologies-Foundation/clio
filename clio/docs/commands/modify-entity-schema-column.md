@@ -149,6 +149,7 @@ cliogate must be installed on the target Creatio environment.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
 - `--caption-culture <VALUE>` overrides the culture for the written column caption/description (e.g. `en-US`, `uk-UA`). Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved. Column READ/display (`get-entity-schema-column-properties`) keeps using the host locale.
+- For `add`/`modify`, each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.
 
 ## See also
 

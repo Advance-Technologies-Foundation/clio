@@ -65,6 +65,7 @@ public static class EntitySchemaPrompt {
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the schema and column captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
+		 The detected culture is the LANGUAGE of the caption text, not just the map key: author each localization value in its own language and keep the mandatory `en-US` value in ENGLISH. clio rejects non-English text (e.g. Cyrillic) under `en-US`; put localized text under its own culture key such as `uk-UA`.
 		 """;
 
 	/// <summary>
@@ -129,7 +130,7 @@ public static class EntitySchemaPrompt {
 		 `is-required` for `required`.
 		 Do not send legacy scalar `title` or
 		 `description`, and do not translate the payload into frontend `entity.update.operationsJson`.
-		 `add` operations must provide `title-localizations` with at least `en-US`. Supported types include
+		 `add` operations must provide `title-localizations` with at least `en-US`, and the `en-US` value must be ENGLISH text — author each localization in its own language (non-English text under `en-US`, e.g. Cyrillic, is rejected; use a key such as `uk-UA`). Supported types include
 		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for
 		 `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password` can be used as aliases for `SecureText`,
 		 and `EmailAddress` can be used as an alias for `Email`. For image/photo fields bound to `crt.ImageInput`,
@@ -230,7 +231,9 @@ public static class EntitySchemaPrompt {
 		 `{action}` on column `{columnName}` in entity schema `{schemaName}` from package `{packageName}` on
 		 environment `{environmentName}`.
 		 Pass only the option fields required for the requested action. For `add`, supply `type` and
-		 `title-localizations` with at least `en-US`; for `Lookup`, also supply `reference-schema-name`. For
+		 `title-localizations` with at least `en-US` (the `en-US` value must be ENGLISH text — author each
+		 localization in its own language; non-English text under `en-US` such as Cyrillic is rejected, use a
+		 key like `uk-UA`); for `Lookup`, also supply `reference-schema-name`. For
 		 `modify`, include only the fields that should change, using `title-localizations` and
 		 `description-localizations` instead of legacy scalar `title` or `description`. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
