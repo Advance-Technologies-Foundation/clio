@@ -51,9 +51,12 @@ rendering on stdout — the docs block surfaces under a `documentation:`
 section.
 
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
-markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
-the catalog actually matched the requested target version and when it fell
-back.
+markers (`"environment"` | `"environment-superset"` | `"latest-fallback"`) so
+consumers can tell when the catalog actually matched the requested target
+version (`environment`), when the version was known but its exact catalog was
+unavailable so `latest` stood in (`environment-superset`, a soft caveat), and
+when the version could not be determined at all (`latest-fallback`, the hard
+stop).
 
 When `resolvedFrom` is `"latest-fallback"` the response also carries a
 `versionWarning` string. `latest` is a superset of every GA version, so a
@@ -64,6 +67,21 @@ built against it can fail to render at runtime. Pass `--version` or
 catalog to a real version; the warning is omitted once `resolvedFrom` is
 `"environment"`. Under `--pretty` the warning renders on a `WARNING:` line
 beneath the header.
+
+Alongside the prose `versionWarning`, a `latest-fallback` response also sets
+two machine-readable markers so a consumer can branch programmatically instead
+of parsing text:
+
+- `requiresVersionConfirmation: true` — the hard stop. The version is unknown,
+  so the consumer must tell the user and request explicit confirmation before
+  proceeding against `latest`; it is emitted only on `latest-fallback` and
+  omitted on `"environment"` / `"environment-superset"` (both have a known
+  version).
+- `resolvedFromReason` — a kebab-case classification of why the version could
+  not be determined: `probe-error` (transient — a retry or a reachable
+  environment may resolve it), or the stable `no-active-environment` /
+  `core-version-missing` / `core-version-unparseable`. Use it to decide whether
+  a retry is worthwhile or a clearer input (an explicit `--version`) is needed.
 
 The MCP `get-component-info` tool mirrors this resolution 1:1 and accepts the
 same per-call selectors — `environment-name` (preferred), `version`, or

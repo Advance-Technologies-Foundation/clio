@@ -51,10 +51,12 @@ public sealed class PlatformVersionResolverTests {
 		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback,
 			because: "any probe failure must degrade gracefully; AI must never fail because cliogate is unreachable");
 		resolution.ResolvedVersion.Should().Be("latest");
+		resolution.Reason.Should().Be(VersionFallbackReason.ProbeError,
+			because: "a thrown probe is a transient class — the caller must be able to tell it apart from a genuinely undeterminable version and consider a retry (ENG-91583 AC#3)");
 	}
 
 	[Test]
-	[Description("An empty body is treated as a soft failure.")]
+	[Description("An empty body is treated as a soft failure with the stable core-version-missing reason — retrying the same empty shape will not help.")]
 	public async Task ResolveAsync_Falls_To_Latest_When_Response_Empty() {
 		// Arrange
 		IApplicationClient client = SubstituteClient(string.Empty);
@@ -66,6 +68,8 @@ public sealed class PlatformVersionResolverTests {
 		// Assert
 		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback);
 		resolution.ResolvedVersion.Should().Be("latest");
+		resolution.Reason.Should().Be(VersionFallbackReason.CoreVersionMissing,
+			because: "a probe that responded but carried no usable CoreVersion is stable, not transient (ENG-91583 AC#3)");
 	}
 
 	[Test]
@@ -110,6 +114,8 @@ public sealed class PlatformVersionResolverTests {
 		// Assert
 		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback,
 			because: "custom dev builds with non-SemVer CoreVersion strings must not crash the AI catalog flow");
+		resolution.Reason.Should().Be(VersionFallbackReason.CoreVersionUnparseable,
+			because: "the value itself is the blocker, so the reason must be the stable core-version-unparseable, not a transient probe error (ENG-91583 AC#3)");
 	}
 
 	[Test]
@@ -125,6 +131,8 @@ public sealed class PlatformVersionResolverTests {
 		// Assert
 		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback,
 			because: "no environment means there is nothing to probe; the resolver must not call IApplicationClient at all");
+		resolution.Reason.Should().Be(VersionFallbackReason.NoActiveEnvironment,
+			because: "an absent environment URI is a clear input gap, not a probe error — the reason must say so (ENG-91583 AC#3)");
 		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -219,6 +227,29 @@ public sealed class PlatformVersionResolverTests {
 			because: "ApplicationInfoService needs only auth, so version resolution must succeed without cliogate");
 		resolution.ResolvedVersion.Should().Be("8.3.3",
 			because: "the 4-part coreVersion from ApplicationInfo is normalised to the 3-part CDN tag");
+		resolution.Reason.Should().Be(VersionFallbackReason.None,
+			because: "a clean environment resolution never ran the fallback, so it must carry no fallback reason (ENG-91583 AC#3)");
+	}
+
+	[Test]
+	[Description("When BOTH the ApplicationInfo and cliogate probes throw, the fallback is classified as the transient probe-error rather than a stable undeterminable reason (ENG-91583 AC#3).")]
+	public async Task ResolveAsync_Reports_ProbeError_When_Both_Probes_Throw() {
+		// Arrange — ApplicationInfo (POST) and cliogate GetSysInfo (GET) both fail with a network error.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("application-info unreachable"));
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("cliogate unreachable"));
+		PlatformVersionResolver resolver = CreateResolver(client);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback,
+			because: "two failed probes still degrade to the latest superset");
+		resolution.Reason.Should().Be(VersionFallbackReason.ProbeError,
+			because: "both failures were thrown requests — the transient class must win so a retry is signalled as worthwhile");
 	}
 
 	[Test]

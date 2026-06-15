@@ -127,9 +127,10 @@ public sealed class ComponentInfoCommand {
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? documentation,
-		RegistryGlobalReferences globalReferences) =>
+		RegistryGlobalReferences globalReferences,
+		string? resolvedFromReason) =>
 		ComponentInfoTool.CreateDetailResponse(
-			entry, resolvedTargetVersion, resolvedFrom, documentation, globalReferences);
+			entry, resolvedTargetVersion, resolvedFrom, documentation, globalReferences, resolvedFromReason);
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {
 		string payload = pretty
@@ -157,10 +158,11 @@ public sealed class ComponentInfoCommand {
 		}
 
 		// No flags — default to latest with a non-authoritative source so the response carries
-		// "latest-fallback" regardless of what the catalog returns.
+		// "latest-fallback" regardless of what the catalog returns. Nothing to probe, so the reason
+		// is the input gap (no-active-environment), not a probe error.
 		return Task.FromResult(new PlatformVersionResolution(
 			PlatformVersionResolver.LatestVersion,
-			VersionResolutionSource.LatestFallback));
+			VersionResolutionSource.LatestFallback) { Reason = VersionFallbackReason.NoActiveEnvironment });
 	}
 
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoCommandOptions options) {
@@ -180,6 +182,7 @@ public sealed class ComponentInfoCommand {
 		CancellationToken cancellationToken) {
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			resolution.Source, resolution.ResolvedVersion, state.ResolvedVersion);
+		string? resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, resolution.Reason);
 
 		string componentType = options.ComponentType?.Trim();
 		bool listMode = string.IsNullOrWhiteSpace(componentType)
@@ -193,7 +196,8 @@ public sealed class ComponentInfoCommand {
 				Count = filtered.Count,
 				Items = ComponentInfoGrouping.CreateItems(filtered),
 				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom
+				ResolvedFrom = resolvedFrom,
+				ResolvedFromReason = resolvedFromReason
 			};
 		}
 
@@ -201,7 +205,7 @@ public sealed class ComponentInfoCommand {
 			string? documentation = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
-			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
@@ -212,7 +216,8 @@ public sealed class ComponentInfoCommand {
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
 		};
 	}
 

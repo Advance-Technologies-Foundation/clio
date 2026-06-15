@@ -544,6 +544,134 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("On latest-fallback (version unknown) the response sets the machine-readable requiresVersionConfirmation flag so the client can branch on it instead of parsing the prose warning (ENG-91583 AC#1).")]
+	public async Task ComponentInfoTool_Should_Set_RequiresVersionConfirmation_True_On_Latest_Fallback() {
+		// Arrange — a bare call (no environment, no version) degrades to latest-fallback.
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "a version-less, environment-less call cannot determine the platform version");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "latest-fallback is the hard stop — the machine-readable flag must force the client to confirm the unknown version with the user (AC#1)");
+		response.ResolvedFromReason.Should().Be("no-active-environment",
+			because: "with nothing to probe the reason must classify the gap as no-active-environment, not a transient probe error (AC#3)");
+	}
+
+	[Test]
+	[Description("On the environment tier (version known and catalog matched) requiresVersionConfirmation and resolvedFromReason are omitted — there is no confirmation gate (ENG-91583 AC#4).")]
+	public async Task ComponentInfoTool_Should_Omit_RequiresVersionConfirmation_When_Version_Known() {
+		// Arrange — resolver succeeds and the catalog matches exactly.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment",
+			because: "the probe resolved the version and the catalog matched it");
+		response.RequiresVersionConfirmation.Should().BeNull(
+			because: "a known version carries no confirmation gate, so the flag must be omitted from the wire shape (AC#4)");
+		response.ResolvedFromReason.Should().BeNull(
+			because: "resolvedFromReason is a latest-fallback-only marker and must be absent on the environment tier");
+	}
+
+	[Test]
+	[Description("On environment-superset (version known, catalog approximate) requiresVersionConfirmation stays omitted — it is a soft caveat, not the hard stop (ENG-91583 AC#4).")]
+	public async Task ComponentInfoTool_Should_Omit_RequiresVersionConfirmation_On_Environment_Superset() {
+		// Arrange — probe resolves 8.1.5 but the CDN only has "latest" published.
+		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
+		ComponentInfoCatalog catalog = new(client);
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment-superset",
+			because: "the version was known but the exact catalog was absent");
+		response.RequiresVersionConfirmation.Should().BeNull(
+			because: "environment-superset is a soft caveat — the version is known, so no hard-stop confirmation flag applies (AC#4)");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "the soft caveat is still surfaced as prose so the agent verifies critical types");
+	}
+
+	[Test]
+	[Description("A transient probe failure degrades to latest-fallback with resolvedFromReason=probe-error so the agent learns a retry / reachable environment may resolve the version (ENG-91583 AC#3).")]
+	public async Task ComponentInfoTool_Should_Report_Probe_Error_Reason_On_Transient_Failure() {
+		// Arrange — environment supplied, but the resolver reports a transient probe error.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog,
+			resolver: StubPlatformVersionResolver.LatestFallback(VersionFallbackReason.ProbeError));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "a probe error still degrades to the latest superset");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "the hard stop is unchanged regardless of why the version is unknown (AC#4)");
+		response.ResolvedFromReason.Should().Be("probe-error",
+			because: "a thrown probe is transient — the agent must be able to tell it apart from a genuinely undeterminable version and consider a retry (AC#3)");
+	}
+
+	[Test]
+	[Description("LABELLED CASE (version unknown → agent must communicate + request confirmation): end-to-end through the tool, a latest-fallback response carries BOTH the machine-readable hard-stop flag AND the prose directive to inform the user and request confirmation (ENG-91583 AC#5).")]
+	public async Task ComponentInfoTool_VersionUnknown_Should_Force_Communicate_And_Confirm_Signal() {
+		// Arrange — version cannot be determined.
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert — the enforced (machine-readable) signal …
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "the version-unknown case must raise the enforced confirmation flag the client branches on, not rely on the agent reading prose");
+		// … and the prose directive that spells out the required user communication.
+		response.VersionWarning.Should().NotBeNull(
+			because: "the version-unknown case must also carry the human-readable caveat");
+		response.VersionWarning.Should().Contain("request explicit",
+			because: "the labelled case asserts the agent is told to request the user's explicit confirmation before proceeding");
+		response.VersionWarning.Should().Contain("do NOT silently assume",
+			because: "the labelled case asserts the agent is told not to silently assume a component set when the version is unknown");
+	}
+
+	[Test]
+	[Description("ComponentInfoResolution.RequiresVersionConfirmation is true only on latest-fallback, and GetFallbackReason emits the kebab reason only on that tier (ENG-91583 AC#1/AC#3).")]
+	public void ComponentInfoResolution_Should_Gate_Confirmation_And_Reason_On_Latest_Fallback_Only() {
+		// Arrange / Act / Assert — confirmation gate.
+		ComponentInfoResolution.RequiresVersionConfirmation("latest-fallback").Should().BeTrue(
+			because: "latest-fallback is the only tier where the version is unknown");
+		ComponentInfoResolution.RequiresVersionConfirmation("environment").Should().BeFalse(
+			because: "the environment tier has a known, exact version");
+		ComponentInfoResolution.RequiresVersionConfirmation("environment-superset").Should().BeFalse(
+			because: "environment-superset still has a known version — only a soft caveat applies");
+		ComponentInfoResolution.RequiresVersionConfirmation(null).Should().BeFalse(
+			because: "a missing tier (e.g. mobile with no markers) carries no confirmation gate");
+
+		// reason is emitted only on latest-fallback …
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.ProbeError)
+			.Should().Be("probe-error", because: "transient probe failures must surface as the probe-error token");
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.NoActiveEnvironment)
+			.Should().Be("no-active-environment", because: "a missing environment is a stable, undeterminable reason");
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.CoreVersionUnparseable)
+			.Should().Be("core-version-unparseable", because: "an unparseable core version is a stable reason");
+		// … and suppressed everywhere else (including None on the fallback tier).
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.None)
+			.Should().BeNull(because: "None carries no diagnostic value and must be omitted even on the fallback tier");
+		ComponentInfoResolution.GetFallbackReason("environment", VersionFallbackReason.ProbeError)
+			.Should().BeNull(because: "resolvedFromReason is a latest-fallback-only marker");
+	}
+
+	[Test]
 	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses and omits it for environment-matched responses.")]
 	public void ComponentInfoPrettyRenderer_Should_Render_Version_Warning_Only_On_Latest_Fallback() {
 		// Arrange
@@ -685,9 +813,14 @@ public sealed class ComponentInfoToolTests {
 		IComponentInfoCatalog catalog,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentRegistryDocsClient? docsClient = null,
-		string? environmentVersion = null) {
+		string? environmentVersion = null,
+		IPlatformVersionResolver? resolver = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
-		if (environmentVersion is not null) {
+		if (resolver is not null) {
+			// Explicit resolver override — wins over environmentVersion so a test can inject a
+			// specific latest-fallback reason (e.g. probe-error) carried on the resolution.
+			factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		} else if (environmentVersion is not null) {
 			factory.Create(Arg.Any<EnvironmentSettings>())
 				.Returns(StubPlatformVersionResolver.Environment(environmentVersion));
 		}
@@ -1062,6 +1195,9 @@ public sealed class ComponentInfoToolTests {
 	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IPlatformVersionResolver {
 		public static StubPlatformVersionResolver LatestFallback() =>
 			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
+
+		public static StubPlatformVersionResolver LatestFallback(VersionFallbackReason reason) =>
+			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback) { Reason = reason });
 
 		public static StubPlatformVersionResolver Environment(string semver) =>
 			new(new PlatformVersionResolution(semver, VersionResolutionSource.Environment));

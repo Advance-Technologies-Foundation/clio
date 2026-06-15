@@ -70,7 +70,7 @@ public sealed class ComponentInfoTool(
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
-		"When resolvedFrom is 'latest-fallback' the version is unknown: do not silently assume the component set — tell the user and request confirmation before proceeding. " +
+		"When resolvedFrom is 'latest-fallback' the version is unknown and the response sets requiresVersionConfirmation: true — do not silently assume the component set: tell the user the version is unknown and request confirmation before proceeding (resolvedFromReason says whether a retry might help). " +
 		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
@@ -162,16 +162,17 @@ public sealed class ComponentInfoTool(
 			: await catalog.LoadAsync(versionResolution.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			versionResolution.Source, versionResolution.ResolvedVersion, state.ResolvedVersion);
+		string? resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason);
 
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
 			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
 			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
-			return CreateListResponse(filtered, state.ResolvedVersion, resolvedFrom);
+			return CreateListResponse(filtered, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
 			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
-			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
+			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
 		string requestedType = args.ComponentType.Trim();
@@ -186,7 +187,8 @@ public sealed class ComponentInfoTool(
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
 		};
 	}
 
@@ -217,9 +219,11 @@ public sealed class ComponentInfoTool(
 			return resolver.ResolveAsync(cancellationToken);
 		}
 
+		// Neither an explicit version nor an environment was supplied, so there is nothing to probe:
+		// a clear input gap (no-active-environment), not a probe error.
 		return Task.FromResult(new PlatformVersionResolution(
 			PlatformVersionResolver.LatestVersion,
-			VersionResolutionSource.LatestFallback));
+			VersionResolutionSource.LatestFallback) { Reason = VersionFallbackReason.NoActiveEnvironment });
 	}
 
 	/// <summary>
@@ -244,14 +248,16 @@ public sealed class ComponentInfoTool(
 	private static ComponentInfoResponse CreateListResponse(
 		IReadOnlyList<ComponentRegistryEntry> entries,
 		string? resolvedTargetVersion,
-		string? resolvedFrom) {
+		string? resolvedFrom,
+		string? resolvedFromReason = null) {
 		return new ComponentInfoResponse {
 			Success = true,
 			Mode = "list",
 			Count = entries.Count,
 			Items = ComponentInfoGrouping.CreateItems(entries),
 			ResolvedTargetVersion = resolvedTargetVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
 		};
 	}
 
@@ -260,7 +266,8 @@ public sealed class ComponentInfoTool(
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? documentation,
-		RegistryGlobalReferences? globalReferences) {
+		RegistryGlobalReferences? globalReferences,
+		string? resolvedFromReason = null) {
 		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalReferences?.BaseInputs, entry.Inputs);
 		ComponentReferencesResponse? references = BuildReferencesResponse(entry, globalReferences);
 		return new ComponentInfoResponse {
@@ -281,6 +288,7 @@ public sealed class ComponentInfoTool(
 				: null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason,
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
 			References = references
 		};
@@ -564,6 +572,34 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("versionWarning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? VersionWarning => ComponentInfoResolution.GetVersionWarning(ResolvedFrom);
+
+	/// <summary>
+	/// Gets the machine-readable hard-stop flag, emitted as <c>true</c> only when <see cref="ResolvedFrom"/>
+	/// is <c>"latest-fallback"</c> (the target platform version could not be determined). Unlike the prose
+	/// <see cref="VersionWarning"/> — which an agent can skip — this flag exists so the client can branch on it
+	/// programmatically: it MUST tell the user the version is unknown and request explicit confirmation before
+	/// generating an implementation plan, instead of silently assuming the <c>latest</c> superset. Derived from
+	/// <see cref="ResolvedFrom"/> (the same single source as <see cref="VersionWarning"/>) so every response
+	/// shape and both the MCP tool and CLI verb stay in lockstep. Omitted from the wire shape on every other
+	/// tier (<c>environment</c> / <c>environment-superset</c>), where the version is known and no gate applies.
+	/// </summary>
+	[JsonPropertyName("requiresVersionConfirmation")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? RequiresVersionConfirmation =>
+		ComponentInfoResolution.RequiresVersionConfirmation(ResolvedFrom) ? true : null;
+
+	/// <summary>
+	/// Gets the kebab-case reason the version fell back to <c>latest</c>, present only alongside
+	/// <see cref="RequiresVersionConfirmation"/> on the <c>latest-fallback</c> tier. Lets the client
+	/// distinguish a transient <c>"probe-error"</c> (a retry or a reachable environment may resolve the
+	/// version) from a genuinely undeterminable one (<c>"no-active-environment"</c>,
+	/// <c>"core-version-missing"</c>, <c>"core-version-unparseable"</c>) and tailor what it asks the user.
+	/// Set by the response factories from <see cref="PlatformVersionResolution.Reason"/>; omitted on every
+	/// non-fallback tier.
+	/// </summary>
+	[JsonPropertyName("resolvedFromReason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ResolvedFromReason { get; init; }
 
 	/// <summary>
 	/// Gets or sets the long-form documentation associated with the component. Populated
