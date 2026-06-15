@@ -603,8 +603,13 @@ public sealed class PageSyncTool(
 		string schemaDir, string schemaName, string? environmentName, PageGetResponse getResponse) {
 		try {
 			string fetchedAt = DateTime.UtcNow.ToString("o");
-			PageBaselineInfo baseline = BuildBaseline(schemaName, environmentName, getResponse.Editable, fetchedAt);
 			string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
+			PageBaselineInfo baseline = BuildBaseline(schemaName, environmentName, getResponse.Editable, fetchedAt);
+			// Preserve the environment identity (e.g. a URI-mode EnvironmentUri) captured by a prior
+			// write so the verify rewrite stays byte-compatible with the update-page baseline and does
+			// not silently disarm conflict detection for a later URI-mode update-page.
+			baseline = PageBaselineStore.MergeEnvironmentIdentity(
+				baseline, PageBaselineStore.TryReadBaseline(fileSystem, metaFile));
 			fileSystem.File.WriteAllText(metaFile, System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
 				FetchedAt = fetchedAt,
 				Page = getResponse.Page,

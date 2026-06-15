@@ -62,6 +62,12 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 	private const string SignalRChannelClassName = "Terrasoft.SignalRChannel";
 	private const char UriPathSeparator = '/';
 
+	// Best-effort upper bound for the whole notification chain (cookie acquisition + WS/SignalR
+	// handshake). This runs on the synchronous success path of update-page under McpToolExecutionLock,
+	// so a hung handshake against an unreachable message-channel endpoint must never stall the
+	// already-succeeded save or serialize sibling page tools — on timeout the toast is simply skipped.
+	private static readonly TimeSpan PublishTimeout = TimeSpan.FromSeconds(5);
+
 	private readonly IApplicationClient _applicationClient;
 	private readonly IBrowserSessionService _browserSessionService;
 	private readonly EnvironmentSettings _environmentSettings;
@@ -94,9 +100,7 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		try {
 			return TryNotifyPageSavedAsync(schemaName, schemaCaption).GetAwaiter().GetResult();
 		} catch (Exception ex) {
-			string warning = BuildFailureWarning($"unexpected error while publishing designer presence: {ex.Message}");
-			_logger.WriteDebug(warning);
-			return warning;
+			return LogAndBuildFailureWarning("unexpected error while publishing designer presence", ex);
 		}
 	}
 
@@ -113,15 +117,21 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 				"forms-auth cookies require login/password; OAuth-only or credential-less environments cannot publish the live notification.");
 		}
 
+		// Bound every network step with a single timeout so a slow/unreachable endpoint cannot stall
+		// the synchronous save path (see PublishTimeout). The token is threaded through cookie
+		// acquisition and the publish handshake instead of CancellationToken.None.
+		using var timeoutSource = new CancellationTokenSource(PublishTimeout);
+		CancellationToken cancellationToken = timeoutSource.Token;
+
 		string sessionPath;
 		try {
 			sessionPath = await _browserSessionService
-				.GetSessionPathAsync(_environmentSettings, forceRefresh: false, ct: CancellationToken.None)
+				.GetSessionPathAsync(_environmentSettings, forceRefresh: false, ct: cancellationToken)
 				.ConfigureAwait(false);
+		} catch (OperationCanceledException) {
+			return BuildTimeoutWarning("acquiring browser-session cookies");
 		} catch (Exception ex) {
-			string warning = BuildFailureWarning($"could not obtain browser-session cookies: {ex.Message}");
-			_logger.WriteDebug(warning);
-			return warning;
+			return LogAndBuildFailureWarning("could not obtain browser-session cookies", ex);
 		}
 
 		if (string.IsNullOrWhiteSpace(sessionPath) || !_fileSystem.File.Exists(sessionPath)) {
@@ -152,20 +162,24 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		Uri serviceUrl;
 		try {
 			serviceUrl = ResolveServiceUrl(applicationInfo.ServiceUrl, applicationInfo.ClientConnectionClassName);
-		} catch (Exception ex) {
+		} catch (InvalidOperationException ex) {
+			// ResolveServiceUrl throws only controlled, non-sensitive messages (empty/foreign-host/
+			// downgrade/unsupported-scheme), so surfacing the message here leaks nothing.
 			return BuildSkipWarning($"message-channel serviceUrl is invalid: {ex.Message}");
+		} catch (Exception ex) {
+			return BuildSkipWarning($"message-channel serviceUrl is invalid ({ex.GetType().Name}).");
 		}
 
 		MessageChannelEnvelope envelope = BuildSaveEnvelope(schemaName, schemaCaption, userInfo);
 
 		try {
-			await publisher.PublishAsync(new MessageChannelPublishRequest(serviceUrl, cookies, envelope), CancellationToken.None)
+			await publisher.PublishAsync(new MessageChannelPublishRequest(serviceUrl, cookies, envelope), cancellationToken)
 				.ConfigureAwait(false);
 			return null;
+		} catch (OperationCanceledException) {
+			return BuildTimeoutWarning("publishing the live notification");
 		} catch (Exception ex) {
-			string warning = BuildFailureWarning($"live notification publish failed: {ex.Message}");
-			_logger.WriteDebug(warning);
-			return warning;
+			return LogAndBuildFailureWarning("live notification publish failed", ex);
 		}
 	}
 
@@ -225,9 +239,26 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		if (string.IsNullOrWhiteSpace(rawServiceUrl)) {
 			throw new InvalidOperationException("serviceUrl is empty.");
 		}
+		if (!Uri.TryCreate(_environmentSettings.Uri, UriKind.Absolute, out Uri? environmentUri)) {
+			throw new InvalidOperationException("environment URI is not an absolute URI.");
+		}
 		Uri resolved = Uri.TryCreate(rawServiceUrl, UriKind.Absolute, out Uri? absolute)
 			? absolute
 			: new Uri(new Uri(_environmentSettings.Uri.TrimEnd(UriPathSeparator) + UriPathSeparator, UriKind.Absolute), rawServiceUrl);
+		// Security: the full forms-auth cookie set (including the auth/session cookie) is attached to
+		// this connection downstream. A server-supplied absolute serviceUrl pointing at a foreign host
+		// would harvest the live session, so only the environment's own host may receive the cookies.
+		if (!string.Equals(resolved.Host, environmentUri.Host, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException("serviceUrl host does not match the environment host.");
+		}
+		if (!IsSupportedTransportScheme(resolved.Scheme)) {
+			throw new InvalidOperationException($"serviceUrl scheme '{resolved.Scheme}' is not a supported message-channel transport.");
+		}
+		// Never downgrade to a plaintext transport when the environment itself is TLS-secured.
+		if (string.Equals(environmentUri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+			&& IsPlaintextTransportScheme(resolved.Scheme)) {
+			throw new InvalidOperationException("serviceUrl would downgrade a secured environment to a plaintext transport.");
+		}
 		if (string.Equals(clientConnectionClassName, WebSocketChannelClassName, StringComparison.Ordinal)
 			&& (resolved.Scheme == Uri.UriSchemeHttp || resolved.Scheme == Uri.UriSchemeHttps)) {
 			var builder = new UriBuilder(resolved) {
@@ -240,6 +271,16 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		}
 		return resolved;
 	}
+
+	private static bool IsSupportedTransportScheme(string scheme) =>
+		string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
+		|| string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+		|| string.Equals(scheme, Uri.UriSchemeWs, StringComparison.Ordinal)
+		|| string.Equals(scheme, Uri.UriSchemeWss, StringComparison.Ordinal);
+
+	private static bool IsPlaintextTransportScheme(string scheme) =>
+		string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
+		|| string.Equals(scheme, Uri.UriSchemeWs, StringComparison.Ordinal);
 
 	/// <summary>
 	/// Builds the per-schema message sender the front-end Designer Presence listener filters on:
@@ -254,6 +295,23 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 
 	private static string BuildFailureWarning(string reason) =>
 		$"Designer presence notification failed: {reason} The page save already succeeded.";
+
+	/// <summary>
+	/// Builds a sanitized failure warning and logs it. Security: transport exceptions in this area can
+	/// echo the target URI, request headers, or cookie/session fragments, so the raw <c>ex.Message</c>
+	/// is never interpolated into agent-visible output or logs — only the exception type is surfaced.
+	/// </summary>
+	private string LogAndBuildFailureWarning(string context, Exception ex) {
+		string warning = BuildFailureWarning($"{context} ({ex.GetType().Name}).");
+		_logger.WriteDebug(warning);
+		return warning;
+	}
+
+	private string BuildTimeoutWarning(string context) {
+		string warning = BuildFailureWarning($"{context} timed out after {PublishTimeout.TotalSeconds:0}s.");
+		_logger.WriteDebug(warning);
+		return warning;
+	}
 
 	private sealed class ApplicationInfoResponsePayload {
 		[JsonPropertyName("applicationInfo")]

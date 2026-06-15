@@ -199,6 +199,53 @@ public class PageBaselineStoreTests {
 	}
 
 	[Test]
+	[Description("RefreshExistingBaseline must carry forward a prior EnvironmentUri when the post-save baseline omits it, so a name-mode sync refresh does not disarm URI-mode conflict detection.")]
+	public void RefreshExistingBaseline_ShouldPreservePriorEnvironmentUri_WhenRefreshOmitsIt() {
+		// Arrange — a prior get-page captured both the name and the direct URI identity.
+		MockFileSystem fs = new();
+		fs.AddFile(MetaPath, new MockFileData(MetaJsonWithBaseline(
+			environmentName: "local", environmentUri: "https://site.creatio.com", checksum: "old")));
+
+		// Act — a sync-pages (name-only) refresh persists the post-save checksum without a URI.
+		PageBaselineStore.RefreshExistingBaseline(
+			fs,
+			MetaPath,
+			new PageBaselineInfo {
+				SchemaName = SchemaName,
+				EnvironmentName = "local",
+				EditableSchemaExists = true,
+				EditableSchemaUId = "99999999-8888-7777-6666-555555555555",
+				Checksum = "new-checksum",
+				ModifiedOn = "new-modified",
+				CapturedAt = "2026-06-12T11:00:00Z"
+			});
+
+		// Assert
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fs.GetFile(MetaPath).TextContents);
+		meta.Baseline.Checksum.Should().Be("new-checksum", because: "the refresh must still persist the post-save checksum");
+		meta.Baseline.EnvironmentName.Should().Be("local", because: "the name identity must round-trip unchanged");
+		meta.Baseline.EnvironmentUri.Should().Be("https://site.creatio.com",
+			because: "a name-only refresh must not strip the URI identity a prior capture stored, or URI-mode conflict detection silently disarms");
+	}
+
+	[Test]
+	[Description("MergeEnvironmentIdentity must keep an explicitly supplied identity field instead of overwriting it with the prior value.")]
+	public void MergeEnvironmentIdentity_ShouldKeepIncomingValue_WhenRefreshSuppliesIt() {
+		// Arrange
+		PageBaselineInfo previous = new() { EnvironmentName = "old", EnvironmentUri = "https://old.creatio.com" };
+		PageBaselineInfo refreshed = new() {
+			SchemaName = SchemaName, EnvironmentName = "new", EnvironmentUri = "https://new.creatio.com", Checksum = "c"
+		};
+
+		// Act
+		PageBaselineInfo merged = PageBaselineStore.MergeEnvironmentIdentity(refreshed, previous);
+
+		// Assert
+		merged.EnvironmentName.Should().Be("new", because: "an explicit incoming name must win over the prior value");
+		merged.EnvironmentUri.Should().Be("https://new.creatio.com", because: "an explicit incoming URI must win over the prior value");
+	}
+
+	[Test]
 	[Description("RefreshExistingBaseline must no-op when meta.json does not exist — the store never creates .clio-pages trees.")]
 	public void RefreshExistingBaseline_ShouldNoOp_WhenMetaJsonMissing() {
 		// Arrange

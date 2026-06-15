@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Abstractions.TestingHelpers;
@@ -163,5 +164,162 @@ public sealed class PageDesignerPresenceNotifierTests {
 			because: "the notifier must fail open when the environment advertises an unhandled transport");
 		_webSocketPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
 		_signalRPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("The notifier skips the live push with a warning when the browser-session storageState carries no usable cookies.")]
+	public void TryNotifyPageSaved_ShouldReturnWarning_WhenStorageStateHasNoCookies() {
+		// Arrange
+		_fileSystem.File.WriteAllText(StorageStatePath, StorageStateJson.Serialize(new StorageStateResult([])));
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("did not contain usable cookies",
+			because: "a cookie-less storageState cannot authenticate the live channel and must fail open");
+		_webSocketPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("The notifier skips the live push with a warning when GetApplicationInfo returns no usable application info.")]
+	public void TryNotifyPageSaved_ShouldReturnWarning_WhenApplicationInfoUnavailable() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(ApplicationInfoUrl, "{}").Returns("{}");
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("application info is unavailable",
+			because: "without the message-channel application info the notifier cannot pick a transport and must fail open");
+		_webSocketPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("The notifier skips the live push with a warning when the current user info has no sessionId.")]
+	public void TryNotifyPageSaved_ShouldReturnWarning_WhenUserSessionIdMissing() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(UserInfoUrl, "{}")
+			.Returns("""{"userInfo":{"id":"11111111-2222-3333-4444-555555555555","sessionId":""}}""");
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("missing sessionId",
+			because: "the listener excludes the receiving session by sessionId, so a blank sessionId makes the broadcast unusable");
+		_webSocketPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("The notifier refuses to attach session cookies when the server-supplied absolute serviceUrl points at a host other than the environment host.")]
+	public void TryNotifyPageSaved_ShouldReturnWarningAndNotPublish_WhenServiceUrlHostDiffersFromEnvironment() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(ApplicationInfoUrl, "{}")
+			.Returns("""{"applicationInfo":{"serviceUrl":"wss://evil.example.com/messages","clientConnectionClassName":"Terrasoft.WebSocketChannel"}}""");
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("host does not match the environment host",
+			because: "attaching the live session cookies to a foreign host would harvest the authenticated session");
+		_webSocketPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+		_signalRPublisher.DidNotReceive().PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("The notifier upgrades an http message-channel URL to ws for the WebSocket transport.")]
+	public void TryNotifyPageSaved_ShouldUpgradeHttpToWs_ForWebSocketTransport() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(ApplicationInfoUrl, "{}")
+			.Returns("""{"applicationInfo":{"serviceUrl":"http://test/0/Nui/ViewModule.aspx.ashx","clientConnectionClassName":"Terrasoft.WebSocketChannel"}}""");
+		MessageChannelPublishRequest? captured = null;
+		_webSocketPublisher.PublishAsync(Arg.Do<MessageChannelPublishRequest>(r => captured = r), Arg.Any<CancellationToken>());
+
+		// Act
+		string? warning = CreateSut().TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().BeNull(because: "the http URL is a valid same-host WebSocket target");
+		captured!.ServiceUrl.Scheme.Should().Be("ws",
+			because: "an http message-channel URL must be upgraded to ws for the WebSocket transport");
+	}
+
+	[Test]
+	[Description("The notifier upgrades an https message-channel URL to wss for the WebSocket transport.")]
+	public void TryNotifyPageSaved_ShouldUpgradeHttpsToWss_ForWebSocketTransport() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(ApplicationInfoUrl, "{}")
+			.Returns("""{"applicationInfo":{"serviceUrl":"https://test/0/Nui/ViewModule.aspx.ashx","clientConnectionClassName":"Terrasoft.WebSocketChannel"}}""");
+		MessageChannelPublishRequest? captured = null;
+		_webSocketPublisher.PublishAsync(Arg.Do<MessageChannelPublishRequest>(r => captured = r), Arg.Any<CancellationToken>());
+
+		// Act
+		string? warning = CreateSut().TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().BeNull(because: "the https URL is a valid same-host WebSocket target");
+		captured!.ServiceUrl.Scheme.Should().Be("wss",
+			because: "an https message-channel URL must be upgraded to wss for the WebSocket transport");
+	}
+
+	[Test]
+	[Description("The notifier returns a failure warning that exposes only the exception type and never the raw exception message when the publish throws.")]
+	public void TryNotifyPageSaved_ShouldReturnSanitizedWarning_WhenPublishThrows() {
+		// Arrange
+		const string secret = "SECRET-LEAK-session-123";
+		_webSocketPublisher.PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException(new InvalidOperationException(secret)));
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("live notification publish failed",
+			because: "a publish failure must still be surfaced as a best-effort warning");
+		warning.Should().Contain("InvalidOperationException",
+			because: "the exception type is safe to log and helps diagnosis");
+		warning.Should().NotContain(secret,
+			because: "raw transport exception messages can carry the target URI, cookie fragments, or sessionId and must never reach agent-visible output");
+	}
+
+	[Test]
+	[Description("The notifier returns a timeout warning when the publish is canceled by the bounded timeout.")]
+	public void TryNotifyPageSaved_ShouldReturnTimeoutWarning_WhenPublishCanceled() {
+		// Arrange
+		_webSocketPublisher.PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException(new OperationCanceledException()));
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().Contain("timed out",
+			because: "a stalled handshake must surface as a bounded timeout instead of blocking the save indefinitely");
+	}
+
+	[Test]
+	[Description("The notifier hands the publisher a cancelable token (the bounded timeout), never CancellationToken.None.")]
+	public void TryNotifyPageSaved_ShouldPassCancelableToken_ToPublisher() {
+		// Arrange
+		CancellationToken capturedToken = default;
+		_webSocketPublisher.PublishAsync(Arg.Any<MessageChannelPublishRequest>(), Arg.Do<CancellationToken>(t => capturedToken = t));
+		PageDesignerPresenceNotifier sut = CreateSut();
+
+		// Act
+		string? warning = sut.TryNotifyPageSaved("UsrPage_FormPage");
+
+		// Assert
+		warning.Should().BeNull(because: "the default arrange publishes successfully");
+		capturedToken.CanBeCanceled.Should().BeTrue(
+			because: "the publish must run under a bounded timeout token so a hung handshake cannot stall the save");
 	}
 }

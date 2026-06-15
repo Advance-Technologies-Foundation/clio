@@ -114,12 +114,43 @@ internal static class PageBaselineStore {
 			PageMetaFileModel updated = new() {
 				FetchedAt = meta.FetchedAt,
 				Page = meta.Page,
-				Baseline = baseline
+				Baseline = MergeEnvironmentIdentity(baseline, meta.Baseline)
 			};
 			fileSystem.File.WriteAllText(metaFilePath, JsonSerializer.Serialize(updated));
 		} catch {
 			// best-effort — a failed refresh must not fail the save that already succeeded.
 		}
+	}
+
+	/// <summary>
+	/// Carries forward the environment identity (name + URI) of a prior capture when the incoming
+	/// post-save baseline leaves a field unset. Both on-disk write paths must persist a byte-compatible
+	/// identity: update-page writes name+URI from its args, but sync-pages only knows the environment
+	/// name. Without this merge a sync-pages refresh would strip the <c>EnvironmentUri</c> a URI-mode
+	/// get-page captured, so a later URI-mode update-page could no longer match the environment and
+	/// conflict detection would silently disarm for that page.
+	/// </summary>
+	internal static PageBaselineInfo MergeEnvironmentIdentity(PageBaselineInfo refreshed, PageBaselineInfo previous) {
+		if (refreshed is null || previous is null) {
+			return refreshed;
+		}
+		bool nameMissing = string.IsNullOrWhiteSpace(refreshed.EnvironmentName)
+			&& !string.IsNullOrWhiteSpace(previous.EnvironmentName);
+		bool uriMissing = string.IsNullOrWhiteSpace(refreshed.EnvironmentUri)
+			&& !string.IsNullOrWhiteSpace(previous.EnvironmentUri);
+		if (!nameMissing && !uriMissing) {
+			return refreshed;
+		}
+		return new PageBaselineInfo {
+			SchemaName = refreshed.SchemaName,
+			EnvironmentName = nameMissing ? previous.EnvironmentName : refreshed.EnvironmentName,
+			EnvironmentUri = uriMissing ? previous.EnvironmentUri : refreshed.EnvironmentUri,
+			EditableSchemaExists = refreshed.EditableSchemaExists,
+			EditableSchemaUId = refreshed.EditableSchemaUId,
+			Checksum = refreshed.Checksum,
+			ModifiedOn = refreshed.ModifiedOn,
+			CapturedAt = refreshed.CapturedAt
+		};
 	}
 
 	/// <summary>

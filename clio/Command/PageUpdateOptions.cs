@@ -246,6 +246,12 @@ namespace Clio.Command {
 				return false;
 			}
 			string actualChecksum = row[ChecksumColumnName]?.ToString();
+			if (string.IsNullOrWhiteSpace(actualChecksum)) {
+				// Fail open: a present row with a NULL/blank Checksum (e.g. an unpublished schema) means
+				// "checksum unavailable", not proof of an external edit. Reporting a conflict here is
+				// misleading and loops the agent — skip the check, consistent with the fail-toward-no-check contract.
+				return true;
+			}
 			if (!string.Equals(actualChecksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.ChecksumMismatch,

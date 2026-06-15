@@ -68,6 +68,27 @@ public sealed class PageUpdateCommandConflictTests
 			.Returns("""{"success": true, "rows": []}""");
 	}
 
+	private void StubChecksumRowWithNullChecksum() {
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl,
+				Arg.Is<string>(body => body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": [{"ModifiedOn": "2026-06-12T09:00:00"}]}""");
+	}
+
+	// The replacing schema does not yet exist in the design package, so the lookup by package must
+	// return no rows — otherwise ResolveEditableUId treats it as an existing (non-replacing) schema.
+	private void StubReplacingSchemaAbsentInPackage() {
+		_applicationClient.ExecutePostRequest(
+				SelectQueryUrl,
+				Arg.Is<string>(body => body.Contains("byPackage")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+	}
+
+	private PageUpdateCommand CreateReplacingCommand() =>
+		new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClient(isCreateReplacing: true));
+
 	private void StubDesignerEndpoints() {
 		_applicationClient.ExecutePostRequest(
 				GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -236,6 +257,63 @@ public sealed class PageUpdateCommandConflictTests
 			because: "the resolved editable UId does not match the baseline UId");
 		response.ConflictDetails.ActualSchemaUId.Should().Be(SchemaUId,
 			because: "the details must show which schema the write would actually target");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must save (no conflict) when the baseline says absent and the replacing schema is the legitimate first-time write being created now.")]
+	public void TryUpdatePage_ShouldSaveSchema_WhenBaselineAbsentAndIsCreateReplacing() {
+		// Arrange
+		StubChecksumRow("fresh-after-save");
+		StubReplacingSchemaAbsentInPackage();
+		PageUpdateCommand command = CreateReplacingCommand();
+		PageUpdateOptions options = CreateOptions(expectedSchemaAbsent: true);
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "an absent baseline plus a replacing-schema write is the legitimate first-time save, not an external modification");
+		response.Success.Should().BeTrue(because: "the first-time replacing write must proceed");
+		response.Conflict.Should().BeFalse(because: "creating the replacing schema now is exactly what the absent baseline expects");
+		_applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage must return a schema-deleted-externally conflict when the baseline has a checksum but the editable schema now only exists as a replacing (not-yet-saved) schema.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineHasChecksumButIsCreateReplacing() {
+		// Arrange
+		StubReplacingSchemaAbsentInPackage();
+		PageUpdateCommand command = CreateReplacingCommand();
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum");
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a baseline expecting an existing editable schema cannot reconcile with a replacing-only schema state");
+		response.Conflict.Should().BeTrue(because: "the response must carry the conflict marker");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.SchemaDeletedExternally,
+			because: "the editable schema the baseline expected is gone — only a replacing schema remains");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryUpdatePage must fail open (save, no conflict) when the server row is present but its Checksum is NULL/blank, distinguishing 'checksum unavailable' from a value mismatch.")]
+	public void TryUpdatePage_ShouldSaveSchema_WhenServerChecksumIsNull() {
+		// Arrange
+		StubChecksumRowWithNullChecksum();
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum");
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a present row with a NULL checksum is checksum-unavailable, not proof of an external edit");
+		response.Conflict.Should().BeFalse(because: "fail-open avoids the misleading 'modified externally' that would loop the agent");
+		_applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
