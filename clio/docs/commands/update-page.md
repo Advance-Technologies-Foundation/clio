@@ -16,6 +16,14 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+After a successful non-dry-run save, update-page also attempts a
+best-effort live Designer Presence notification so active Creatio designers
+can be warned that the page was saved outside their session. This live push
+reuses the browser-session/forms-auth path and therefore requires
+login/password-backed cookies. In OAuth-only or credential-less environments,
+the page save still succeeds; the response simply carries a warning when the
+live notification is skipped or fails.
+
 When the body contains #ResourceString(key)# macros, update-page can
 register missing child-schema localizableStrings before saving. Pass
 --resources when you need explicit captions, or let clio derive captions
@@ -48,6 +56,42 @@ name instead of trying to edit a non-existent local `insert`.
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
 
+## Conflict Detection (external modifications)
+
+When `--expected-checksum` is supplied, update-page compares it against the current
+`SysSchema.Checksum` of the editable schema **before** saving. If the schema was modified
+outside your session (for example, a user edited the page in the Creatio designer),
+the save is blocked and the response carries a structured conflict:
+
+```jsonc
+{
+  "success": false,
+  "conflict": true,
+  "conflictDetails": {
+    "reason": "checksum-mismatch",          // or schema-created-externally |
+                                            //    schema-deleted-externally | schema-uid-mismatch
+    "expectedChecksum": "…", "actualChecksum": "…",
+    "expectedSchemaUId": "…", "actualSchemaUId": "…",
+    "modifiedOn": "…"                       // informational only
+  },
+  "error": "Page schema '…' was modified outside this session …"
+}
+```
+
+Recovery: re-run `get-page`, re-apply your change on top of the fresh body, then retry.
+Pass `--force` to deliberately overwrite the external changes instead.
+
+After a successful save with a baseline in play, the response carries `newChecksum`,
+`newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
+
+Successful saves may also return a `warnings` entry about the live Designer Presence
+push. Treat that warning as informational only: the schema save already succeeded.
+
+The MCP `update-page` tool arms this check automatically from the baseline that the MCP
+`get-page` tool stores in `.clio-pages/{schema-name}/meta.json` (matching environment
+required); the CLI verb arms it only when `--expected-checksum` is passed explicitly.
+A small race window between the check and the save remains (last write wins).
+
 ## Synopsis
 
 ```bash
@@ -71,6 +115,14 @@ validation
 --optional-properties              JSON array of {key, value} objects to
 merge into schema optionalProperties,
 e.g. '[{"key":"entitySchemaName","value":"UsrMyEntity"}]'
+
+--expected-checksum                Baseline SysSchema checksum of the editable
+schema (from get-page). Blocks the save with
+a structured conflict when the server-side
+checksum differs
+
+--force                            Skip the external-modification check and
+deliberately overwrite out-of-band changes
 
 --uri                    -u       Application uri
 

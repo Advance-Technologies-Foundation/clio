@@ -139,6 +139,19 @@ public sealed class PageModificationGuidanceResource {
 		       - Verify is best-effort: if the read-back fails, the update response still reports `success: true`.
 		       - Use `verify: true` when you need page metadata (schema name, package, UId) in the same call as the save.
 
+		       External-modification conflicts (checksum baseline)
+		       - `get-page` stores a checksum baseline of the editable schema in `.clio-pages/{schema}/meta.json`. `update-page` and `sync-pages` automatically compare that baseline against the server BEFORE saving (same environment only).
+		       - If the page was modified outside your session (the user edited it in the Creatio designer, deleted a component you added, another tool saved it), the write FAILS with `conflict: true` and `conflictDetails.reason`: `checksum-mismatch`, `schema-created-externally`, `schema-deleted-externally`, or `schema-uid-mismatch`. In `sync-pages` the conflict is per page (`conflict` / `conflict-details` on the page result) and the rest of the batch continues.
+		       - RECOVERY — follow exactly this order:
+		         1. Do NOT retry with the same body. Your local view of the page is stale.
+		         2. Re-run `get-page` for the schema — this reloads body.js/bundle.json AND refreshes the baseline.
+		         3. Inspect what changed externally, re-apply your intended change on top of the FRESH body (respect the user's external edits — do not restore components the user deleted).
+		         4. Retry `update-page` / `sync-pages`.
+		       - `force: true` (per page in `sync-pages`) skips the check and deliberately overwrites the external changes. Use it ONLY after you have informed the user about the external modifications and they explicitly confirmed overwriting them. Never set force pre-emptively.
+		       - After a successful save the baseline refreshes automatically — consecutive updates in the same session do not false-conflict.
+		       - No baseline (no prior `get-page`, legacy meta.json, different environment) → the check is skipped; flows behave exactly as before.
+		       - A small race window between the check and the save remains (last write wins) — the check is a guard, not a transaction.
+
 		       Body formatting
 		       - clio does NOT normalize or re-indent page bodies — the string you pass is saved verbatim.
 		       - When adding new content, match the indentation style already present in the page body (tabs, 2 spaces, 4 spaces, etc.).

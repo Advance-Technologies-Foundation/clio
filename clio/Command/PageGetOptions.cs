@@ -146,6 +146,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(currentSchema.SchemaType);
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
+			PageEditableSchemaInfo editableInfo = BuildEditableSchemaInfo(editableSchema);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -180,6 +181,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				Raw = new PageRawInfo {
 					Body = editableBody
 				},
+				Editable = editableInfo,
 				Error = null
 			};
 			return true;
@@ -223,6 +225,36 @@ public class PageGetCommand : Command<PageGetOptions> {
 				_hierarchyClient.GetParentSchemas(replacingUId, designPackageUId);
 			return replacingHierarchy.FirstOrDefault(
 				s => string.Equals(s.UId, replacingUId, StringComparison.OrdinalIgnoreCase));
+		} catch {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Builds the conflict-detection baseline source for the editable schema. Best-effort: when the
+	/// checksum query fails the method returns <c>null</c> so the caller degrades to "no baseline"
+	/// instead of failing the whole <c>get-page</c> call.
+	/// </summary>
+	private PageEditableSchemaInfo BuildEditableSchemaInfo(PageDesignerHierarchySchema editableSchema) {
+		if (editableSchema is null) {
+			return new PageEditableSchemaInfo { EditableSchemaExists = false };
+		}
+		try {
+			(Newtonsoft.Json.Linq.JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				_applicationClient,
+				_serviceUrlBuilder,
+				editableSchema.UId,
+				("Checksum", "Checksum"),
+				("ModifiedOn", "ModifiedOn"));
+			if (row is null) {
+				return null;
+			}
+			return new PageEditableSchemaInfo {
+				EditableSchemaExists = true,
+				EditableSchemaUId = editableSchema.UId,
+				Checksum = row["Checksum"]?.ToString(),
+				ModifiedOn = row["ModifiedOn"]?.ToString()
+			};
 		} catch {
 			return null;
 		}
