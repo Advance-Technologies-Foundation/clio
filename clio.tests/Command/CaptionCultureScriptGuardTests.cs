@@ -297,4 +297,75 @@ public sealed class CaptionCultureScriptGuardTests {
 		act.Should().NotThrow(
 			"because fullwidth Latin letters are Latin script and must not be rejected under en-US");
 	}
+
+	[TestCase("en-US", "µm")]
+	[TestCase("en-US", "µg/mL")]
+	[TestCase("pt-PT", "Nº 5")]
+	[TestCase("es-ES", "1ª Linha")]
+	[Description("EnsureCaptionMatchesCulture allows the Latin-1 ordinal/micro letters (ª µ º) that sit below U+00C0 under Latin-script cultures — they are Latin script and must not be a false positive.")]
+	public void EnsureCaptionMatchesCulture_ShouldNotThrow_WhenLatin1OrdinalOrMicroSignUnderLatinCulture(string cultureName, string caption) {
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().NotThrow(
+			$"because '{caption}' uses only Latin-1 letters (ª/µ/º are Latin script), so it is valid for the Latin-script '{cultureName}' locale");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture rejects a mixed Latin+Cyrillic caption under en-US and reports only the Cyrillic runes, never the accented Latin letter.")]
+	public void EnsureCaptionMatchesCulture_ShouldReportOnlyNonLatinRunes_WhenLatinAndCyrillicMixedUnderEnUs() {
+		// Arrange
+		const string cultureName = "en-US";
+		const string caption = "Café (кофе)";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		EntitySchemaDesignerException exception = act.Should().Throw<EntitySchemaDesignerException>(
+				"because the en-US caption still contains Cyrillic letters and must be authored in English")
+			.Which;
+		exception.Message.Should().Contain("'к'",
+			"because the offending Cyrillic rune must be listed so the author can find it");
+		exception.Message.Should().NotContain("'é'",
+			"because the accented Latin letter é is valid Latin script and must not be reported as an offender");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture lists a repeated offender only once (offender de-duplication).")]
+	public void EnsureCaptionMatchesCulture_ShouldDeduplicateOffenders_WhenSameNonLatinRuneRepeats() {
+		// Arrange
+		const string cultureName = "en-US";
+		const string caption = "ккк";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				"because Cyrillic text under en-US must be rejected")
+			.Which.Message.Should().Contain("('к')",
+				"because a repeated offender must be reported once, not once per occurrence");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture truncates the offender list to the first 8 distinct runes.")]
+	public void EnsureCaptionMatchesCulture_ShouldTruncateOffenderList_WhenMoreThanEightDistinctOffenders() {
+		// Arrange
+		const string cultureName = "en-US";
+		const string caption = "АБВГДЕЖЗИК"; // 10 distinct Cyrillic letters; only the first 8 must be listed
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		string message = act.Should().Throw<EntitySchemaDesignerException>(
+				"because Cyrillic text under en-US must be rejected")
+			.Which.Message;
+		message.Should().Contain("'З'",
+			"because the 8th distinct offender is within the truncation limit and must be listed");
+		message.Should().NotContain("'И'",
+			"because the 9th distinct offender is beyond the 8-offender limit and must be truncated");
+	}
 }

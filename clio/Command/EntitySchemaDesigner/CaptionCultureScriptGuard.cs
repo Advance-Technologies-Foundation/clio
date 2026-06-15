@@ -120,21 +120,16 @@ internal static class CaptionCultureScriptGuard {
 		return LatinScriptLanguages.Contains(parts[0]);
 	}
 
-	private static List<Rune> CollectNonLatinLetters(string value) {
-		List<Rune> offenders = [];
-		foreach (Rune rune in value.EnumerateRunes()) {
-			if (Rune.IsLetter(rune) && !IsLatinLetter(rune)) {
-				offenders.Add(rune);
-			}
-		}
-
-		return offenders;
-	}
+	private static List<Rune> CollectNonLatinLetters(string value) =>
+		value.EnumerateRunes()
+			.Where(rune => Rune.IsLetter(rune) && !IsLatinLetter(rune))
+			.ToList();
 
 	private static bool IsLatinLetter(Rune rune) {
 		int value = rune.Value;
 		return value is (>= 'A' and <= 'Z')
 			or (>= 'a' and <= 'z')
+			or 0x00AA or 0x00B5 or 0x00BA  // The only L*-category code points below U+00C0: ª (feminine ordinal), µ (micro sign), º (masculine ordinal)
 			or (>= 0x00C0 and <= 0x024F)   // Latin-1 Supplement letters + Latin Extended-A/-B (accented Latin)
 			or (>= 0x1E00 and <= 0x1EFF)   // Latin Extended Additional (e.g. Vietnamese)
 			or (>= 0xFB00 and <= 0xFB06)   // Latin small ligatures (ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ) — deliberately NOT 0xFB13+ (Armenian/Hebrew)

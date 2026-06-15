@@ -2,6 +2,7 @@ namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.Linq;
+	using Clio.Command.EntitySchemaDesigner;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -49,14 +50,14 @@ namespace Clio.Command {
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ISchemaTemplateCatalog _templateCatalog;
 		private readonly ILogger _logger;
-		private readonly Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver _captionCultureResolver;
+		private readonly ICaptionCultureResolver _captionCultureResolver;
 
 		public PageCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ISchemaTemplateCatalog templateCatalog,
 			ILogger logger,
-			Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver) {
+			ICaptionCultureResolver captionCultureResolver) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_templateCatalog = templateCatalog;
@@ -135,8 +136,8 @@ namespace Clio.Command {
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				// ENG-91044: the page caption is stored under the effective culture, so reject text whose
 				// script does not match it (e.g. Cyrillic under en-US).
-				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
-				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
 					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings,

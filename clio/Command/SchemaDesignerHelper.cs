@@ -1,6 +1,7 @@
 namespace Clio.Command;
 
 using System.Linq;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -133,8 +134,8 @@ internal static class SchemaDesignerHelper {
 		string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
 		// ENG-91044: reject caption/description text whose script does not match the effective culture
 		// (e.g. Cyrillic under en-US). Shared by create-sql-schema and create-source-code-schema.
-		Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, caption, "caption");
-		Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, description, "description");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, caption, "caption");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, description, "description");
 		schema["name"] = name;
 		schema["caption"] = new JArray(new JObject { ["cultureName"] = effectiveCulture, [ValueKey] = caption });
 		if (!string.IsNullOrWhiteSpace(description))

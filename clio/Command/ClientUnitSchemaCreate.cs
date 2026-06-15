@@ -1,5 +1,6 @@
 namespace Clio.Command {
 	using System;
+	using Clio.Command.EntitySchemaDesigner;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -41,13 +42,13 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
-		private readonly Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver _captionCultureResolver;
+		private readonly ICaptionCultureResolver _captionCultureResolver;
 
 		public ClientUnitSchemaCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ILogger logger,
-			Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver captionCultureResolver) {
+			ICaptionCultureResolver captionCultureResolver) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -93,8 +94,8 @@ namespace Clio.Command {
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				// ENG-91044: the schema caption is stored under the effective culture, so reject text whose
 				// script does not match it (e.g. Cyrillic under en-US).
-				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
-				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
 				JObject payload = BuildSaveSchemaPayload(newSchemaUId, options.SchemaName, caption,
 					options.Description, packageUId, options.PackageName, captionCulture);
 				if (!TrySaveSchema(payload, out string saveError)) {
