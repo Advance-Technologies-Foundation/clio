@@ -496,15 +496,15 @@ stories:
     blocks: []
 
   # --- Component discovery & selection (epic ENG-89871, origin ENG-91134 Paused) ---
-  # Solution-level entries. GATE: deferred until the umbrella ADR is accepted (Decision 7);
-  # story-writer breakdown pending. C also gated behind its child vector-search ADR.
+  # Solution-level entries. GATE CLEARED: umbrella ADR ACCEPTED 2026-06-15 (Alex); A/B/D/E may proceed.
+  # C still gated behind its child vector-search ADR. story-writer breakdown pending.
   - id: story-component-discovery-A
     title: "[Solution A] Component selection metadata in registry (synonyms/use-cases/when-to-use + taxonomy)"
     feature: "component-discovery-selection"
     size: L
-    status: deferred
+    status: in-progress
     jira: ENG-91571
-    note: "Data foundation; B/C/D depend on it. Typed POCO mapping (NOT passthrough) + de-truncate snapshot fixture + A owns category taxonomy + applicability field. Catalog-wide DoD; at-scale generation w/ named human sign-off for confusable set. Deferred until umbrella ADR accepted; consider A1(schema+confusable)/A2(backfill) split (OQ-D2)."
+    note: "STARTED 2026-06-15 (A1 slice): umbrella ADR ACCEPTED (Alex), gate cleared. Typed POCO mapping (NOT passthrough) + de-truncate snapshot fixture + A owns category taxonomy + applicability field. CORRECTION: the assumed hardcoded CategoryOrder does NOT exist (clio/generator/creatio-ui) — A defines taxonomy from scratch and fills the empty producer `category` field; nothing to reconcile. A1 = schema + confusable-set seed (clio-self-sufficient, fixture-gated), unblocks B/C/D. A2 = full ~200 backfill + live CDN seed (static-files-mcp) + JSDoc derivation (creatio-ui), trails. Does NOT touch ComponentInfoListItem/ComponentRelations (D owns)."
     prd: spec/prd/prd-component-discovery-selection.md
     adr: spec/adr/adr-component-discovery-selection.md
     depends_on: []

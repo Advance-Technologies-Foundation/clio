@@ -141,6 +141,78 @@ public sealed class ComponentRegistrySnapshotTests {
 			because: "the live mobile catalog must list at least one component");
 	}
 
+	/// <summary>
+	/// The confusable set whose selection-metadata presence is gated in the A1 slice (ENG-91571).
+	/// These are the components the agent routinely mis-picks between (the ENG-91134 Gallery/grid/
+	/// file-list failure class). Presence is snapshot-gated here; the prose quality of the metadata is
+	/// signed off separately by a named human owner (umbrella ADR Decision 1, "presence ≠ quality").
+	/// The full ~200-catalog backfill is the A2 follow-up.
+	/// </summary>
+	private static readonly string[] ConfusableSet = {
+		"crt.Gallery", "crt.DataGrid", "crt.List", "crt.FileList",
+		"crt.MultiList", "crt.ImageInput", "crt.Timeline", "crt.CommunicationOptions"
+	};
+
+	[Test]
+	[Description("Every confusable-set component in the de-truncated live snapshot must carry non-empty selection metadata (synonyms, useCases, whenToUse) and a taxonomy category — Solution A1's presence bar (ENG-91571). Presence is snapshot-gated; prose quality is human-signed-off separately.")]
+	public void Live_Registry_Snapshot_Should_Carry_Selection_Metadata_On_Confusable_Set() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Assert
+		foreach (string componentType in ConfusableSet) {
+			state.Lookup.TryGetValue(componentType, out ComponentRegistryEntry? entry).Should().BeTrue(
+				because: $"the confusable component '{componentType}' must be present in the de-truncated snapshot to gate its selection metadata");
+			entry!.Synonyms.Should().NotBeEmpty(
+				because: $"'{componentType}' must carry synonyms so a natural-language prompt can resolve to it (Solution A1 presence bar)");
+			entry.UseCases.Should().NotBeEmpty(
+				because: $"'{componentType}' must carry use-cases for Solution B's ranked search to weight (A1 presence bar)");
+			entry.WhenToUse.Should().NotBeNullOrWhiteSpace(
+				because: $"'{componentType}' must carry a 'when to use' guidance line (Solution A1 presence bar)");
+			ComponentCategories.IsKnown(entry.Category).Should().BeTrue(
+				because: $"'{componentType}'.category '{entry.Category}' must be a member of the controlled taxonomy A owns");
+		}
+	}
+
+	[Test]
+	[Description("Every non-empty category value present in the live snapshot must be a member of the controlled taxonomy ComponentCategories owns (Solution A, ENG-91571) — guards against drift between producer data and the single-source vocabulary.")]
+	public void Live_Registry_Snapshot_Category_Values_Should_Be_In_Controlled_Taxonomy() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Assert
+		foreach (ComponentRegistryEntry entry in state.Entries) {
+			if (string.IsNullOrWhiteSpace(entry.Category)) {
+				continue;
+			}
+			ComponentCategories.IsKnown(entry.Category).Should().BeTrue(
+				because: $"'{entry.ComponentType}'.category '{entry.Category}' must be one of the controlled ComponentCategories vocabulary, not free-form text");
+		}
+	}
+
+	[Test]
+	[Description("crt.CommunicationOptions must be flagged not-applicable to custom entities with an explanatory coupling note (Solution A, ENG-91571; ENG-91134 comment 453013) so Solution D's fail-fast UX can steer the agent instead of letting it silently substitute.")]
+	public void Live_Snapshot_CommunicationOptions_Should_Be_Flagged_Not_Applicable_To_Custom_Entities() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Act
+		state.Lookup.TryGetValue("crt.CommunicationOptions", out ComponentRegistryEntry? entry).Should().BeTrue(
+			because: "crt.CommunicationOptions is part of the confusable/seed set in the de-truncated snapshot");
+
+		// Assert
+		entry!.AppliesToCustomEntities.Should().BeFalse(
+			because: "crt.CommunicationOptions is bound to the built-in Contact/Account communication model and cannot be built on a custom entity (ENG-91134 comment 453013)");
+		entry.EntityCouplingNote.Should().NotBeNullOrWhiteSpace(
+			because: "a restrictive applicability flag must ship with a human-readable reason so the agent can relay it to the user");
+	}
+
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
 		bucket is null ? System.Array.Empty<string>() : bucket.Keys;
 }

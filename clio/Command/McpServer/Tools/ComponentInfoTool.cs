@@ -86,6 +86,7 @@ public sealed class ComponentInfoTool(
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
 		"When resolvedFrom is 'latest-fallback' the version is unknown: do not silently assume the component set — tell the user and request confirmation before proceeding. " +
 		"A detail response for a collection/visual type (crt.DataGrid, crt.List, crt.FileList, crt.MultiList, crt.ImageInput) carries a relatedComponents see-also (e.g. crt.Gallery) plus a discoveryTip steering you back to list-mode discovery. " +
+			"Each detail response also carries selection metadata when the producer has populated it — synonyms, useCases, a one-line whenToUse/whenNotToUse, a taxonomy category, and an appliesToCustomEntities applicability flag (e.g. crt.CommunicationOptions cannot be built on a custom entity) — use it to match the user's request to the right component and to avoid a type that cannot be built on the target entity. " +
 		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
@@ -299,7 +300,14 @@ public sealed class ComponentInfoTool(
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
 			References = references,
 			RelatedComponents = ComponentRelations.GetRelated(entry.ComponentType),
-			DiscoveryTip = DiscoveryTipText
+			DiscoveryTip = DiscoveryTipText,
+			Category = string.IsNullOrWhiteSpace(entry.Category) ? null : entry.Category,
+			Synonyms = entry.Synonyms.Count == 0 ? null : entry.Synonyms,
+			UseCases = entry.UseCases.Count == 0 ? null : entry.UseCases,
+			WhenToUse = string.IsNullOrWhiteSpace(entry.WhenToUse) ? null : entry.WhenToUse,
+			WhenNotToUse = string.IsNullOrWhiteSpace(entry.WhenNotToUse) ? null : entry.WhenNotToUse,
+			AppliesToCustomEntities = entry.AppliesToCustomEntities,
+			EntityCouplingNote = string.IsNullOrWhiteSpace(entry.EntityCouplingNote) ? null : entry.EntityCouplingNote
 		};
 	}
 
@@ -628,6 +636,62 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("discoveryTip")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? DiscoveryTip { get; init; }
+
+	/// <summary>
+	/// Gets the use-case taxonomy category for this component (Solution A, ENG-91571) — one controlled
+	/// value from <see cref="ComponentCategories"/>. Omitted when the entry carries no category.
+	/// </summary>
+	[JsonPropertyName("category")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Category { get; init; }
+
+	/// <summary>
+	/// Gets the alternate names a user might use for this component (Solution A, ENG-91571). Omitted
+	/// when the entry has no synonyms.
+	/// </summary>
+	[JsonPropertyName("synonyms")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Synonyms { get; init; }
+
+	/// <summary>
+	/// Gets the concrete scenarios this component is the right fit for (Solution A, ENG-91571). Omitted
+	/// when the entry has no use-cases.
+	/// </summary>
+	[JsonPropertyName("useCases")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? UseCases { get; init; }
+
+	/// <summary>
+	/// Gets the one-line "pick this when…" guidance (Solution A, ENG-91571). Omitted when the entry
+	/// has no such guidance.
+	/// </summary>
+	[JsonPropertyName("whenToUse")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? WhenToUse { get; init; }
+
+	/// <summary>
+	/// Gets the one-line "do NOT pick this when…" guidance (Solution A, ENG-91571). Omitted when the
+	/// entry has no such guidance.
+	/// </summary>
+	[JsonPropertyName("whenNotToUse")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? WhenNotToUse { get; init; }
+
+	/// <summary>
+	/// Gets the applicability / entity-coupling constraint (Solution A, ENG-91571). <c>false</c> marks a
+	/// component that cannot be built on a custom entity; omitted when there is no restriction.
+	/// </summary>
+	[JsonPropertyName("appliesToCustomEntities")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? AppliesToCustomEntities { get; init; }
+
+	/// <summary>
+	/// Gets the human-readable explanation for a restrictive <see cref="AppliesToCustomEntities"/>
+	/// value (Solution A, ENG-91571). Omitted when there is no coupling note.
+	/// </summary>
+	[JsonPropertyName("entityCouplingNote")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? EntityCouplingNote { get; init; }
 }
 
 /// <summary>
@@ -681,10 +745,65 @@ public sealed class ComponentRegistryEntry {
 	public string ComponentType { get; init; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets the high-level component category.
+	/// Gets the use-case taxonomy category this component belongs to (Solution A, ENG-91571).
+	/// A single controlled value from <see cref="ComponentCategories"/> — the ~5–15 vocabulary A owns
+	/// and Solution D's faceted discovery consumes. Producer-populated; empty on legacy or
+	/// not-yet-backfilled entries.
 	/// </summary>
 	[JsonPropertyName("category")]
 	public string Category { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the alternate names a user might use for this component (Solution A, ENG-91571) — e.g.
+	/// "photo grid", "image carousel", "thumbnails" for <c>crt.Gallery</c>. Weighted above
+	/// <c>description</c> by Solution B's ranked search and surfaced on the detail response so an AI
+	/// agent can map a natural-language prompt to the right component. Empty until backfilled.
+	/// </summary>
+	[JsonPropertyName("synonyms")]
+	public IReadOnlyList<string> Synonyms { get; init; } = [];
+
+	/// <summary>
+	/// Gets the concrete scenarios this component is the right fit for (Solution A, ENG-91571) — e.g.
+	/// "display a collection of images or photos with previews" for <c>crt.Gallery</c>. Weighted
+	/// alongside <see cref="Synonyms"/> by Solution B's ranked search. Empty until backfilled.
+	/// </summary>
+	[JsonPropertyName("useCases")]
+	public IReadOnlyList<string> UseCases { get; init; } = [];
+
+	/// <summary>
+	/// Gets the one-line "pick this when…" guidance (Solution A, ENG-91571) steering the agent toward
+	/// this component for the scenarios it fits best. Surfaced on the detail response and consumed by
+	/// Solution D's compact selection-index. Empty until backfilled.
+	/// </summary>
+	[JsonPropertyName("whenToUse")]
+	public string WhenToUse { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the one-line "do NOT pick this when…" guidance (Solution A, ENG-91571) steering the agent
+	/// away from a common mis-pick (e.g. "not for a single image — use crt.ImageInput"). Empty until
+	/// backfilled.
+	/// </summary>
+	[JsonPropertyName("whenNotToUse")]
+	public string WhenNotToUse { get; init; } = string.Empty;
+
+	/// <summary>
+	/// Gets the applicability / entity-coupling constraint (Solution A, ENG-91571; ENG-91134 comment
+	/// 453013). <c>false</c> marks a component hard-coupled to a built-in entity (e.g.
+	/// <c>crt.CommunicationOptions</c>, bound to the Contact/Account communication model) that cannot
+	/// be built on a custom entity; <c>true</c> or <c>null</c> means no such restriction. Solution D's
+	/// fail-fast UX reads this to steer the agent to tell the user instead of silently substituting.
+	/// </summary>
+	[JsonPropertyName("appliesToCustomEntities")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? AppliesToCustomEntities { get; init; }
+
+	/// <summary>
+	/// Gets the human-readable explanation that accompanies a restrictive
+	/// <see cref="AppliesToCustomEntities"/> value — e.g. "Bound to the Contact/Account communication
+	/// model; not available on custom entities." Empty when there is no coupling note.
+	/// </summary>
+	[JsonPropertyName("entityCouplingNote")]
+	public string EntityCouplingNote { get; init; } = string.Empty;
 
 	/// <summary>
 	/// Gets or sets the component description.

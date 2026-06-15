@@ -45,7 +45,8 @@
         "imageSelected": {
           "type": "RequestBindingConfig"
         }
-      }
+      },
+      "category": "utility"
     },
     {
       "componentType": "crt.Button",
@@ -388,7 +389,8 @@
         "docs": [
           "docs/button.component.md"
         ]
-      }
+      },
+      "category": "action"
     },
     {
       "componentType": "crt.ComboBox",
@@ -593,7 +595,1936 @@
         "docs": [
           "docs/combobox.component.md"
         ]
-      }
+      },
+      "category": "data-input"
+    },
+    {
+      "componentType": "crt.CommunicationOptions",
+      "inputs": {
+        "columnsCount": {
+          "type": "number"
+        },
+        "defaultOptionConfig": {
+          "type": "unknown"
+        },
+        "displayFormatColumnName": {
+          "type": "string"
+        },
+        "items": {
+          "type": "BaseViewModelCollection"
+        },
+        "labelPosition": {
+          "type": "LabelPositionType<DisplayLabelPositionType>",
+          "default": "auto",
+          "values": [
+            "left",
+            "right",
+            "above",
+            "hidden",
+            "auto"
+          ]
+        },
+        "masterRecordColumnName": {
+          "type": "string"
+        },
+        "masterRecordColumnValue": {
+          "type": "string"
+        },
+        "numberColumnName": {
+          "type": "string"
+        },
+        "optionActions": {
+          "type": "array",
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "primaryColumnName": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": false
+        },
+        "showNoDataPlaceholder": {
+          "type": "boolean",
+          "default": true
+        },
+        "templates": {
+          "type": "unknown",
+          "default": {}
+        },
+        "typeColumnName": {
+          "type": "string"
+        }
+      },
+      "description": "Communication options panel displaying phone, email, and social media contact details with inline editing.",
+      "references": {
+        "docs": [
+          "docs/communication-options.component.md"
+        ]
+      },
+      "category": "communication",
+      "synonyms": [
+        "communication",
+        "contact options",
+        "phone and email",
+        "communication channels"
+      ],
+      "useCases": [
+        "Display and edit a contact's communication channels (phone, email, web, social)"
+      ],
+      "whenToUse": "Use on Contact/Account pages to manage communication channels (phone, email, web, social).",
+      "whenNotToUse": "Cannot be used on custom entities — it is bound to the built-in Contact/Account communication model.",
+      "appliesToCustomEntities": false,
+      "entityCouplingNote": "Bound to the built-in Contact/Account communication model; not available on custom entities."
+    },
+    {
+      "componentType": "crt.DataGrid",
+      "inputs": {
+        "activeRow": {
+          "type": "unknown"
+        },
+        "bulkActions": {
+          "type": "array",
+          "default": [],
+          "description": "Mass-action menu items shown when one or more rows are selected (requires `features.rows.selection.multiple: true`). Each item is a `CrtMenuItemViewElementConfig` with a `clicked` request binding receiving the selected rows.",
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "DataGridColumnDefinition"
+          }
+        },
+        "editingCells": {
+          "type": "array",
+          "items": {
+            "type": "DataGridCell"
+          }
+        },
+        "features": {
+          "type": "Partial<DataGridFeatures>",
+          "default": {
+            "hierarchical": {
+              "enable": true
+            }
+          },
+          "description": "Feature toggles controlling editing, selection, header, columns and hierarchy. Shape: `{ rows?: { numeration?, selection? }, editable?: { enable?, itemsCreation?, floatingEditPanel? }, columns?: { adding?, dragAndDrop?, resizing?, sorting? }, header?: { visible? }, hierarchical?: { enable? } }`. Omitted branches inherit framework defaults."
+        },
+        "fitContent": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true the grid hugs its content width; when false it fills the available width of the parent container."
+        },
+        "header": {
+          "type": "DataGridHeaderDefinition",
+          "default": {
+            "sticky": true
+          }
+        },
+        "headerToolbarItems": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "hierarchicalAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalChildrenCountAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalHasChildrenAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalRowsState": {
+          "type": "HierarchyStateCollapsed | HierarchyStateExpanded"
+        },
+        "items": {
+          "type": "DataItem[] | BaseViewModelCollection"
+        },
+        "maxHeight": {
+          "type": "string"
+        },
+        "primaryColumnName": {
+          "type": "string"
+        },
+        "rowToolbarItems": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "selectedRows": {
+          "type": "array",
+          "deprecated": true,
+          "deprecationReason": "Use `selectionState` input instead.",
+          "items": {
+            "type": "unknown"
+          }
+        },
+        "selectionState": {
+          "type": "DataGridRowsSelectionState"
+        },
+        "sorting": {
+          "type": "array",
+          "items": {
+            "type": "DataTableSortingConfig"
+          }
+        },
+        "stretch": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true the grid stretches to fill the parent container's available height; otherwise it sizes to its content."
+        },
+        "style": {
+          "type": "string",
+          "default": "plain-white",
+          "values": [
+            "plain-white",
+            "glassmorphism"
+          ],
+          "description": "Visual style of the grid. `plain-white` is the default flat look; `glass-effect` enables glassmorphism and switches toolbar buttons to a light variant."
+        },
+        "title": {
+          "type": "string"
+        },
+        "totalItemsCount": {
+          "type": "number"
+        }
+      },
+      "outputs": {
+        "activeRowChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user activates a different row (typically single-click). Payload is the row's primary key."
+        },
+        "cancelItemsChanges": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user discards pending inline edits. Payload is the list of changed records being reverted."
+        },
+        "columnsChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user edits the column set (add/remove/reorder via the column toolbar). Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the updated column definitions."
+        },
+        "createItem": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when a new inline row is created (requires `features.editable.itemsCreation: true`). Payload describes the new row position."
+        },
+        "deleteItem": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user deletes a row via the row toolbar."
+        },
+        "hierarchicalRowsStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the overall hierarchy expand/collapse state changes. Payload is the full `HierarchyState`."
+        },
+        "hierarchicalRowStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when a single hierarchical row is expanded or collapsed (requires `features.hierarchical.enable: true`)."
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user scrolls to load the next page. Payload includes `rowsOffset` and `pageSize` for the request handler."
+        },
+        "rowDoubleClick": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on row double-click — typically used to open the row's record page. Payload is the `DataTableRowContext` for the clicked row."
+        },
+        "saveItemsChanges": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user commits pending inline edits (requires `features.editable.enable: true`)."
+        },
+        "selectedRowsChange": {
+          "type": "RequestBindingConfig",
+          "deprecated": true,
+          "deprecationReason": "Use `selectionStateChange` output instead."
+        },
+        "selectionStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user changes the selection (checkbox toggles, select-all). Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the full `DataGridRowsSelectionState`."
+        },
+        "sortingChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user changes column sorting via the column toolbar. Payload is the updated sorting config array."
+        }
+      },
+      "description": "Tabular list component for ListPage records and inline grid actions.",
+      "references": {
+        "docs": [
+          "docs/data-grid.component.md"
+        ]
+      },
+      "category": "data-collection",
+      "synonyms": [
+        "table",
+        "grid",
+        "data table",
+        "records table",
+        "spreadsheet"
+      ],
+      "useCases": [
+        "Display records in rows and columns with sorting and selection",
+        "Show a tabular list of entity records"
+      ],
+      "whenToUse": "Use for tabular data with columns, sorting, and row selection.",
+      "whenNotToUse": "Not for image/photo collections (use crt.Gallery) or a simple non-tabular list (use crt.List).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.DateTimePicker",
+      "inputs": {
+        "appearance": {
+          "type": "string",
+          "default": "legacy",
+          "values": [
+            "legacy",
+            "outline"
+          ]
+        },
+        "ariaLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Screen reader label for the field. Falls back to the visible label when empty."
+        },
+        "autofocus": {
+          "type": "boolean",
+          "description": "State of autofocus."
+        },
+        "control": {
+          "type": "FormControl",
+          "description": "Form control that holds the field value. In schemas, bind with `\"$<AttributeName>\"` to link the input to a data source attribute."
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disables user interaction with the input. Bindable as `$Attribute | crt.ToBoolean` for runtime control."
+        },
+        "label": {
+          "type": "string",
+          "default": "",
+          "description": "Field label displayed above or beside the input. Use `#ResourceString(<key>)#` for localized text."
+        },
+        "labelPosition": {
+          "type": "LabelPositionType<DisplayLabelPositionType>",
+          "default": "auto",
+          "values": [
+            "left",
+            "right",
+            "above",
+            "hidden",
+            "auto"
+          ],
+          "description": "Label placement relative to the input. `auto` switches between `left` and `above` based on container width; `hidden` keeps the label for accessibility only."
+        },
+        "mode": {
+          "type": "'auto' | 'portrait' | 'landscape'",
+          "default": "auto",
+          "values": [
+            "auto",
+            "portrait",
+            "landscape"
+          ],
+          "description": "Possible the view that the calendar should be in."
+        },
+        "multiYearSelector": {
+          "type": "boolean",
+          "default": true,
+          "description": "State of active multiyear view when click on year."
+        },
+        "pickerType": {
+          "type": "string",
+          "default": "datetime",
+          "values": [
+            "date",
+            "datetime",
+            "time"
+          ],
+          "description": "Possible picker types for crt-picker component."
+        },
+        "pickerViewMode": {
+          "type": "string",
+          "default": "calendar-clock",
+          "values": [
+            "calendar-clock",
+            "calendar-list"
+          ],
+          "description": "Picker view mode."
+        },
+        "placeholder": {
+          "type": "string",
+          "default": "",
+          "description": "Placeholder text shown inside the empty input."
+        },
+        "preventSameDateTimeSelection": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prevent user to select same date time."
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true the date/time picker is locked from user interaction. Bindable as `$Attribute | crt.ToBoolean` for runtime control."
+        },
+        "startView": {
+          "type": "'month' | 'year' | 'clock' | 'multi-year'",
+          "default": "month",
+          "values": [
+            "month",
+            "year",
+            "clock",
+            "multi-year"
+          ],
+          "description": "Possible the view that the calendar should start in."
+        },
+        "timeInterval": {
+          "type": "number",
+          "default": 1,
+          "description": "Time interval."
+        },
+        "timeSelectionInterval": {
+          "type": "number",
+          "default": 15,
+          "description": "Time selection interval used by list-based picker view."
+        },
+        "tooltip": {
+          "type": "string",
+          "default": "",
+          "description": "Tooltip text shown on hover next to the label."
+        },
+        "useSeconds": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enables showing seconds."
+        },
+        "useTwelveHourFormat": {
+          "type": "boolean",
+          "description": "Sets state of using twelve-hour format."
+        },
+        "value": {
+          "type": "string",
+          "description": "Sets value to control."
+        }
+      },
+      "outputs": {
+        "blurred": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input loses focus."
+        },
+        "focused": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input gains focus."
+        },
+        "keyDown": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keydown` over the input. Same request-binding shape as `keyUp`; useful for capturing Enter/Escape before the value changes."
+        },
+        "keyUp": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keyup` over the input. Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the `KeyboardEvent`."
+        }
+      },
+      "description": "Date, time, or datetime picker bound to a page attribute.",
+      "references": {
+        "docs": [
+          "docs/datetimepicker.component.md"
+        ]
+      },
+      "category": "data-input"
+    },
+    {
+      "componentType": "crt.FileList",
+      "inputs": {
+        "activeRow": {
+          "type": "unknown"
+        },
+        "bulkActions": {
+          "type": "array",
+          "default": [],
+          "description": "Mass-action menu items shown when one or more rows are selected (requires `features.rows.selection.multiple: true`). Each item is a `CrtMenuItemViewElementConfig` with a `clicked` request binding receiving the selected rows.",
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "DataGridColumnDefinition"
+          }
+        },
+        "droppable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Toggle that enables the drag-and-drop zone for file uploads. Pair with the `fileDropped` action to handle dropped files."
+        },
+        "editingCells": {
+          "type": "array",
+          "items": {
+            "type": "DataGridCell"
+          }
+        },
+        "features": {
+          "type": "unknown"
+        },
+        "fileGroups": {
+          "type": "array",
+          "description": "File category filter. Restricts the visible attachments to specific groups (e.g. `[FileGroupEnum.Attachments]`).",
+          "items": {
+            "type": "FileGroupEnum | string"
+          }
+        },
+        "fitContent": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true the grid hugs its content width; when false it fills the available width of the parent container."
+        },
+        "galleryItemConfig": {
+          "type": "GalleryItemConfig"
+        },
+        "header": {
+          "type": "DataGridHeaderDefinition",
+          "default": {
+            "sticky": true
+          }
+        },
+        "headerToolbarItems": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "hierarchicalAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalChildrenCountAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalHasChildrenAttributeName": {
+          "type": "string"
+        },
+        "hierarchicalRowsState": {
+          "type": "HierarchyStateCollapsed | HierarchyStateExpanded"
+        },
+        "items": {
+          "type": "BaseViewModelCollection"
+        },
+        "masterRecordColumnValue": {
+          "type": "string",
+          "description": "Identifier of the parent record. Typically bound as `\"$Id\"` so the file list shows attachments for the page's master record."
+        },
+        "maxHeight": {
+          "type": "string"
+        },
+        "primaryColumnName": {
+          "type": "string"
+        },
+        "recordColumnName": {
+          "type": "string",
+          "description": "Name of the column on the file entity that references the parent record (e.g. `\"RecordId\"`)."
+        },
+        "rowToolbarItems": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "selectedRows": {
+          "type": "array",
+          "deprecated": true,
+          "deprecationReason": "Use `selectionState` input instead.",
+          "items": {
+            "type": "unknown"
+          }
+        },
+        "selectionState": {
+          "type": "DataGridRowsSelectionState"
+        },
+        "sorting": {
+          "type": "array",
+          "items": {
+            "type": "DataTableSortingConfig"
+          }
+        },
+        "stretch": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true the grid stretches to fill the parent container's available height; otherwise it sizes to its content."
+        },
+        "style": {
+          "type": "string",
+          "default": "plain-white",
+          "values": [
+            "plain-white",
+            "glassmorphism"
+          ],
+          "description": "Visual style of the grid. `plain-white` is the default flat look; `glass-effect` enables glassmorphism and switches toolbar buttons to a light variant."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Tag string used to filter files by a custom category. Empty value disables tag filtering."
+        },
+        "title": {
+          "type": "string"
+        },
+        "totalItemsCount": {
+          "type": "number"
+        },
+        "viewType": {
+          "type": "string",
+          "default": "list",
+          "values": [
+            "list",
+            "gallery"
+          ],
+          "description": "Layout mode for the file list. `list` renders a data grid; `gallery` renders preview tiles."
+        }
+      },
+      "outputs": {
+        "activeRowChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user activates a different row (typically single-click). Payload is the row's primary key."
+        },
+        "cancelItemsChanges": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user discards pending inline edits. Payload is the list of changed records being reverted."
+        },
+        "columnsChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user edits the column set (add/remove/reorder via the column toolbar). Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the updated column definitions."
+        },
+        "createItem": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when a new inline row is created (requires `features.editable.itemsCreation: true`). Payload describes the new row position."
+        },
+        "deleteItem": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user deletes a row via the row toolbar."
+        },
+        "fileDropped": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when files are dropped onto the drop zone (requires `droppable: true`). The payload `{ files }` carries the dropped `File[]`."
+        },
+        "hierarchicalRowsStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the overall hierarchy expand/collapse state changes. Payload is the full `HierarchyState`."
+        },
+        "hierarchicalRowStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when a single hierarchical row is expanded or collapsed (requires `features.hierarchical.enable: true`)."
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user scrolls to load the next page. Payload includes `rowsOffset` and `pageSize` for the request handler."
+        },
+        "rowDoubleClick": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on row double-click — typically used to open the row's record page. Payload is the `DataTableRowContext` for the clicked row."
+        },
+        "saveItemsChanges": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user commits pending inline edits (requires `features.editable.enable: true`)."
+        },
+        "selectedRowsChange": {
+          "type": "RequestBindingConfig",
+          "deprecated": true,
+          "deprecationReason": "Use `selectionStateChange` output instead."
+        },
+        "selectionStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user changes the selection (checkbox toggles, select-all). Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the full `DataGridRowsSelectionState`."
+        },
+        "sortingChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user changes column sorting via the column toolbar. Payload is the updated sorting config array."
+        },
+        "uploadClicked": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user clicks the upload button. Configure as `{ request: '<RequestType>', params?: {...} }` (typically `crt.UploadFileRequest`) to open the file picker."
+        }
+      },
+      "description": "File/attachment list component with drag-and-drop upload, gallery/list view modes, and file grouping. Extends DataGrid.",
+      "references": {
+        "typeDefinitions": {
+          "FileGroupEnum": {
+            "values": [
+              "efbf3a0d-d780-465a-8e4b-8c0765197cfb"
+            ],
+            "type": "string"
+          }
+        },
+        "docs": [
+          "docs/file-list.component.md"
+        ]
+      },
+      "category": "media",
+      "synonyms": [
+        "files",
+        "attachments",
+        "documents list",
+        "file attachments"
+      ],
+      "useCases": [
+        "Display and manage a list of file attachments on a record"
+      ],
+      "whenToUse": "Use to list and manage file attachments (documents) on a record.",
+      "whenNotToUse": "Not for displaying images as a visual gallery (use crt.Gallery) or a single image (use crt.ImageInput).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.FlexContainer",
+      "inputs": {
+        "alignItems": {
+          "type": "string",
+          "default": "stretch",
+          "values": [
+            "flex-start",
+            "flex-end",
+            "center",
+            "stretch",
+            "baseline"
+          ],
+          "description": "Alignment of children along the cross axis (perpendicular to `direction`). `'stretch'` makes each child fill the cross axis; the other values anchor them."
+        },
+        "borderRadius": {
+          "type": "SizeEnum | number | string",
+          "default": "none"
+        },
+        "color": {
+          "type": "string",
+          "default": "transparent"
+        },
+        "direction": {
+          "type": "string",
+          "default": "row",
+          "values": [
+            "column",
+            "row",
+            "column-reverse",
+            "row-reverse"
+          ],
+          "description": "Flow direction of the children — `'row'` lays them out horizontally, `'column'` vertically. The `-reverse` variants flip the order."
+        },
+        "elementResponsiveWidth": {
+          "type": "number",
+          "default": 0
+        },
+        "fitContent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Layout toggle that shrinks the container to fit its children. When `false`, the container reserves its full grid-cell area."
+        },
+        "gap": {
+          "type": "number | SizeEnum",
+          "default": "small",
+          "description": "Spacing between adjacent children. Accepts a `SizeEnum` keyword (`none`/`xs`/`small`/`medium`/`large`/`xl`/`xxl`) or a raw pixel `number`."
+        },
+        "items": {
+          "type": "ContainerViewElements",
+          "default": [],
+          "description": "Child view elements rendered inside this container."
+        },
+        "justifyContent": {
+          "type": "string",
+          "default": "start",
+          "values": [
+            "center",
+            "start",
+            "end",
+            "baseline",
+            "space-between",
+            "space-around",
+            "space-evenly",
+            "stretch"
+          ],
+          "description": "Distribution of children along the main axis. `'start'`/`'end'`/`'center'` cluster them; the `'space-*'` values spread them out with equal gutters; `'stretch'` makes them fill the axis."
+        },
+        "padding": {
+          "type": "ContainerPadding | SizeEnum | string | number",
+          "default": {
+            "top": "none",
+            "right": "none",
+            "bottom": "none",
+            "left": "none"
+          },
+          "description": "Container padding. Accepts a single size keyword (`none`/`xs`/`s`/`m`/`l`/`xl`/`xxl`/`small`/`medium`/`large`) or a per-side object `{ top, bottom, left, right }`."
+        },
+        "responsiveWidth": {
+          "type": "unknown"
+        },
+        "role": {
+          "type": "string",
+          "description": "ARIA `role` attribute applied to the container element. Set only when the container plays a semantic role for assistive tech (e.g. `'toolbar'`, `'navigation'`); leave unset otherwise."
+        },
+        "stretch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Layout toggle that lets the container fill the available width/height of its parent grid cell. When `false`, the container keeps its intrinsic size."
+        },
+        "visiblePadding": {
+          "type": "boolean",
+          "default": true
+        },
+        "wrap": {
+          "type": "string",
+          "values": [
+            "nowrap",
+            "wrap",
+            "wrap-reverse"
+          ],
+          "description": "Wrap behavior when children overflow the main axis. `'wrap'` lets them flow onto new lines; `'nowrap'` keeps them on one line and lets the container scroll instead."
+        }
+      },
+      "outputs": {
+        "innerScroll": {
+          "type": "RequestBindingConfig",
+          "description": "Fired when the user scrolls inside the container (when content overflows). Configure as `{ request: '<RequestType>', params?: {...} }` to bind to a request handler; without a `request` the scroll event is observed but no handler runs."
+        }
+      },
+      "description": "Flexbox layout container for vertical or horizontal grouping of child elements.",
+      "references": {
+        "docs": [
+          "docs/flex-container.component.md"
+        ]
+      },
+      "category": "layout-container"
+    },
+    {
+      "componentType": "crt.Gallery",
+      "inputs": {
+        "ariaLabel": {
+          "type": "string",
+          "default": "gallery",
+          "description": "Accessibility label announced by screen readers."
+        },
+        "bulkActions": {
+          "type": "array",
+          "description": "Dropdown actions shown when one or more items are selected. Each item is a `CrtMenuItemViewElementConfig` with a `clicked` request binding.",
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "itemConfig": {
+          "type": "TConfig",
+          "default": {},
+          "description": "Per-item template/binding config (`templateValuesMapping` for caption/description/image column names, `referenceSchema`, `defaultSize`). Most schemas leave it empty and rely on framework defaults."
+        },
+        "items": {
+          "type": "DataItem[] | BaseViewModelCollection",
+          "description": "Source records to render. Bind via `\"$<Attr>\"` to a collection attribute (e.g., the data source's `Items` exposed attribute)."
+        },
+        "itemStyles": {
+          "type": "Record",
+          "description": "Inline style object applied to every item wrapper (e.g., `{ background: '...' }`).",
+          "keyType": "string",
+          "valueType": "string | number"
+        },
+        "mode": {
+          "type": "string",
+          "default": "component-type",
+          "values": [
+            "view-element-config",
+            "component-type"
+          ],
+          "description": "Item rendering strategy. `component-type` uses a registered view-element type; `view-element-config` renders an inline config provided per item."
+        },
+        "multiselect": {
+          "type": "boolean",
+          "description": "Whether multiple items can be selected at once. Switches the gallery from single-select (`selectedItemId`) to multi-select (`selectionState` + `bulkActions`)."
+        },
+        "selectable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether item selection is enabled. When `false`, clicking items does not toggle selection or emit `selectedItemIdChange`."
+        },
+        "selectedItemId": {
+          "type": "string",
+          "default": null,
+          "description": "Currently selected item id (single-select mode). Bind to a data source attribute (`\"$<Attr>\"`) for two-way sync with `selectedItemIdChange`."
+        },
+        "selectionState": {
+          "type": "AllSelectionState | SpecificSelectionState",
+          "description": "Multi-select state (`{ type: 'specific', selected: Guid[] }` or `{ type: 'all', unselected: Guid[] }`). Bind via `\"$<Attr>\"` to round-trip with `selectionStateChange`. `type: 'all'` is coerced to a `'specific'` empty selection at runtime."
+        }
+      },
+      "outputs": {
+        "itemClick": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when an item is clicked. Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the clicked `DataItemModel`."
+        },
+        "itemDblClick": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when an item is double-clicked (commonly used to open a record). Same request-binding shape as `itemClick`."
+        },
+        "itemEvent": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when an item emits a custom inner event (e.g., a button inside the item template). Payload includes the event and the item."
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the last item enters the viewport (infinite-scroll trigger). Bind to a request that loads the next page."
+        },
+        "selectedItemIdChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the selected id changes in single-select mode. Pair with `selectedItemId` for two-way binding."
+        },
+        "selectionStateChange": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the multi-select state changes. Pair with `selectionState` for two-way binding."
+        }
+      },
+      "description": "Gallery list component with selectable cards, pagination events, and bulk menu actions.",
+      "references": {
+        "typeDefinitions": {
+          "AllSelectionState": {
+            "fields": {
+              "type": {
+                "type": "string",
+                "values": [
+                  "all"
+                ],
+                "required": true
+              },
+              "unselected": {
+                "type": "array",
+                "items": {
+                  "type": "unknown"
+                },
+                "required": true
+              }
+            }
+          },
+          "SpecificSelectionState": {
+            "fields": {
+              "selected": {
+                "type": "array",
+                "items": {
+                  "type": "unknown"
+                },
+                "required": true
+              },
+              "type": {
+                "type": "string",
+                "values": [
+                  "specific"
+                ],
+                "required": true
+              }
+            }
+          }
+        },
+        "docs": [
+          "docs/gallery.component.md"
+        ]
+      },
+      "category": "media",
+      "synonyms": [
+        "photo grid",
+        "image gallery",
+        "picture gallery",
+        "image carousel",
+        "thumbnails",
+        "media gallery",
+        "photo collection"
+      ],
+      "useCases": [
+        "Display a collection of images or photos as browsable preview cards",
+        "Show a visual catalog of pictures the user can browse and select",
+        "Present uploaded media as a browsable gallery"
+      ],
+      "whenToUse": "Use to display a collection of images/photos as browsable preview cards — the right choice for any image-gallery or photo-grid prompt.",
+      "whenNotToUse": "Not for tabular records with columns (use crt.DataGrid) or a single image field (use crt.ImageInput).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.ImageInput",
+      "inputs": {
+        "alt": {
+          "type": "string",
+          "description": "Accessibility `alt` text for the rendered image."
+        },
+        "appearance": {
+          "type": "string",
+          "default": "legacy",
+          "values": [
+            "legacy",
+            "outline"
+          ]
+        },
+        "ariaLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Screen reader label for the field. Falls back to the visible label when empty."
+        },
+        "autocomplete": {
+          "type": "string",
+          "default": "none"
+        },
+        "autofocus": {
+          "type": "boolean",
+          "default": false
+        },
+        "borderRadius": {
+          "type": "SizeEnum | number | string",
+          "default": "medium",
+          "description": "Corner rounding. Accepts a `SizeEnum` token (`small`/`medium`/`large`/`extra-large`), a number (px), or any CSS length string (e.g., `'50%'` for a circle)."
+        },
+        "colorId": {
+          "type": "Guid",
+          "description": "Seed used by `placeholderMode: 'abbreviation'` to pick a stable background color. Bind to a record id to keep the color consistent per contact/account."
+        },
+        "control": {
+          "type": "FormControl",
+          "description": "Form control that holds the field value. In schemas, bind with `\"$<AttributeName>\"` to link the input to a data source attribute."
+        },
+        "customBorderWidth": {
+          "type": "string"
+        },
+        "customHeight": {
+          "type": "string"
+        },
+        "customWidth": {
+          "type": "string"
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disables user interaction with the input. Bindable as `$Attribute | crt.ToBoolean` for runtime control."
+        },
+        "displayTools": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "unknown"
+        },
+        "inputType": {
+          "type": "string",
+          "default": "text"
+        },
+        "isFocused": {
+          "type": "boolean",
+          "default": false
+        },
+        "label": {
+          "type": "string",
+          "default": "",
+          "description": "Field label displayed above or beside the input. Use `#ResourceString(<key>)#` for localized text."
+        },
+        "labelPosition": {
+          "type": "LabelPositionType<DisplayLabelPositionType>",
+          "default": "auto",
+          "values": [
+            "left",
+            "right",
+            "above",
+            "hidden",
+            "auto"
+          ],
+          "description": "Label placement relative to the input. `auto` switches between `left` and `above` based on container width; `hidden` keeps the label for accessibility only."
+        },
+        "mask": {
+          "type": "InputMaskConfig"
+        },
+        "maxFileSize": {
+          "type": "number",
+          "description": "Maximum upload size in bytes. Forwarded as `maxFileSize` on the `imageSelected` payload; the system setting `MaxImageSize` is shown as a placeholder default."
+        },
+        "multiline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the input renders as a multi-line textarea. Disabled for email/url data types via the data source attribute."
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "Icon name or abbreviation seed shown when no image is loaded. For `'abbreviation'` `placeholderMode`, seeds initials and background color; for `'icon'` mode, names the icon to display."
+        },
+        "placeholderMode": {
+          "type": "string",
+          "values": [
+            "abbreviation",
+            "icon"
+          ],
+          "description": "Placeholder style when no image is set. `abbreviation` shows initials from `placeholder` over a contact-style color; `icon` shows the icon named by `placeholder`."
+        },
+        "positioning": {
+          "type": "string",
+          "default": "cover",
+          "values": [
+            "cover",
+            "scale-down"
+          ],
+          "description": "Image fit inside the frame (CSS `object-fit`). `cover` crops to fill; `scale-down` shrinks to fit without cropping."
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Editability toggle. When `true`, the field renders as non-editable; pair with `disabled` to also dim the styling."
+        },
+        "size": {
+          "type": "string",
+          "default": "large",
+          "values": [
+            "none",
+            "default",
+            "extra-small",
+            "small",
+            "medium",
+            "large",
+            "extra-large",
+            "xxl",
+            "xxxl"
+          ],
+          "description": "Image frame size preset. Ignored when both `customWidth` and `customHeight` are set."
+        },
+        "tooltip": {
+          "type": "string",
+          "description": "Tooltip text shown on hover next to the label."
+        },
+        "value": {
+          "type": "string | SafeResourceUrl",
+          "description": "Bound view-model attribute (e.g. `'$PDS_Photo'`) or empty string for unbound. Prefer this property over `control` for image fields."
+        },
+        "valueValidationInfo": {
+          "type": "CrtValidationInfo"
+        }
+      },
+      "outputs": {
+        "blurred": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input loses focus."
+        },
+        "focused": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input gains focus."
+        },
+        "imageClear": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user clears the current image. Bind to a request that clears the stored value."
+        },
+        "imageSelected": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the user picks a file. Payload: `{ file, maxFileSize }`. Configure as `{ request: '<RequestType>', params?: {...} }` to upload the file via a handler."
+        },
+        "keyDown": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keydown` over the input. Same request-binding shape as `keyUp`; useful for capturing Enter/Escape before the value changes."
+        },
+        "keyUp": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keyup` over the input. Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the `KeyboardEvent`."
+        }
+      },
+      "description": "Image uploader and preview control. Binds through the value property, not control.",
+      "references": {
+        "typeDefinitions": {
+          "SafeResourceUrl": {
+            "external": true,
+            "module": "@angular/platform-browser"
+          }
+        },
+        "docs": [
+          "docs/image-input.component.md"
+        ]
+      },
+      "category": "media",
+      "synonyms": [
+        "image",
+        "photo",
+        "picture",
+        "avatar",
+        "single image",
+        "image upload"
+      ],
+      "useCases": [
+        "Upload or display a single image such as an avatar, logo, or cover"
+      ],
+      "whenToUse": "Use for a single image field — upload/display one picture (avatar, logo, cover).",
+      "whenNotToUse": "Not for a collection of images (use crt.Gallery).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.Input",
+      "inputs": {
+        "appearance": {
+          "type": "string",
+          "default": "legacy",
+          "values": [
+            "legacy",
+            "outline"
+          ]
+        },
+        "ariaLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Screen reader label for the field. Falls back to the visible label when empty."
+        },
+        "autocomplete": {
+          "type": "string",
+          "default": "none"
+        },
+        "autofocus": {
+          "type": "boolean",
+          "default": false
+        },
+        "control": {
+          "type": "FormControl",
+          "default": "",
+          "description": "Form control that holds the field value. In schemas, bind with `\"$<AttributeName>\"` to link the input to a data source attribute."
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disables user interaction with the input. Bindable as `$Attribute | crt.ToBoolean` for runtime control."
+        },
+        "displayTools": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "unknown"
+        },
+        "inputType": {
+          "type": "string",
+          "default": "text"
+        },
+        "label": {
+          "type": "string",
+          "default": "",
+          "description": "Field label displayed above or beside the input. Use `#ResourceString(<key>)#` for localized text."
+        },
+        "labelPosition": {
+          "type": "LabelPositionType<DisplayLabelPositionType>",
+          "default": "auto",
+          "values": [
+            "left",
+            "right",
+            "above",
+            "hidden",
+            "auto"
+          ],
+          "description": "Label placement relative to the input. `auto` switches between `left` and `above` based on container width; `hidden` keeps the label for accessibility only."
+        },
+        "mask": {
+          "type": "InputMaskConfig"
+        },
+        "multiline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the input renders as a multi-line textarea. Disabled for email/url data types via the data source attribute."
+        },
+        "placeholder": {
+          "type": "string",
+          "default": "",
+          "description": "Placeholder text shown inside the empty input."
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Editability toggle. When `true`, the field renders as non-editable; pair with `disabled` to also dim the styling."
+        },
+        "tooltip": {
+          "type": "string",
+          "default": "",
+          "description": "Tooltip text shown on hover next to the label."
+        },
+        "value": {
+          "type": "TValue",
+          "description": "Current input value. Setting this updates the bound `control`; prefer binding `control` via the data source attribute and read this for one-way reads."
+        }
+      },
+      "outputs": {
+        "blurred": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input loses focus."
+        },
+        "focused": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input gains focus."
+        },
+        "keyDown": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keydown` over the input. Same request-binding shape as `keyUp`; useful for capturing Enter/Escape before the value changes."
+        },
+        "keyUp": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keyup` over the input. Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the `KeyboardEvent`."
+        }
+      },
+      "description": "Generic text input for short, medium, or multiline text values.",
+      "references": {
+        "docs": [
+          "docs/input.component.md"
+        ]
+      },
+      "category": "data-input"
+    },
+    {
+      "componentType": "crt.Label",
+      "inputs": {
+        "caption": {
+          "type": "string",
+          "default": "",
+          "description": "Label text shown to the user. Use `#ResourceString(<key>)#` for localized values; numeric `0` is coerced to the string `\"0\"`, all other falsy values render as empty."
+        },
+        "headingLevel": {
+          "type": "string",
+          "default": "label",
+          "values": [
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "label"
+          ],
+          "description": "Semantic HTML tag the label renders as (`h1`-`h4` for document outline, `label` for form association). Affects accessibility and DOM, not visual style — use `labelType` for typography."
+        },
+        "labelBackgroundColor": {
+          "type": "string",
+          "default": "transparent",
+          "description": "Background color behind the label. Accepts a CSS color, a theme token, or `\"transparent\"` to disable the fill."
+        },
+        "labelColor": {
+          "type": "string",
+          "default": "auto",
+          "description": "Font color. Accepts a CSS color or a Creatio theme color token (e.g. `\"auto\"`, `\"primary-color-1\"`)."
+        },
+        "labelElementType": {
+          "type": "string",
+          "values": [
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "label"
+          ],
+          "deprecated": true,
+          "deprecationReason": "Use headingLevel instead."
+        },
+        "labelEllipsis": {
+          "type": "boolean",
+          "default": false,
+          "description": "When `true`, clips overflowing text with an ellipsis rather than wrapping to a new line."
+        },
+        "labelFontFamily": {
+          "type": "string"
+        },
+        "labelFontSize": {
+          "type": "string"
+        },
+        "labelHeight": {
+          "type": "string"
+        },
+        "labelLetterSpacing": {
+          "type": "string"
+        },
+        "labelLineHeight": {
+          "type": "string"
+        },
+        "labelMargin": {
+          "type": "string"
+        },
+        "labelStyle": {
+          "type": "Record",
+          "default": {},
+          "keyType": "string",
+          "valueType": "string | number"
+        },
+        "labelTextAlign": {
+          "type": "string",
+          "default": "start",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "justify",
+            "inherit"
+          ],
+          "description": "Horizontal text alignment within the label's box."
+        },
+        "labelTextTransform": {
+          "type": "string",
+          "values": [
+            "capitalize",
+            "lowercase",
+            "uppercase",
+            "none",
+            "inherit"
+          ]
+        },
+        "labelThickness": {
+          "type": "string",
+          "default": "default",
+          "values": [
+            "light",
+            "normal",
+            "semibold",
+            "bold",
+            "default"
+          ],
+          "description": "Font weight applied on top of `labelType`. `default` keeps the preset's intrinsic weight."
+        },
+        "labelType": {
+          "type": "string",
+          "default": "headline-1",
+          "values": [
+            "large-1",
+            "large-2",
+            "large-3",
+            "large-4",
+            "headline-1",
+            "headline-1-small",
+            "headline-2",
+            "headline-3",
+            "headline-4",
+            "body-large",
+            "body",
+            "caption-large",
+            "caption",
+            "placeholder-large",
+            "placeholder",
+            "button",
+            "button-small",
+            "blankslate"
+          ],
+          "description": "Typography preset. Sets the label's font scale and weight family (headlines, body, caption, button, etc.)."
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "description": "Read-only text label for headings, captions, and inline explanatory copy.",
+      "references": {
+        "docs": [
+          "docs/label.component.md"
+        ]
+      },
+      "category": "text-display"
+    },
+    {
+      "componentType": "crt.List",
+      "inputs": {},
+      "category": "data-collection",
+      "synonyms": [
+        "list",
+        "record list",
+        "item list",
+        "simple list"
+      ],
+      "useCases": [
+        "Display records as a simple vertical list without grid columns"
+      ],
+      "whenToUse": "Use for a simple vertical list of records without tabular columns.",
+      "whenNotToUse": "Not for columnar/tabular data (use crt.DataGrid) or images (use crt.Gallery).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.Menu",
+      "inputs": {
+        "context": {
+          "type": "BaseViewModel",
+          "description": "View model passed as context to menu items that conditionally show/disable based on row data."
+        },
+        "items": {
+          "type": "array",
+          "default": [],
+          "description": "Menu items as view element config.",
+          "items": {
+            "type": "CrtMenuItemViewElementConfig"
+          }
+        },
+        "menuItems": {
+          "type": "array",
+          "deprecated": true,
+          "deprecationReason": "Use property . Will be removed in https://creatio.atlassian.net/browse/RND-21872",
+          "items": {
+            "type": "BaseMenuItem"
+          }
+        },
+        "panelClass": {
+          "type": "string",
+          "description": "CSS class(es) added to the dropdown panel element (space-delimited string)."
+        },
+        "stopOverlayClickPropagation": {
+          "type": "boolean",
+          "default": false,
+          "description": "When `true`, clicks on the CDK overlay backdrop are stopped from propagating to the page. Use inside modals or overlays to prevent unintended close-on-outside-click behavior."
+        },
+        "useGlassmorphism": {
+          "type": "boolean",
+          "default": false,
+          "description": "Applies a blurred glass-effect style to the dropdown panel backdrop."
+        },
+        "xPosition": {
+          "type": "string",
+          "default": "after",
+          "values": [
+            "before",
+            "after"
+          ],
+          "description": "Horizontal alignment of the dropdown panel relative to its trigger: `\"before\"` or `\"after\"`."
+        },
+        "yPosition": {
+          "type": "string",
+          "default": "below",
+          "values": [
+            "above",
+            "below"
+          ],
+          "description": "Vertical placement of the dropdown panel relative to its trigger: `\"above\"` or `\"below\"`."
+        }
+      },
+      "description": "Dropdown/context menu container used for both desktop (Freedom UI) and mobile pages. Holds `crt.MenuItem` entries provided via the `items` input and can be triggered programmatically or embedded inside a `crt.Button` via `menuItems`. Supports nested sub-menus, glassmorphism backdrop, and configurable open position.",
+      "references": {
+        "docs": [
+          "docs/menu.component.md"
+        ]
+      },
+      "category": "navigation"
+    },
+    {
+      "componentType": "crt.MultiList",
+      "inputs": {
+        "currentPage": {
+          "type": "number",
+          "description": "Current page index used for paging operations."
+        },
+        "isCombinedMode": {
+          "type": "boolean",
+          "description": "Indicates whether the list is displayed in a combined layout mode."
+        },
+        "isSearchDisabled": {
+          "type": "boolean",
+          "description": "Disables the search input when `true`."
+        },
+        "itemsList": {
+          "type": "BaseViewModelCollection",
+          "description": "Collection of ViewModel items displayed by the list. Overrides the mixin's itemsList and exposes it as an Angular input."
+        },
+        "noDataPlaceholder": {
+          "type": "MultiListPlaceholderConfig",
+          "description": "Placeholder configuration for the multi-list component when no data is available."
+        },
+        "searchDisableFeatureName": {
+          "type": "string",
+          "description": "Feature flag name; when the flag is enabled, the search input is hidden."
+        },
+        "searchFilter": {
+          "type": "string",
+          "description": "Current search query used to filter list items."
+        },
+        "selectedItemId": {
+          "type": "string",
+          "description": "ID of the currently selected list item."
+        },
+        "showNoDataBlankState": {
+          "type": "boolean",
+          "default": true,
+          "description": "Indicates whether to show the \"no data\" blank state when the list is empty."
+        }
+      },
+      "outputs": {
+        "currentPageChange": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted when the current page index changes."
+        },
+        "itemClicked": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted when a user clicks a list item."
+        },
+        "itemFocused": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted when a list item receives focus."
+        },
+        "loadData": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted to request loading additional list data."
+        },
+        "searchFilterChange": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted when the search filter value changes."
+        }
+      },
+      "description": "Multi-tab list component with search, paging, combined mode, and selectable items. Used for detail-like tabbed data views.",
+      "references": {
+        "typeDefinitions": {
+          "MultiListPlaceholderConfig": {
+            "fields": {
+              "image": {
+                "type": "PlaceholderIcon | PlaceholderAnimation"
+              },
+              "subhead": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "docs": [
+          "docs/multi-list.component.md"
+        ]
+      },
+      "category": "data-collection",
+      "synonyms": [
+        "multi select list",
+        "multiple selection list",
+        "checklist"
+      ],
+      "useCases": [
+        "Select multiple records from a list"
+      ],
+      "whenToUse": "Use to select multiple records from a list.",
+      "whenNotToUse": "Not for image collections (use crt.Gallery).",
+      "appliesToCustomEntities": true
+    },
+    {
+      "componentType": "crt.NumberInput",
+      "inputs": {
+        "appearance": {
+          "type": "string",
+          "default": "legacy",
+          "values": [
+            "legacy",
+            "outline"
+          ]
+        },
+        "ariaLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Screen reader label for the field. Falls back to the visible label when empty."
+        },
+        "autocomplete": {
+          "type": "string",
+          "default": "none"
+        },
+        "autofocus": {
+          "type": "boolean",
+          "default": false
+        },
+        "control": {
+          "type": "FormControl",
+          "default": "",
+          "description": "Form control that holds the field value. In schemas, bind with `\"$<AttributeName>\"` to link the input to a data source attribute."
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Disables user interaction with the input. Bindable as `$Attribute | crt.ToBoolean` for runtime control."
+        },
+        "format": {
+          "type": "object",
+          "description": "Numeric display format. `decimalPrecision` controls how many fractional digits are rendered (e.g. `{ decimalPrecision: 2 }` → `\"3.14\"`)."
+        },
+        "id": {
+          "type": "unknown"
+        },
+        "label": {
+          "type": "string",
+          "default": "",
+          "description": "Field label displayed above or beside the input. Use `#ResourceString(<key>)#` for localized text."
+        },
+        "labelPosition": {
+          "type": "LabelPositionType<DisplayLabelPositionType>",
+          "default": "auto",
+          "values": [
+            "left",
+            "right",
+            "above",
+            "hidden",
+            "auto"
+          ],
+          "description": "Label placement relative to the input. `auto` switches between `left` and `above` based on container width; `hidden` keeps the label for accessibility only."
+        },
+        "placeholder": {
+          "type": "string",
+          "default": "",
+          "description": "Placeholder text shown inside the empty input."
+        },
+        "readonly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Editability toggle. When `true`, the field renders as non-editable; pair with `disabled` to also dim the styling."
+        },
+        "tooltip": {
+          "type": "string",
+          "default": "",
+          "description": "Tooltip text shown on hover next to the label."
+        },
+        "value": {
+          "type": "TValue",
+          "description": "Current input value. Setting this updates the bound `control`; prefer binding `control` via the data source attribute and read this for one-way reads."
+        }
+      },
+      "outputs": {
+        "blurred": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input loses focus."
+        },
+        "focused": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked when the input gains focus."
+        },
+        "keyDown": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keydown` over the input. Same request-binding shape as `keyUp`; useful for capturing Enter/Escape before the value changes."
+        },
+        "keyUp": {
+          "type": "RequestBindingConfig",
+          "description": "Action invoked on each `keyup` over the input. Configure as `{ request: '<RequestType>', params?: {...} }`; payload is the `KeyboardEvent`."
+        }
+      },
+      "description": "Numeric input for integer, decimal, money, and other number-like values.",
+      "references": {
+        "docs": [
+          "docs/number-input.component.md"
+        ]
+      },
+      "category": "data-input"
+    },
+    {
+      "componentType": "crt.QuickFilter",
+      "inputs": {
+        "config": {
+          "type": "BaseQuickFilterConfig<unknown>",
+          "description": "Chip presentation + filter-type-specific config (`BaseQuickFilterConfig`): `caption` (required, typically `#ResourceString(<name>_config_caption)#`), `hint?`, `icon?`, `iconPosition?`, `defaultValue?`. Each `filterType` extends this — `lookup` adds `entitySchemaName`/`showRecordsInWindows`/`recordsFilter`, `date-range` adds `showFiscalPeriods`/`showTime`, `custom` adds `approachState`."
+        },
+        "filterType": {
+          "type": "string",
+          "values": [
+            "custom",
+            "date-range",
+            "lookup"
+          ],
+          "description": "Filter style variant. Selects which inner control is rendered: `custom` (boolean toggle), `date-range` (date pickers), or `lookup` (entity picker). Required; pair with a matching `config` shape and the `_filterOptions.expose[].converters[0].args[0].quickFilterType`."
+        },
+        "value": {
+          "type": "unknown",
+          "description": "Current chip value (shape varies by `filterType`: boolean for `custom`, date-range object for `date-range`, lookup array for `lookup`). Real pages do NOT bind this directly — the `QuickFilterPreprocessor` exposes it through `_filterOptions.from = \"<name>_Value\"` and routes changes via `crt.QuickFilterAttributeConverter` to the target collection."
+        }
+      },
+      "outputs": {
+        "valueChange": {
+          "type": "RequestBindingConfig",
+          "description": "Event emitted when the chip value changes. Real pages do NOT bind a request to this — the `QuickFilterPreprocessor` routes the new value into `<name>_Value` and the configured `crt.QuickFilterAttributeConverter` propagates it to the target collection's filter attribute."
+        }
+      },
+      "description": "Configurable quick filter component for list pages. Supports lookup, date range, checkbox, and custom filter types.",
+      "references": {
+        "docs": [
+          "docs/quick-filter.component.md"
+        ]
+      },
+      "category": "filter-search"
+    },
+    {
+      "componentType": "crt.TabContainer",
+      "inputs": {
+        "borderRadius": {
+          "type": "SizeEnum | number | string",
+          "default": "none"
+        },
+        "color": {
+          "type": "string",
+          "default": "transparent"
+        },
+        "elementResponsiveWidth": {
+          "type": "number",
+          "default": 0
+        },
+        "fitContent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Layout toggle that shrinks the container to fit its children. When `false`, the container reserves its full grid-cell area."
+        },
+        "items": {
+          "type": "ContainerViewElements",
+          "default": [],
+          "description": "Child view elements rendered inside this container."
+        },
+        "padding": {
+          "type": "ContainerPadding | SizeEnum | string | number",
+          "default": {
+            "top": "none",
+            "right": "none",
+            "bottom": "none",
+            "left": "none"
+          },
+          "description": "Container padding. Accepts a single size keyword (`none`/`xs`/`s`/`m`/`l`/`xl`/`xxl`/`small`/`medium`/`large`) or a per-side object `{ top, bottom, left, right }`."
+        },
+        "responsiveWidth": {
+          "type": "unknown"
+        },
+        "stretch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Layout toggle that lets the container fill the available width/height of its parent grid cell. When `false`, the container keeps its intrinsic size."
+        },
+        "tools": {
+          "type": "ContainerViewElements",
+          "default": [],
+          "description": "Tab-header tools slot: an array of child view elements rendered as action controls next to the tab caption (e.g. `crt.Button`, `crt.Icon`). Typically declared as nested `items` ops in `viewConfigDiff` with `propertyName: \"tools\"`."
+        },
+        "visiblePadding": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "description": "Single tab within a TabPanel. Contains child elements shown when the tab is active.",
+      "references": {
+        "docs": [
+          "docs/tab-container.component.md"
+        ]
+      },
+      "category": "layout-container"
+    },
+    {
+      "componentType": "crt.Timeline",
+      "inputs": {
+        "customFilters": {
+          "type": "ContainerViewElements",
+          "default": [],
+          "description": "Content slot for additional filter view elements rendered alongside the built-in quick filters (date, owner, entity)."
+        },
+        "filterValues": {
+          "type": "array",
+          "description": "Extra filter groups applied per tile schema. Each `TileFilter` targets one entity (`type`) and adds its `filter` to that tile's `FilterGroup`.",
+          "items": {
+            "type": "TileFilter"
+          }
+        },
+        "hideTools": {
+          "type": "boolean",
+          "default": false
+        },
+        "isTileReadOnly": {
+          "type": "boolean",
+          "description": "Read-only toggle that disables inline edits inside individual tiles (e.g. case/email head editors)."
+        },
+        "items": {
+          "type": "unknown",
+          "default": []
+        },
+        "masterEntity": {
+          "type": "LookupValue",
+          "description": "Alternative to `masterSchemaId`: a full `LookupValue` whose `value` is the master record id. Use to bind to a related-entity attribute instead of the page's own `$Id`."
+        },
+        "masterEntitySchemaName": {
+          "type": "string",
+          "description": "Entity schema name of the master record. Auto-derived from the page's primary data source when not set explicitly."
+        },
+        "masterSchemaId": {
+          "type": "string",
+          "default": "$Id",
+          "description": "Record id of the master entity the timeline shows activity for. Typically bound to the page's primary record via `\"$Id\"`."
+        },
+        "quickFilterByOwnerConfig": {
+          "type": "LookupQuickFilterConfig",
+          "description": "Quick-filter dropdown config for the \"filter by owner\" lookup chip. Synthesized at runtime by `TimelinePreprocessor` from a `Contact` entity schema; rarely overridden by hand."
+        },
+        "tools": {
+          "type": "ContainerViewElements",
+          "default": [],
+          "description": "Content slot for action toolbar buttons rendered at the top of the timeline (e.g. add note, refresh)."
+        }
+      },
+      "description": "Timeline component displaying chronological entity activity tiles with filtering and master entity binding.",
+      "references": {
+        "typeDefinitions": {
+          "LookupQuickFilterConfig": {
+            "fields": {
+              "caption": {
+                "type": "string",
+                "required": true
+              },
+              "comboboxViewElementConfig": {
+                "type": "ViewElementConfig"
+              },
+              "defaultValue": {
+                "type": "TValue",
+                "required": true
+              },
+              "entitySchemaName": {
+                "type": "string",
+                "required": true
+              },
+              "hint": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string"
+              },
+              "iconPosition": {
+                "type": "string"
+              },
+              "recordsFilter": {
+                "type": "unknown"
+              },
+              "showRecordsInWindows": {
+                "type": "boolean",
+                "required": true
+              }
+            }
+          },
+          "TileFilter": {
+            "fields": {
+              "filter": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "shape": {
+                    "backwardReferenceFilters": {
+                      "type": "array",
+                      "items": {
+                        "type": "BackwardReferenceFilter"
+                      },
+                      "required": true
+                    },
+                    "filters": {
+                      "type": "( | BooleanComparisonFilter | MathComparisonFilter | StringComparisonFilter | DateComparisonFilter | RelativeDateComparisonFilter | LookupComparisonFilter | IsNullComparisonFilter | IsNotNullComparisonFilter | FilterGroup\n\t)[]",
+                      "required": true
+                    },
+                    "logicalOperation": {
+                      "type": "string",
+                      "values": [
+                        "AND",
+                        "OR"
+                      ],
+                      "required": true
+                    }
+                  }
+                },
+                "required": true
+              },
+              "type": {
+                "type": "string",
+                "required": true
+              }
+            }
+          }
+        },
+        "docs": [
+          "docs/timeline.component.md"
+        ]
+      },
+      "category": "data-collection",
+      "synonyms": [
+        "activity feed",
+        "history",
+        "chronological list",
+        "events timeline"
+      ],
+      "useCases": [
+        "Show records in chronological order as a timeline of events or activities"
+      ],
+      "whenToUse": "Use to show records chronologically as a timeline of activities/events.",
+      "whenNotToUse": "Not for tabular data (use crt.DataGrid).",
+      "appliesToCustomEntities": true
     }
   ],
   "references": {

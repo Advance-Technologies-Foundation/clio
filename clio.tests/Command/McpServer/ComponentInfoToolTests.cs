@@ -333,6 +333,98 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Surfaces the Solution A selection metadata (synonyms, useCases, whenToUse, whenNotToUse, category) from the entry onto the detail response so an AI agent can match a natural-language prompt to the component (ENG-91571).")]
+	public void CreateDetailResponse_ShouldSurfaceSelectionMetadata_WhenEntryCarriesIt() {
+		// Arrange
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.Gallery",
+			Category = ComponentCategories.Media,
+			Synonyms = new[] { "photo grid", "image gallery" },
+			UseCases = new[] { "Display a collection of images as preview cards" },
+			WhenToUse = "Use to display a collection of images as browsable cards.",
+			WhenNotToUse = "Not for a single image — use crt.ImageInput."
+		};
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.Category.Should().Be(ComponentCategories.Media,
+			because: "the taxonomy category must round-trip to the detail response for faceted discovery (Solution D)");
+		response.Synonyms.Should().BeEquivalentTo(new[] { "photo grid", "image gallery" },
+			because: "synonyms must reach the agent so a 'photo grid' prompt resolves to crt.Gallery");
+		response.UseCases.Should().ContainSingle().Which.Should().Contain("collection of images",
+			because: "use-cases must round-trip for ranked search and agent reasoning");
+		response.WhenToUse.Should().NotBeNullOrWhiteSpace(
+			because: "the 'when to use' guidance steers the agent toward the right pick");
+		response.WhenNotToUse.Should().Contain("crt.ImageInput",
+			because: "the 'when not to use' guidance steers the agent away from a common mis-pick");
+	}
+
+	[Test]
+	[Description("Omits the Solution A selection-metadata fields from the detail response when the entry carries none, so unbackfilled components stay low-noise on the wire (ENG-91571).")]
+	public void CreateDetailResponse_ShouldOmitSelectionMetadata_WhenEntryHasNone() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Button" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.Synonyms.Should().BeNull(because: "an entry with no synonyms must omit the field from the wire shape");
+		response.UseCases.Should().BeNull(because: "an entry with no use-cases must omit the field");
+		response.WhenToUse.Should().BeNull(because: "an entry with no guidance must omit the field");
+		response.Category.Should().BeNull(because: "an entry with no category must omit the field");
+		response.AppliesToCustomEntities.Should().BeNull(because: "no applicability restriction means the flag is omitted");
+	}
+
+	[Test]
+	[Description("Surfaces the applicability/entity-coupling constraint (appliesToCustomEntities + entityCouplingNote) so Solution D's fail-fast UX can warn the agent that a component cannot be built on a custom entity (ENG-91571; ENG-91134 comment 453013).")]
+	public void CreateDetailResponse_ShouldSurfaceApplicability_WhenEntryIsEntityCoupled() {
+		// Arrange
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.CommunicationOptions",
+			AppliesToCustomEntities = false,
+			EntityCouplingNote = "Bound to the built-in Contact/Account communication model; not available on custom entities."
+		};
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.AppliesToCustomEntities.Should().BeFalse(
+			because: "the entity-coupling constraint must reach the agent so it does not try to build crt.CommunicationOptions on a custom entity");
+		response.EntityCouplingNote.Should().NotBeNullOrWhiteSpace(
+			because: "the human-readable coupling reason must round-trip so the agent can relay it to the user");
+	}
+
+	[Test]
+	[Description("List-mode search (ComponentInfoGrouping.FilterEntries) matches Solution A selection metadata — a 'photo grid' synonym query and a use-case phrase resolve to crt.Gallery even though its description omits those words (ENG-91571; the binary filter Solution B will later replace with scored ranking).")]
+	public void FilterEntries_ShouldMatchBySelectionMetadata_WhenQueryHitsSynonymOrUseCase() {
+		// Arrange
+		ComponentRegistryEntry gallery = new() {
+			ComponentType = "crt.Gallery",
+			Description = "Gallery list component with selectable cards.",
+			Synonyms = new[] { "photo grid", "image gallery" },
+			UseCases = new[] { "Display a collection of images" }
+		};
+		ComponentRegistryEntry button = new() { ComponentType = "crt.Button", Description = "Action button." };
+		ComponentRegistryEntry[] entries = { gallery, button };
+
+		// Act
+		System.Collections.Generic.IReadOnlyList<ComponentRegistryEntry> bySynonym =
+			ComponentInfoGrouping.FilterEntries(entries, "photo grid");
+		System.Collections.Generic.IReadOnlyList<ComponentRegistryEntry> byUseCase =
+			ComponentInfoGrouping.FilterEntries(entries, "collection of images");
+
+		// Assert
+		bySynonym.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
+			because: "a 'photo grid' synonym query must surface crt.Gallery even though its description omits the term");
+		byUseCase.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
+			because: "a use-case phrase must surface the component whose use-case describes it");
+	}
+
+	[Test]
 	[Description("Filters grouped list results by keyword search across the curated registry.")]
 	public async Task ComponentInfoTool_Should_Filter_List_By_Search() {
 		// Arrange

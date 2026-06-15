@@ -329,6 +329,87 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the caller must be told why the request was rejected");
 	}
 
+	[Test]
+	[Description("Surfaces Solution A selection metadata (synonyms, useCases, whenToUse, category, applicability) on the detail response end-to-end through the real MCP server, fed from a local-override catalog so the assertion does not depend on the producer backfill reaching the live CDN (ENG-91571; the live CDN seed is the A2 follow-up).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info detail surfaces Solution A selection metadata from a local catalog")]
+	[AllureDescription("Starts the real clio MCP server with CLIO_COMPONENT_REGISTRY_LOCAL_FILE pointing at a catalog carrying the new fields, then verifies crt.Gallery returns synonyms/useCases/whenToUse/category and crt.CommunicationOptions returns the entity-coupling constraint.")]
+	public async Task ComponentInfoTool_Detail_Should_Surface_Selection_Metadata_From_Local_Catalog() {
+		// Arrange — a local-override catalog carrying the Solution A fields, so the assertion is
+		// independent of the producer backfill reaching the academy CDN (the A2/sequencing step).
+		string catalogPath = Path.Combine(Path.GetTempPath(), $"clio-component-registry-a1-e2e-{Guid.NewGuid():N}.json");
+		await File.WriteAllTextAsync(catalogPath, LocalSelectionMetadataCatalogJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = catalogPath;
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+			// Act
+			ComponentInfoResponse gallery = await CallComponentInfoAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.Gallery" });
+			ComponentInfoResponse communication = await CallComponentInfoAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.CommunicationOptions" });
+
+			// Assert — selection metadata round-trips through the real MCP serialization path.
+			gallery.Category.Should().Be("media",
+				because: "the taxonomy category must reach the agent through the real MCP server for faceted discovery");
+			gallery.Synonyms.Should().Contain("photo grid",
+				because: "synonyms must round-trip end-to-end so a 'photo grid' prompt can resolve to crt.Gallery");
+			gallery.UseCases.Should().NotBeNullOrEmpty(
+				because: "use-cases must round-trip end-to-end for Solution B's ranked search and agent reasoning");
+			gallery.WhenToUse.Should().NotBeNullOrWhiteSpace(
+				because: "the 'when to use' guidance must reach the agent on the detail call it actually makes");
+
+			// Assert — applicability constraint round-trips (ENG-91134 comment 453013).
+			communication.AppliesToCustomEntities.Should().BeFalse(
+				because: "the entity-coupling constraint must reach the agent so it does not build crt.CommunicationOptions on a custom entity");
+			communication.EntityCouplingNote.Should().NotBeNullOrWhiteSpace(
+				because: "the coupling reason must round-trip so the agent can relay it to the user");
+		}
+		finally {
+			File.Delete(catalogPath);
+		}
+	}
+
+	/// <summary>
+	/// A minimal local-override registry payload (<c>CLIO_COMPONENT_REGISTRY_LOCAL_FILE</c>) carrying
+	/// the Solution A selection-metadata fields. Used so the end-to-end assertion exercises the real
+	/// MCP serialization path without waiting for the producer to publish the fields to the CDN.
+	/// </summary>
+	private const string LocalSelectionMetadataCatalogJson =
+		"""
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Gallery",
+		      "description": "Gallery list component with selectable cards, pagination events, and bulk menu actions.",
+		      "category": "media",
+		      "synonyms": ["photo grid", "image gallery", "thumbnails"],
+		      "useCases": ["Display a collection of images or photos as browsable preview cards"],
+		      "whenToUse": "Use to display a collection of images/photos as browsable preview cards.",
+		      "whenNotToUse": "Not for a single image — use crt.ImageInput."
+		    },
+		    {
+		      "componentType": "crt.CommunicationOptions",
+		      "description": "Contact communication channels editor.",
+		      "category": "communication",
+		      "synonyms": ["communication", "contact options"],
+		      "useCases": ["Manage a contact's communication channels"],
+		      "whenToUse": "Use on Contact/Account pages to manage communication channels.",
+		      "whenNotToUse": "Cannot be used on custom entities.",
+		      "appliesToCustomEntities": false,
+		      "entityCouplingNote": "Bound to the built-in Contact/Account communication model; not available on custom entities."
+		    }
+		  ],
+		  "references": {}
+		}
+		""";
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

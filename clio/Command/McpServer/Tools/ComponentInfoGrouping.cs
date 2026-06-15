@@ -56,9 +56,18 @@ public static class ComponentInfoGrouping {
 			.ToArray();
 	}
 
+	// Selection-metadata fields (Solution A, ENG-91571) participate in the binary substring
+	// filter so synonyms/use-cases/when-to-use become searchable the moment the producer
+	// backfills them. Solution B (ENG-91572) replaces this binary Matches with a scored ranking
+	// that weights synonyms/useCases above description; until then they are equal-weight hits.
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
 		return ContainsCi(entry.ComponentType, query)
 			|| ContainsCi(entry.Description, query)
+			|| ContainsCi(entry.Category, query)
+			|| ContainsCi(entry.WhenToUse, query)
+			|| ContainsCi(entry.WhenNotToUse, query)
+			|| entry.Synonyms.Any(synonym => ContainsCi(synonym, query))
+			|| entry.UseCases.Any(useCase => ContainsCi(useCase, query))
 			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
 			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
 			|| entry.Properties.Any(property =>

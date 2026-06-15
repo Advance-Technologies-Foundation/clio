@@ -1,6 +1,6 @@
 # ADR: Component Discovery & Selection for AI Agents (umbrella)
 
-**Status**: Proposed
+**Status**: Accepted (2026-06-15, Alex Kravchuk)
 **Author**: Claude (code-delivery, on behalf of Alex Kravchuk)
 **PRD**: [prd-component-discovery-selection.md](../prd/prd-component-discovery-selection.md)
 **Epic**: ENG-89871 · **Origin**: ENG-91134 (Paused)
@@ -9,7 +9,8 @@
 
 > This is an **umbrella** ADR over five solution sub-tasks. C carries its own child ADR (the
 > vector-search go/no-go). It was authored after a three-lens adversarial review of the sub-tasks;
-> each Decision below closes a review finding. It is **Proposed** — gate A/B/D/E behind acceptance.
+> each Decision below closes a review finding. **Accepted 2026-06-15** (Alex Kravchuk) — the BMAD gate
+> (Decision 7) is cleared; A/B/D/E may proceed (C remains gated behind its child vector-search ADR).
 
 ---
 
@@ -47,11 +48,15 @@ D references a taxonomy A does not produce.
   (`ComponentRegistrySnapshotTests.Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields`) would fail
   the moment the producer ships them. A is therefore a **coordinated producer+clio change**, sequenced
   so the guard never goes red on `master` between the two.
-- The **live-snapshot fixture is de-truncated** to the full `latest` payload (or ≥1-per-category
-  representative subset); a coverage assertion checks presence on every entry.
-- **A owns the category taxonomy** (`categories[]` + a controlled ~5–15 vocabulary). The existing
-  hardcoded `CategoryOrder` and the empty producer `category` field are reconciled into this one
-  source. D consumes it; D does not define it.
+- The **live-snapshot fixture is de-truncated** to a representative subset (≥1-per-category, incl. the
+  full confusable set); a coverage assertion checks selection-metadata presence. In the **A1** slice the
+  presence bar covers the confusable/seed set; the full ~200 catalog backfill (presence on every entry)
+  is **A2**.
+- **A owns the category taxonomy** (a controlled ~5–15 vocabulary, the single source — scalar `category`
+  per component). Implementation note (2026-06-15): the assumed pre-existing hardcoded `CategoryOrder`
+  does **not** exist anywhere (clio, generator, or creatio-ui) — there is nothing to reconcile; A defines
+  the taxonomy from scratch and populates the already-declared-but-empty producer `category` field on
+  `ComponentRegistryEntry` as that one source. D consumes it; D does not define it.
 - **At-scale generation** produces reviewable diffs in `static-files-mcp`; presence is snapshot-gated
   (automatable), quality for the confusable set (Gallery/DataGrid/List/FileList/ImageInput/Timeline…)
   has a **named human owner** signing off. Presence ≠ quality — both bars are explicit.

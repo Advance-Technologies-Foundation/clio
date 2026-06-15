@@ -59,6 +59,15 @@ image/card collections. Every detail response additionally carries a
 on a layout from memory. Under `--pretty` these render under
 `relatedComponents:` and `tip:` sections.
 
+A detail response also carries Solution A **selection metadata** (ENG-91571)
+when the producer has populated it: `synonyms` (alternate names a user might
+use), `useCases` (concrete scenarios the component fits), one-line `whenToUse`
+/ `whenNotToUse` guidance, a `category` from the controlled taxonomy, and an
+`appliesToCustomEntities` applicability flag with an `entityCouplingNote`
+(e.g. `crt.CommunicationOptions` is bound to the Contact/Account model and
+cannot be built on a custom entity). Use these to match a natural-language
+request to the right component; list-mode `--search` also matches across them.
+
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
 the catalog actually matched the requested target version and when it fell
