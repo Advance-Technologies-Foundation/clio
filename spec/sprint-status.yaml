@@ -554,8 +554,9 @@ stories:
     feature: "component-discovery-selection"
     size: M
     status: deferred
+    decision: "NO-GO (2026-06-16) — stop at A+B+D; vector search not warranted. ENG-91573 → Paused."
     jira: ENG-91573
-    note: "Vector demoted to contingency. Pin metric+threshold BEFORE spike; measure invocation first, then deterministic (no-LLM) recall@k on the shared labelled set; stop at A+B+D unless a measured gap remains. Requires a CHILD ADR before any vector code. Benchmarked against B+D — pull a minimal measurement forward, not strictly last."
+    note: "NO-GO recorded 2026-06-16 (ENG-91573 Paused). The Decision-3 go/no-go gate is satisfied WITHOUT running the spike: (1) deterministic no-LLM recall@5 >= 0.8 on the shared labelled set (Decision 6) is already met by B's ComponentInfoRankingTests (PR #709) — per the pinned rule (>=0.8 -> stop at A+B+D), embeddings are not warranted; (2) the live property-management session reproduced the ENG-91134 miss as an INVOCATION gap (the agent never called list/search — it went straight to detail crt.ImageInput/crt.DataGrid from memory), which AC #2 assigns to D, not to embeddings ('recall@k is irrelevant if the agent doesn't query'); (3) semantic-only top-k retrieval hides the catalog space — the very mechanism behind the Gallery miss. No clio vector code; child vector ADR not needed; nothing depends on C. Reopen only if, after live A2 data + D's faceted discovery land, deterministic recall@5 drops below 0.8 or a measured retrieval gap appears on queries the agent actually issues."
     prd: spec/prd/prd-component-discovery-selection.md
     adr: spec/adr/adr-component-discovery-selection.md
     depends_on: [story-component-discovery-A, story-component-discovery-B, story-component-discovery-D]
