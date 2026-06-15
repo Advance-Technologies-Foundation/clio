@@ -494,3 +494,66 @@ stories:
     ac: []
     depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
     blocks: []
+
+  # --- Component discovery & selection (epic ENG-89871, origin ENG-91134 Paused) ---
+  # Solution-level entries. GATE: deferred until the umbrella ADR is accepted (Decision 7);
+  # story-writer breakdown pending. C also gated behind its child vector-search ADR.
+  - id: story-component-discovery-A
+    title: "[Solution A] Component selection metadata in registry (synonyms/use-cases/when-to-use + taxonomy)"
+    feature: "component-discovery-selection"
+    size: L
+    status: deferred
+    jira: ENG-91571
+    note: "Data foundation; B/C/D depend on it. Typed POCO mapping (NOT passthrough) + de-truncate snapshot fixture + A owns category taxonomy + applicability field. Catalog-wide DoD; at-scale generation w/ named human sign-off for confusable set. Deferred until umbrella ADR accepted; consider A1(schema+confusable)/A2(backfill) split (OQ-D2)."
+    prd: spec/prd/prd-component-discovery-selection.md
+    adr: spec/adr/adr-component-discovery-selection.md
+    depends_on: []
+    blocks: [story-component-discovery-B, story-component-discovery-C, story-component-discovery-D]
+
+  - id: story-component-discovery-B
+    title: "[Solution B] Ranked synonym/use-case search in get-component-info (replace binary substring)"
+    feature: "component-discovery-selection"
+    size: M
+    status: deferred
+    jira: ENG-91572
+    note: "Scored top-N; weighting synonyms/useCases>description>...; deterministic tie-break. Parity scoped to DETERMINISTIC tool output only — LLM rerank is client-side, out of clio scope. Uses the shared labelled set (Decision 6). Code can land before A; acceptance blocked on A's CDN data."
+    prd: spec/prd/prd-component-discovery-selection.md
+    adr: spec/adr/adr-component-discovery-selection.md
+    depends_on: [story-component-discovery-A]
+    blocks: [story-component-discovery-C]
+
+  - id: story-component-discovery-D
+    title: "[Solution D] Proactive + faceted catalog discovery (carries ENG-91134 root cause)"
+    feature: "component-discovery-selection"
+    size: L
+    status: deferred
+    jira: ENG-91574
+    note: "Faceted category discovery (Amazon find-tools) + compact selection-index + REQUIRED decision-point relatedComponents on collection/visual detail responses + stateless breadcrumb (OQ-D1) + fail-fast applicability steering (comment 453013). Owns ComponentInfoListItem shape ext. Acceptance blocked on A's data."
+    prd: spec/prd/prd-component-discovery-selection.md
+    adr: spec/adr/adr-component-discovery-selection.md
+    depends_on: [story-component-discovery-A]
+    blocks: [story-component-discovery-C]
+
+  - id: story-component-discovery-E
+    title: "[Solution E] Reliable version detection + mandatory user communication"
+    feature: "component-discovery-selection"
+    size: M
+    status: deferred
+    jira: ENG-91583
+    note: "Version head of ENG-91134. Enforcement, not surfacing (signal already in code): requiresVersionConfirmation flag on latest-fallback + rule in ACTIVE PagePrompt. Review PlatformVersionResolver degrade paths. Reuses shared labelled set for the version-unknown case. Independent of A/B."
+    prd: spec/prd/prd-component-discovery-selection.md
+    adr: spec/adr/adr-component-discovery-selection.md
+    depends_on: []
+    blocks: []
+
+  - id: story-component-discovery-C
+    title: "[Solution C] Lightweight retrieval spike + ADR (vector only if measured gap remains)"
+    feature: "component-discovery-selection"
+    size: M
+    status: deferred
+    jira: ENG-91573
+    note: "Vector demoted to contingency. Pin metric+threshold BEFORE spike; measure invocation first, then deterministic (no-LLM) recall@k on the shared labelled set; stop at A+B+D unless a measured gap remains. Requires a CHILD ADR before any vector code. Benchmarked against B+D — pull a minimal measurement forward, not strictly last."
+    prd: spec/prd/prd-component-discovery-selection.md
+    adr: spec/adr/adr-component-discovery-selection.md
+    depends_on: [story-component-discovery-A, story-component-discovery-B, story-component-discovery-D]
+    blocks: []
