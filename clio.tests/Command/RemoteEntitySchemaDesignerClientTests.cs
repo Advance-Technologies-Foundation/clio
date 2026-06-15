@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -175,5 +176,95 @@ internal class RemoteEntitySchemaDesignerClientTests
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Reports Exists when the referenced-record SelectQuery returns a row.")]
+	public void CheckRecordExists_ReturnsExists_WhenRowReturned() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns($"{{\"success\":true,\"rows\":[{{\"Id\":\"{recordId:D}\"}}]}}");
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.Exists,
+			because: "a returned row confirms the referenced record exists");
+	}
+
+	[Test]
+	[Description("Reports NotFound when the referenced-record SelectQuery returns no rows.")]
+	public void CheckRecordExists_ReturnsNotFound_WhenNoRows() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.NotFound,
+			because: "an empty result means no record with that id exists in the referenced schema");
+	}
+
+	[Test]
+	[Description("Reports Unknown when the existence query fails, so an unverifiable check never blocks a write.")]
+	public void CheckRecordExists_ReturnsUnknown_WhenServiceReportsFailure() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Current user does not have permission\"}}");
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.Unknown,
+			because: "a failed existence query must degrade to Unknown rather than block the write");
+	}
+
+	[Test]
+	[Description("Reports Unknown when the existence query throws a transport fault, so a write is never blocked on an unverifiable check.")]
+	public void CheckRecordExists_ReturnsUnknown_WhenTransportFaultThrows() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException("connection reset"));
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.Unknown,
+			because: "a transport fault must degrade to Unknown instead of aborting a previously-working column write");
+	}
+
+	[Test]
+	[Description("Reports NotFound (no NullReferenceException) when the existence query returns a null rows array.")]
+	public void CheckRecordExists_ReturnsNotFound_WhenRowsIsNull() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":null}");
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.NotFound,
+			because: "a null rows array must be treated as no record found, not throw a NullReferenceException");
 	}
 }
