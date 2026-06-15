@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
-using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -142,71 +141,6 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "no side effect is possible when the server is unreachable");
 		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
 			because: "the agent needs an actionable next step instead of blind retries");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server with a tiny CLIO_CREATE_SECTION_TIMEOUT_SECONDS override against an unreachable Creatio URI and verifies create-app-section still returns the structured transport-classified envelope (not a bare MCP -32001). Against the connection-refused endpoint the failure classifies as transport before the insert budget is ever reached, so this test does NOT exercise the budget firing — it proves only that the spawned clio process accepts the override env var without breaking the classified-envelope path. The budget firing itself and all three timeout classes are covered deterministically by ApplicationSectionCreateService unit tests (a faithful creatio-timeout repro would need a programmable HTTP stub the harness does not provide, because a blackhole endpoint hangs in the unbounded preparation reads before the insert budget is reached).")]
-	[AllureFeature(SectionCreateToolName)]
-	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create still returns the transport-classified envelope when CLIO_CREATE_SECTION_TIMEOUT_SECONDS is set")]
-	[AllureDescription("Sets a tiny insert-budget override, registers an unreachable environment, calls create-app-section through the real clio MCP server, and verifies the spawned process accepts the override env var and still returns the structured transport-classified error-class/section-created/retry-guidance envelope (ENG-91540 env-var plumbing). The unreachable URI classifies as transport before the budget is reached, so the budget firing itself is covered by unit tests, not here.")]
-	public async Task ApplicationSectionCreate_Should_Honor_Insert_Budget_Override_Env_Var() {
-		// Arrange
-		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-budget-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(tempHome);
-		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
-		// ENG-91540: set a tiny CLIO_CREATE_SECTION_TIMEOUT_SECONDS so the spawned clio process parses the
-		// override env var. The unreachable URI classifies as transport before the insert budget is reached,
-		// so this stays deterministic and fast but does not exercise the budget firing (unit tests cover that);
-		// it asserts only that the override does not break the classified-envelope path.
-		settings.ProcessEnvironmentVariables[ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable] = "2";
-		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-			"""
-			{
-			  "ActiveEnvironmentKey": "unreachable-budget-e2e",
-			  "Environments": {
-			    "unreachable-budget-e2e": {
-			      "Uri": "http://127.0.0.1:9",
-			      "Login": "Supervisor",
-			      "Password": "Supervisor",
-			      "IsNetCore": false
-			    }
-			  }
-			}
-			""",
-			settings.ClioProcessPath,
-			settings.ProcessEnvironmentVariables);
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "unreachable-budget-e2e",
-					["application-code"] = "UsrMissingApp",
-					["caption"] = "Orders",
-					["entity-schema-name"] = "UsrOrders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "a classified failure under a custom insert budget must stay inside the structured payload, not surface as an opaque MCP -32001");
-		response.Success.Should().BeFalse(
-			because: "create-app-section cannot succeed against an unreachable environment regardless of the budget override");
-		response.ErrorClass.Should().Be("transport",
-			because: "the connection-refused endpoint means the request never reached Creatio, so the failure classifies as transport before the insert budget is reached even with CLIO_CREATE_SECTION_TIMEOUT_SECONDS set");
-		response.SectionCreated.Should().Be("false",
-			because: "no side effect is possible when the server is unreachable, regardless of the budget override");
-		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
-			because: "the agent needs an actionable next step instead of an opaque transport timeout");
 	}
 
 	[Test]

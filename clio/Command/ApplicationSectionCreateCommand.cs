@@ -110,12 +110,13 @@ public sealed class ApplicationSectionCreateService(
 	// of letting the client abandon the call with an opaque "-32001 Request timed out" (ENG-91540).
 	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
 	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
-	// clients never send a progressToken, so no beat is emitted at all). The 90 s insert budget plus
-	// the 20 s post-timeout readback bound the dominant slow span — the not-visible timeout path that
-	// is the actual repro — so clio answers well under the observed 180 s ceiling there. (The
-	// preparation reads before the insert and the GetApplicationInfo poll in the recovery loop are not
-	// bounded by these budgets — see ENG-91316.) CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient
-	// clients / large stands extend the insert budget.
+	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
+	// call (90 s) and the post-timeout recovery readback (20 s) — the dominant slow span on the
+	// not-visible timeout path that is the actual repro — so clio answers well under the observed 180 s
+	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert,
+	// the success-path readback (Timeout.Infinite), and the 15-attempt poll loop have no cumulative
+	// deadline (residual ENG-91316). CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients /
+	// large stands extend the insert budget.
 	private const int DefaultInsertTimeoutMs = 90_000;
 	private const int VerificationTimeoutMs = 20_000;
 
