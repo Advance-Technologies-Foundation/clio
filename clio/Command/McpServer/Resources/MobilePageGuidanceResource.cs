@@ -412,11 +412,17 @@ public sealed class MobilePageGuidanceResource {
 		       crt.RunBusinessProcessRequest
 		         Starts a business process.
 		         params: processName (string, required),
+		                 processRunType (string, REQUIRED: 'RegardlessOfThePage' | 'ForTheSelectedPage';
+		                     'ForTheSelectedRecords' is not yet supported on mobile),
 		                 processParameters? (Record<string, unknown>),
 		                 recordIdProcessParameterName? (string),
 		                 showNotification? (boolean),
 		                 notificationText? (string),
 		                 saveAtProcessStart? (boolean)
+		         NOTE: processRunType is REQUIRED. Use 'ForTheSelectedPage' to run against the current
+		         record (pair with recordIdProcessParameterName to pass the open record id into a parameter);
+		         use 'RegardlessOfThePage' to run with no record context. "For the selected page" maps to
+		         processRunType: 'ForTheSelectedPage' — recordIdProcessParameterName alone does NOT set it.
 		         NOTE: keys in processParameters are process parameter CODES, NOT captions — a wrong code is
 		         silently dropped. Call get-process-signature and the run-process-button guide before
 		         authoring this button.
