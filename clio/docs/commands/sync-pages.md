@@ -48,6 +48,7 @@ Each entry in the `pages` array must have:
 | `schema-name` | Yes | Freedom UI page schema name |
 | `body` | Yes | Full JavaScript page body |
 | `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
+| `force` | No | Skip the external-modification (checksum) conflict check for this page and deliberately overwrite out-of-band changes. Default `false` |
 
 ## Example
 
@@ -135,6 +136,39 @@ When `verify` is `true`, each successful page result also returns:
 
 - `page` — the same metadata shape as `get-page.page`
 - `verified-body-file` — path to the local `body.js` file written from the raw body read back from Creatio after save
+
+## Conflict Detection (external modifications)
+
+When the MCP `get-page` tool previously stored a checksum baseline in
+`.clio-pages/{schema-name}/meta.json` for the **same environment**, each page write first
+compares the stored `SysSchema.Checksum` against the server. A page whose schema was
+modified outside the current session (e.g. edited in the Creatio designer) fails with a
+per-page conflict — the rest of the batch continues:
+
+```jsonc
+{
+  "schema-name": "UsrTodoList_FormPage",
+  "success": false,
+  "conflict": true,
+  "conflict-details": { "reason": "checksum-mismatch", "expectedChecksum": "…", "actualChecksum": "…" },
+  "error": "Page schema '…' was modified outside this session …"
+}
+```
+
+Recovery: re-run `get-page` for the conflicted schema, re-apply the change on top of the
+fresh body, then retry — or set the per-page `force: true` after the user explicitly
+confirms overwriting the external changes.
+
+Baseline maintenance after a successful save:
+
+- `verify: true` — a full fresh `meta.json` (page metadata + new baseline) is written next
+  to the verified `body.js`.
+- `verify: false` — the existing `meta.json` baseline is updated with the post-save
+  checksum; if fresh metadata could not be obtained, the baseline is removed so the next
+  write skips the check instead of reporting a false conflict.
+
+Pages without a baseline (no prior MCP `get-page`, legacy `meta.json`, or a different
+environment) are saved without the check — fully backward compatible.
 
 ## Error Handling
 
