@@ -22,6 +22,7 @@ public static class SchemaValidationService
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
+	private const string LabelPropertyName = "label";
 	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
@@ -77,6 +78,19 @@ public static class SchemaValidationService
 
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
+		RegexOptions.Compiled,
+		RegexTimeout);
+
+	/// <summary>
+	/// Matches a <c>#ResourceString(Key)#</c> localization macro anywhere within a value (unanchored).
+	/// Unlike <see cref="ResourceStringPattern"/> (which requires the whole value to be exactly the
+	/// macro), this recognises a resource reference that is concatenated with other text or wrapped in
+	/// another macro — most notably the platform's <c>#MacrosTemplateString(…#ResourceString(Key)#…)#</c>
+	/// form, the dominant OOTB caption shape. Used by <see cref="IsInlineUserVisibleTextLiteral"/> so a
+	/// localized-but-wrapped value is not misclassified as a hardcoded inline literal.
+	/// </summary>
+	private static readonly Regex ResourceStringReferencePattern = new(
+		@"#ResourceString\(([^)]+)\)#",
 		RegexOptions.Compiled,
 		RegexTimeout);
 	private const string ResourceBindingPrefix = "$Resources.Strings.";
@@ -144,6 +158,39 @@ public static class SchemaValidationService
 		"schema or the current body may legitimately provide the attribute and resource.";
 
 	/// <summary>
+	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
+	/// localizable-string bindings (<c>$Resources.Strings.&lt;Key&gt;</c> or the
+	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro), never as inline string literals. Enforced by
+	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile). The set is deliberately limited to
+	/// properties that are unambiguously rendered to the user; overloaded keys such as <c>description</c>
+	/// (which also names non-display metadata on entity columns, components, and APIs) are intentionally
+	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
+	/// </summary>
+	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
+		LabelPropertyName,
+		"caption",
+		"title",
+		"tooltip",
+		"placeholder"
+	};
+
+	/// <summary>
+	/// Canonical clause describing the localizable-text rule enforced by
+	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
+	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
+	/// update-page / sync-pages / validate-page tool descriptions and the <c>page-schema-resources</c>
+	/// guidance, so the rule the validator rejects on is stated in identical words everywhere. Kept
+	/// <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// </summary>
+	internal const string LocalizableTextLiteralClause =
+		"user-visible text on a view node (label, caption, title, tooltip, placeholder) must be a " +
+		"localizable-string binding, not an inline literal: bind it via $Resources.Strings.<Key> and " +
+		"register the key with its default-language value through the 'resources' parameter " +
+		"(e.g. resources: '{\"<Key>\": \"<text>\"}'), or use the #ResourceString(<Key>)# macro form for " +
+		"data-grid column captions and validator messages";
+
+	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body.</param>
@@ -174,6 +221,9 @@ public static class SchemaValidationService
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
 		warnings.AddRange(labelBindingResult.Warnings);
+
+		SchemaValidationResult textLiteralResult = ValidateMobileLocalizableTextLiterals(body);
+		if (!textLiteralResult.IsValid) errors.AddRange(textLiteralResult.Errors);
 
 		return (errors, warnings);
 	}
@@ -1092,6 +1142,152 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	/// <summary>
+	/// Validates that user-visible text properties (<see cref="LocalizableTextProperties"/>) inside a web
+	/// page body's <c>viewConfigDiff</c> are authored as localizable-string bindings rather than inline
+	/// literals. Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree (including nested
+	/// child components) so a panel title, tab caption, or input placeholder set as a plain string is
+	/// rejected regardless of nesting depth.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when any targeted text property carries an
+	/// inline literal. Binding forms (<c>$Resources.Strings.*</c> and any other <c>$</c>-prefixed
+	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
+	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
+	/// accepted; non-string and empty values are ignored.
+	/// </returns>
+	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>
+	/// directly from the plain-JSON mobile page root instead of a marker-delimited section; the literal
+	/// rule is identical.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> with the same contract as the web variant.</returns>
+	public static SchemaValidationResult ValidateMobileLocalizableTextLiterals(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result) {
+		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+			    values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+			ScanNodeForTextLiterals(values, ownerName, result);
+		}
+	}
+
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.Value.ValueKind == JsonValueKind.String &&
+					    LocalizableTextProperties.Contains(property.Name) &&
+					    IsInlineUserVisibleTextLiteral(property.Value.GetString())) {
+						result.Errors.Add(BuildTextLiteralError(currentName, property.Name, property.Value.GetString()!));
+					}
+					ScanNodeForTextLiterals(property.Value, currentName, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForTextLiterals(item, ownerName, result);
+				}
+				break;
+		}
+	}
+
+	private static bool TryGetNodeName(JsonElement element, out string name) {
+		name = string.Empty;
+		if (element.TryGetProperty("name", out JsonElement nameElement) &&
+		    nameElement.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(nameElement.GetString())) {
+			name = nameElement.GetString()!;
+			return true;
+		}
+		return false;
+	}
+
+	private static bool IsInlineUserVisibleTextLiteral(string? value) {
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+		if (IsBindingExpression(value)) {
+			return false;
+		}
+		// A value that references a #ResourceString(Key)# macro anywhere is localized — bare,
+		// concatenated, or wrapped (e.g. #MacrosTemplateString(#ResourceString(Key)#)#, the dominant
+		// OOTB caption form). Only a value with no resource reference at all is a hardcoded literal.
+		return !ResourceStringReferencePattern.IsMatch(value);
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="value"/> is a Freedom UI binding expression — a <c>$</c>
+	/// immediately followed by an identifier character (covers <c>$Resources.Strings.*</c>, <c>$Email</c>,
+	/// <c>$PageParameters_*</c>, converter pipelines, …). A bare <c>$</c> followed by a space or digit
+	/// (for example a literal price placeholder "<c>$120</c>") is NOT a binding and stays subject to the
+	/// inline-literal check.
+	/// </summary>
+	private static bool IsBindingExpression(string value) =>
+		value.Length >= 2 && value[0] == '$' && (char.IsLetter(value[1]) || value[1] == '_');
+
+	private static string BuildTextLiteralError(string ownerName, string property, string value) {
+		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
+			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
 	private static void ValidateInsertedFieldEntry(
 		JsonElement entry,
 		IReadOnlySet<string> declaredAttributes,
@@ -1179,7 +1375,7 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
-		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
+		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
@@ -1521,7 +1717,7 @@ public static class SchemaValidationService
 				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
-		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
+		if (TryGetStringProperty(componentValues, LabelPropertyName, out string labelExpression) &&
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
@@ -1631,7 +1827,7 @@ public static class SchemaValidationService
 	}
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
-		return TryGetStringProperty(componentValues, "label", out captionExpression)
+		return TryGetStringProperty(componentValues, LabelPropertyName, out captionExpression)
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
 	}
 

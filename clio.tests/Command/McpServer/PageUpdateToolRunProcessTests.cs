@@ -44,7 +44,8 @@ public sealed class PageUpdateToolRunProcessTests {
 			commandResolver: resolver,
 			mobileComponentCatalog: Substitute.For<IMobileComponentInfoCatalog>(),
 			webComponentCatalog: Substitute.For<IComponentInfoCatalog>(),
-			samplingService: Substitute.For<IPageBodySamplingService>());
+			samplingService: Substitute.For<IPageBodySamplingService>(),
+			fileSystem: Substitute.For<System.IO.Abstractions.IFileSystem>());
 		return (tool, resolver);
 	}
 

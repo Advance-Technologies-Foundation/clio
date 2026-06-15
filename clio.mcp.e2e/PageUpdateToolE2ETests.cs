@@ -2,12 +2,16 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
+using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -436,6 +440,52 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects inline placeholder literal in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a viewConfigDiff insert whose placeholder is a hardcoded string, and verifies that the tool returns a structured validation error naming the node, the placeholder property, and the page-schema-resources guide.")]
+	public async Task PageUpdateTool_Should_Reject_Inline_Placeholder_Literal_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+			"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrInlinePlaceholder_FormPage",
+					["body"] = inlinePlaceholderBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the localizable-text check should surface as a structured update-page response, not a protocol-level error");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject a hardcoded placeholder that cannot be translated");
+		response.Error.Should().Contain("EmailField")
+			.And.Contain("placeholder")
+			.And.Contain("page-schema-resources",
+				because: "the failure must name the node, the offending property, and point to the localization guide so the agent can fix the payload in one pass");
+	}
+
+	[Test]
 	[Description("Rejects invalid handler section shape through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects non-array handlers in dry-run mode")]
@@ -804,6 +854,233 @@ public sealed class PageUpdateToolE2ETests {
 			because: "the error message must identify the offending parameter");
 	}
 
+	[Test]
+	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
+	[AllureDescription("Uses the real clio MCP server against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory stores the baseline; (2) a second update-page anchored at a DIFFERENT temp directory simulates the out-of-band modification (no baseline there, so no conflict check and no refresh of the first baseline); (3) update-page anchored at the first directory must fail with conflict:true / checksum-mismatch — this is the live proof that Creatio bumps SysSchema.Checksum on SaveSchema; (4) re-running get-page refreshes the baseline and the retry succeeds, restoring the original body (built-in cleanup).")]
+	public async Task PageUpdateTool_Should_Detect_OutOfBand_Modification_And_Recover_Via_GetPage() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page conflict-detection test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-session-").FullName;
+		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-oob-").FullName;
+		try {
+			// Act 1: get-page anchored at sessionDir — captures the checksum baseline.
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+			string metaJson = await File.ReadAllTextAsync(getResponse.Files.MetaFile);
+			metaJson.Should().Contain("\"baseline\"",
+				because: "get-page must persist the conflict-detection baseline into meta.json (story 2 contract, live)");
+
+			// Act 2: out-of-band modification — update-page anchored at a DIFFERENT directory
+			// (no baseline there → no conflict check, and the session baseline stays untouched).
+			string outOfBandBody = originalBody.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
+				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
+			outOfBandResponse.Success.Should().BeTrue(
+				because: $"the simulated out-of-band save must succeed to set up the conflict. Error: {outOfBandResponse.Error}");
+
+			// Act 3: update-page with the stale session baseline — must surface the conflict.
+			PageUpdateResponse conflictResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir);
+
+			// Assert: structured conflict, proving Creatio bumped SysSchema.Checksum on save (A-01).
+			conflictResponse.Success.Should().BeFalse(
+				because: "the schema changed outside the session, so the stale-baseline write must be blocked");
+			conflictResponse.Conflict.Should().BeTrue(
+				because: "the response must carry the machine-readable conflict marker through the real MCP transport");
+			conflictResponse.ConflictDetails.Should().NotBeNull(
+				because: "the conflict must explain itself with structured details");
+			conflictResponse.ConflictDetails.Reason.Should().Be("checksum-mismatch",
+				because: "the out-of-band SaveSchema must have bumped SysSchema.Checksum — the load-bearing assumption (A-01) of the whole feature");
+			conflictResponse.Error.Should().Contain("Re-run get-page",
+				because: "the error must guide the agent toward the reload-and-rebase recovery");
+
+			// Act 4: recovery — re-run get-page (fresh baseline), retry the save (restores the
+			// original blank body, doubling as cleanup of the out-of-band container).
+			PageGetResponse refreshedGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			refreshedGet.Success.Should().BeTrue(
+				because: $"the recovery get-page must succeed. Error: {refreshedGet.Error}");
+			PageUpdateResponse retryResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir);
+			retryResponse.Success.Should().BeTrue(
+				because: $"after reloading the baseline the retry must succeed and restore the seed body. Error: {retryResponse.Error}");
+			retryResponse.Conflict.Should().BeFalse(
+				because: "the refreshed baseline matches the server state, so no conflict remains");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	[Test]
+	[Description("A successful update-page save pushes a Designer Presence save event that a second session can receive for the page sender.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page publishes Designer Presence save event")]
+	[AllureDescription("Starts the real MCP server, connects a second authenticated session to the page Designer Presence sender, performs a real update-page save against the seeded page ClioMcp_BlankPageToSave, and verifies receipt of a Designer Presence save event.")]
+	public async Task PageUpdateTool_Should_Publish_DesignerPresence_Save_Event() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping live Designer Presence save-event E2E.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-presence-").FullName;
+		await using var listener = await DesignerPresenceListener.StartAsync(environmentName, savePage);
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}' before the save-event probe. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(
+				arrangeContext,
+				savePage,
+				originalBody,
+				environmentName,
+				outputDirectory);
+			DesignerPresenceServerEvent receivedEvent = await listener.WaitForSaveEventAsync(TimeSpan.FromSeconds(30));
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"the seeded page save must succeed before Designer Presence can rebroadcast it. Error: {saveResponse.Error}");
+			receivedEvent.SchemaName.Should().Be(savePage,
+				because: "the save event should be scoped to the same page sender that the listener joined");
+			receivedEvent.SchemaType.Should().Be("page",
+				because: "update-page publishes page designer presence only in this iteration");
+			receivedEvent.Users.Should().Contain(user => string.Equals(user.Mode, "save", StringComparison.OrdinalIgnoreCase),
+				because: "the aggregated presence event should contain a collaborator in save mode after update-page succeeds");
+		} finally {
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	[Test]
+	[Description("ENG-91317: update-page with force=true overwrites an out-of-band modification deliberately, and a no-baseline flow stays unaffected (regression guard).")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page force=true overwrites out-of-band changes; no-baseline flow unaffected")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: stores a baseline via get-page, makes an out-of-band save from a different anchor, then saves the original body with force=true from the session anchor — the overwrite must succeed (restoring the seed body). A final save without any baseline directory proves the legacy no-baseline flow is unaffected.")]
+	public async Task PageUpdateTool_Should_Overwrite_With_Force_And_Keep_NoBaseline_Flow_Unaffected() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page force-overwrite test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-force-session-").FullName;
+		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-force-oob-").FullName;
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+			string outOfBandBody = originalBody.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EForceContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
+				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
+			outOfBandResponse.Success.Should().BeTrue(
+				because: $"the simulated out-of-band save must succeed to set up the overwrite. Error: {outOfBandResponse.Error}");
+
+			// Act 1: force=true from the stale session anchor — deliberate overwrite (also restores the seed body).
+			PageUpdateResponse forceResponse = await UpdatePageAsync(
+				arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+
+			// Assert
+			forceResponse.Success.Should().BeTrue(
+				because: $"force=true must bypass the conflict check after explicit user confirmation. Error: {forceResponse.Error}");
+			forceResponse.Conflict.Should().BeFalse(
+				because: "a forced overwrite reports no conflict");
+
+			// Act 2: regression guard — a save with no baseline anywhere must behave exactly as before the feature.
+			string noBaselineDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-").FullName;
+			try {
+				PageUpdateResponse noBaselineResponse = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, noBaselineDir);
+				noBaselineResponse.Success.Should().BeTrue(
+					because: $"the legacy no-baseline flow must stay unaffected (AC-11). Error: {noBaselineResponse.Error}");
+				noBaselineResponse.Conflict.Should().BeFalse(
+					because: "without a baseline there is nothing to conflict with");
+			} finally {
+				TryDeleteDirectory(noBaselineDir);
+			}
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	private static async Task<PageGetResponse> GetPageAsync(
+		ArrangeContext arrangeContext, string schemaName, string environmentName, string outputDirectory) {
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName,
+					["output-directory"] = outputDirectory
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "get-page must return a structured payload, not an MCP transport error");
+		return EntitySchemaStructuredResultParser.Extract<PageGetResponse>(result);
+	}
+
+	private static async Task<PageUpdateResponse> UpdatePageAsync(
+		ArrangeContext arrangeContext,
+		string schemaName,
+		string body,
+		string environmentName,
+		string outputDirectory,
+		bool? force = null) {
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = schemaName,
+			["body"] = body,
+			["environment-name"] = environmentName,
+			["output-directory"] = outputDirectory,
+			["skip-sampling"] = true
+		};
+		if (force == true) {
+			args["force"] = true;
+		}
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "update-page must return a structured payload, not an MCP transport error");
+		return EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+	}
+
+	private static void TryDeleteDirectory(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, recursive: true);
+			}
+		} catch {
+			// best-effort temp cleanup; never fail the test on it.
+		}
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -925,5 +1202,202 @@ public sealed class PageUpdateToolE2ETests {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
 		}
+	}
+
+	private sealed class DesignerPresenceListener : IAsyncDisposable {
+		private readonly IApplicationClient _applicationClient;
+		private readonly IServiceProvider _provider;
+		private readonly CancellationTokenSource _listenCancellationTokenSource;
+		private readonly Task _listenTask;
+		private readonly TaskCompletionSource<bool> _connectedTcs =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly TaskCompletionSource<DesignerPresenceServerEvent> _saveEventTcs =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		private readonly string _senderName;
+		private readonly EventHandler<System.Net.WebSockets.WebSocketState> _connectionHandler;
+		private readonly EventHandler<Creatio.Client.Dto.WsMessage> _messageHandler;
+
+		private DesignerPresenceListener(
+			IServiceProvider provider,
+			IApplicationClient applicationClient,
+			string senderName,
+			CancellationTokenSource listenCancellationTokenSource) {
+			_provider = provider;
+			_applicationClient = applicationClient;
+			_senderName = senderName;
+			_listenCancellationTokenSource = listenCancellationTokenSource;
+			_connectionHandler = (_, state) => {
+				if (state == System.Net.WebSockets.WebSocketState.Open) {
+					_connectedTcs.TrySetResult(true);
+				}
+			};
+			_messageHandler = (_, message) => OnMessageReceived(message);
+			_applicationClient.ConnectionStateChanged += _connectionHandler;
+			_applicationClient.MessageReceived += _messageHandler;
+			_listenTask = Task.Run(() => _applicationClient.Listen(_listenCancellationTokenSource.Token));
+		}
+
+		public static async Task<DesignerPresenceListener> StartAsync(string environmentName, string schemaName) {
+			EnvironmentSettings environmentSettings = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+			IServiceProvider provider = new BindingsModule().Register(environmentSettings);
+			IApplicationClient applicationClient = provider.GetRequiredService<IApplicationClient>();
+			var listenCancellationTokenSource = new CancellationTokenSource();
+			string senderName = $"DesignerPresence_page_{schemaName.ToLowerInvariant()}";
+			var listener = new DesignerPresenceListener(
+				provider,
+				applicationClient,
+				senderName,
+				listenCancellationTokenSource);
+			await listener.WaitUntilConnectedAsync(TimeSpan.FromSeconds(30));
+			await listener.SendViewJoinAsync(schemaName);
+			return listener;
+		}
+
+		public async Task<DesignerPresenceServerEvent> WaitForSaveEventAsync(TimeSpan timeout) {
+			using CancellationTokenSource timeoutTokenSource = new(timeout);
+			using CancellationTokenRegistration _ = timeoutTokenSource.Token.Register(() =>
+					   _saveEventTcs.TrySetCanceled(timeoutTokenSource.Token));
+			{
+				return await _saveEventTcs.Task.ConfigureAwait(false);
+			}
+		}
+
+		private async Task WaitUntilConnectedAsync(TimeSpan timeout) {
+			using CancellationTokenSource timeoutTokenSource = new(timeout);
+			using CancellationTokenRegistration _ = timeoutTokenSource.Token.Register(() =>
+					   _connectedTcs.TrySetCanceled(timeoutTokenSource.Token));
+			{
+				await _connectedTcs.Task.ConfigureAwait(false);
+			}
+		}
+
+		private void OnMessageReceived(Creatio.Client.Dto.WsMessage? message) {
+			if (message is null) {
+				return;
+			}
+			if (!string.Equals(message.Header?.Sender, _senderName, StringComparison.Ordinal)) {
+				return;
+			}
+			if (string.IsNullOrWhiteSpace(message.Body)) {
+				return;
+			}
+			try {
+				DesignerPresenceServerEvent? payload = JsonSerializer.Deserialize<DesignerPresenceServerEvent>(message.Body);
+				if (payload is null) {
+					return;
+				}
+				if (payload.Users.Any(user => string.Equals(user.Mode, "save", StringComparison.OrdinalIgnoreCase))) {
+					_saveEventTcs.TrySetResult(payload);
+				}
+			} catch (JsonException) {
+				// Ignore unrelated or malformed channel messages; the listener is scoped by sender.
+			}
+		}
+
+		private async Task SendViewJoinAsync(string schemaName) {
+			IBrowserSessionService browserSessionService = _provider.GetRequiredService<IBrowserSessionService>();
+			IServiceUrlBuilder serviceUrlBuilder = _provider.GetRequiredService<IServiceUrlBuilder>();
+			IReadOnlyList<IMessageChannelPublisher> publishers = _provider.GetServices<IMessageChannelPublisher>().ToArray();
+			string sessionPath = await browserSessionService
+				.GetSessionPathAsync(_provider.GetRequiredService<EnvironmentSettings>(), forceRefresh: false, ct: CancellationToken.None)
+				.ConfigureAwait(false);
+			string storageStateJson = await File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
+			IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
+			(JsonDocument applicationInfo, JsonDocument userInfo) = ReadPresenceContext(serviceUrlBuilder);
+			string? clientConnectionClassName = applicationInfo.RootElement
+				.GetProperty("applicationInfo")
+				.GetProperty("clientConnectionClassName")
+				.GetString();
+			string rawServiceUrl = applicationInfo.RootElement
+				.GetProperty("applicationInfo")
+				.GetProperty("serviceUrl")
+				.GetString()!;
+			Uri serviceUrl = ResolvePresenceServiceUrl(_provider.GetRequiredService<EnvironmentSettings>().Uri, rawServiceUrl, clientConnectionClassName);
+			IMessageChannelPublisher publisher = publishers.Single(p => p.ClientConnectionClassName == clientConnectionClassName);
+			string sessionId = userInfo.RootElement.GetProperty("userInfo").GetProperty("sessionId").GetString()!;
+			string body = JsonSerializer.Serialize(new {
+				mode = "view",
+				schemaType = "page",
+				schemaName = schemaName,
+				schemaCaption = schemaName,
+				user = new {
+					sessionId,
+					id = userInfo.RootElement.GetProperty("userInfo").GetProperty("id").GetString(),
+					name = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactName").GetString(),
+					contactId = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactId").GetString(),
+					contactName = userInfo.RootElement.GetProperty("userInfo").GetProperty("contactName").GetString(),
+					photoId = userInfo.RootElement.GetProperty("userInfo").GetProperty("photoId").GetString(),
+					email = userInfo.RootElement.GetProperty("userInfo").GetProperty("email").GetString()
+				},
+				sessionId
+			});
+			await publisher.PublishAsync(new MessageChannelPublishRequest(
+				serviceUrl,
+				cookies,
+				MessageChannelEnvelope.Create("DesignerPresence", "ServerMsg", body))).ConfigureAwait(false);
+		}
+
+		private (JsonDocument ApplicationInfo, JsonDocument UserInfo) ReadPresenceContext(IServiceUrlBuilder serviceUrlBuilder) {
+			string applicationInfoJson = _applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(CreatioServicePaths.GetApplicationInfo),
+				"{}");
+			string userInfoJson = _applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build(CreatioServicePaths.GetCurrentUserInfo),
+				"{}");
+			return (JsonDocument.Parse(applicationInfoJson), JsonDocument.Parse(userInfoJson));
+		}
+
+		private static Uri ResolvePresenceServiceUrl(string environmentUri, string rawServiceUrl, string? transportClassName) {
+			Uri resolved = Uri.TryCreate(rawServiceUrl, UriKind.Absolute, out Uri? absolute)
+				? absolute
+				: new Uri(new Uri(environmentUri.TrimEnd('/') + "/", UriKind.Absolute), rawServiceUrl);
+			if (string.Equals(transportClassName, WebSocketMessageChannelPublisher.TransportClassName, StringComparison.Ordinal)
+				&& (resolved.Scheme == Uri.UriSchemeHttp || resolved.Scheme == Uri.UriSchemeHttps)) {
+				var builder = new UriBuilder(resolved) {
+					Scheme = resolved.Scheme == Uri.UriSchemeHttps ? "wss" : "ws"
+				};
+				if (resolved.IsDefaultPort) {
+					builder.Port = -1;
+				}
+				return builder.Uri;
+			}
+			return resolved;
+		}
+
+		public async ValueTask DisposeAsync() {
+			_applicationClient.ConnectionStateChanged -= _connectionHandler;
+			_applicationClient.MessageReceived -= _messageHandler;
+			_listenCancellationTokenSource.Cancel();
+			try {
+				await _listenTask.ConfigureAwait(false);
+			} catch (OperationCanceledException) {
+				// Expected when the listener is disposed.
+			} catch (AggregateException ex) when (ex.InnerExceptions.All(inner => inner is OperationCanceledException)) {
+				// Expected when the listener is disposed.
+			}
+			_listenCancellationTokenSource.Dispose();
+			if (_provider is IDisposable disposable) {
+				disposable.Dispose();
+			}
+		}
+	}
+
+	private sealed class DesignerPresenceServerEvent {
+		[System.Text.Json.Serialization.JsonPropertyName("schemaName")]
+		public string SchemaName { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("schemaType")]
+		public string SchemaType { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("schemaCaption")]
+		public string SchemaCaption { get; set; } = string.Empty;
+
+		[System.Text.Json.Serialization.JsonPropertyName("users")]
+		public List<DesignerPresenceServerUser> Users { get; set; } = [];
+	}
+
+	private sealed class DesignerPresenceServerUser {
+		[System.Text.Json.Serialization.JsonPropertyName("mode")]
+		public string Mode { get; set; } = string.Empty;
 	}
 }

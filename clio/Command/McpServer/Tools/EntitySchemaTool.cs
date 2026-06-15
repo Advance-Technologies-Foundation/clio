@@ -435,7 +435,12 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema column.")]
+	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
+		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
+		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
+		+ "so the GUID can be verified without a second query. When the display value cannot be resolved, "
+		+ "record-resolution carries an honest marker (no-access, not-found-or-no-access, or "
+		+ "display-column-unavailable) and display-value is null.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
 		[Description("Parameters: environment-name, package-name, schema-name, column-name (all required)")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
@@ -465,7 +470,11 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	/// </summary>
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema.")]
+	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
+		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
+		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
+		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
+		+ "record cannot be read.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {

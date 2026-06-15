@@ -142,6 +142,58 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a marker-valid page body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects inline placeholder literal during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a marker-valid page body whose inserted crt.Input carries a hardcoded placeholder through sync-pages with validation enabled, and verifies that the localizable-text check fails the call without requiring a real page save.")]
+	public async Task PageSyncTool_Should_Reject_Inline_Placeholder_Literal_When_Validation_Is_Enabled() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+			"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		await using ArrangeContext context = await ArrangeAsync();
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrInlinePlaceholder_{Guid.NewGuid():N}",
+							["body"] = inlinePlaceholderBody
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should be reported as structured tool results");
+		response.Success.Should().BeFalse(
+			because: "client-side validation should reject a hardcoded placeholder that cannot be translated");
+		response.Pages.Should().ContainSingle(because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(because: "the inline placeholder literal must fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned when validation is enabled");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "the localizable-text rule is a content-level validator");
+		response.Pages[0].Validation.Errors!.Should().Contain(
+			e => e.Contains("EmailField") && e.Contains("placeholder") && e.Contains("page-schema-resources"),
+			because: "the diagnostic must name the node, the offending property, and point to the localization guide");
+	}
+
+	[Test]
 	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]
@@ -545,6 +597,133 @@ public sealed class PageSyncToolE2ETests {
 		Assert.Ignore(
 			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
 		return string.Empty;
+	}
+
+	[Test]
+	[Description("ENG-91317: sync-pages surfaces a per-page conflict for a stale-baseline page after an out-of-band modification, and the per-page force flag overwrites it deliberately (restoring the seed body).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages detects out-of-band schema modification per page and honors per-page force")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory stores the checksum baseline; (2) an update-page anchored at a DIFFERENT temp directory simulates the out-of-band modification; (3) sync-pages from the first anchor must fail that page with conflict:true / conflict-details (checksum-mismatch); (4) the same batch entry resubmitted with force:true must overwrite, restoring the original blank body (built-in cleanup).")]
+	public async Task PageSyncTool_Should_Surface_PerPage_Conflict_And_Honor_PerPage_Force() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages conflict-detection test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-conflict-").FullName;
+		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-sync-oob-").FullName;
+		try {
+			// Act 1: get-page anchored at sessionDir — captures the baseline.
+			CallToolResult getResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName,
+						["output-directory"] = sessionDir
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{SavePage}'. Error: {getResponse.Error}");
+			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act 2: out-of-band modification via update-page anchored elsewhere (no baseline there).
+			string outOfBandBody = originalBody.Replace(
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			CallToolResult outOfBandResult = await context.Session.CallToolAsync(
+				PageUpdateTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["body"] = outOfBandBody,
+						["environment-name"] = environmentName,
+						["output-directory"] = outOfBandDir,
+						["skip-sampling"] = true
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageUpdateResponse outOfBandResponse = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(outOfBandResult);
+			outOfBandResponse.Success.Should().BeTrue(
+				because: $"the simulated out-of-band save must succeed to set up the conflict. Error: {outOfBandResponse.Error}");
+
+			// Act 3: sync-pages from the stale session anchor — the page must fail with a conflict.
+			CallToolResult conflictResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> {
+								["schema-name"] = SavePage,
+								["body"] = originalBody
+							}
+						},
+						["validate"] = true,
+						["skip-sampling"] = true,
+						["output-directory"] = sessionDir
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageSyncResponse conflictResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(conflictResult);
+
+			// Assert per-page conflict
+			conflictResponse.Success.Should().BeFalse(
+				because: "the stale-baseline page must fail the batch");
+			conflictResponse.Pages.Should().ContainSingle(
+				because: "one page was submitted for sync");
+			conflictResponse.Pages[0].Conflict.Should().BeTrue(
+				because: "the per-page result must carry the conflict marker through the real MCP transport");
+			conflictResponse.Pages[0].ConflictDetails.Should().NotBeNull(
+				because: "the per-page conflict must explain itself with structured details");
+			conflictResponse.Pages[0].ConflictDetails.Reason.Should().Be("checksum-mismatch",
+				because: "the out-of-band SaveSchema bumped SysSchema.Checksum (risk A-01) and the baseline went stale");
+
+			// Act 4: per-page force=true overwrites deliberately, restoring the seed body (cleanup).
+			CallToolResult forceResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> {
+								["schema-name"] = SavePage,
+								["body"] = originalBody,
+								["force"] = true
+							}
+						},
+						["validate"] = true,
+						["skip-sampling"] = true,
+						["output-directory"] = sessionDir
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageSyncResponse forceResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(forceResult);
+
+			// Assert force overwrite
+			forceResponse.Success.Should().BeTrue(
+				because: $"per-page force=true must bypass the conflict check after user confirmation. Per-page error: {forceResponse.Pages.FirstOrDefault()?.Error}");
+			forceResponse.Pages[0].Conflict.Should().BeFalse(
+				because: "a forced overwrite reports no conflict");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	private static void TryDeleteDirectory(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, recursive: true);
+			}
+		} catch {
+			// best-effort temp cleanup; never fail the test on it.
+		}
 	}
 
 	[Test]

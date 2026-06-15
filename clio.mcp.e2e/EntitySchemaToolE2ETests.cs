@@ -372,6 +372,34 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a lookup Const default whose referenced record does not exist, verified end to end through the real MCP server (DRAFT-AC-06).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column rejects a lookup Const default for a missing record")]
+	[AllureDescription("Creates a sandbox entity schema, then adds a lookup column referencing Contact with a Const default whose GUID does not exist, and verifies the real MCP server rejects the write before save with a not-found error.")]
+	public async Task ModifyEntitySchemaColumn_Should_Reject_LookupConstDefault_When_RecordMissing() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string lookupColumnName = "UsrOwner";
+		const string missingRecordId = "00000000-0000-0000-0000-0000000000aa";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult =
+			await ActAddLookupColumnWithMissingConstDefaultAsync(arrangeContext, lookupColumnName, missingRecordId);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the lookup-column mutation can be attempted");
+		addResult.ExitCode.Should().Be(1,
+			because: "a Const lookup default pointing at a nonexistent record must be rejected before save (DRAFT-AC-06)");
+		addResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("was not found in referenced schema", StringComparison.Ordinal),
+			because: "the rejection must explain that the default record does not exist in the referenced schema");
+	}
+
+	[Test]
 	[Description("Creates a schema through create-entity-schema with masked=true on a Text column and verifies masked is preserved in structured readback.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ReadColumnToolName)]
@@ -954,6 +982,27 @@ public sealed class EntitySchemaToolE2ETests {
 		});
 	}
 
+	private static async Task<CommandExecutionEnvelope> ActAddLookupColumnWithMissingConstDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName,
+		string missingRecordId) {
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a lookup Const default pointing at a missing record", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Lookup",
+				titleLocalizations: BuildLocalizations("Owner"),
+				referenceSchemaName: "Contact",
+				defaultValueConfig: BuildConstDefaultValueConfig(missingRecordId));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
 	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string? columnName = null) {
@@ -1203,7 +1252,8 @@ public sealed class EntitySchemaToolE2ETests {
 		bool? indexed = null,
 		string? defaultValueSource = null,
 		string? defaultValue = null,
-		Dictionary<string, object?>? defaultValueConfig = null) {
+		Dictionary<string, object?>? defaultValueConfig = null,
+		string? referenceSchemaName = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
 			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
@@ -1217,6 +1267,9 @@ public sealed class EntitySchemaToolE2ETests {
 		};
 		if (!string.IsNullOrWhiteSpace(type)) {
 			args["type"] = type;
+		}
+		if (!string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			args["reference-schema-name"] = referenceSchemaName;
 		}
 		if (titleLocalizations?.Count > 0) {
 			args["title-localizations"] = titleLocalizations;
@@ -1594,6 +1647,13 @@ public sealed class EntitySchemaToolE2ETests {
 		return new Dictionary<string, object?> {
 			["source"] = "Settings",
 			["value-source"] = valueSource
+		};
+	}
+
+	private static Dictionary<string, object?> BuildConstDefaultValueConfig(string value) {
+		return new Dictionary<string, object?> {
+			["source"] = "Const",
+			["value"] = value
 		};
 	}
 
