@@ -31,7 +31,8 @@ public interface IToolCommandResolver {
 /// </summary>
 public class ToolCommandResolver(
 	ISettingsRepository settingsRepository,
-	ISettingsBootstrapService settingsBootstrapService) : IToolCommandResolver {
+	ISettingsBootstrapService settingsBootstrapService,
+	IInteractiveConsole interactiveConsole) : IToolCommandResolver {
 
 	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -55,10 +56,10 @@ public class ToolCommandResolver(
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
 				?? throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
-			settings = settings.Fill(options);
+			settings = settings.Fill(options, interactiveConsole);
 		} 
 		else {
-			settings = new EnvironmentSettings().Fill(options);
+			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new InvalidOperationException(
@@ -84,7 +85,7 @@ public class ToolCommandResolver(
 				?? new EnvironmentSettings {
 					Login = "default"
 				};
-		settings = settings.Fill(options);
+		settings = settings.Fill(options, interactiveConsole);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
 	}

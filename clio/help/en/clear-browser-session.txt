@@ -1,0 +1,23 @@
+NAME
+    clear-browser-session - Delete the cached Creatio browser session
+
+DESCRIPTION
+    Removes the cached Playwright storageState for a registered Creatio environment
+    so the next 'get-browser-session' performs a fresh login. The command is
+    idempotent — it succeeds even when no session is cached.
+
+SYNOPSIS
+    clio clear-browser-session [-e <environment>] [--output-path <path>]
+
+OPTIONS
+    -e, --environment   Target environment name (defaults to the active environment).
+    --output-path       Also delete the file at this path (for sessions written via
+                        'get-browser-session --output-path'). The default cache entry is
+                        always removed; this option covers the additional copy.
+
+EXAMPLES
+    clio clear-browser-session -e MyEnv
+        Delete the cached session for MyEnv.
+
+    clio clear-browser-session -e MyEnv --output-path /tmp/session.storageState.json
+        Delete the cached session AND the credential file at the specified path.

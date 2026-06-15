@@ -782,7 +782,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities."),
+				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
@@ -1636,7 +1636,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities."),
+				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -2463,7 +2463,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — and in a `columns` add-batch the read-shape scalar `caption` is promoted to `title-localizations` — so a column read from get-app-info can be sent back by adding the `action` verb.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -2501,6 +2501,30 @@ internal static class ToolContractCatalog {
 									["type"] = "Lookup",
 									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
+								}
+							}
+						}
+					}
+				}),
+				Example("Round-trip a get-app-info column: modify and remove using the read shape", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[OperationsFieldName] = new object[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							[SchemaNameFieldName] = ExamplePackageName,
+							["update-operations"] = new object[] {
+								// modify a column read from get-app-info: identity as `name`, type as `data-value-type`
+								new Dictionary<string, object?> {
+									[ActionFieldName] = "modify",
+									["name"] = "UsrStatus",
+									["data-value-type"] = "Lookup",
+									["reference-schema"] = ExampleTaskStatusSchemaName
+								},
+								// remove a column echoing only the read-shape `name`
+								new Dictionary<string, object?> {
+									[ActionFieldName] = "remove",
+									["name"] = "UsrObsolete"
 								}
 							}
 						}

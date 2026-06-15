@@ -3111,6 +3111,105 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("Canonical attribute-level validator binding `{ \"required\": { \"type\": \"usr.NotEmpty\" } }` passes ValidateValidatorBindingShape")]
+	public void ValidateValidatorBindingShape_CanonicalShape_ReturnsValid() {
+		// Arrange
+		string viewModelConfig = """
+			{"attributes":{"UsrDescription":{"modelConfig":{"path":"PDS.UsrDescription"},"validators":{"required":{"type":"usr.NotEmpty"}}}}}
+		""";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingShape(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the canonical shape `{ <name>: { type: \"<ValidatorType>\" } }` is the documented runtime contract and must pass without errors");
+		result.Errors.Should().BeEmpty(
+			because: "no anti-shape is present and the validator must remain quiet on valid input");
+	}
+
+	[Test]
+	[Description("`validators: [ ... ]` declared as an array on a view-model attribute is rejected — must be an object map")]
+	public void ValidateValidatorBindingShape_AttributeValidatorsAsArray_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfig = """
+			{"attributes":{"UsrDescription":{"modelConfig":{"path":"PDS.UsrDescription"},"validators":[{"type":"usr.NotEmpty"}]}}}
+		""";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "an array-shaped `validators` on an attribute is silently dropped by the existing chain — it must be flagged before save");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("UsrDescription") && error.Contains("an array"),
+			because: "the error must name the offending attribute and the wrong shape so the agent can fix it without grepping");
+	}
+
+	[Test]
+	[Description("Named validator entry declared as an array (`{ required: [{ type: ... }] }`) is rejected — each entry must be an object")]
+	public void ValidateValidatorBindingShape_NamedEntryAsArray_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfig = """
+			{"attributes":{"UsrDescription":{"modelConfig":{"path":"PDS.UsrDescription"},"validators":{"required":[{"type":"usr.NotEmpty"}]}}}}
+		""";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "wrapping a validator entry in an array is silently skipped by `TryGetValidatorType` — the body must be rejected before save");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("UsrDescription") && error.Contains("required") && error.Contains("an array"),
+			because: "the error must identify both the attribute and the validator name so the agent can pinpoint the wrapper that needs to go");
+	}
+
+	[Test]
+	[Description("Named validator entry declared as a bare string (`{ required: \"usr.NotEmpty\" }`) is rejected — must be an object with `type`")]
+	public void ValidateValidatorBindingShape_NamedEntryAsString_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfig = """
+			{"attributes":{"UsrDescription":{"modelConfig":{"path":"PDS.UsrDescription"},"validators":{"required":"usr.NotEmpty"}}}}
+		""";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a bare string shorthand is not the documented contract — the entry needs `{ type: \"<ValidatorType>\" }` so the agent must not ship the abbreviation");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("UsrDescription") && error.Contains("required") && error.Contains("a string"),
+			because: "the error must explain which entry is the wrong shape and what kind it is so the fix is mechanical");
+	}
+
+	[Test]
+	[Description("Named validator entry missing the `type` property is rejected — each entry must point at a SCHEMA_VALIDATORS key via a non-empty string `type`")]
+	public void ValidateValidatorBindingShape_NamedEntryMissingType_ReturnsInvalid() {
+		// Arrange
+		string viewModelConfig = """
+			{"attributes":{"UsrDescription":{"modelConfig":{"path":"PDS.UsrDescription"},"validators":{"required":{"params":{"message":"#ResourceString(M)#"}}}}}}
+		""";
+		string body = BuildStaticViewModelConfigPageBody("[]", viewModelConfig);
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateValidatorBindingShape(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "an entry without `type` has nothing to dispatch to in SCHEMA_VALIDATORS — the body would attach the validator metadata to the attribute without a runtime target");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("UsrDescription") && error.Contains("required") && error.Contains("type"),
+			because: "the error must name both the attribute and the missing property so the agent can add the type pointer without re-reading guidance");
+	}
+
+	[Test]
 	[Description("Empty body returns valid result without errors")]
 	public void ValidateValidatorControlBindings_EmptyBody_ReturnsValid() {
 		// Act

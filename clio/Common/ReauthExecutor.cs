@@ -31,7 +31,6 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Fields: Private
 
 	private readonly Action _login;
-	private readonly ILogger _logger;
 	private readonly object _reauthLock = new();
 	private int _loginVersion;
 
@@ -57,10 +56,8 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// Creates a new <see cref="ReauthExecutor"/>.
 	/// </summary>
 	/// <param name="login">Callback that re-authenticates the underlying client. Required.</param>
-	/// <param name="logger">Optional logger; a single warning is written each time a re-auth is performed.</param>
-	public ReauthExecutor(Action login, ILogger logger = null) {
+	public ReauthExecutor(Action login) {
 		_login = login ?? throw new ArgumentNullException(nameof(login));
-		_logger = logger;
 	}
 
 	#endregion
@@ -215,7 +212,6 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	}
 
 	private void TryReauthenticate(int observedVersion) {
-		bool reauthPerformed = false;
 		lock (_reauthLock) {
 			// If the version has advanced while we waited on the lock, another caller has
 			// already re-authenticated for us; skip our own Login and proceed to retry.
@@ -225,11 +221,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 				// observable on weak memory models (ARM, AArch64) without depending on
 				// the lock's release fence to publish it to lock-free readers.
 				Volatile.Write(ref _loginVersion, unchecked(_loginVersion + 1));
-				reauthPerformed = true;
 			}
-		}
-		if (reauthPerformed) {
-			_logger?.WriteWarning("Detected expired Creatio session; re-authenticated and retrying the request.");
 		}
 	}
 

@@ -321,6 +321,73 @@ public sealed class PageValidateToolE2ETests {
 			because: "no error should be reported for the canonical happy path");
 	}
 
+	[Test]
+	[Description("validate-page rejects a body whose JavaScript syntax is invalid (the production incident shape `await X = Y`) — proves the new Acornima syntax pre-flight gate fires through the real MCP transport, not just the regex brace-counter that previously passed this body as syntax-OK.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects body with await-as-assignment-target syntax error")]
+	[AllureDescription("Sends the canonical incident body (`await request.$context.X = \"value\"`) through validate-page and verifies that the response carries valid=false with a `JavaScript syntax error at line N, column M` message — proving the pre-flight tool now matches the write-path tools' Acornima-based gate.")]
+	public async Task PageValidateTool_Should_Reject_Body_With_JavaScript_Syntax_Error() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string incidentBody =
+			"define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			incidentBody);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the body's `await X = Y` shape is a JavaScript syntax error; the pre-flight tool must reject it before any write tool sees it");
+		response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "the syntax gate must surface its dedicated JsSyntaxOk=false signal so callers can route to the right fix");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "an actionable failure response per the AC requires the error list to carry the syntax diagnostic");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("JavaScript syntax error", System.StringComparison.OrdinalIgnoreCase),
+			because: "the canonical syntax-gate prefix is what existing tooling and operator habits key on");
+	}
+
+	[Test]
+	[Description("validate-page rejects a body whose custom converter uses the reserved `crt.*` namespace — proves the new AST lint pass surfaces through the pre-flight tool end-to-end. The regex layer treats `crt.*` as a valid vendor prefix, so this body is the canonical proof that the lint pass adds detection beyond regex under default validation.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects converter using reserved crt.* prefix")]
+	[AllureDescription("Sends a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The regex validators accept the body (their checks explicitly skip `crt.*` keys); verifying the response carries `converter-crt-prefix-reserved` proves the AST lint pass surfaces through the validate-page MCP wire.")]
+	public async Task PageValidateTool_Should_Reject_Custom_Converter_With_Crt_Prefix() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string crtPrefixConverterBody = ValidPageBody.Replace(
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"converters: /**SCHEMA_CONVERTERS*/{ \"crt.MyConverter\": function(v) { return v; } }/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			crtPrefixConverterBody);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the reserved `crt.*` namespace is for Creatio built-in converters; the AST lint pass must catch the custom-name usage end-to-end via the pre-flight tool");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the lint failure must contribute to the validation error list");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("converter-crt-prefix-reserved", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
