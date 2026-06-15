@@ -2,6 +2,7 @@ activate-pkg:activate-pkg,activate-package,apkg,enable-package
 add-data-binding-row:add-data-binding-row
 add-item:add-item,create
 add-package:add-package,ap
+add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy

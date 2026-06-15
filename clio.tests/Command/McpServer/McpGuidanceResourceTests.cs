@@ -766,6 +766,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document the macro syntax");
 		article.Text.Should().Contain("`resources` parameter",
 			because: "the guide should document how explicit resource entries are passed to page tools");
+		article.Text.Should().Contain("HARD REJECT",
+			because: "the guide should state that inline text literals are rejected, not merely discouraged");
+		article.Text.Should().Contain("placeholder",
+			because: "placeholders are the headline case the enforcement guidance must call out");
+		article.Text.Should().Contain("default-language",
+			because: "the creation rule must tell the agent to seed the default-language value via the resources parameter");
 	}
 
 	[Test]
