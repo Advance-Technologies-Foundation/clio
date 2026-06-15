@@ -91,6 +91,10 @@
 
 	</ItemGroup>
 
+	<ItemGroup Label="ProcessDesignerRecipes">
+		<EmbeddedResource Include="Common\ProcessDesigner\Recipes\read-data-element.recipe.js" />
+	</ItemGroup>
+
 	<Choose>
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>

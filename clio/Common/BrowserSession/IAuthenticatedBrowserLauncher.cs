@@ -20,4 +20,22 @@ public interface IAuthenticatedBrowserLauncher {
 	/// <param name="ct">Cancellation token.</param>
 	/// <exception cref="ChromiumNotFoundException">No Chromium-based browser could be located.</exception>
 	Task LaunchAsync(EnvironmentSettings env, string storageStatePath, CancellationToken ct = default);
+
+	/// <summary>
+	/// Same as <see cref="LaunchAsync"/>, but returns the loopback remote-debugging port the launched
+	/// browser is listening on, so a caller (e.g. the Process Designer driver) can re-attach a CDP session
+	/// to the same already-authenticated browser. The browser is left open.
+	/// </summary>
+	/// <param name="env">Target environment (its <c>Uri</c> is the post-login navigation target).</param>
+	/// <param name="storageStatePath">Path to a Playwright storageState file produced by the session service.</param>
+	/// <param name="ct">Cancellation token.</param>
+	/// <returns>The launch result carrying the chosen <see cref="LaunchResult.DevToolsPort"/>.</returns>
+	/// <exception cref="ChromiumNotFoundException">No Chromium-based browser could be located.</exception>
+	Task<LaunchResult> LaunchAndKeepOpenAsync(EnvironmentSettings env, string storageStatePath, CancellationToken ct = default);
 }
+
+/// <summary>
+/// The outcome of launching an authenticated browser.
+/// </summary>
+/// <param name="DevToolsPort">The loopback remote-debugging port the launched browser is listening on.</param>
+public sealed record LaunchResult(int DevToolsPort);

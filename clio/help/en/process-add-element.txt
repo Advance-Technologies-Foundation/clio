@@ -1,0 +1,34 @@
+process-add-element (alias: pae)
+
+Drives the live Creatio Process Designer (over the Chrome DevTools Protocol) to append and configure
+an element and SAVE the process — without hand-drawing BPMN. This slice supports the Read data element.
+The result is a runnable Start -> Read data -> End process.
+
+USAGE
+  clio process-add-element --element-type read-data --read-object Contact -e <environment>
+  clio pae --element-type read-data --read-object Account --process-caption "My read" -e <environment>
+
+OPTIONS
+  --element-type      Element type to add. Supported: read-data. (required)
+  --read-object       Object the Read data element reads, e.g. Contact. (required)
+  --process-id        Existing process id to open; omit to create a NEW process.
+  --process-caption   Process caption (readback handle); auto-generated when omitted.
+  --headed            Run the browser headed (default true; headless unverified).
+  -e, --environment   Registered clio environment name (forms-auth).
+
+HOW IT WORKS
+  1. Validates the planned Start -> Read data -> End graph; aborts BEFORE opening a browser on any error.
+  2. Obtains an authenticated browser session (get-browser-session) and launches a local Chromium (CDP).
+  3. Appends a Read data element onto the Start->End flow, sets the source object, asserts the
+     connection is valid (no .djs-validate-outline), and SAVEs.
+  4. Prints the saved process identity as JSON: { success, code, uId, caption }.
+
+REQUIREMENTS
+  - A forms-auth Creatio environment (login + password). OAuth-only environments are not supported.
+  - A local Chromium-based browser (Chrome/Edge/Brave) on the machine running clio.
+
+NOTES
+  - Read it back with `describe-process --process-caption "<caption>"` or
+    `generate-process-model --code <code>`.
+  - Never reports a false-positive save: a missing save signal, an invalid connection, or a CDP error
+    yield a specific Error: and a non-zero exit.

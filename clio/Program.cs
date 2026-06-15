@@ -10,6 +10,7 @@ using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
+using Clio.Command.ProcessDesigner;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
@@ -209,6 +210,7 @@ internal class Program {
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
 		typeof(DescribeProcessOptions),
+		typeof(ProcessAddElementOptions),
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
@@ -403,6 +405,7 @@ internal class Program {
 			MergeWorkspacesCommandOptions opts => Resolve<MergeWorkspacesCommand>(opts).Execute(opts),
 			GenerateProcessModelCommandOptions opts => Resolve<GenerateProcessModelCommand>(opts).Execute(opts),
 			DescribeProcessOptions opts => Resolve<DescribeProcessCommand>(opts).Execute(opts),
+			ProcessAddElementOptions opts => Resolve<ProcessAddElementCommand>(opts).Execute(opts),
 			StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
 			HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
 			LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),

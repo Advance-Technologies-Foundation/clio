@@ -54,6 +54,7 @@ externalLink:externalLink,link
 extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package
 generate-pkg-zip:generate-pkg-zip,comp-pkg,compress
 describe-process:describe-process,dp
+process-add-element:process-add-element,pae
 generate-process-model:generate-process-model,gpm
 generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash

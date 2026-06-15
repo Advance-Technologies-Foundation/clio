@@ -18,6 +18,7 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
+using Clio.Command.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.TIDE;
@@ -335,6 +336,7 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<ValidateProcessGraphTool>();
 		services.AddTransient<DescribeProcessTool>();
+		services.AddTransient<ProcessAddElementTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
@@ -553,6 +555,7 @@ public class BindingsModule {
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
+		services.AddTransient<ProcessAddElementCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();

@@ -340,6 +340,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="describe-process"></a>
 <a id="dp"></a>
 - [`describe-process`](docs/commands/describe-process.md) - Read an existing Creatio process and return its structured graph (elements, flows, parameters), `dp`
+<a id="process-add-element"></a>
+<a id="pae"></a>
+- [`process-add-element`](docs/commands/process-add-element.md) - Drive the Process Designer to append and configure an element (Read data) and save the process, `pae`
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`

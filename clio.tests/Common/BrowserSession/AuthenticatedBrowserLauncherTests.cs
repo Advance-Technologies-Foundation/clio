@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -12,8 +11,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Common.BrowserSession;
 
 /// <summary>
-/// Story 9 (browser-session-handoff): AuthenticatedBrowserLauncher unit tests for injectable logic
-/// that does not require a real browser or CDP connection.
+/// AuthenticatedBrowserLauncher unit tests for injectable logic that does not require a real browser.
+/// After Story 1 (ai-business-process-generation) the CDP plumbing lives in <see cref="ICdpSession"/>,
+/// so the launcher is exercised here with a mocked session — behavior must stay identical to Mode A.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -114,38 +114,54 @@ public sealed class AuthenticatedBrowserLauncherTests {
 
 	#endregion
 
-	#region Tests: LaunchAsync error paths
+	#region Tests: LaunchAndKeepOpenAsync
+
+	private static IFileSystem FsWithPortAndCookies(string port = "9222") {
+		IFileSystem fs = Substitute.For<IFileSystem>();
+		fs.ReadAllText(Arg.Any<string>()).Returns(callInfo => {
+			string path = callInfo.Arg<string>();
+			return path.EndsWith("DevToolsActivePort")
+				? $"{port}\n/devtools/browser/abc"
+				: StorageStateJson.Serialize(
+					new StorageStateResult([new BrowserCookie(".ASPXAUTH", "v", "d", "/", true, false, "Lax", -1)]));
+		});
+		fs.ExistsFile(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>().EndsWith("DevToolsActivePort"));
+		return fs;
+	}
+
+	private static IProcessExecutor StartedExecutor() {
+		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
+		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
+			.Returns(Task.FromResult(new ProcessLaunchResult { Started = true, ProcessId = 12345 }));
+		return executor;
+	}
 
 	private static AuthenticatedBrowserLauncher BuildSut(
-		IChromiumLocator? locator = null,
-		IProcessExecutor? executor = null,
-		IFileSystem? fileSystem = null,
-		IHttpClientFactory? httpFactory = null) {
+		IChromiumLocator locator = null,
+		IProcessExecutor executor = null,
+		IFileSystem fileSystem = null,
+		ICdpSession cdpSession = null) {
 		locator ??= Substitute.For<IChromiumLocator>();
+		locator.Locate().Returns("/usr/bin/chromium");
 		executor ??= Substitute.For<IProcessExecutor>();
 		fileSystem ??= Substitute.For<IFileSystem>();
-		httpFactory ??= Substitute.For<IHttpClientFactory>();
+		cdpSession ??= Substitute.For<ICdpSession>();
 		ILogger logger = Substitute.For<ILogger>();
-		return new AuthenticatedBrowserLauncher(locator, executor, fileSystem, httpFactory, logger);
+		return new AuthenticatedBrowserLauncher(locator, executor, fileSystem, cdpSession, logger);
 	}
 
 	[Test]
-	[Description("LaunchAsync should throw when the browser process fails to start, not silently continue.")]
-	public async Task LaunchAsync_ShouldThrow_WhenProcessDoesNotStart() {
+	[Description("LaunchAndKeepOpenAsync should throw when the browser process fails to start, not silently continue.")]
+	public async Task LaunchAndKeepOpenAsync_ShouldThrow_WhenProcessDoesNotStart() {
 		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns("/usr/bin/chromium");
 		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
 		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(Task.FromResult(new ProcessLaunchResult { Started = false, ErrorMessage = "binary not found" }));
-		IFileSystem fs = Substitute.For<IFileSystem>();
-		fs.ReadAllText(Arg.Any<string>()).Returns(StorageStateJson.Serialize(
-			new StorageStateResult([new BrowserCookie(".ASPXAUTH", "v", "d", "/", true, false, "Lax", -1)])));
-		AuthenticatedBrowserLauncher sut = BuildSut(locator, executor, fs);
+		AuthenticatedBrowserLauncher sut = BuildSut(executor: executor, fileSystem: FsWithPortAndCookies());
 		EnvironmentSettings env = new() { Uri = "https://dev.creatio.com", IsNetCore = true };
 
 		// Act
-		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json");
+		Func<Task> act = () => sut.LaunchAndKeepOpenAsync(env, "/tmp/session.storageState.json");
 
 		// Assert
 		await act.Should().ThrowAsync<InvalidOperationException>(
@@ -153,26 +169,20 @@ public sealed class AuthenticatedBrowserLauncherTests {
 	}
 
 	[Test]
-	[Description("LaunchAsync should throw when DevToolsActivePort never appears within the timeout budget.")]
-	public async Task LaunchAsync_ShouldThrow_WhenDevToolsPortFileNeverAppears() {
+	[Description("LaunchAndKeepOpenAsync should propagate cancellation when DevToolsActivePort never appears.")]
+	public async Task LaunchAndKeepOpenAsync_ShouldThrow_WhenDevToolsPortFileNeverAppears() {
 		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns("/usr/bin/chromium");
-		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
-		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
-			.Returns(Task.FromResult(new ProcessLaunchResult { Started = true, ProcessId = 12345 }));
 		IFileSystem fs = Substitute.For<IFileSystem>();
 		fs.ReadAllText(Arg.Any<string>()).Returns(StorageStateJson.Serialize(
 			new StorageStateResult([new BrowserCookie(".ASPXAUTH", "v", "d", "/", true, false, "Lax", -1)])));
-		// Port file never appears.
-		fs.ExistsFile(Arg.Any<string>()).Returns(false);
-		AuthenticatedBrowserLauncher sut = BuildSut(locator, executor, fs);
+		fs.ExistsFile(Arg.Any<string>()).Returns(false); // Port file never appears.
+		AuthenticatedBrowserLauncher sut = BuildSut(executor: StartedExecutor(), fileSystem: fs);
 		EnvironmentSettings env = new() { Uri = "https://dev.creatio.com", IsNetCore = true };
 		using CancellationTokenSource cts = new();
 		cts.Cancel(); // pre-cancelled so the poll loop aborts immediately without a 20s wait
 
 		// Act
-		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json", cts.Token);
+		Func<Task> act = () => sut.LaunchAndKeepOpenAsync(env, "/tmp/session.storageState.json", cts.Token);
 
 		// Assert
 		await act.Should().ThrowAsync<OperationCanceledException>(
@@ -180,44 +190,42 @@ public sealed class AuthenticatedBrowserLauncherTests {
 	}
 
 	[Test]
-	[Description("LaunchAsync should throw when no CDP page target is found within the timeout budget.")]
-	public async Task LaunchAsync_ShouldThrow_WhenPageTargetNeverAppears() {
+	[Description("LaunchAndKeepOpenAsync should rethrow when the CDP session fails to connect (and not leave a stale browser unhandled).")]
+	public async Task LaunchAndKeepOpenAsync_ShouldThrow_WhenCdpSessionConnectFails() {
 		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns("/usr/bin/chromium");
-		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
-		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
-			.Returns(Task.FromResult(new ProcessLaunchResult { Started = true, ProcessId = 12345 }));
-		IFileSystem fs = Substitute.For<IFileSystem>();
-		fs.ReadAllText(Arg.Any<string>()).Returns(callInfo => {
-			string path = callInfo.Arg<string>();
-			// Port file content: first line is the port number.
-			return path.EndsWith("DevToolsActivePort") ? "9222\n/devtools/browser/..." : StorageStateJson.Serialize(
-				new StorageStateResult([new BrowserCookie(".ASPXAUTH", "v", "d", "/", true, false, "Lax", -1)]));
-		});
-		fs.ExistsFile(Arg.Any<string>()).Returns(callInfo =>
-			callInfo.Arg<string>().EndsWith("DevToolsActivePort"));
-		// HttpClient for /json will fail (the localhost port doesn't actually exist in unit tests).
-		IHttpClientFactory httpFactory = Substitute.For<IHttpClientFactory>();
-		httpFactory.CreateClient(Arg.Any<string>())
-			.Returns(_ => new HttpClient(new ThrowingHandler()));
-		AuthenticatedBrowserLauncher sut = BuildSut(locator, executor, fs, httpFactory);
+		ICdpSession cdpSession = Substitute.For<ICdpSession>();
+		cdpSession.ConnectAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException(new InvalidOperationException("could not obtain a CDP page target")));
+		AuthenticatedBrowserLauncher sut = BuildSut(
+			executor: StartedExecutor(), fileSystem: FsWithPortAndCookies(), cdpSession: cdpSession);
 		EnvironmentSettings env = new() { Uri = "https://dev.creatio.com", IsNetCore = true };
-		using CancellationTokenSource cts = new();
-		cts.Cancel(); // pre-cancelled so the poll loop aborts immediately without a 4s wait
 
 		// Act
-		Func<Task> act = () => sut.LaunchAsync(env, "/tmp/session.storageState.json", cts.Token);
+		Func<Task> act = () => sut.LaunchAndKeepOpenAsync(env, "/tmp/session.storageState.json");
 
 		// Assert
-		await act.Should().ThrowAsync<OperationCanceledException>(
-			"because a cancelled token while polling for a CDP page target should propagate the cancellation");
+		await act.Should().ThrowAsync<InvalidOperationException>(
+			"because a CDP connect failure must surface rather than reporting a successful authenticated launch");
 	}
 
-	/// <summary>Stub handler that always throws HttpRequestException, simulating a port that is not listening.</summary>
-	private sealed class ThrowingHandler : HttpMessageHandler {
-		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
-			Task.FromException<HttpResponseMessage>(new HttpRequestException("connection refused (unit test)"));
+	[Test]
+	[Description("LaunchAndKeepOpenAsync should connect, inject cookies, navigate, and return the chosen DevTools port.")]
+	public async Task LaunchAndKeepOpenAsync_ShouldInjectCookiesNavigateAndReturnPort_WhenLaunchSucceeds() {
+		// Arrange
+		ICdpSession cdpSession = Substitute.For<ICdpSession>();
+		AuthenticatedBrowserLauncher sut = BuildSut(
+			executor: StartedExecutor(), fileSystem: FsWithPortAndCookies("9222"), cdpSession: cdpSession);
+		EnvironmentSettings env = new() { Uri = "https://dev.creatio.com", IsNetCore = true };
+
+		// Act
+		LaunchResult result = await sut.LaunchAndKeepOpenAsync(env, "/tmp/session.storageState.json");
+
+		// Assert
+		result.DevToolsPort.Should().Be(9222,
+			because: "the launcher must expose the port it read from DevToolsActivePort so a driver can re-attach");
+		await cdpSession.Received(1).ConnectAsync(9222, Arg.Any<CancellationToken>());
+		await cdpSession.Received().SendAsync("Network.setCookie", Arg.Any<object>(), Arg.Any<CancellationToken>());
+		await cdpSession.Received().SendAsync("Page.navigate", Arg.Any<object>(), Arg.Any<CancellationToken>());
 	}
 
 	#endregion
