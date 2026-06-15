@@ -123,25 +123,10 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 		using var timeoutSource = new CancellationTokenSource(PublishTimeout);
 		CancellationToken cancellationToken = timeoutSource.Token;
 
-		string sessionPath;
-		try {
-			sessionPath = await _browserSessionService
-				.GetSessionPathAsync(_environmentSettings, forceRefresh: false, ct: cancellationToken)
-				.ConfigureAwait(false);
-		} catch (OperationCanceledException) {
-			return BuildTimeoutWarning("acquiring browser-session cookies");
-		} catch (Exception ex) {
-			return LogAndBuildFailureWarning("could not obtain browser-session cookies", ex);
-		}
-
-		if (string.IsNullOrWhiteSpace(sessionPath) || !_fileSystem.File.Exists(sessionPath)) {
-			return BuildSkipWarning("browser-session storageState was not available.");
-		}
-
-		string storageStateJson = await _fileSystem.File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
-		IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
-		if (cookies.Count == 0) {
-			return BuildSkipWarning("browser-session storageState did not contain usable cookies.");
+		(IReadOnlyList<BrowserCookie>? cookies, string? cookieWarning) =
+			await TryAcquireCookiesAsync(cancellationToken).ConfigureAwait(false);
+		if (cookies is null) {
+			return cookieWarning;
 		}
 
 		ApplicationInfoPayload? applicationInfo = TryReadApplicationInfo();
@@ -159,15 +144,9 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 			return BuildSkipWarning("current user info is unavailable or missing sessionId.");
 		}
 
-		Uri serviceUrl;
-		try {
-			serviceUrl = ResolveServiceUrl(applicationInfo.ServiceUrl, applicationInfo.ClientConnectionClassName);
-		} catch (InvalidOperationException ex) {
-			// ResolveServiceUrl throws only controlled, non-sensitive messages (empty/foreign-host/
-			// downgrade/unsupported-scheme), so surfacing the message here leaks nothing.
-			return BuildSkipWarning($"message-channel serviceUrl is invalid: {ex.Message}");
-		} catch (Exception ex) {
-			return BuildSkipWarning($"message-channel serviceUrl is invalid ({ex.GetType().Name}).");
+		(Uri? serviceUrl, string? serviceUrlWarning) = TryResolveServiceUrl(applicationInfo);
+		if (serviceUrl is null) {
+			return serviceUrlWarning;
 		}
 
 		MessageChannelEnvelope envelope = BuildSaveEnvelope(schemaName, schemaCaption, userInfo);
@@ -180,6 +159,49 @@ internal sealed class PageDesignerPresenceNotifier : IPageDesignerPresenceNotifi
 			return BuildTimeoutWarning("publishing the live notification");
 		} catch (Exception ex) {
 			return LogAndBuildFailureWarning("live notification publish failed", ex);
+		}
+	}
+
+	/// <summary>
+	/// Acquires the forms-auth browser-session cookies under the bounded <paramref name="cancellationToken"/>.
+	/// Returns the cookies on success, or a non-null fail-open warning (skip/timeout/failure) otherwise.
+	/// </summary>
+	private async Task<(IReadOnlyList<BrowserCookie>? Cookies, string? Warning)> TryAcquireCookiesAsync(
+		CancellationToken cancellationToken) {
+		string sessionPath;
+		try {
+			sessionPath = await _browserSessionService
+				.GetSessionPathAsync(_environmentSettings, forceRefresh: false, ct: cancellationToken)
+				.ConfigureAwait(false);
+		} catch (OperationCanceledException) {
+			return (null, BuildTimeoutWarning("acquiring browser-session cookies"));
+		} catch (Exception ex) {
+			return (null, LogAndBuildFailureWarning("could not obtain browser-session cookies", ex));
+		}
+		if (string.IsNullOrWhiteSpace(sessionPath) || !_fileSystem.File.Exists(sessionPath)) {
+			return (null, BuildSkipWarning("browser-session storageState was not available."));
+		}
+		string storageStateJson = await _fileSystem.File.ReadAllTextAsync(sessionPath).ConfigureAwait(false);
+		IReadOnlyList<BrowserCookie> cookies = StorageStateJson.ParseCookies(storageStateJson);
+		if (cookies.Count == 0) {
+			return (null, BuildSkipWarning("browser-session storageState did not contain usable cookies."));
+		}
+		return (cookies, null);
+	}
+
+	/// <summary>
+	/// Resolves and validates the message-channel service URL. Returns the URI on success, or a
+	/// non-null skip warning when the URL is empty/foreign-host/downgraded/unsupported.
+	/// </summary>
+	private (Uri? ServiceUrl, string? Warning) TryResolveServiceUrl(ApplicationInfoPayload applicationInfo) {
+		try {
+			return (ResolveServiceUrl(applicationInfo.ServiceUrl, applicationInfo.ClientConnectionClassName), null);
+		} catch (InvalidOperationException ex) {
+			// ResolveServiceUrl throws only controlled, non-sensitive messages (empty/foreign-host/
+			// downgrade/unsupported-scheme), so surfacing the message here leaks nothing.
+			return (null, BuildSkipWarning($"message-channel serviceUrl is invalid: {ex.Message}"));
+		} catch (Exception ex) {
+			return (null, BuildSkipWarning($"message-channel serviceUrl is invalid ({ex.GetType().Name})."));
 		}
 	}
 
