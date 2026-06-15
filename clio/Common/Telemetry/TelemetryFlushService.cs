@@ -349,8 +349,8 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		DateTimeOffset cutoff = _timeProvider.GetUtcNow().AddDays(-MaxSpoolAgeDays);
 		List<string> live = new(sessions.Count);
 		foreach (string path in sessions) {
-			// A session-state file is only useful for duration inference within a live session;
-			// reclaim stale or unreadable ones so the directory cannot grow without bound.
+			// Session-state files matter only for in-session duration inference, so stale or
+			// unreadable ones are reclaimed to keep the directory bounded.
 			if (SessionLastWriteUtc(path) is { } writtenAt && writtenAt >= cutoff) {
 				live.Add(path);
 			} else {

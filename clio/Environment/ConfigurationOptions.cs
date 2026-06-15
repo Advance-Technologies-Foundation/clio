@@ -183,49 +183,9 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
-			if (this.Safe.HasValue && this.Safe.Value) {
-				Console.WriteLine($"You try to apply the action on the production site {this.Uri}");
-				Console.Write($"Do you want to continue? [Y/N]:");
-				var answer = Console.ReadKey();
-				Console.WriteLine();
-				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
-					Console.WriteLine("Operation was canceled by user");
-					System.Environment.Exit(1);
-				}
-			}
+			ConfirmProductionSiteOrExit();
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? this.WorkspacePathes : options.WorkspacePathes;
-
-			bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if (isUri) {
-
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Uri = uri;
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.WorkingFolder = options.DbWorknigFolder;
-
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Login = options.DbUser;
-			}
-
-			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
-				result.DbServer.Password = options.DbPassword;
-			}
-
+			ApplyDbServerOptions(result, options);
 			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
 				result.BackupFilePath = options.BackUpFilePath;
 			}
@@ -234,6 +194,38 @@ namespace Clio
 			}
 			return result;
 		}
+
+		private void ConfirmProductionSiteOrExit() {
+			if (!(this.Safe.HasValue && this.Safe.Value)) {
+				return;
+			}
+			Console.WriteLine($"You try to apply the action on the production site {this.Uri}");
+			Console.Write($"Do you want to continue? [Y/N]:");
+			var answer = Console.ReadKey();
+			Console.WriteLine();
+			if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
+				Console.WriteLine("Operation was canceled by user");
+				System.Environment.Exit(1);
+			}
+		}
+
+		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
+			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
+				EnsureDbServer(result).Uri = uri;
+			}
+			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
+				EnsureDbServer(result).WorkingFolder = options.DbWorknigFolder;
+			}
+			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
+				EnsureDbServer(result).Login = options.DbUser;
+			}
+			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
+				EnsureDbServer(result).Password = options.DbPassword;
+			}
+		}
+
+		private static DbServer EnsureDbServer(EnvironmentSettings result) =>
+			result.DbServer ??= new DbServer();
 	}
 
 	/// <summary>
