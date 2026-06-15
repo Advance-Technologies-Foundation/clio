@@ -213,6 +213,7 @@ internal class Program {
 		typeof(McpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
+		typeof(AddPackageDependencyOptions),
 
 
 	];
@@ -424,6 +425,7 @@ internal class Program {
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
+			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
