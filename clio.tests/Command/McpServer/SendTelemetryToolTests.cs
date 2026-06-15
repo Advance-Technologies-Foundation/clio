@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -14,7 +15,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public sealed class SendMeasurementsToolTests
+public sealed class SendTelemetryToolTests
 {
 	private string _telemetryHome;
 
@@ -34,38 +35,38 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exposes the stable send-measurements MCP tool name as a constant and attribute value.")]
-	public void SendMeasurementsTool_Should_Expose_Stable_Tool_Name()
+	[Description("Exposes the stable send-telemetry MCP tool name as a constant and attribute value.")]
+	public void SendTelemetryTool_Should_Expose_Stable_Tool_Name()
 	{
 		// Arrange
 
 		// Act
-		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(SendMeasurementsTool)
-			.GetMethod(nameof(SendMeasurementsTool.SendMeasurements))!
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(SendTelemetryTool)
+			.GetMethod(nameof(SendTelemetryTool.SendTelemetry))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
-		SendMeasurementsTool.ToolName.Should().Be("send-measurements",
+		SendTelemetryTool.ToolName.Should().Be("send-telemetry",
 			because: "the product telemetry skill contract calls this stable MCP tool name");
-		attribute.Name.Should().Be(SendMeasurementsTool.ToolName,
+		attribute.Name.Should().Be(SendTelemetryTool.ToolName,
 			because: "MCP discovery should advertise the same stable tool name that tests and agents use");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Exposes a read-only consent lookup tool so agents do not probe consent by sending analytics.")]
-	public void GetMeasurementsConsentTool_Should_Expose_Stable_Tool_Name()
+	public void GetTelemetryConsentTool_Should_Expose_Stable_Tool_Name()
 	{
 		// Arrange / Act
-		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)typeof(GetMeasurementsConsentTool)
-			.GetMethod(nameof(GetMeasurementsConsentTool.GetMeasurementsConsent))!
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)typeof(GetTelemetryConsentTool)
+			.GetMethod(nameof(GetTelemetryConsentTool.GetTelemetryConsent))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
-		toolAttribute.Name.Should().Be(GetMeasurementsConsentTool.ToolName,
-			because: "agents need a read-only way to inspect local consent before sending measurements");
+		toolAttribute.Name.Should().Be(GetTelemetryConsentTool.ToolName,
+			because: "agents need a read-only way to inspect local consent before sending telemetry events");
 		toolAttribute.ReadOnly.Should().BeTrue(
 			because: "consent lookup must not write product analytics");
 	}
@@ -81,9 +82,9 @@ public sealed class SendMeasurementsToolTests
 		// Act / Assert
 		instructions.Should().Contain("Product telemetry",
 			because: "Copilot and other chat agents receive MCP server instructions even before loading skill files");
-		instructions.Should().Contain("send-measurements",
+		instructions.Should().Contain("send-telemetry",
 			because: "the chat model needs to know which MCP tool stores product telemetry");
-		instructions.Should().Contain("get-measurements-consent",
+		instructions.Should().Contain("get-telemetry-consent",
 			because: "agents should inspect local consent with a read-only tool before sending analytics");
 		instructions.Should().Contain("get-tool-contract",
 			because: "the authoritative payload shape and emission order live in the tool contract, not the server instructions");
@@ -93,19 +94,19 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Delegates the MCP request to the measurement service without wrapping the structured result.")]
-	public void SendMeasurements_Should_Delegate_To_Measurement_Service()
+	[Description("Delegates the MCP request to the telemetry service without wrapping the structured result.")]
+	public void SendTelemetry_Should_Delegate_To_Telemetry_Service()
 	{
 		// Arrange
-		IMeasurementService service = Substitute.For<IMeasurementService>();
-		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
-		MeasurementRequest request = CreateRequest() with { TelemetryConsent = "granted" };
-		MeasurementResult expected = new(true, "stored", "event-id");
+		ITelemetryService service = Substitute.For<ITelemetryService>();
+		ITelemetryFlushScheduler scheduler = Substitute.For<ITelemetryFlushScheduler>();
+		TelemetryEventRequest request = CreateRequest() with { TelemetryConsent = "granted" };
+		TelemetryEventResult expected = new(true, "stored", "event-id");
 		service.Send(request).Returns(expected);
-		SendMeasurementsTool tool = new(service, scheduler);
+		SendTelemetryTool tool = new(service, scheduler);
 
 		// Act
-		MeasurementResult actual = tool.SendMeasurements(request);
+		TelemetryEventResult actual = tool.SendTelemetry(request);
 
 		// Assert
 		actual.Should().BeSameAs(expected,
@@ -116,17 +117,17 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Schedules a background telemetry flush after an event is stored locally.")]
-	public void SendMeasurements_Should_Schedule_Flush_When_Event_Stored()
+	public void SendTelemetry_Should_Schedule_Flush_When_Event_Stored()
 	{
 		// Arrange
-		IMeasurementService service = Substitute.For<IMeasurementService>();
-		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
-		MeasurementRequest request = CreateRequest();
-		service.Send(request).Returns(new MeasurementResult(true, "stored", "event-id"));
-		SendMeasurementsTool tool = new(service, scheduler);
+		ITelemetryService service = Substitute.For<ITelemetryService>();
+		ITelemetryFlushScheduler scheduler = Substitute.For<ITelemetryFlushScheduler>();
+		TelemetryEventRequest request = CreateRequest();
+		service.Send(request).Returns(new TelemetryEventResult(true, "stored", "event-id"));
+		SendTelemetryTool tool = new(service, scheduler);
 
 		// Act
-		tool.SendMeasurements(request);
+		tool.SendTelemetry(request);
 
 		// Assert
 		scheduler.Received(1).TryScheduleFlush();
@@ -134,21 +135,21 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Does not schedule a background flush when the measurement is rejected or consent is denied.")]
-	public void SendMeasurements_Should_Not_Schedule_Flush_When_Event_Not_Stored()
+	[Description("Does not schedule a background flush when the telemetry is rejected or consent is denied.")]
+	public void SendTelemetry_Should_Not_Schedule_Flush_When_Event_Not_Stored()
 	{
 		// Arrange
-		IMeasurementService service = Substitute.For<IMeasurementService>();
-		IMeasurementFlushScheduler scheduler = Substitute.For<IMeasurementFlushScheduler>();
-		MeasurementRequest request = CreateRequest();
+		ITelemetryService service = Substitute.For<ITelemetryService>();
+		ITelemetryFlushScheduler scheduler = Substitute.For<ITelemetryFlushScheduler>();
+		TelemetryEventRequest request = CreateRequest();
 		service.Send(request).Returns(
-			new MeasurementResult(false, "rejected", Error: new MeasurementError("unknown-event-name", "bad")),
-			new MeasurementResult(true, "consent-denied"));
-		SendMeasurementsTool tool = new(service, scheduler);
+			new TelemetryEventResult(false, "rejected", Error: new TelemetryError("unknown-event-name", "bad")),
+			new TelemetryEventResult(true, "consent-denied"));
+		SendTelemetryTool tool = new(service, scheduler);
 
 		// Act
-		tool.SendMeasurements(request);
-		tool.SendMeasurements(request);
+		tool.SendTelemetry(request);
+		tool.SendTelemetry(request);
 
 		// Assert
 		scheduler.DidNotReceive().TryScheduleFlush();
@@ -156,14 +157,14 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Requires telemetry consent before the first measurement can be persisted.")]
-	public void MeasurementService_Should_Require_Consent_On_First_Use()
+	[Description("Requires telemetry consent before the first telemetry can be persisted.")]
+	public void TelemetryService_Should_Require_Consent_On_First_Use()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementResult result = service.Send(CreateRequest());
+		TelemetryEventResult result = service.Send(CreateRequest());
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -176,14 +177,14 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Reads local consent without creating telemetry folders or storing measurement events.")]
-	public void MeasurementService_Should_Read_Consent_Status_Without_Writing_Analytics()
+	[Description("Reads local consent without creating telemetry folders or storing telemetry events.")]
+	public void TelemetryService_Should_Read_Consent_Status_Without_Writing_Analytics()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementConsentResult unknown = service.GetConsentStatus();
+		TelemetryConsentResult unknown = service.GetConsentStatus();
 
 		// Assert
 		unknown.TelemetryConsent.Should().Be("unknown",
@@ -195,14 +196,14 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Reads a persisted granted consent decision without requiring another user prompt.")]
-	public void MeasurementService_Should_Return_Persisted_Consent_Status()
+	public void TelemetryService_Should_Return_Persisted_Consent_Status()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
 
 		// Act
-		MeasurementConsentResult result = service.GetConsentStatus();
+		TelemetryConsentResult result = service.GetConsentStatus();
 
 		// Assert
 		result.Status.Should().Be("known",
@@ -213,42 +214,42 @@ public sealed class SendMeasurementsToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Stores denied consent locally and does not write measurement events.")]
-	public void MeasurementService_Should_NoOp_When_Consent_Is_Denied()
+	[Description("Stores denied consent locally and does not write telemetry events.")]
+	public void TelemetryService_Should_NoOp_When_Consent_Is_Denied()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementResult first = service.Send(CreateRequest() with { TelemetryConsent = "denied" });
-		MeasurementResult second = service.Send(CreateRequest("business_plan_generated"));
+		TelemetryEventResult first = service.Send(CreateRequest() with { TelemetryConsent = "denied" });
+		TelemetryEventResult second = service.Send(CreateRequest("business_plan_generated"));
 
 		// Assert
 		first.Success.Should().BeTrue(because: "denied consent should be accepted and persisted without failing the workflow");
 		second.Status.Should().Be("consent-denied",
-			because: "later measurements should silently no-op after a user denies consent");
+			because: "later telemetry events should silently no-op after a user denies consent");
 		EventFiles().Should().BeEmpty(
-			because: "denied consent must prevent local measurement persistence");
+			because: "denied consent must prevent local telemetry persistence");
 		File.Exists(Path.Combine(_telemetryHome, "consent.json")).Should().BeTrue(
 			because: "the consent decision must be preserved across sessions");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Preserves a denied consent decision when a later measurement includes stale granted consent.")]
-	public void MeasurementService_Should_Not_Overwrite_Denied_Consent_With_Later_Granted_Value()
+	[Description("Preserves a denied consent decision when a later telemetry includes stale granted consent.")]
+	public void TelemetryService_Should_Not_Overwrite_Denied_Consent_With_Later_Granted_Value()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 		service.Send(CreateRequest() with { TelemetryConsent = "denied" });
 
 		// Act
-		MeasurementResult result = service.Send(CreateRequest("business_plan_generated") with { TelemetryConsent = "granted" });
-		MeasurementConsentResult consent = service.GetConsentStatus();
+		TelemetryEventResult result = service.Send(CreateRequest("business_plan_generated") with { TelemetryConsent = "granted" });
+		TelemetryConsentResult consent = service.GetConsentStatus();
 
 		// Assert
 		result.Status.Should().Be("consent-denied",
-			because: "send-measurements must not act as a consent update endpoint after an opt-out");
+			because: "send-telemetry must not act as a consent update endpoint after an opt-out");
 		consent.TelemetryConsent.Should().Be("denied",
 			because: "a stale granted payload must not override the persisted denied decision");
 		EventFiles().Should().BeEmpty(
@@ -258,13 +259,13 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Persists granted-consent events as OpenTelemetry-shaped JSON files.")]
-	public void MeasurementService_Should_Write_Otel_Event_To_Events_Directory()
+	public void TelemetryService_Should_Write_Otel_Event_To_Events_Directory()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementResult result = service.Send(CreateRequest() with {
+		TelemetryEventResult result = service.Send(CreateRequest() with {
 			TelemetryConsent = "granted",
 			DurationMs = 12345
 		});
@@ -278,7 +279,7 @@ public sealed class SendMeasurementsToolTests
 			because: "the service should write one local event file").Subject;
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile));
 		document.RootElement.GetProperty("severity_text").GetString().Should().Be("INFO",
-			because: "product measurements are telemetry info logs");
+			because: "product telemetry events are telemetry info logs");
 		document.RootElement.GetProperty("body").GetProperty("string_value").GetString().Should().Be("session_started",
 			because: "the OTel body should carry the event name");
 		JsonElement attributes = document.RootElement.GetProperty("attributes");
@@ -287,17 +288,17 @@ public sealed class SendMeasurementsToolTests
 		AttributeValue(attributes, "duration_ms").Should().Be("12345",
 			because: "duration_ms should be stored when the agent supplies it");
 		AttributeValue(attributes, "installation_id").Should().NotBeNullOrWhiteSpace(
-			because: "clio should enrich measurements with an anonymous installation identifier");
+			because: "clio should enrich telemetry events with an anonymous installation identifier");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Infers duration_ms from local per-session stage timers when the agent does not provide duration.")]
-	public void MeasurementService_Should_Infer_Duration_From_Local_Session_Timer()
+	public void TelemetryService_Should_Infer_Duration_From_Local_Session_Timer()
 	{
 		// Arrange
 		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
-		MeasurementService service = CreateService(time);
+		TelemetryService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest("implementation_started") with { TelemetryConsent = "granted" });
@@ -314,11 +315,11 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Adds overall duration since session start to later events without treating every event as a step duration.")]
-	public void MeasurementService_Should_Add_Overall_Duration_To_Post_Start_Events()
+	public void TelemetryService_Should_Add_Overall_Duration_To_Post_Start_Events()
 	{
 		// Arrange
 		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
-		MeasurementService service = CreateService(time);
+		TelemetryService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
@@ -338,11 +339,11 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Does not add duration_ms to implementation_started while still recording total session age.")]
-	public void MeasurementService_Should_Not_Infer_Step_Duration_For_Implementation_Start()
+	public void TelemetryService_Should_Not_Infer_Step_Duration_For_Implementation_Start()
 	{
 		// Arrange
 		MutableTimeProvider time = new(DateTimeOffset.UnixEpoch);
-		MeasurementService service = CreateService(time);
+		TelemetryService service = CreateService(time);
 
 		// Act
 		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
@@ -362,16 +363,16 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Accepts post-implementation change request and change applied events.")]
-	public void MeasurementService_Should_Accept_Post_Implementation_Change_Events()
+	public void TelemetryService_Should_Accept_Post_Implementation_Change_Events()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementResult requested = service.Send(CreateRequest("implementation_changes_requested") with {
+		TelemetryEventResult requested = service.Send(CreateRequest("implementation_changes_requested") with {
 			TelemetryConsent = "granted"
 		});
-		MeasurementResult applied = service.Send(CreateRequest("implementation_changes_applied"));
+		TelemetryEventResult applied = service.Send(CreateRequest("implementation_changes_applied"));
 
 		// Assert
 		requested.Success.Should().BeTrue(
@@ -385,14 +386,14 @@ public sealed class SendMeasurementsToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects unknown event names and unsupported fields before writing an event file.")]
-	public void MeasurementService_Should_Reject_Invalid_Or_Unsupported_Payload()
+	public void TelemetryService_Should_Reject_Invalid_Or_Unsupported_Payload()
 	{
 		// Arrange
-		MeasurementService service = CreateService();
+		TelemetryService service = CreateService();
 
 		// Act
-		MeasurementResult unknownEvent = service.Send(CreateRequest("unknown_event") with { TelemetryConsent = "granted" });
-		MeasurementResult unsupportedField = service.Send(CreateRequestWithUnsupportedPrompt());
+		TelemetryEventResult unknownEvent = service.Send(CreateRequest("unknown_event") with { TelemetryConsent = "granted" });
+		TelemetryEventResult unsupportedField = service.Send(CreateRequestWithUnsupportedPrompt());
 
 		// Assert
 		unknownEvent.Error!.Code.Should().Be("unknown-event-name",
@@ -403,7 +404,31 @@ public sealed class SendMeasurementsToolTests
 			because: "invalid payloads must be rejected before persistence");
 	}
 
-	private static MeasurementRequest CreateRequest(string eventName = "session_started") =>
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a soft non-throwing result when the local filesystem rejects a telemetry write.")]
+	public void TelemetryService_Should_Return_Soft_Result_When_Storage_Write_Fails()
+	{
+		// Arrange
+		System.IO.Abstractions.IFileSystem fileSystem = Substitute.For<System.IO.Abstractions.IFileSystem>();
+		fileSystem.File.Exists(Arg.Any<string>()).Returns(false);
+		fileSystem.File.When(file => file.WriteAllText(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Encoding>()))
+			.Do(_ => throw new UnauthorizedAccessException("telemetry directory is read-only"));
+		TelemetryService service = new(fileSystem, _telemetryHome);
+
+		// Act
+		TelemetryEventResult result = service.Send(CreateRequest() with { TelemetryConsent = "granted" });
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a storage I/O failure must be reported, not silently treated as stored");
+		result.Status.Should().Be("store-failed",
+			because: "telemetry persistence errors degrade to a soft status instead of throwing into the MCP tool");
+		result.Error!.Code.Should().Be("storage-unavailable",
+			because: "the caller receives a structured, non-throwing storage error");
+	}
+
+	private static TelemetryEventRequest CreateRequest(string eventName = "session_started") =>
 		new(
 			SessionId: "018f6e4a-0000-7000-9000-000000000001",
 			EventName: eventName,
@@ -411,7 +436,7 @@ public sealed class SendMeasurementsToolTests
 			SkillVersion: "0.1.0",
 			PluginVersion: "0.1.0");
 
-	private static MeasurementRequest CreateRequestWithUnsupportedPrompt() =>
+	private static TelemetryEventRequest CreateRequestWithUnsupportedPrompt() =>
 		CreateRequest() with {
 			TelemetryConsent = "granted",
 			ExtensionData = new() {
@@ -419,9 +444,9 @@ public sealed class SendMeasurementsToolTests
 			}
 		};
 
-	private MeasurementService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
+	private TelemetryService CreateService() => new(new System.IO.Abstractions.FileSystem(), _telemetryHome);
 
-	private MeasurementService CreateService(TimeProvider timeProvider) =>
+	private TelemetryService CreateService(TimeProvider timeProvider) =>
 		new(new System.IO.Abstractions.FileSystem(), _telemetryHome, timeProvider);
 
 	private sealed class MutableTimeProvider : TimeProvider

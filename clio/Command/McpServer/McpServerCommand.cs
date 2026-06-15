@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
@@ -14,7 +14,7 @@ public class McpServerCommandOptions : BaseCommandOptions
 
 
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
-	IMeasurementFlushScheduler flushScheduler) : Command<McpServerCommandOptions>{
+	ITelemetryFlushScheduler flushScheduler) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
 		McpLogNotifier.Initialize(server);
 		using var cts = new CancellationTokenSource();

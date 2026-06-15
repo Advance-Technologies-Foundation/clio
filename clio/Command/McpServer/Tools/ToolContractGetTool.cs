@@ -293,8 +293,8 @@ internal static class ToolContractCatalog {
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
-			[GetMeasurementsConsentTool.ToolName] = BuildGetMeasurementsConsent(),
-			[SendMeasurementsTool.ToolName] = BuildSendMeasurements(),
+			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
+			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
@@ -358,8 +358,8 @@ internal static class ToolContractCatalog {
 		GuidanceGetTool.ToolName,
 		ExecuteEsqTool.ToolName,
 		SettingsHealthTool.ToolName,
-		GetMeasurementsConsentTool.ToolName,
-		SendMeasurementsTool.ToolName,
+		GetTelemetryConsentTool.ToolName,
+		SendTelemetryTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -539,19 +539,19 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
-	private static ToolContractDefinition BuildSendMeasurements() {
-		return BuildSendMeasurementsContract(SendMeasurementsTool.ToolName, "Use at product workflow milestones after the user has granted product telemetry consent.");
+	private static ToolContractDefinition BuildSendTelemetry() {
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted product telemetry consent.");
 	}
 
-	private static ToolContractDefinition BuildGetMeasurementsConsent() {
-		return BuildGetMeasurementsConsentContract(GetMeasurementsConsentTool.ToolName,
-			"Use before sending the first product measurement event to check whether telemetry consent is already stored locally.");
+	private static ToolContractDefinition BuildGetTelemetryConsent() {
+		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
+			"Use before sending the first product telemetry event to check whether telemetry consent is already stored locally.");
 	}
 
-	private static ToolContractDefinition BuildGetMeasurementsConsentContract(string toolName, string flowNotes) {
+	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Reads locally persisted product telemetry consent without storing any measurement event.",
+			"Reads locally persisted product telemetry consent without storing any telemetry event.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -571,14 +571,14 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				new ToolAntiPattern("Sending session_started to check consent", "Use this read-only consent tool before any measurement event. Do not call send-measurements until consent is granted or the first-run answer must be persisted.")
+				new ToolAntiPattern("Sending session_started to check consent", "Use this read-only consent tool before any telemetry event. Do not call send-telemetry until consent is granted or the first-run answer must be persisted.")
 			]);
 	}
 
-	private static ToolContractDefinition BuildSendMeasurementsContract(string toolName, string flowNotes) {
+	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a product telemetry measurement as a local OpenTelemetry-shaped JSON file after user consent.",
+			"Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file after user consent.",
 			new ToolInputSchemaContract(
 				["session_id", EventNameFieldName, "coding_agent", "skill_version", "plugin_version"],
 				[
@@ -587,7 +587,6 @@ internal static class ToolContractCatalog {
 					Field("coding_agent", StringType, "Agent or host name, for example Codex, Claude Code, Cursor, Copilot, or VS Code."),
 					Field("skill_version", StringType, "Product skill version."),
 					Field("plugin_version", StringType, "Product plugin version."),
-					Field("duration_ms", NumberType, "Optional step duration for meaningful workflow transitions in milliseconds."),
 					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")
 				],
 				Validators: [
@@ -601,7 +600,7 @@ internal static class ToolContractCatalog {
 					"status == rejected"
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(StatusFieldName, StringType, "Measurement status: stored, consent-denied, or rejected."),
+				Field(StatusFieldName, StringType, "Telemetry status: stored, consent-denied, or rejected."),
 				Field("event_id", StringType, "Generated event identifier when an event is stored."),
 				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
 			CommonErrorContract,
@@ -615,15 +614,14 @@ internal static class ToolContractCatalog {
 					[EventNameFieldName] = "business_plan_generated",
 					["coding_agent"] = "Codex",
 					["skill_version"] = "0.1.0",
-					["plugin_version"] = "0.1.0",
-					["duration_ms"] = 82000
+					["plugin_version"] = "0.1.0"
 				})
 			],
 			Flow([toolName], flowNotes),
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom measurement fields", "The measurement tool accepts only the documented product telemetry fields.")
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields.")
 			]);
 	}
 

@@ -9,7 +9,7 @@ namespace Clio.Common.Telemetry;
 /// <summary>
 /// Schedules opportunistic background telemetry flushes with single-flight semantics.
 /// </summary>
-public interface IMeasurementFlushScheduler
+public interface ITelemetryFlushScheduler
 {
 	/// <summary>
 	/// Starts a fire-and-forget background flush; no-ops when a flush is already running.
@@ -25,26 +25,26 @@ public interface IMeasurementFlushScheduler
 }
 
 /// <inheritdoc />
-public sealed class MeasurementFlushScheduler : IMeasurementFlushScheduler
+public sealed class TelemetryFlushScheduler : ITelemetryFlushScheduler
 {
 	/// <summary>
 	/// Hard cap for a single background flush run.
 	/// </summary>
 	internal static readonly TimeSpan FlushRunTimeout = TimeSpan.FromMinutes(2);
 
-	private readonly IMeasurementFlushService _flushService;
-	private readonly ILogger<MeasurementFlushScheduler> _logger;
+	private readonly ITelemetryFlushService _flushService;
+	private readonly ILogger<TelemetryFlushScheduler> _logger;
 	private readonly SemaphoreSlim _gate = new(1, 1);
 	private volatile Task _pending = Task.CompletedTask;
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="MeasurementFlushScheduler"/> class.
+	/// Initializes a new instance of the <see cref="TelemetryFlushScheduler"/> class.
 	/// </summary>
-	public MeasurementFlushScheduler(IMeasurementFlushService flushService,
-		ILogger<MeasurementFlushScheduler> logger = null)
+	public TelemetryFlushScheduler(ITelemetryFlushService flushService,
+		ILogger<TelemetryFlushScheduler> logger = null)
 	{
 		_flushService = flushService ?? throw new ArgumentNullException(nameof(flushService));
-		_logger = logger ?? NullLogger<MeasurementFlushScheduler>.Instance;
+		_logger = logger ?? NullLogger<TelemetryFlushScheduler>.Instance;
 	}
 
 	/// <inheritdoc />

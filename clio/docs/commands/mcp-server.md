@@ -27,14 +27,22 @@ Available MCP tool categories:
 - sync-pages       Batch page operations in a single call
 - data-binding    Manage data bindings and seed data
 - telemetry       Record local product telemetry for app-creation workflows:
-  - get-measurements-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
-  - send-measurements         Store one workflow measurement as a local OpenTelemetry-shaped event once consent is granted
+  - get-telemetry-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
+  - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
 
 When a telemetry endpoint is configured (settings file "telemetry" section or the
-CLIO_TELEMETRY_ENDPOINT / CLIO_TELEMETRY_INGEST_KEY environment variables) and consent
-is granted, stored events are uploaded in the background (on server start and after
-each stored event) as OTLP/HTTP JSON and removed locally on success. Without an
-endpoint nothing is sent; the local spool is only pruned (age and size caps).
+CLIO_TELEMETRY_ENDPOINT / CLIO_TELEMETRY_INGEST_KEY environment variables; the endpoint
+must be https, or http only for a loopback host) and consent is granted, stored events
+are uploaded in the background (on server start and after each stored event) as OTLP/HTTP
+JSON and removed locally on success. Without an endpoint nothing is sent; the local spool
+is only pruned (age and size caps).
+
+Local telemetry is stored under &lt;clio-home&gt;/telemetry (relocate with CLIO_TELEMETRY_HOME;
+honors CLIO_HOME). Each event carries only product workflow metadata — session_id,
+event_name, timestamps, coding_agent, clio_version, platform, an anonymous installation_id,
+and skill/plugin versions — never prompts, secrets, tokens, customer data, or generated
+content. Spooled events are pruned after at most 30 days locally; the collected metrics are
+retained up to 1 year server-side.
 
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling

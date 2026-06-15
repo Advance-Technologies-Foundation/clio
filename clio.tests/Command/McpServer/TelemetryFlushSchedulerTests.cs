@@ -10,7 +10,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public sealed class MeasurementFlushSchedulerTests
+public sealed class TelemetryFlushSchedulerTests
 {
 	private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(5);
 
@@ -20,8 +20,8 @@ public sealed class MeasurementFlushSchedulerTests
 	public async Task TryScheduleFlush_Should_Run_Flush_When_Idle()
 	{
 		// Arrange
-		(IMeasurementFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
-		MeasurementFlushScheduler scheduler = new(service);
+		(ITelemetryFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
+		TelemetryFlushScheduler scheduler = new(service);
 
 		// Act
 		scheduler.TryScheduleFlush();
@@ -39,8 +39,8 @@ public sealed class MeasurementFlushSchedulerTests
 	public async Task TryScheduleFlush_Should_Skip_When_Flush_Already_Running()
 	{
 		// Arrange
-		(IMeasurementFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
-		MeasurementFlushScheduler scheduler = new(service);
+		(ITelemetryFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
+		TelemetryFlushScheduler scheduler = new(service);
 
 		// Act
 		scheduler.TryScheduleFlush();
@@ -60,8 +60,8 @@ public sealed class MeasurementFlushSchedulerTests
 	public async Task DrainAsync_Should_Wait_For_InFlight_Flush_Within_Timeout()
 	{
 		// Arrange
-		(IMeasurementFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
-		MeasurementFlushScheduler scheduler = new(service);
+		(ITelemetryFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
+		TelemetryFlushScheduler scheduler = new(service);
 		scheduler.TryScheduleFlush();
 		await started.Task.WaitAsync(WaitTimeout);
 
@@ -83,8 +83,8 @@ public sealed class MeasurementFlushSchedulerTests
 	public async Task DrainAsync_Should_Return_When_Flush_Hangs_Beyond_Timeout()
 	{
 		// Arrange
-		(IMeasurementFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
-		MeasurementFlushScheduler scheduler = new(service);
+		(ITelemetryFlushService service, TaskCompletionSource started, TaskCompletionSource release) = CreateControllableService();
+		TelemetryFlushScheduler scheduler = new(service);
 		scheduler.TryScheduleFlush();
 		await started.Task.WaitAsync(WaitTimeout);
 
@@ -103,10 +103,10 @@ public sealed class MeasurementFlushSchedulerTests
 	public async Task TryScheduleFlush_Should_Not_Throw_And_Recover_When_Flush_Service_Faults()
 	{
 		// Arrange
-		IMeasurementFlushService service = Substitute.For<IMeasurementFlushService>();
+		ITelemetryFlushService service = Substitute.For<ITelemetryFlushService>();
 		service.FlushAsync(Arg.Any<CancellationToken>())
 			.Returns(_ => Task.FromException(new InvalidOperationException("boom")));
-		MeasurementFlushScheduler scheduler = new(service);
+		TelemetryFlushScheduler scheduler = new(service);
 
 		// Act
 		Action schedule = scheduler.TryScheduleFlush;
@@ -120,12 +120,12 @@ public sealed class MeasurementFlushSchedulerTests
 		await service.Received(2).FlushAsync(Arg.Any<CancellationToken>());
 	}
 
-	private static (IMeasurementFlushService Service, TaskCompletionSource Started, TaskCompletionSource Release)
+	private static (ITelemetryFlushService Service, TaskCompletionSource Started, TaskCompletionSource Release)
 		CreateControllableService()
 	{
 		TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		IMeasurementFlushService service = Substitute.For<IMeasurementFlushService>();
+		ITelemetryFlushService service = Substitute.For<ITelemetryFlushService>();
 		service.FlushAsync(Arg.Any<CancellationToken>()).Returns(_ => {
 			started.TrySetResult();
 			return release.Task;

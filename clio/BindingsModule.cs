@@ -115,8 +115,8 @@ public class BindingsModule {
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
-		services.AddHttpClient(MeasurementFlushService.HttpClientName)
-			.ConfigureHttpClient(client => client.Timeout = MeasurementFlushService.PostTimeout);
+		services.AddHttpClient(TelemetryFlushService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -317,21 +317,26 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
-		services.AddTransient<IMeasurementService>(sp => new MeasurementService(
-			sp.GetRequiredService<IFileSystem>(), timeProvider: sp.GetRequiredService<TimeProvider>()));
-		services.AddSingleton<IMeasurementFlushOptionsProvider, MeasurementFlushOptionsProvider>();
-		services.AddSingleton<IMeasurementFlushService>(sp => new MeasurementFlushService(
+		// Singleton: the service is effectively stateless (its only shared mutable state is a static
+		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
+		// flusher that depends on it (no captured-dependency lifetime mismatch).
+		services.AddSingleton<ITelemetryService>(sp => new TelemetryService(
+			sp.GetRequiredService<IFileSystem>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>()));
+		services.AddSingleton<ITelemetryFlushOptionsProvider, TelemetryFlushOptionsProvider>();
+		services.AddSingleton<ITelemetryFlushService>(sp => new TelemetryFlushService(
 			sp.GetRequiredService<IFileSystem>(),
 			sp.GetRequiredService<IHttpClientFactory>(),
-			sp.GetRequiredService<IMeasurementService>(),
-			sp.GetRequiredService<IMeasurementFlushOptionsProvider>(),
+			sp.GetRequiredService<ITelemetryService>(),
+			sp.GetRequiredService<ITelemetryFlushOptionsProvider>(),
 			timeProvider: sp.GetRequiredService<TimeProvider>(),
-			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MeasurementFlushService>>()));
-		services.AddSingleton<IMeasurementFlushScheduler>(sp => new MeasurementFlushScheduler(
-			sp.GetRequiredService<IMeasurementFlushService>(),
-			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MeasurementFlushScheduler>>()));
-		services.AddTransient<GetMeasurementsConsentTool>();
-		services.AddTransient<SendMeasurementsTool>();
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushService>>()));
+		services.AddSingleton<ITelemetryFlushScheduler>(sp => new TelemetryFlushScheduler(
+			sp.GetRequiredService<ITelemetryFlushService>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushScheduler>>()));
+		services.AddTransient<GetTelemetryConsentTool>();
+		services.AddTransient<SendTelemetryTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();

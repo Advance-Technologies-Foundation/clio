@@ -11,24 +11,24 @@ using FluentAssertions;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the background telemetry flusher: spooled measurement events are
+/// End-to-end tests for the background telemetry flusher: spooled telemetry events are
 /// uploaded as OTLP/HTTP JSON to a stub collector and removed locally on success.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("send-measurements-flush")]
+[AllureFeature("send-telemetry-flush")]
 [NonParallelizable]
-public sealed class SendMeasurementsFlushE2ETests
+public sealed class SendTelemetryFlushE2ETests
 {
-	private const string ToolName = SendMeasurementsTool.ToolName;
+	private const string ToolName = SendTelemetryTool.ToolName;
 
 	/// <summary>
-	/// Environment variable understood by <c>MeasurementService</c> to redirect its local storage root.
+	/// Environment variable understood by <c>TelemetryService</c> to redirect its local storage root.
 	/// </summary>
 	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
 
 	/// <summary>
-	/// Environment variables understood by <c>MeasurementFlushOptionsProvider</c>.
+	/// Environment variables understood by <c>TelemetryFlushOptionsProvider</c>.
 	/// </summary>
 	private const string TelemetryEndpointEnvironmentVariable = "CLIO_TELEMETRY_ENDPOINT";
 	private const string TelemetryIngestKeyEnvironmentVariable = "CLIO_TELEMETRY_INGEST_KEY";
@@ -36,11 +36,11 @@ public sealed class SendMeasurementsFlushE2ETests
 	private static readonly TimeSpan FlushWaitTimeout = TimeSpan.FromSeconds(15);
 
 	[Test]
-	[Description("Starts the real clio MCP server with a configured telemetry endpoint, invokes send-measurements with consent, and verifies the event is uploaded to the stub OTLP collector and removed from the local spool.")]
+	[Description("Starts the real clio MCP server with a configured telemetry endpoint, invokes send-telemetry with consent, and verifies the event is uploaded to the stub OTLP collector and removed from the local spool.")]
 	[AllureTag(ToolName)]
-	[AllureName("Send Measurements flushes stored event to the collector")]
-	[AllureDescription("Uses the real clio MCP server and a local HTTP stub collector to verify the background OTLP/HTTP upload after send-measurements.")]
-	public async Task SendMeasurements_Should_Flush_Event_To_Stub_Collector_When_Endpoint_Configured()
+	[AllureName("Send Telemetry flushes stored event to the collector")]
+	[AllureDescription("Uses the real clio MCP server and a local HTTP stub collector to verify the background OTLP/HTTP upload after send-telemetry.")]
+	public async Task SendTelemetry_Should_Flush_Event_To_Stub_Collector_When_Endpoint_Configured()
 	{
 		// Arrange
 		string sessionId = Guid.NewGuid().ToString();
@@ -70,7 +70,7 @@ public sealed class SendMeasurementsFlushE2ETests
 
 			// Assert
 			callResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
-				because: "send-measurements should store the event and respond normally");
+				because: "send-telemetry should store the event and respond normally");
 			uploaded.Should().BeTrue(
 				because: "the background flusher should upload the stored event shortly after the tool call");
 			StubCollector.CapturedRequest request = collector.Requests[0];
@@ -81,6 +81,13 @@ public sealed class SendMeasurementsFlushE2ETests
 				.GetProperty("scopeLogs")[0].GetProperty("logRecords");
 			logRecords.GetArrayLength().Should().Be(1,
 				because: "exactly one stored event should be uploaded");
+			JsonElement logRecord = logRecords[0];
+			logRecord.GetProperty("timeUnixNano").ValueKind.Should().Be(JsonValueKind.String,
+				because: "OTLP/HTTP JSON encodes the int64 timeUnixNano as a string");
+			logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
+				because: "the uploaded record must use the camelCase OTLP body shape, not the snake_case local store shape");
+			request.Body.Should().NotContain("time_unix_nano",
+				because: "a wire/schema regression to the snake_case storage shape would be silently rejected and dropped by a strict collector");
 			request.Body.Should().Contain(sessionId,
 				because: "the uploaded OTLP payload should carry the original session id attribute");
 			bool drained = await WaitUntilAsync(() => EventFiles(telemetryHome).Length == 0, FlushWaitTimeout);
@@ -97,7 +104,7 @@ public sealed class SendMeasurementsFlushE2ETests
 	[Description("Pre-seeds a spooled event and granted consent, then verifies that starting the clio MCP server alone uploads the backlog to the stub collector without any tool calls.")]
 	[AllureTag(ToolName)]
 	[AllureName("MCP server start flushes spool backlog")]
-	[AllureDescription("Verifies the on-start flush trigger: a pre-seeded spool drains to the stub collector with no send-measurements calls.")]
+	[AllureDescription("Verifies the on-start flush trigger: a pre-seeded spool drains to the stub collector with no send-telemetry calls.")]
 	public async Task McpServerStart_Should_Flush_Spool_Backlog_Without_Tool_Calls()
 	{
 		// Arrange

@@ -7,28 +7,30 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Ms = System.IO.Abstractions;
 
 namespace Clio.Common.Telemetry;
 
 /// <summary>
-/// Stores product measurement events as local OpenTelemetry-shaped JSON files.
+/// Stores product telemetry events as local OpenTelemetry-shaped JSON files.
 /// </summary>
-public interface IMeasurementService
+public interface ITelemetryService
 {
 	/// <summary>
-	/// Validates and persists a product measurement event locally.
+	/// Validates and persists a product telemetry event locally.
 	/// </summary>
-	MeasurementResult Send(MeasurementRequest request);
+	TelemetryEventResult Send(TelemetryEventRequest request);
 
 	/// <summary>
 	/// Reads the locally persisted telemetry consent decision without writing analytics.
 	/// </summary>
-	MeasurementConsentResult GetConsentStatus();
+	TelemetryConsentResult GetConsentStatus();
 }
 
 /// <inheritdoc />
-public sealed class MeasurementService : IMeasurementService
+public sealed class TelemetryService : ITelemetryService
 {
 	internal const string ConsentGranted = "granted";
 
@@ -55,6 +57,7 @@ public sealed class MeasurementService : IMeasurementService
 	private readonly Ms.IFileSystem _fileSystem;
 	private readonly TimeProvider _timeProvider;
 	private readonly string _telemetryRoot;
+	private readonly ILogger<TelemetryService> _logger;
 
 	private static readonly HashSet<string> AllowedEventNames = new(StringComparer.Ordinal) {
 		SessionStartedEvent,
@@ -78,7 +81,7 @@ public sealed class MeasurementService : IMeasurementService
 	};
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="MeasurementService"/> class.
+	/// Initializes a new instance of the <see cref="TelemetryService"/> class.
 	/// </summary>
 	/// <param name="fileSystem">Filesystem abstraction used for all local telemetry I/O.</param>
 	/// <param name="telemetryRoot">
@@ -89,69 +92,81 @@ public sealed class MeasurementService : IMeasurementService
 	/// Optional time source for event timestamps and duration inference. Defaults to
 	/// <see cref="TimeProvider.System"/>; tests can supply a controllable provider.
 	/// </param>
-	public MeasurementService(Ms.IFileSystem fileSystem, string telemetryRoot = null, TimeProvider timeProvider = null)
+	/// <param name="logger">Optional diagnostics logger; silent when omitted.</param>
+	public TelemetryService(Ms.IFileSystem fileSystem, string telemetryRoot = null, TimeProvider timeProvider = null,
+		ILogger<TelemetryService> logger = null)
 	{
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_timeProvider = timeProvider ?? TimeProvider.System;
 		_telemetryRoot = string.IsNullOrWhiteSpace(telemetryRoot)
 			? DefaultTelemetryRoot
 			: telemetryRoot;
+		_logger = logger ?? NullLogger<TelemetryService>.Instance;
 	}
 
 	/// <inheritdoc />
-	public MeasurementConsentResult GetConsentStatus()
+	public TelemetryConsentResult GetConsentStatus()
 	{
 		ConsentState consentState = ReadConsent();
 		return consentState.TelemetryConsent switch {
-			ConsentGranted => new MeasurementConsentResult(true, "known", ConsentGranted),
-			ConsentDenied => new MeasurementConsentResult(true, "known", ConsentDenied),
-			_ => new MeasurementConsentResult(true, Unknown, Unknown)
+			ConsentGranted => new TelemetryConsentResult(true, "known", ConsentGranted),
+			ConsentDenied => new TelemetryConsentResult(true, "known", ConsentDenied),
+			_ => new TelemetryConsentResult(true, Unknown, Unknown)
 		};
 	}
 
 	/// <inheritdoc />
-	public MeasurementResult Send(MeasurementRequest request)
+	public TelemetryEventResult Send(TelemetryEventRequest request)
 	{
 		if (request is null) {
-			return Invalid("invalid-request", "Measurement request is required.");
+			return Invalid("invalid-request", "Telemetry request is required.");
 		}
-		MeasurementResult validation = ValidateRequest(request);
+		TelemetryEventResult validation = ValidateRequest(request);
 		if (!validation.Success) {
 			return validation;
 		}
 		lock (SyncRoot) {
-			EnsureDirectories();
-			ConsentState consentState = ResolveConsent(request.TelemetryConsent);
-			if (consentState.TelemetryConsent == ConsentDenied) {
-				return new MeasurementResult(true, "consent-denied");
-			}
-			if (consentState.TelemetryConsent != ConsentGranted) {
-				return Invalid("telemetry-consent-required",
-					"Telemetry consent is required before measurements can be stored. Ask the user and retry with telemetry_consent set to granted or denied.");
-			}
+			try {
+				EnsureDirectories();
+				ConsentState consentState = ResolveConsent(request.TelemetryConsent);
+				if (consentState.TelemetryConsent == ConsentDenied) {
+					return new TelemetryEventResult(true, "consent-denied");
+				}
+				if (consentState.TelemetryConsent != ConsentGranted) {
+					return Invalid("telemetry-consent-required",
+						"Telemetry consent is required before telemetry events can be stored. Ask the user and retry with telemetry_consent set to granted or denied.");
+				}
 
-			string eventId = Guid.NewGuid().ToString("N");
-			DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
-			MeasurementSessionState sessionState = ReadSessionState(request.SessionId);
-			long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
-			MeasurementRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
-			long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, request.EventName, eventTimestamp);
-			OpenTelemetryLogEvent logEvent = BuildLogEvent(enrichedRequest, eventId, eventTimestamp, durationSinceSessionStartMs);
-			WriteEvent(eventId, logEvent);
-			UpdateSessionState(sessionState, request.EventName, eventTimestamp);
-			return new MeasurementResult(true, StatusStored, eventId);
+				string eventId = Guid.NewGuid().ToString("N");
+				DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
+				TelemetrySessionState sessionState = ReadSessionState(request.SessionId);
+				long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
+				TelemetryEventRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
+				long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, request.EventName, eventTimestamp);
+				OpenTelemetryLogEvent logEvent = BuildLogEvent(enrichedRequest, eventId, eventTimestamp, durationSinceSessionStartMs);
+				WriteEvent(eventId, logEvent);
+				UpdateSessionState(sessionState, request.EventName, eventTimestamp);
+				return new TelemetryEventResult(true, StatusStored, eventId);
+			} catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) {
+				// Telemetry must never disturb the caller: a local storage I/O failure is reported as a
+				// soft result, never thrown into the MCP tool call. Mirrors the flusher's contract.
+				_logger.LogDebug(ex, "telemetry-store failed error={Error}", ex.Message);
+				return new TelemetryEventResult(false, "store-failed",
+					Error: new TelemetryError("storage-unavailable",
+						"Local telemetry storage is unavailable; the event was not recorded."));
+			}
 		}
 	}
 
-	private static MeasurementResult ValidateRequest(MeasurementRequest request)
+	private static TelemetryEventResult ValidateRequest(TelemetryEventRequest request)
 	{
 		if (request.ExtensionData is { Count: > 0 }) {
 			string invalidFields = string.Join(", ", request.ExtensionData.Keys.OrderBy(key => key, StringComparer.Ordinal));
-			return Invalid("unsupported-fields", $"Unsupported measurement fields: {invalidFields}.");
+			return Invalid("unsupported-fields", $"Unsupported telemetry fields: {invalidFields}.");
 		}
 		foreach ((string name, string value) in RequiredFields(request)) {
 			if (string.IsNullOrWhiteSpace(value)) {
-				return Invalid("missing-required-field", $"Measurement field '{name}' is required.");
+				return Invalid("missing-required-field", $"Telemetry field '{name}' is required.");
 			}
 		}
 		if (!AllowedEventNames.Contains(request.EventName)) {
@@ -160,10 +175,10 @@ public sealed class MeasurementService : IMeasurementService
 		if (!string.IsNullOrWhiteSpace(request.TelemetryConsent) && !AllowedConsents.Contains(request.TelemetryConsent)) {
 			return Invalid("unknown-consent", $"Unsupported telemetry_consent '{request.TelemetryConsent}'.");
 		}
-		return new MeasurementResult(true, "valid");
+		return new TelemetryEventResult(true, "valid");
 	}
 
-	private static IReadOnlyList<(string name, string value)> RequiredFields(MeasurementRequest request) =>
+	private static IReadOnlyList<(string name, string value)> RequiredFields(TelemetryEventRequest request) =>
 	[
 		("session_id", request.SessionId),
 		("event_name", request.EventName),
@@ -172,8 +187,8 @@ public sealed class MeasurementService : IMeasurementService
 		("plugin_version", request.PluginVersion)
 	];
 
-	private static MeasurementResult Invalid(string code, string message) =>
-		new(false, "rejected", Error: new MeasurementError(code, message));
+	private static TelemetryEventResult Invalid(string code, string message) =>
+		new(false, "rejected", Error: new TelemetryError(code, message));
 
 	private ConsentState ResolveConsent(string explicitConsent)
 	{
@@ -200,7 +215,7 @@ public sealed class MeasurementService : IMeasurementService
 		}
 	}
 
-	private OpenTelemetryLogEvent BuildLogEvent(MeasurementRequest request, string eventId, DateTimeOffset timestamp,
+	private OpenTelemetryLogEvent BuildLogEvent(TelemetryEventRequest request, string eventId, DateTimeOffset timestamp,
 		long? durationSinceSessionStartMs)
 	{
 		List<OpenTelemetryAttribute> attributes = [
@@ -230,21 +245,21 @@ public sealed class MeasurementService : IMeasurementService
 			attributes);
 	}
 
-	private MeasurementSessionState ReadSessionState(string sessionId)
+	private TelemetrySessionState ReadSessionState(string sessionId)
 	{
 		string path = SessionStatePath(sessionId);
 		if (!_fileSystem.File.Exists(path)) {
-			return new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
 		}
 		try {
-			return JsonSerializer.Deserialize<MeasurementSessionState>(_fileSystem.File.ReadAllText(path, Encoding.UTF8), JsonOptions)
-				?? new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return JsonSerializer.Deserialize<TelemetrySessionState>(_fileSystem.File.ReadAllText(path, Encoding.UTF8), JsonOptions)
+				?? new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
 		} catch {
-			return new MeasurementSessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
 		}
 	}
 
-	private static long? InferDurationMs(MeasurementSessionState sessionState, string eventName, DateTimeOffset timestamp)
+	private static long? InferDurationMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		string startEventName = eventName switch {
 			"business_plan_generated" => SessionStartedEvent,
@@ -261,7 +276,7 @@ public sealed class MeasurementService : IMeasurementService
 		return Math.Max(0, (long)(timestamp - startedAt).TotalMilliseconds);
 	}
 
-	private static long? InferDurationSinceSessionStartMs(MeasurementSessionState sessionState, string eventName, DateTimeOffset timestamp)
+	private static long? InferDurationSinceSessionStartMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		if (eventName == SessionStartedEvent
 			|| !sessionState.Events.TryGetValue(SessionStartedEvent, out DateTimeOffset sessionStartedAt)) {
@@ -270,7 +285,7 @@ public sealed class MeasurementService : IMeasurementService
 		return Math.Max(0, (long)(timestamp - sessionStartedAt).TotalMilliseconds);
 	}
 
-	private static string FirstKnown(MeasurementSessionState sessionState, params string[] eventNames)
+	private static string FirstKnown(TelemetrySessionState sessionState, params string[] eventNames)
 	{
 		return eventNames
 			.Where(eventName => sessionState.Events.ContainsKey(eventName))
@@ -278,7 +293,7 @@ public sealed class MeasurementService : IMeasurementService
 			.FirstOrDefault();
 	}
 
-	private void UpdateSessionState(MeasurementSessionState sessionState, string eventName, DateTimeOffset timestamp)
+	private void UpdateSessionState(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		sessionState.Events[eventName] = timestamp;
 		WriteJson(SessionStatePath(sessionState.SessionId), sessionState);
@@ -325,7 +340,7 @@ public sealed class MeasurementService : IMeasurementService
 
 	private static string GetClioVersion() =>
 		Assembly.GetEntryAssembly()?.GetName().Version?.ToString()
-		?? typeof(MeasurementService).Assembly.GetName().Version?.ToString()
+		?? typeof(TelemetryService).Assembly.GetName().Version?.ToString()
 		?? Unknown;
 
 	private static string GetPlatform()
@@ -347,7 +362,7 @@ public sealed class MeasurementService : IMeasurementService
 	private string TelemetryRoot => _telemetryRoot;
 	private string ConsentPath => Path.Combine(TelemetryRoot, "consent.json");
 	private string InstallationIdPath => Path.Combine(TelemetryRoot, "installation-id.txt");
-	private string SessionsDirectory => Path.Combine(TelemetryRoot, "sessions");
+	private string SessionsDirectory => TelemetryStoragePaths.SessionsDirectory(TelemetryRoot);
 	private string SessionStatePath(string sessionId) =>
 		Path.Combine(SessionsDirectory, $"{SafeFileName(sessionId)}.json");
 

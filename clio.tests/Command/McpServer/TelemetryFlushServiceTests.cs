@@ -17,7 +17,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public sealed class MeasurementFlushServiceTests
+public sealed class TelemetryFlushServiceTests
 {
 	private const string DefaultEndpoint = "https://telemetry.example.com/v1/logs";
 	private static readonly DateTimeOffset BaseTime = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -46,7 +46,7 @@ public sealed class MeasurementFlushServiceTests
 		// Arrange
 		WriteEventFile(BaseTime);
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler, endpoint: null);
+		TelemetryFlushService service = CreateService(handler, endpoint: null);
 
 		// Act
 		await service.FlushAsync();
@@ -66,7 +66,7 @@ public sealed class MeasurementFlushServiceTests
 		// Arrange
 		WriteEventFile(BaseTime);
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler, consent: "denied");
+		TelemetryFlushService service = CreateService(handler, consent: "denied");
 
 		// Act
 		await service.FlushAsync();
@@ -86,7 +86,7 @@ public sealed class MeasurementFlushServiceTests
 		// Arrange
 		WriteEventFile(BaseTime, "session_started");
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler);
+		TelemetryFlushService service = CreateService(handler);
 
 		// Act
 		await service.FlushAsync();
@@ -128,7 +128,7 @@ public sealed class MeasurementFlushServiceTests
 			WriteEventFile(BaseTime.AddSeconds(index), $"evt_{index:D3}");
 		}
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(
+		TelemetryFlushService service = CreateService(
 			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
 
 		// Act
@@ -159,14 +159,14 @@ public sealed class MeasurementFlushServiceTests
 		FakeHttpHandler handler = new();
 		handler.Enqueue(HttpStatusCode.ServiceUnavailable, HttpStatusCode.ServiceUnavailable,
 			HttpStatusCode.ServiceUnavailable);
-		MeasurementFlushService service = CreateService(
+		TelemetryFlushService service = CreateService(
 			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
 
 		// Act
 		await service.FlushAsync();
 
 		// Assert
-		handler.Requests.Should().HaveCount(MeasurementFlushService.PostAttempts,
+		handler.Requests.Should().HaveCount(TelemetryFlushService.PostAttempts,
 			because: "a transient failure should be retried up to the attempt cap and never bleed into the next batch");
 		EventFiles().Should().HaveCount(60,
 			because: "undelivered events must stay spooled so the next trigger can retry");
@@ -181,7 +181,7 @@ public sealed class MeasurementFlushServiceTests
 		WriteEventFile(BaseTime);
 		FakeHttpHandler handler = new();
 		handler.Enqueue(HttpStatusCode.TooManyRequests, HttpStatusCode.OK);
-		MeasurementFlushService service = CreateService(handler);
+		TelemetryFlushService service = CreateService(handler);
 
 		// Act
 		await service.FlushAsync();
@@ -204,7 +204,7 @@ public sealed class MeasurementFlushServiceTests
 		}
 		FakeHttpHandler handler = new();
 		handler.Enqueue(HttpStatusCode.BadRequest, HttpStatusCode.OK);
-		MeasurementFlushService service = CreateService(
+		TelemetryFlushService service = CreateService(
 			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
 
 		// Act
@@ -225,13 +225,13 @@ public sealed class MeasurementFlushServiceTests
 		// Arrange
 		MutableTimeProvider time = new(BaseTime);
 		for (int index = 0; index < 5; index++) {
-			WriteEventFile(BaseTime.AddDays(-(MeasurementFlushService.MaxSpoolAgeDays + 5)).AddSeconds(index));
+			WriteEventFile(BaseTime.AddDays(-(TelemetryFlushService.MaxSpoolAgeDays + 5)).AddSeconds(index));
 		}
-		for (int index = 0; index < MeasurementFlushService.MaxSpoolFiles + 10; index++) {
+		for (int index = 0; index < TelemetryFlushService.MaxSpoolFiles + 10; index++) {
 			WriteEventFile(BaseTime.AddHours(-1).AddSeconds(index));
 		}
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler, endpoint: null, timeProvider: time);
+		TelemetryFlushService service = CreateService(handler, endpoint: null, timeProvider: time);
 
 		// Act
 		await service.FlushAsync();
@@ -239,7 +239,7 @@ public sealed class MeasurementFlushServiceTests
 		// Assert
 		handler.Requests.Should().BeEmpty(
 			because: "pruning must not depend on a configured endpoint");
-		EventFiles().Should().HaveCount(MeasurementFlushService.MaxSpoolFiles,
+		EventFiles().Should().HaveCount(TelemetryFlushService.MaxSpoolFiles,
 			because: "expired files and the oldest files above the size cap must be deleted locally");
 	}
 
@@ -254,7 +254,7 @@ public sealed class MeasurementFlushServiceTests
 		string tmpPath = Path.Combine(EventsDirectory, $"{BaseTime.AddSeconds(2):yyyyMMddTHHmmssfffZ}_partial.json.tmp");
 		File.WriteAllText(tmpPath, "partial");
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler);
+		TelemetryFlushService service = CreateService(handler);
 
 		// Act
 		await service.FlushAsync();
@@ -278,7 +278,7 @@ public sealed class MeasurementFlushServiceTests
 		// Arrange
 		WriteEventFile(BaseTime);
 		FakeHttpHandler handler = new();
-		MeasurementFlushService service = CreateService(handler, ingestKey: "public-key-123");
+		TelemetryFlushService service = CreateService(handler, ingestKey: "public-key-123");
 
 		// Act
 		await service.FlushAsync();
@@ -290,21 +290,50 @@ public sealed class MeasurementFlushServiceTests
 				because: "the edge collector filters casual noise by the configured ingest-key header");
 	}
 
-	private MeasurementFlushService CreateService(FakeHttpHandler handler, string endpoint = DefaultEndpoint,
+	[Test]
+	[Category("Unit")]
+	[Description("Prunes session-state files older than the age cap and keeps recent ones, independent of the event spool.")]
+	public async Task FlushAsync_Should_Prune_Stale_Session_State_Files()
+	{
+		// Arrange
+		string sessionsDirectory = Path.Combine(_telemetryHome, "sessions");
+		Directory.CreateDirectory(sessionsDirectory);
+		string stalePath = Path.Combine(sessionsDirectory, "stale-session.json");
+		string freshPath = Path.Combine(sessionsDirectory, "fresh-session.json");
+		File.WriteAllText(stalePath, "{}");
+		File.WriteAllText(freshPath, "{}");
+		File.SetLastWriteTimeUtc(stalePath, BaseTime.AddDays(-(TelemetryFlushService.MaxSpoolAgeDays + 5)).UtcDateTime);
+		File.SetLastWriteTimeUtc(freshPath, BaseTime.AddHours(-1).UtcDateTime);
+		FakeHttpHandler handler = new();
+		TelemetryFlushService service = CreateService(handler, endpoint: null, timeProvider: new MutableTimeProvider(BaseTime));
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		File.Exists(stalePath).Should().BeFalse(
+			because: "session-state files older than the age cap are reclaimed so the directory cannot grow without bound");
+		File.Exists(freshPath).Should().BeTrue(
+			because: "recent session-state files are still needed for in-session duration inference");
+		handler.Requests.Should().BeEmpty(
+			because: "session pruning runs regardless of whether an upload endpoint is configured");
+	}
+
+	private TelemetryFlushService CreateService(FakeHttpHandler handler, string endpoint = DefaultEndpoint,
 		string ingestKey = null, string consent = "granted", TimeProvider timeProvider = null)
 	{
-		IMeasurementService measurementService = Substitute.For<IMeasurementService>();
-		measurementService.GetConsentStatus().Returns(new MeasurementConsentResult(true, "known", consent));
-		IMeasurementFlushOptionsProvider optionsProvider = Substitute.For<IMeasurementFlushOptionsProvider>();
-		optionsProvider.Resolve().Returns(new MeasurementFlushOptions(endpoint, ingestKey));
-		return new MeasurementFlushService(
+		ITelemetryService telemetryService = Substitute.For<ITelemetryService>();
+		telemetryService.GetConsentStatus().Returns(new TelemetryConsentResult(true, "known", consent));
+		ITelemetryFlushOptionsProvider optionsProvider = Substitute.For<ITelemetryFlushOptionsProvider>();
+		optionsProvider.Resolve().Returns(new TelemetryFlushOptions(endpoint, ingestKey));
+		return new TelemetryFlushService(
 			new System.IO.Abstractions.FileSystem(),
 			new FakeHttpClientFactory(handler),
-			measurementService,
+			telemetryService,
 			optionsProvider,
 			_telemetryHome,
 			timeProvider ?? new MutableTimeProvider(BaseTime.AddHours(1)),
-			NullLogger<MeasurementFlushService>.Instance);
+			NullLogger<TelemetryFlushService>.Instance);
 	}
 
 	private string EventsDirectory => Path.Combine(_telemetryHome, "events");
@@ -376,7 +405,7 @@ public sealed class MeasurementFlushServiceTests
 			string body = request.Content is null
 				? null
 				: await request.Content.ReadAsStringAsync(cancellationToken);
-			request.Headers.TryGetValues(MeasurementFlushService.IngestKeyHeaderName, out IEnumerable<string> values);
+			request.Headers.TryGetValues(TelemetryFlushService.IngestKeyHeaderName, out IEnumerable<string> values);
 			Requests.Add(new CapturedRequest(request.RequestUri, body, values?.FirstOrDefault()));
 			HttpStatusCode status = _statuses.Count > 0 ? _statuses.Dequeue() : HttpStatusCode.OK;
 			return new HttpResponseMessage(status);

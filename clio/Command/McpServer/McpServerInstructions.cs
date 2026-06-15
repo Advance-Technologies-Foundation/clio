@@ -23,11 +23,11 @@ internal static class McpServerInstructions
 
 		### Product telemetry
 		Two read-only-aware tools record local product telemetry for app-creation workflows:
-		- `get-measurements-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
-		- `send-measurements` validates and stores a single workflow measurement event as a local OpenTelemetry-shaped file once consent is `granted`.
+		- `get-telemetry-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
+		- `send-telemetry` validates and stores a single workflow telemetry event as a local OpenTelemetry-shaped file once consent is `granted`.
 
 		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
-		Call `get-tool-contract` for `get-measurements-consent` and `send-measurements` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
+		Call `get-tool-contract` for `get-telemetry-consent` and `send-telemetry` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
 		When a telemetry endpoint is configured and consent is granted, stored events are uploaded in the background automatically; no agent action is needed.
 
 		### Inspect an environment

@@ -5,9 +5,9 @@ using System.Text.Json.Serialization;
 namespace Clio.Common.Telemetry;
 
 /// <summary>
-/// Product measurement request accepted by the MCP telemetry tool.
+/// Product telemetry request accepted by the MCP telemetry tool.
 /// </summary>
-public sealed record MeasurementRequest(
+public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("session_id")] string SessionId,
 	[property: JsonPropertyName("event_name")] string EventName,
 	[property: JsonPropertyName("coding_agent")] string CodingAgent,
@@ -21,28 +21,28 @@ public sealed record MeasurementRequest(
 }
 
 /// <summary>
-/// Result returned from the measurement service and MCP tool.
+/// Result returned from the telemetry service and MCP tool.
 /// </summary>
-public sealed record MeasurementResult(
+public sealed record TelemetryEventResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("status")] string Status,
 	[property: JsonPropertyName("event_id")] string EventId = null,
-	[property: JsonPropertyName("error")] MeasurementError Error = null
+	[property: JsonPropertyName("error")] TelemetryError Error = null
 );
 
 /// <summary>
 /// Local product telemetry consent status.
 /// </summary>
-public sealed record MeasurementConsentResult(
+public sealed record TelemetryConsentResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("status")] string Status,
 	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent
 );
 
 /// <summary>
-/// Structured measurement validation or persistence error.
+/// Structured telemetry validation or persistence error.
 /// </summary>
-public sealed record MeasurementError(
+public sealed record TelemetryError(
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("message")] string Message
 );
@@ -52,7 +52,7 @@ internal sealed record ConsentState(
 	[property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt
 );
 
-internal sealed record MeasurementSessionState(
+internal sealed record TelemetrySessionState(
 	[property: JsonPropertyName("session_id")] string SessionId,
 	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events
 );

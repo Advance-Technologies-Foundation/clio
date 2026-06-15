@@ -10,22 +10,22 @@ using FluentAssertions;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the product telemetry measurement MCP tool.
+/// End-to-end tests for the product telemetry MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("send-measurements")]
+[AllureFeature("send-telemetry")]
 [NonParallelizable]
-public sealed class SendMeasurementsToolE2ETests
+public sealed class SendTelemetryToolE2ETests
 {
-	private const string ToolName = SendMeasurementsTool.ToolName;
+	private const string ToolName = SendTelemetryTool.ToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server, invokes send-measurements with first-use consent, and verifies that an OpenTelemetry-shaped event is written locally.")]
+	[Description("Starts the real clio MCP server, invokes send-telemetry with first-use consent, and verifies that an OpenTelemetry-shaped event is written locally.")]
 	[AllureTag(ToolName)]
-	[AllureName("Send Measurements stores OTel event file")]
-	[AllureDescription("Uses the real clio MCP server to invoke send-measurements and verifies the local telemetry event file.")]
-	public async Task SendMeasurements_Should_Store_Otel_Event_File()
+	[AllureName("Send Telemetry stores OTel event file")]
+	[AllureDescription("Uses the real clio MCP server to invoke send-telemetry and verifies the local telemetry event file.")]
+	public async Task SendTelemetry_Should_Store_Otel_Event_File()
 	{
 		// Arrange
 		string sessionId = Guid.NewGuid().ToString();
@@ -58,9 +58,9 @@ public sealed class SendMeasurementsToolE2ETests
 			tools.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
 				.Select(tool => tool.GetProperty("name").GetString())
 				.Should().Contain(ToolName,
-					because: "the real MCP server should advertise the send-measurements tool");
+					because: "the real MCP server should advertise the send-telemetry tool");
 			callResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
-				because: "send-measurements should return a normal MCP response when the event is persisted locally");
+				because: "send-telemetry should return a normal MCP response when the event is persisted locally");
 			string? eventFile = FindEventFile(telemetryHome, sessionId);
 			eventFile.Should().NotBeNull(
 				because: "one product event should be persisted locally");
@@ -78,7 +78,7 @@ public sealed class SendMeasurementsToolE2ETests
 	}
 
 	/// <summary>
-	/// Environment variable understood by <c>MeasurementService</c> to redirect its local storage root.
+	/// Environment variable understood by <c>TelemetryService</c> to redirect its local storage root.
 	/// </summary>
 	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
 

@@ -18,7 +18,7 @@ namespace Clio.Common.Telemetry;
 /// <summary>
 /// Uploads locally spooled product telemetry events to the configured OTLP/HTTP collector.
 /// </summary>
-public interface IMeasurementFlushService
+public interface ITelemetryFlushService
 {
 	/// <summary>
 	/// Prunes the local event spool (age and size caps), then uploads spooled events as
@@ -29,7 +29,7 @@ public interface IMeasurementFlushService
 }
 
 /// <inheritdoc />
-public sealed class MeasurementFlushService : IMeasurementFlushService
+public sealed class TelemetryFlushService : ITelemetryFlushService
 {
 	/// <summary>
 	/// Named HttpClient used for telemetry uploads. The timeout is configured once at
@@ -53,7 +53,7 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 
 	/// <summary>
 	/// Parse format for the event filename timestamp prefix written by
-	/// <see cref="MeasurementService"/> (<c>yyyyMMddTHHmmssfffZ_{eventId}.json</c>);
+	/// <see cref="TelemetryService"/> (<c>yyyyMMddTHHmmssfffZ_{eventId}.json</c>);
 	/// the trailing <c>Z</c> is a literal and is validated separately.
 	/// </summary>
 	private const string FileTimestampFormat = "yyyyMMddTHHmmssfff";
@@ -63,23 +63,26 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 	private static readonly JsonSerializerOptions WireJsonOptions = new() {
+		// camelCase fallback so a future Otlp* member added without an explicit [JsonPropertyName]
+		// still serializes as spec-valid OTLP/HTTP JSON (proto3 JSON requires lowerCamelCase keys).
+		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
 	private readonly Ms.IFileSystem _fileSystem;
 	private readonly IHttpClientFactory _httpClientFactory;
-	private readonly IMeasurementService _measurementService;
-	private readonly IMeasurementFlushOptionsProvider _optionsProvider;
+	private readonly ITelemetryService _telemetryService;
+	private readonly ITelemetryFlushOptionsProvider _optionsProvider;
 	private readonly TimeProvider _timeProvider;
-	private readonly ILogger<MeasurementFlushService> _logger;
+	private readonly ILogger<TelemetryFlushService> _logger;
 	private readonly string _telemetryRoot;
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="MeasurementFlushService"/> class.
+	/// Initializes a new instance of the <see cref="TelemetryFlushService"/> class.
 	/// </summary>
 	/// <param name="fileSystem">Filesystem abstraction used for all spool I/O.</param>
 	/// <param name="httpClientFactory">Factory resolving the named telemetry upload client.</param>
-	/// <param name="measurementService">Source of the locally stored consent decision.</param>
+	/// <param name="telemetryService">Source of the locally stored consent decision.</param>
 	/// <param name="optionsProvider">Resolves endpoint and ingest-key configuration per run.</param>
 	/// <param name="telemetryRoot">
 	/// Optional local storage root. When omitted, the root is taken from the
@@ -87,21 +90,21 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 	/// </param>
 	/// <param name="timeProvider">Optional time source for spool age pruning; defaults to system time.</param>
 	/// <param name="logger">Optional diagnostics logger; silent when omitted.</param>
-	public MeasurementFlushService(
+	public TelemetryFlushService(
 		Ms.IFileSystem fileSystem,
 		IHttpClientFactory httpClientFactory,
-		IMeasurementService measurementService,
-		IMeasurementFlushOptionsProvider optionsProvider,
+		ITelemetryService telemetryService,
+		ITelemetryFlushOptionsProvider optionsProvider,
 		string telemetryRoot = null,
 		TimeProvider timeProvider = null,
-		ILogger<MeasurementFlushService> logger = null)
+		ILogger<TelemetryFlushService> logger = null)
 	{
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-		_measurementService = measurementService ?? throw new ArgumentNullException(nameof(measurementService));
+		_telemetryService = telemetryService ?? throw new ArgumentNullException(nameof(telemetryService));
 		_optionsProvider = optionsProvider ?? throw new ArgumentNullException(nameof(optionsProvider));
 		_timeProvider = timeProvider ?? TimeProvider.System;
-		_logger = logger ?? NullLogger<MeasurementFlushService>.Instance;
+		_logger = logger ?? NullLogger<TelemetryFlushService>.Instance;
 		_telemetryRoot = TelemetryStoragePaths.ResolveRoot(telemetryRoot);
 	}
 
@@ -118,6 +121,9 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 
 	private async Task FlushCoreAsync(CancellationToken cancellationToken)
 	{
+		// Session-state files are pruned every run (independent of the event spool) so the
+		// sessions directory cannot grow without bound on long-lived machines.
+		PruneSessions();
 		string eventsDirectory = TelemetryStoragePaths.EventsDirectory(_telemetryRoot);
 		if (!_fileSystem.Directory.Exists(eventsDirectory)) {
 			return;
@@ -127,12 +133,12 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 		if (spool.Count == 0) {
 			return;
 		}
-		MeasurementFlushOptions options = _optionsProvider.Resolve();
+		TelemetryFlushOptions options = _optionsProvider.Resolve();
 		if (!options.IsSendingEnabled) {
 			_logger.LogDebug("telemetry-flush skipped reason=endpoint-not-configured spool={Count}", spool.Count);
 			return;
 		}
-		if (_measurementService.GetConsentStatus().TelemetryConsent != MeasurementService.ConsentGranted) {
+		if (_telemetryService.GetConsentStatus().TelemetryConsent != TelemetryService.ConsentGranted) {
 			_logger.LogDebug("telemetry-flush skipped reason=consent-not-granted spool={Count}", spool.Count);
 			return;
 		}
@@ -153,9 +159,11 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 					_logger.LogDebug("telemetry-flush delivered events={Count}", batch.Count);
 					break;
 				case PostOutcome.PermanentRejection:
-					// Loss-tolerant by design: a rejected batch must not wedge the spool.
+					// Loss-tolerant by design: a rejected batch must not wedge the spool. Logged at
+					// Warning (not Debug) so a server-wide 4xx — e.g. a wire/schema regression that
+					// would otherwise silently zero out telemetry — is detectable by operators.
 					DeleteFiles(batch.Select(item => item.Path));
-					_logger.LogDebug("telemetry-flush dropped reason=permanent-rejection events={Count}", batch.Count);
+					_logger.LogWarning("telemetry-flush dropped reason=permanent-rejection events={Count}", batch.Count);
 					break;
 				default:
 					// Transient failure after all attempts — keep files; next trigger retries.
@@ -264,7 +272,7 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 	private static OtlpAnyValue ToOtlpValue(OpenTelemetryValue value) =>
 		new(value?.StringValue, value?.IntValue?.ToString(CultureInfo.InvariantCulture));
 
-	private async Task<PostOutcome> PostWithRetryAsync(HttpClient http, MeasurementFlushOptions options,
+	private async Task<PostOutcome> PostWithRetryAsync(HttpClient http, TelemetryFlushOptions options,
 		string payload, CancellationToken cancellationToken)
 	{
 		for (int attempt = 1; attempt <= PostAttempts; attempt++) {
@@ -279,7 +287,7 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 		return PostOutcome.TransientFailure;
 	}
 
-	private async Task<PostOutcome> PostOnceAsync(HttpClient http, MeasurementFlushOptions options,
+	private async Task<PostOutcome> PostOnceAsync(HttpClient http, TelemetryFlushOptions options,
 		string payload, int attempt, CancellationToken cancellationToken)
 	{
 		try {
@@ -297,7 +305,8 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 					(int)response.StatusCode, attempt);
 				return PostOutcome.TransientFailure;
 			}
-			_logger.LogDebug("telemetry-flush rejected status={Status}", (int)response.StatusCode);
+			string body = await ReadBodySnippetAsync(response, cancellationToken).ConfigureAwait(false);
+			_logger.LogWarning("telemetry-flush rejected status={Status} body={Body}", (int)response.StatusCode, body);
 			return PostOutcome.PermanentRejection;
 		} catch (HttpRequestException ex) {
 			_logger.LogDebug(ex, "telemetry-flush retry attempt={Attempt} error={Error}", attempt, ex.Message);
@@ -305,6 +314,62 @@ public sealed class MeasurementFlushService : IMeasurementFlushService
 		} catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested) {
 			_logger.LogDebug(ex, "telemetry-flush retry attempt={Attempt} reason=timeout", attempt);
 			return PostOutcome.TransientFailure;
+		}
+	}
+
+	private const int RejectionBodySnippetLength = 200;
+
+	private static async Task<string> ReadBodySnippetAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+	{
+		try {
+			string body = (await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false))?.Trim()
+				?? string.Empty;
+			return body.Length <= RejectionBodySnippetLength ? body : body[..RejectionBodySnippetLength];
+		} catch {
+			// Diagnostics only — a body that cannot be read must never affect the flush outcome.
+			return string.Empty;
+		}
+	}
+
+	private void PruneSessions()
+	{
+		string sessionsDirectory = TelemetryStoragePaths.SessionsDirectory(_telemetryRoot);
+		if (!_fileSystem.Directory.Exists(sessionsDirectory)) {
+			return;
+		}
+		List<string> sessions;
+		try {
+			sessions = _fileSystem.Directory.GetFiles(sessionsDirectory)
+				.Where(path => path.EndsWith(EventFileSuffix, StringComparison.Ordinal))
+				.ToList();
+		} catch (Exception ex) {
+			_logger.LogDebug(ex, "telemetry-flush session-list failed error={Error}", ex.Message);
+			return;
+		}
+		DateTimeOffset cutoff = _timeProvider.GetUtcNow().AddDays(-MaxSpoolAgeDays);
+		List<string> live = new(sessions.Count);
+		foreach (string path in sessions) {
+			// A session-state file is only useful for duration inference within a live session;
+			// reclaim stale or unreadable ones so the directory cannot grow without bound.
+			if (SessionLastWriteUtc(path) is { } writtenAt && writtenAt >= cutoff) {
+				live.Add(path);
+			} else {
+				DeleteFile(path);
+			}
+		}
+		if (live.Count > MaxSpoolFiles) {
+			foreach (string path in live.OrderBy(SessionLastWriteUtc).Take(live.Count - MaxSpoolFiles)) {
+				DeleteFile(path);
+			}
+		}
+	}
+
+	private DateTimeOffset? SessionLastWriteUtc(string path)
+	{
+		try {
+			return new DateTimeOffset(_fileSystem.File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
+		} catch {
+			return null;
 		}
 	}
 

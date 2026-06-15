@@ -9,7 +9,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public sealed class MeasurementFlushOptionsProviderTests
+public sealed class TelemetryFlushOptionsProviderTests
 {
 	[Test]
 	[Category("Unit")]
@@ -18,14 +18,14 @@ public sealed class MeasurementFlushOptionsProviderTests
 	{
 		// Arrange
 		using EnvironmentVariableScope endpointScope = new(
-			MeasurementFlushOptionsProvider.EndpointEnvironmentVariable, "https://env.example.com/v1/logs");
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, "https://env.example.com/v1/logs");
 		using EnvironmentVariableScope keyScope = new(
-			MeasurementFlushOptionsProvider.IngestKeyEnvironmentVariable, "env-key");
-		MeasurementFlushOptionsProvider provider = CreateProvider(
+			TelemetryFlushOptionsProvider.IngestKeyEnvironmentVariable, "env-key");
+		TelemetryFlushOptionsProvider provider = CreateProvider(
 			new TelemetrySettings { Endpoint = "https://settings.example.com/v1/logs", IngestKey = "settings-key" });
 
 		// Act
-		MeasurementFlushOptions options = provider.Resolve();
+		TelemetryFlushOptions options = provider.Resolve();
 
 		// Assert
 		options.Endpoint.Should().Be("https://env.example.com/v1/logs",
@@ -41,14 +41,14 @@ public sealed class MeasurementFlushOptionsProviderTests
 	{
 		// Arrange
 		using EnvironmentVariableScope endpointScope = new(
-			MeasurementFlushOptionsProvider.EndpointEnvironmentVariable, null);
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, null);
 		using EnvironmentVariableScope keyScope = new(
-			MeasurementFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
-		MeasurementFlushOptionsProvider provider = CreateProvider(
+			TelemetryFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
+		TelemetryFlushOptionsProvider provider = CreateProvider(
 			new TelemetrySettings { Endpoint = "https://settings.example.com/v1/logs", IngestKey = "settings-key" });
 
 		// Act
-		MeasurementFlushOptions options = provider.Resolve();
+		TelemetryFlushOptions options = provider.Resolve();
 
 		// Assert
 		options.IsSendingEnabled.Should().BeTrue(
@@ -66,11 +66,11 @@ public sealed class MeasurementFlushOptionsProviderTests
 	{
 		// Arrange
 		using EnvironmentVariableScope endpointScope = new(
-			MeasurementFlushOptionsProvider.EndpointEnvironmentVariable, null);
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, null);
 		using EnvironmentVariableScope keyScope = new(
-			MeasurementFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
-		MeasurementFlushOptionsProvider relativeUrl = CreateProvider(new TelemetrySettings { Endpoint = "not-a-url" });
-		MeasurementFlushOptionsProvider wrongScheme = CreateProvider(
+			TelemetryFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
+		TelemetryFlushOptionsProvider relativeUrl = CreateProvider(new TelemetrySettings { Endpoint = "not-a-url" });
+		TelemetryFlushOptionsProvider wrongScheme = CreateProvider(
 			new TelemetrySettings { Endpoint = "ftp://collector.example.com/v1/logs" });
 
 		// Act / Assert
@@ -87,24 +87,50 @@ public sealed class MeasurementFlushOptionsProviderTests
 	{
 		// Arrange
 		using EnvironmentVariableScope endpointScope = new(
-			MeasurementFlushOptionsProvider.EndpointEnvironmentVariable, null);
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, null);
 		using EnvironmentVariableScope keyScope = new(
-			MeasurementFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
-		MeasurementFlushOptionsProvider provider = CreateProvider(new TelemetrySettings());
+			TelemetryFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
+		TelemetryFlushOptionsProvider provider = CreateProvider(new TelemetrySettings());
 
 		// Act
-		MeasurementFlushOptions options = provider.Resolve();
+		TelemetryFlushOptions options = provider.Resolve();
 
 		// Assert
 		options.IsSendingEnabled.Should().BeFalse(
 			because: "telemetry uploading is disabled by default until an endpoint is explicitly configured");
 	}
 
-	private static MeasurementFlushOptionsProvider CreateProvider(TelemetrySettings settings)
+	[Test]
+	[Category("Unit")]
+	[Description("Requires https for remote endpoints but allows loopback http for local-collector testing.")]
+	public void Resolve_Should_Require_Https_For_Remote_But_Allow_Loopback_Http()
+	{
+		// Arrange
+		using EnvironmentVariableScope endpointScope = new(
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, null);
+		using EnvironmentVariableScope keyScope = new(
+			TelemetryFlushOptionsProvider.IngestKeyEnvironmentVariable, null);
+		TelemetryFlushOptionsProvider remoteHttp = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://collector.example.com/v1/logs" });
+		TelemetryFlushOptionsProvider loopbackHttp = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://127.0.0.1:30080/v1/logs" });
+		TelemetryFlushOptionsProvider remoteHttps = CreateProvider(
+			new TelemetrySettings { Endpoint = "https://collector.example.com/v1/logs" });
+
+		// Act / Assert
+		remoteHttp.Resolve().IsSendingEnabled.Should().BeFalse(
+			because: "the ingest key and event payload must never traverse the network in cleartext to a remote host");
+		loopbackHttp.Resolve().IsSendingEnabled.Should().BeTrue(
+			because: "plaintext http is acceptable only for a loopback collector during local testing");
+		remoteHttps.Resolve().IsSendingEnabled.Should().BeTrue(
+			because: "https is the required transport for a remote OTLP collector");
+	}
+
+	private static TelemetryFlushOptionsProvider CreateProvider(TelemetrySettings settings)
 	{
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
 		repository.GetTelemetrySettings().Returns(settings);
-		return new MeasurementFlushOptionsProvider(repository);
+		return new TelemetryFlushOptionsProvider(repository);
 	}
 
 	private sealed class EnvironmentVariableScope : IDisposable
