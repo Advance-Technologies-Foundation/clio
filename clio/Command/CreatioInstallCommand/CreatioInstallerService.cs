@@ -413,7 +413,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	}
 
 	bool useFs = false;
-	string dest = _msFileSystem.Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "data", "clio-infrastructure",
+	// Won't-fix (SonarCloud S1075): the \\wsl.localhost UNC is an environment-fixed path for the
+	// local Rancher Desktop k8s setup, not a configurable deployment target. Eliminating the
+	// hardcode requires streaming the backup into the pod via the k8s API and dropping the
+	// >= 2 GB WSL fallback entirely — tracked as a separate refactor. The trailing NOSONAR
+	// suppresses S1075 for this line only.
+	string dest = _msFileSystem.Path.Join("\\\\wsl.localhost", "rancher-desktop", "mnt", "data", "clio-infrastructure", // NOSONAR
 		"mssql", "data",
 		$"{siteName}.bak");
 	if (_msFileSystem.FileInfo.New(src).Length < int.MaxValue) {
