@@ -1543,7 +1543,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
 		string body = CreatePageBody(
-			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]""",
+			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "$Resources.Strings.UsrName" } }]""",
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, "dev", null, null, null, SkipSampling: true);
 

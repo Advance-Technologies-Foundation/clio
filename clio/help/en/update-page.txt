@@ -41,11 +41,17 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
+    - User-visible text (label, caption, title, tooltip, placeholder) in
+      viewConfigDiff must be a localizable-string binding, not an inline
+      literal. Bind via $Resources.Strings.<Key> (or #ResourceString(<Key>)#
+      for grid column captions / validator messages) and register the key's
+      default-language value with --resources. Inline literals are rejected.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
     - Call `clio get-guidance --name page-schema-handlers` for handler details
     - Call `clio get-guidance --name page-schema-validators` for validator details
+    - Call `clio get-guidance --name page-schema-resources` for localization details
 
     CONFLICT DETECTION:
     When --expected-checksum is supplied, update-page compares it against the

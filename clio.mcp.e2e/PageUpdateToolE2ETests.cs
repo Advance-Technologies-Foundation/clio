@@ -395,6 +395,52 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects inline placeholder literal in dry-run mode")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a viewConfigDiff insert whose placeholder is a hardcoded string, and verifies that the tool returns a structured validation error naming the node, the placeholder property, and the page-schema-resources guide.")]
+	public async Task PageUpdateTool_Should_Reject_Inline_Placeholder_Literal_In_DryRun_Mode() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+			"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrInlinePlaceholder_FormPage",
+					["body"] = inlinePlaceholderBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the localizable-text check should surface as a structured update-page response, not a protocol-level error");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject a hardcoded placeholder that cannot be translated");
+		response.Error.Should().Contain("EmailField")
+			.And.Contain("placeholder")
+			.And.Contain("page-schema-resources",
+				because: "the failure must name the node, the offending property, and point to the localization guide so the agent can fix the payload in one pass");
+	}
+
+	[Test]
 	[Description("Rejects invalid handler section shape through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects non-array handlers in dry-run mode")]

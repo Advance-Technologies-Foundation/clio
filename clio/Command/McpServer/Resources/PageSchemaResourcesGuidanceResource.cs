@@ -28,6 +28,15 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       Author user-visible string values as localizable-string bindings, not inline literals. The rule covers any string-like property the runtime renders to the user (e.g. `label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button/tab/group captions, validator and dialog messages — non-exhaustive). Inline literals are fine for non-displayed values: type/schema/attribute names, enum-like state values (`labelPosition`, `size`, `direction`, …), and binding/converter expressions. Applies equally to web and mobile.
 
 		       ─────────────────────────────────────────────────────────────
+		       ENFORCEMENT — HARD REJECT (not advisory)
+		       ─────────────────────────────────────────────────────────────
+
+		       `update-page`, `sync-pages`, and `validate-page` REJECT a body that sets `label`, `caption`, `title`, `tooltip`, or `placeholder` to an inline string literal anywhere in `viewConfigDiff` (including nested child components). The save fails with a diagnostic naming the node, the property, and the literal. To pass, author the value as `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid column captions and validator messages) and register the key where the platform does not auto-provide it. `description` is NOT hard-rejected (it also names non-display metadata), but localize it too when it is user-visible. A value that begins with `$` (any binding expression) or that is a non-string (e.g. `placeholder: false`) is never treated as a literal.
+
+		       CREATION RULE — POPULATE THE DEFAULT-LANGUAGE VALUE
+		       When you introduce a NEW user-visible string (a placeholder, a custom title, a button caption, …) you must seed its default-language text yourself: choose a `<Key>`, point the property at `$Resources.Strings.<Key>`, and register `{"<Key>": "<the exact text you would have typed inline>"}` through the `resources` parameter. That registered value becomes the default-language entry in the page's `localizableStrings`; without it the binding resolves to an empty caption. Example: a placeholder you would have written as `"name@firm.com"` becomes `placeholder: "$Resources.Strings.EmailField_placeholder"` plus `resources: '{"EmailField_placeholder": "name@firm.com"}'`.
+
+		       ─────────────────────────────────────────────────────────────
 		       THE DECISION ALGORITHM
 		       ─────────────────────────────────────────────────────────────
 

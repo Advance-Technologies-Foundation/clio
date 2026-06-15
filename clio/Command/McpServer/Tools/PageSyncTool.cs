@@ -685,6 +685,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
 		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
+		SchemaValidationResult localizableTextResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateLocalizableTextLiterals(body));
 		SchemaValidationResult handlerResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateHandlerStructure(body));
 		SchemaValidationResult validatorBindingResult = RunContentValidation(
@@ -718,6 +720,7 @@ public sealed class PageSyncTool(
 			contentResult,
 			fieldResult,
 			insertSelfConsistencyResult,
+			localizableTextResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
@@ -734,6 +737,7 @@ public sealed class PageSyncTool(
 			contentResult,
 			fieldResult,
 			insertSelfConsistencyResult,
+			localizableTextResult,
 			handlerResult,
 			validatorBindingResult,
 			validatorPlacementResult,
@@ -900,7 +904,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

@@ -26,6 +26,11 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
+  `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
+  **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
+  column captions and validator messages) and register the key's default-language value through
+  `resources`. Call `clio get-guidance --name page-schema-resources` for the full rule.
 
 A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
