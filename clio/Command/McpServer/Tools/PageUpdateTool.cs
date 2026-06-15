@@ -44,7 +44,12 @@ public sealed class PageUpdateTool(
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
 		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so. " +
-		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
+		"if the body adds a button that runs a business process (a `clicked` bound to " +
+			"`crt.RunBusinessProcessRequest`), call get-guidance with name `run-process-button` and resolve " +
+			"the process with get-process-signature FIRST — parameter keys must be the process parameter " +
+			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
+			"unknown ones. " +
+			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
@@ -107,6 +112,11 @@ public sealed class PageUpdateTool(
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return (validationFailure, null, null, null);
+		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
+			ValidateRunProcessButtons(options);
+		if (runProcessFailure != null)
+			return (runProcessFailure, null, null, null);
+		validationWarnings = MergeWarnings(validationWarnings, runProcessWarnings);
 		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
 		if (lintFailure != null)
 			return (lintFailure, null, null, null);
@@ -194,6 +204,17 @@ public sealed class PageUpdateTool(
 					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
+			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
+			// run-process structural check (processName required) here too — the signature code check runs
+			// afterwards in ValidateRunProcessButtons for both surfaces.
+			SchemaValidationResult mobileRunProcess =
+				SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
+			if (!mobileRunProcess.IsValid) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+				}, null);
+			}
 			return (null, mobileResult.Warnings);
 		}
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
@@ -239,6 +260,134 @@ public sealed class PageUpdateTool(
 			Force = args.Force ?? false,
 			NotifyDesignerPresence = true
 		};
+
+	/// <summary>
+	/// Validates that every <c>crt.RunBusinessProcessRequest</c> button in the body references real
+	/// process parameter CODES, by resolving the live process signature. A code that does
+	/// not exist on the process is rejected here because the platform silently drops such values.
+	/// When the environment cannot resolve the signature the call is downgraded to a warning rather
+	/// than blocking the write.
+	/// </summary>
+	// internal (not private) so the run-process orchestration — environment gating, signature
+	// caching, hard-fail vs. warning routing, and warning aggregation — is unit-testable without
+	// driving the full UpdatePage body-validation pipeline. See PageUpdateToolRunProcessTests.
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtons(
+		PageUpdateOptions options) {
+		IReadOnlyList<RunProcessButtonConfig> configs = RunProcessButtonConfigReader.Read(options.Body);
+		if (configs.Count == 0) {
+			return (null, null);
+		}
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment)
+			|| !string.IsNullOrWhiteSpace(options.Uri);
+		if (!hasEnvironment) {
+			return (null, [
+				"Run-process button parameter codes were not validated because no environment was provided. "
+				+ "Pass environment-name so update-page can verify codes against the process signature."
+			]);
+		}
+		// Resolve signatures WITHOUT holding the global MCP execution lock — the generator makes a
+		// retrying HTTP call (up to 3x10s) and must not block the single-lane MCP control plane.
+		// The generator writes log warnings to the shared logger; drain them afterwards under the
+		// lock (no network inside) so they do not leak into the next tool response.
+		(PageUpdateResponse Failure, IReadOnlyList<string> Warnings) result =
+			ValidateRunProcessButtonsAgainstSignatures(options, configs);
+		return ExecuteWithCleanLog(() => result);
+	}
+
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(
+		PageUpdateOptions options, IReadOnlyList<RunProcessButtonConfig> configs) {
+		var warnings = new List<string>();
+		var signatures = new Dictionary<string, GetProcessSignatureResponse>(StringComparer.OrdinalIgnoreCase);
+		foreach (RunProcessButtonConfig config in configs) {
+			(PageUpdateResponse failure, IReadOnlyList<string> buttonWarnings) =
+				EvaluateButtonSignature(options, config, signatures);
+			if (failure != null) {
+				return (failure, null);
+			}
+			warnings.AddRange(buttonWarnings);
+		}
+		return (null, warnings.Count > 0 ? warnings : null);
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) EvaluateButtonSignature(
+		PageUpdateOptions options, RunProcessButtonConfig config,
+		IDictionary<string, GetProcessSignatureResponse> signatures) {
+		if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+			return (null, []); // structural validation already reported the missing processName
+		}
+		if (!TryGetCachedSignature(options, config.ProcessName, signatures,
+				out GetProcessSignatureResponse signature, out string resolveWarning)) {
+			return (null, resolveWarning is null ? [] : [resolveWarning]);
+		}
+		if (!signature.Success) {
+			if (signature.ProcessResolutionFailed) {
+				return (ProcessNotResolvedFailure(config, signature), null);
+			}
+			// Transient/transport failure — do not block the write on a backend hiccup.
+			return (null, [TransientValidationWarning(config, signature)]);
+		}
+		RunProcessButtonSignatureValidator.Result validation =
+			RunProcessButtonSignatureValidator.Validate(config, signature.Parameters);
+		if (validation.Error != null) {
+			return (new PageUpdateResponse { Success = false, Error = validation.Error }, null);
+		}
+		return (null, validation.Warnings);
+	}
+
+	private bool TryGetCachedSignature(PageUpdateOptions options, string processName,
+		IDictionary<string, GetProcessSignatureResponse> signatures,
+		out GetProcessSignatureResponse signature, out string warning) {
+		warning = null;
+		if (signatures.TryGetValue(processName, out signature)) {
+			return signature is not null;
+		}
+		if (!TryResolveSignature(options, processName, out signature, out warning)) {
+			return false;
+		}
+		signatures[processName] = signature;
+		return signature is not null;
+	}
+
+	private static PageUpdateResponse ProcessNotResolvedFailure(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		new() {
+			Success = false,
+			Error = $"Run-process button references process '{config.ProcessName}' which could not be "
+				+ $"uniquely resolved on the environment: {signature.Error} "
+				+ "Resolve it with get-process-signature and use the returned processCode."
+		};
+
+	private static string TransientValidationWarning(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		$"Run-process button parameter codes for process '{config.ProcessName}' were not validated: "
+		+ signature.Error;
+
+	private bool TryResolveSignature(PageUpdateOptions options, string processName,
+		out GetProcessSignatureResponse signature, out string warning) {
+		signature = null;
+		warning = null;
+		GetProcessSignatureOptions signatureOptions = new() {
+			ProcessName = processName,
+			Environment = options.Environment,
+			Uri = options.Uri,
+			Login = options.Login,
+			Password = options.Password
+		};
+		GetProcessSignatureCommand signatureCommand;
+		try {
+			signatureCommand = _commandResolver.Resolve<GetProcessSignatureCommand>(signatureOptions);
+		} catch (Exception ex) {
+			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			return false;
+		}
+		try {
+			signatureCommand.TryGetSignature(signatureOptions, out signature);
+			return true;
+		} catch (Exception ex) {
+			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			return false;
+		}
+	}
 
 	/// <summary>
 	/// Discovers the on-disk conflict baseline written by <c>get-page</c> and, when it targets the
@@ -309,6 +458,7 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
 		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
+		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);

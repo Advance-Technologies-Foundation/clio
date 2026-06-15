@@ -262,6 +262,51 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a run-process button that omits processName through update-page before any remote calls are attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects run-process button without processName")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a crt.RunBusinessProcessRequest button missing processName, and verifies a structured validation failure that names the button and processName.")]
+	public async Task PageUpdateTool_Should_Reject_RunProcess_Button_Without_ProcessName() {
+		// Arrange
+		string invalidEnvironmentName = $"missing-runproc-env-{Guid.NewGuid():N}";
+		string runProcessBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function() { return { "
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{"
+			+ "\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\","
+			+ "\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}},\"parentName\":\"MainHeaderTop\","
+			+ "\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrRunProcessValidation_FormPage",
+					["body"] = runProcessBody,
+					["dry-run"] = true,
+					["environment-name"] = invalidEnvironmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing processName should be surfaced as a structured validation failure");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject a run-process button without processName before any remote call");
+		response.Error.Should().Contain("processName",
+			because: "the failure must point at the missing processName");
+		response.Error.Should().Contain("RunBpButton",
+			because: "the failure should name the offending button");
+	}
+
+	[Test]
 	[Description("Rejects field bindings to undeclared attributes through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects undeclared field bindings in dry-run mode")]

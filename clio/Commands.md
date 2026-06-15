@@ -353,6 +353,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (omit `--package` for the merged all-packages view, including custom columns from other packages)
+<a id="get-process-signature"></a>
+<a id="gps"></a>
+- [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
 <a id="get-schema"></a>
 <a id="schema-get"></a>
 - [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
