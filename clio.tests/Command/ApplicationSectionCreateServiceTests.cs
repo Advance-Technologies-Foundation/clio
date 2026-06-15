@@ -814,6 +814,18 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Bounds the post-timeout verification readback with the 20-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
+	public void CreateSection_Should_Pass_Bounded_Readback_Timeout_When_Insert_Times_Out_But_Section_Is_Visible() {
+		// Arrange
+		SetUpTimedOutInsertWithReadbackMocks();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		_capturedReadbackTimeout.Should().Be(20_000,
+			because: "the recovery readback must run under the bounded 20-second budget so the full response stays below the MCP client request ceiling after the insert timed out");
+	}
+
+	[Test]
 	[Description("Does not treat a pre-existing section bound to the same entity as proof of success when the insert times out: verification matches strictly by the generated section id.")]
 	public void CreateSection_Should_Not_Recover_When_Readback_Returns_Unrelated_Section_For_Same_Entity() {
 		// Arrange
@@ -1084,6 +1096,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 	private string? _capturedInsertBody;
 
+	private int? _capturedReadbackTimeout;
+
 	private void SetUpInsertThrowingMocks(Exception insertException) {
 		SetUpCommonReadMocks();
 		_capturedInsertBody = null;
@@ -1130,8 +1144,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
 				Arg.Any<int>())
-			.Returns(_ =>
-				$$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+			.Returns(callInfo => {
+				_capturedReadbackTimeout = callInfo.ArgAt<int>(2);
+				return $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""";
+			});
 		// LoadCreatedSection re-reads the app info and persists the icon background after recovery;
 		// the recovery readback runs bounded, so the update stub must accept the explicit timeout.
 		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")

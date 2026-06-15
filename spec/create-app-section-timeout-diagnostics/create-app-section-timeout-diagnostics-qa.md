@@ -6,9 +6,9 @@
 
 | ID | Case | Expected |
 |----|------|----------|
-| TC-U-1 | Insert call passes finite default budget (300 000 ms) to `ExecutePostRequest` | timeout argument = 300 000 |
+| TC-U-1 | Insert call passes finite default budget (90 000 ms) to `ExecutePostRequest` | timeout argument = 90 000 |
 | TC-U-2 | `CLIO_CREATE_SECTION_TIMEOUT_SECONDS=42` | timeout argument = 42 000 |
-| TC-U-3 | Env var invalid (`abc`, `0`, `-5`) | default 300 000 used |
+| TC-U-3 | Env var invalid (`abc`, `0`, `-5`) | default 90 000 used |
 | TC-U-4 | Insert throws `WebException(ConnectFailure)` | `ApplicationSectionCreateException` with `Transport`, `SectionCreated=false`, retry-safe guidance |
 | TC-U-5 | Insert throws `WebException(Timeout)`, verification readback finds the section | success result returned (recovered) |
 | TC-U-6 | Insert throws `WebException(Timeout)`, verification readback returns no rows | exception with `CreatioTimeout`, `SectionCreated=false`, wait-verify guidance |
@@ -24,6 +24,7 @@
 | TC-U-20 | Readback after timeout returns a pre-existing section bound to the same entity (different Id) | NOT recovered: `CreatioTimeout`, `SectionCreated=false`, no UpdateQuery issued (verification matches strictly by the generated section Id) |
 | TC-U-21 | Env var value whose ms equivalent exceeds `int.MaxValue` (`3000000`) | clamped to `int.MaxValue` |
 | TC-U-22 | Insert returns JSON `null` (empty response) | `ServerError`, `SectionCreated=unknown`, spinner closed |
+| TC-U-23 | Insert times out, section visible on verification readback | recovery readback runs under the bounded 20 000 ms budget (verification `ExecutePostRequest` timeout = 20 000) |
 
 ## Unit — `Module=McpServer` (`ApplicationToolTests`)
 
