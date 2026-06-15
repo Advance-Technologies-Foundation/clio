@@ -83,6 +83,8 @@ public static class ComponentInfoPrettyRenderer {
 		AppendTypeDefinitions(sb, response.References?.TypeDefinitions);
 		AppendExample(sb, response.Example);
 		AppendDocumentation(sb, response.Documentation);
+		AppendRelatedComponents(sb, response.RelatedComponents);
+		AppendDiscoveryTip(sb, response.DiscoveryTip);
 	}
 
 	/// <summary>
@@ -237,5 +239,32 @@ public static class ComponentInfoPrettyRenderer {
 		foreach (string line in documentation.Split('\n')) {
 			sb.Append("  ").AppendLine(line.TrimEnd('\r'));
 		}
+	}
+
+	/// <summary>
+	/// Renders the curated "see also" suggestions (detail mode) under a <c>relatedComponents:</c>
+	/// header so the <c>--pretty</c> CLI surface shows the same decision-point nudge the MCP JSON
+	/// response carries (CLI/MCP parity). Omitted when there are no suggestions.
+	/// </summary>
+	private static void AppendRelatedComponents(StringBuilder sb, IReadOnlyList<RelatedComponentSuggestion>? related) {
+		if (related is null || related.Count == 0) {
+			return;
+		}
+		sb.AppendLine().AppendLine("relatedComponents:");
+		int nameWidth = related.Max(suggestion => suggestion.ComponentType.Length);
+		foreach (RelatedComponentSuggestion suggestion in related) {
+			sb.Append("  ").Append(suggestion.ComponentType.PadRight(nameWidth)).Append("  ").AppendLine(suggestion.Reason);
+		}
+	}
+
+	/// <summary>
+	/// Renders the stateless discovery breadcrumb under a <c>tip:</c> line so the <c>--pretty</c>
+	/// CLI surface mirrors the MCP <c>discoveryTip</c> field. Omitted when absent.
+	/// </summary>
+	private static void AppendDiscoveryTip(StringBuilder sb, string? tip) {
+		if (string.IsNullOrWhiteSpace(tip)) {
+			return;
+		}
+		sb.AppendLine().Append("tip: ").AppendLine(tip);
 	}
 }

@@ -526,9 +526,9 @@ stories:
     title: "[Solution D] Proactive + faceted catalog discovery (carries ENG-91134 root cause)"
     feature: "component-discovery-selection"
     size: L
-    status: deferred
+    status: in-progress
     jira: ENG-91574
-    note: "Faceted category discovery (Amazon find-tools) + compact selection-index + REQUIRED decision-point relatedComponents on collection/visual detail responses + stateless breadcrumb (OQ-D1) + fail-fast applicability steering (comment 453013). Owns ComponentInfoListItem shape ext. Acceptance blocked on A's data."
+    note: "STARTED 2026-06-15: clio-self-sufficient slice landed — decision-point relatedComponents see-also (crt.DataGrid/List/FileList/MultiList/ImageInput -> crt.Gallery) + stateless discoveryTip on every detail response (ComponentRelations.cs); CLI/MCP --pretty parity; unit (ComponentRelationsTests + 2 in ComponentInfoToolTests) + e2e + guidance + docs; build 0/0, McpServer Unit 1197/0. REMAINING (blocked on A's taxonomy/applicability): faceted category discovery + compact selection-index + fail-fast steering. Owns ComponentInfoListItem shape ext."
     prd: spec/prd/prd-component-discovery-selection.md
     adr: spec/adr/adr-component-discovery-selection.md
     depends_on: [story-component-discovery-A]

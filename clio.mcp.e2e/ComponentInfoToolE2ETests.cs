@@ -64,6 +64,10 @@ public sealed class ComponentInfoToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			new Dictionary<string, object?> { ["component-type"] ="crt.MenuItem" });
+		ComponentInfoResponse gallerySeeAlsoResponse = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["component-type"] = "crt.DataGrid" });
 
 		// Assert
 		tabListResponse.Success.Should().BeTrue(
@@ -107,6 +111,20 @@ public sealed class ComponentInfoToolE2ETests {
 			&& detailResponse.Inputs.ContainsKey("items");
 		(hasItemsInLegacy || hasItemsInWrapped).Should().BeTrue(
 			because: "nested menu contracts should expose their submenu slot metadata in either properties or inputs");
+
+		// ENG-91574: a collection/visual type's detail response must carry the decision-point
+		// crt.Gallery see-also and the stateless discovery tip, end to end through the real server.
+		gallerySeeAlsoResponse.Success.Should().BeTrue(
+			because: "crt.DataGrid is a real catalog type and should resolve to a detail response");
+		gallerySeeAlsoResponse.Mode.Should().Be("detail",
+			because: "a component-type lookup should return the detail contract");
+		gallerySeeAlsoResponse.RelatedComponents.Should().NotBeNull(
+			because: "a collection/visual type must carry the decision-point see-also via the real MCP server");
+		gallerySeeAlsoResponse.RelatedComponents!.Select(suggestion => suggestion.ComponentType)
+			.Should().Contain("crt.Gallery",
+				because: "the reopened ENG-91134 fix surfaces crt.Gallery on crt.DataGrid detail responses end to end");
+		gallerySeeAlsoResponse.DiscoveryTip.Should().NotBeNullOrWhiteSpace(
+			because: "every detail response from the real MCP server carries the stateless discovery breadcrumb");
 
 		// CDN migration markers: every response from the real clio MCP server must now
 		// expose the resolver tier and the catalog version it landed on, so AI can react

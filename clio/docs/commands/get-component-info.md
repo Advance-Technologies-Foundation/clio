@@ -50,6 +50,15 @@ and other scripting tools. Pass `--pretty` for a human-readable text
 rendering on stdout — the docs block surfaces under a `documentation:`
 section.
 
+On a **detail** response, a collection/visual component type
+(`crt.DataGrid`, `crt.List`, `crt.FileList`, `crt.MultiList`,
+`crt.ImageInput`) also carries a `relatedComponents` array — a curated
+"see also" pointing at an overlooked better fit such as `crt.Gallery` for
+image/card collections. Every detail response additionally carries a
+`discoveryTip` string nudging you to list the full catalog before settling
+on a layout from memory. Under `--pretty` these render under
+`relatedComponents:` and `tip:` sections.
+
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"latest-fallback"`) so consumers can tell when
 the catalog actually matched the requested target version and when it fell

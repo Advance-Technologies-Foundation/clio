@@ -71,6 +71,7 @@ public sealed class ComponentInfoTool(
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
 		"When resolvedFrom is 'latest-fallback' the version is unknown: do not silently assume the component set — tell the user and request confirmation before proceeding. " +
+		"A detail response for a collection/visual type (crt.DataGrid, crt.List, crt.FileList, crt.MultiList, crt.ImageInput) carries a relatedComponents see-also (e.g. crt.Gallery) plus a discoveryTip steering you back to list-mode discovery. " +
 		"When you target a page-editing environment, pass the same environment-name here. " +
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
@@ -282,7 +283,9 @@ public sealed class ComponentInfoTool(
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
-			References = references
+			References = references,
+			RelatedComponents = ComponentRelations.GetRelated(entry.ComponentType),
+			DiscoveryTip = ComponentRelations.DiscoveryTip
 		};
 	}
 
@@ -591,6 +594,26 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("references")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public ComponentReferencesResponse? References { get; init; }
+
+	/// <summary>
+	/// Gets the curated "see also" suggestions for this component (detail mode only). Populated for
+	/// collection/visual types the agent routinely settles on prematurely (e.g. <c>crt.DataGrid</c>,
+	/// <c>crt.ImageInput</c>) to steer it toward an overlooked better fit such as <c>crt.Gallery</c>.
+	/// Omitted from the wire shape when the type has no curated alternatives — see
+	/// <see cref="ComponentRelations.GetRelated"/>.
+	/// </summary>
+	[JsonPropertyName("relatedComponents")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<RelatedComponentSuggestion>? RelatedComponents { get; init; }
+
+	/// <summary>
+	/// Gets the stateless discovery breadcrumb attached to every detail response, steering the agent
+	/// back to list-mode catalog discovery so non-obvious components are not missed when authoring
+	/// from memory (ENG-91134 root cause). See <see cref="ComponentRelations.DiscoveryTip"/>.
+	/// </summary>
+	[JsonPropertyName("discoveryTip")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DiscoveryTip { get; init; }
 }
 
 /// <summary>

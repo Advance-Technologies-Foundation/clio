@@ -297,6 +297,40 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Attaches a crt.Gallery relatedComponents see-also to the detail response for a collection/visual type, so the nudge reaches the agent on the get-component-info detail call it actually makes (ENG-91134 root cause).")]
+	public void CreateDetailResponse_ShouldAttachGallerySeeAlso_WhenTypeIsCollectionOrVisual() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.DataGrid" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.RelatedComponents.Should().NotBeNull(
+			because: "a collection/visual type must carry a decision-point see-also suggestion");
+		response.RelatedComponents!.Should().ContainSingle(suggestion => suggestion.ComponentType == "crt.Gallery",
+			because: "the agent settled on grid/file-list instead of crt.Gallery, so the detail response must surface it");
+		response.DiscoveryTip.Should().NotBeNullOrWhiteSpace(
+			because: "every detail response carries the stateless discovery breadcrumb");
+	}
+
+	[Test]
+	[Description("Omits relatedComponents for a type with no curated alternatives but still attaches the stateless discovery tip, so the see-also stays low-noise while the catalog nudge is always present.")]
+	public void CreateDetailResponse_ShouldOmitRelatedComponentsButKeepTip_WhenTypeHasNoCuratedAlternatives() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Button" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.RelatedComponents.Should().BeNull(
+			because: "crt.Button has no curated alternatives, so the field is omitted to keep the signal low-noise");
+		response.DiscoveryTip.Should().NotBeNullOrWhiteSpace(
+			because: "the discovery tip is stateless and present on every detail response regardless of suggestions");
+	}
+
+	[Test]
 	[Description("Filters grouped list results by keyword search across the curated registry.")]
 	public async Task ComponentInfoTool_Should_Filter_List_By_Search() {
 		// Arrange
