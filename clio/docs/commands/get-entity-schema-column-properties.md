@@ -54,6 +54,10 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 structured default-value-config
 - structured default-value-config includes `resolved-value-source` for canonical
   identifiers (`SystemValue` Guid, `Settings` code)
+- for a **lookup** column with a `Const` default, default-value-config is enriched with
+  `display-value` (the referenced record's display value, resolved in the connected user's
+  culture); when it cannot be resolved, `record-resolution` carries a marker
+  (`no-access`, `not-found-or-no-access`, or `display-column-unavailable`) and `display-value` is empty
 - column type names are normalized to readable values such as Binary, Image, File, and ImageLookup
 
 ## Reporting Bugs

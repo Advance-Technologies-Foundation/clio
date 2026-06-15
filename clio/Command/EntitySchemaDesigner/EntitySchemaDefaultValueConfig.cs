@@ -49,4 +49,38 @@ public sealed class EntitySchemaDefaultValueConfig
 	[JsonPropertyName("sequence-number-of-chars")]
 	[Description("Sequence width. Used when source is Sequence.")]
 	public int? SequenceNumberOfChars { get; init; }
+
+	/// <summary>
+	/// Gets the resolved display value of the referenced record for a lookup <c>Const</c> default.
+	/// </summary>
+	[JsonPropertyName("display-value")]
+	[Description("Display value of the referenced record for a lookup Const default, resolved in the connected user's culture. Null for non-lookup defaults or when unavailable (see record-resolution).")]
+	public string? DisplayValue { get; init; }
+
+	/// <summary>
+	/// Gets the honest marker explaining why a lookup <c>Const</c> default's display value is unavailable.
+	/// </summary>
+	[JsonPropertyName("record-resolution")]
+	[Description("Marker when the referenced record's display value could not be resolved: no-access, not-found-or-no-access, or display-column-unavailable. Null when display-value is present or enrichment does not apply.")]
+	public string? RecordResolution { get; init; }
+
+	/// <summary>
+	/// Returns a copy of this configuration enriched with the referenced-record display value and/or
+	/// record-resolution marker, leaving all other fields unchanged.
+	/// </summary>
+	/// <param name="displayValue">Resolved display value, or null.</param>
+	/// <param name="recordResolution">Record-resolution marker, or null.</param>
+	/// <returns>A new <see cref="EntitySchemaDefaultValueConfig"/> with the display fields populated.</returns>
+	public EntitySchemaDefaultValueConfig WithDisplay(string? displayValue, string? recordResolution) {
+		return new EntitySchemaDefaultValueConfig {
+			Source = Source,
+			Value = Value,
+			ValueSource = ValueSource,
+			ResolvedValueSource = ResolvedValueSource,
+			SequencePrefix = SequencePrefix,
+			SequenceNumberOfChars = SequenceNumberOfChars,
+			DisplayValue = displayValue,
+			RecordResolution = recordResolution
+		};
+	}
 }
