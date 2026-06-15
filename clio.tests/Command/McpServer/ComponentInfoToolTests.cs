@@ -310,8 +310,10 @@ public sealed class ComponentInfoToolTests {
 			because: "a collection/visual type must carry a decision-point see-also suggestion");
 		response.RelatedComponents!.Should().ContainSingle(suggestion => suggestion.ComponentType == "crt.Gallery",
 			because: "the agent settled on grid/file-list instead of crt.Gallery, so the detail response must surface it");
-		response.DiscoveryTip.Should().NotBeNullOrWhiteSpace(
-			because: "every detail response carries the stateless discovery breadcrumb");
+		response.RelatedComponents!.Single().Reason.Should().NotBeNullOrWhiteSpace(
+			because: "the see-also reason must round-trip through CreateDetailResponse, not only through the ComponentRelations helper");
+		response.DiscoveryTip.Should().Be(ComponentInfoTool.DiscoveryTipText,
+			because: "every detail response pins the canonical stateless discovery breadcrumb, not merely some non-empty text");
 	}
 
 	[Test]
@@ -601,6 +603,57 @@ public sealed class ComponentInfoToolTests {
 			because: "the rendered warning must carry the LatestFallbackWarning text");
 		matchedText.Should().NotContain("WARNING:",
 			because: "an environment-matched catalog has no superset risk to flag");
+	}
+
+	[Test]
+	[Description("The pretty renderer prints the relatedComponents see-also block (crt.Gallery + its reason) and the discovery tip for a collection/visual detail response, and omits the relatedComponents block — while still printing the tip — for a type with no curated alternatives. This exercises the --pretty CLI parity branch the JSON/e2e tests do not cover.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_RelatedComponents_And_Tip_For_Detail_Response() {
+		// Arrange — build real detail responses through the production path so the renderer
+		// sees exactly what the CLI verb passes it (a collection/visual type with a see-also,
+		// and a plain type without one).
+		ComponentInfoResponse withRelated = ComponentInfoTool.CreateDetailResponse(
+			new ComponentRegistryEntry { ComponentType = "crt.DataGrid" }, "8.2.1", "environment", null, null);
+		ComponentInfoResponse withoutRelated = ComponentInfoTool.CreateDetailResponse(
+			new ComponentRegistryEntry { ComponentType = "crt.Button" }, "8.2.1", "environment", null, null);
+
+		// Act
+		string withRelatedText = ComponentInfoPrettyRenderer.Render(withRelated);
+		string withoutRelatedText = ComponentInfoPrettyRenderer.Render(withoutRelated);
+
+		// Assert — collection/visual type: see-also header + suggested type + its reason + tip line.
+		withRelatedText.Should().Contain("relatedComponents:",
+			because: "the --pretty surface must render the see-also block so CLI users get the same decision-point nudge as MCP JSON");
+		withRelatedText.Should().Contain("crt.Gallery",
+			because: "the rendered see-also must name the overlooked gallery viewer");
+		withRelatedText.Should().Contain(withRelated.RelatedComponents!.Single().Reason,
+			because: "the rendered see-also must carry the agent-facing reason, not just the bare type name");
+		withRelatedText.Should().Contain("tip:",
+			because: "the discovery breadcrumb must render on its own labelled line");
+		withRelatedText.Should().Contain(ComponentInfoTool.DiscoveryTipText,
+			because: "the rendered tip must be the canonical discovery breadcrumb text, not a paraphrase");
+
+		// Assert — no curated alternatives: relatedComponents block omitted, tip still printed.
+		withoutRelatedText.Should().NotContain("relatedComponents:",
+			because: "a type with no curated see-also must omit the block entirely to keep the --pretty output low-noise");
+		withoutRelatedText.Should().Contain("tip:",
+			because: "the stateless discovery tip is attached to every detail response regardless of see-also suggestions");
+		withoutRelatedText.Should().Contain(ComponentInfoTool.DiscoveryTipText,
+			because: "the tip text must render even when no relatedComponents block is present");
+	}
+
+	[Test]
+	[Description("The stateless discovery tip names crt.Gallery and steers the agent to list mode, since that is the catalog-discovery step the agent skipped in the reopened bug (ENG-91134). Anchored on ComponentInfoTool, where the type-independent detail-contract constant now lives.")]
+	public void DiscoveryTipText_ShouldNameGalleryAndSteerToListMode() {
+		// Arrange
+
+		// Act
+		string tip = ComponentInfoTool.DiscoveryTipText;
+
+		// Assert
+		tip.Should().Contain("list mode",
+			because: "the tip's whole purpose is to push the agent back to list-mode catalog discovery");
+		tip.Should().Contain("crt.Gallery",
+			because: "crt.Gallery is the canonical non-obvious component the agent missed");
 	}
 
 	[Test]

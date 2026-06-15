@@ -58,6 +58,20 @@ public sealed class ComponentInfoTool(
 		+ SchemaValidationService.InsertedFieldContractSummary;
 
 	/// <summary>
+	/// Stateless discovery breadcrumb attached to every detail response (the <c>discoveryTip</c>
+	/// field). The reopened ENG-91134 root cause was the agent authoring component choices from
+	/// memory without ever listing the catalog; this tip — present on every single-component detail
+	/// response and requiring no per-session state — steers it back to list-mode discovery so
+	/// non-obvious components such as <c>crt.Gallery</c> are not missed. It lives here, next to the
+	/// other detail-contract constants, because it is type-independent: unlike the curated
+	/// <see cref="ComponentRelations"/> see-also map, the tip is identical for every component.
+	/// </summary>
+	internal const string DiscoveryTipText =
+		"This is a single component (detail mode). Before committing to a layout, call get-component-info "
+		+ "in list mode (omit component-type) to review the full catalog — non-obvious components such as "
+		+ "crt.Gallery are easy to miss when authoring from memory.";
+
+	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
 	/// </summary>
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
@@ -285,7 +299,7 @@ public sealed class ComponentInfoTool(
 			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
 			References = references,
 			RelatedComponents = ComponentRelations.GetRelated(entry.ComponentType),
-			DiscoveryTip = ComponentRelations.DiscoveryTip
+			DiscoveryTip = DiscoveryTipText
 		};
 	}
 
@@ -609,7 +623,7 @@ public sealed class ComponentInfoResponse {
 	/// <summary>
 	/// Gets the stateless discovery breadcrumb attached to every detail response, steering the agent
 	/// back to list-mode catalog discovery so non-obvious components are not missed when authoring
-	/// from memory (ENG-91134 root cause). See <see cref="ComponentRelations.DiscoveryTip"/>.
+	/// from memory (ENG-91134 root cause). See <see cref="DiscoveryTipText"/>.
 	/// </summary>
 	[JsonPropertyName("discoveryTip")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

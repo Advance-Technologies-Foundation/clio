@@ -123,6 +123,9 @@ public sealed class ComponentInfoToolE2ETests {
 		gallerySeeAlsoResponse.RelatedComponents!.Select(suggestion => suggestion.ComponentType)
 			.Should().Contain("crt.Gallery",
 				because: "the reopened ENG-91134 fix surfaces crt.Gallery on crt.DataGrid detail responses end to end");
+		gallerySeeAlsoResponse.RelatedComponents!.Single(suggestion => suggestion.ComponentType == "crt.Gallery")
+			.Reason.Should().NotBeNullOrWhiteSpace(
+				because: "the see-also reason must round-trip through the real MCP JSON binding, not only the in-process helper — closing the JSON-binding gap the reviewer flagged");
 		gallerySeeAlsoResponse.DiscoveryTip.Should().NotBeNullOrWhiteSpace(
 			because: "every detail response from the real MCP server carries the stateless discovery breadcrumb");
 
