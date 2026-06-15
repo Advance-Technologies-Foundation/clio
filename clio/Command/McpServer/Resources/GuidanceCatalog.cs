@@ -113,7 +113,11 @@ internal static class GuidanceCatalog {
 			["ui-project"] = Create(
 				"ui-project",
 				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
-				WorkspaceUiProjectGuidanceResource.Guide)
+				WorkspaceUiProjectGuidanceResource.Guide),
+			["process-modeling"] = Create(
+				"process-modeling",
+				"Canonical MCP guidance for designing Creatio business processes (BPMN): the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).",
+				ProcessModelingGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

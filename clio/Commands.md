@@ -337,6 +337,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="externalLink"></a>
 <a id="link"></a>
 - [`externalLink`](docs/commands/externalLink.md) - Handle external deep links, `link`
+<a id="describe-process"></a>
+<a id="dp"></a>
+- [`describe-process`](docs/commands/describe-process.md) - Read an existing Creatio process and return its structured graph (elements, flows, parameters), `dp`
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`

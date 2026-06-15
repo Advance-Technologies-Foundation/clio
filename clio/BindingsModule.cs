@@ -333,6 +333,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
+		services.AddTransient<ValidateProcessGraphTool>();
+		services.AddTransient<DescribeProcessTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
@@ -550,6 +552,7 @@ public class BindingsModule {
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();

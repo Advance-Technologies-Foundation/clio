@@ -441,6 +441,24 @@ Important behavior and safety:
 - A Safe-flagged environment in the non-interactive MCP context fails closed with a structured error instead of hanging the stdio server.
 - `open-web-app --authenticated` (Mode A — launches a local desktop browser already signed in via CDP cookie injection) is intentionally **CLI-only and not an MCP tool**: it opens a GUI window on the operator's machine, which is meaningless for a headless/remote MCP server. The agent-facing surface for an authenticated session is `get-browser-session` (returns a `storageState` path); Mode A is a human convenience built on the same session machinery.
 
+### 11. Business Process Modeling
+
+These tools help an external AI design Creatio business processes (BPMN). clio makes no LLM call —
+an MCP prompt/guidance teaches the agent the intent→BPMN translation; deterministic tools execute.
+
+- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17 **in-memory** (no environment, no I/O). Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-id`/`source`/`target`). The agent calls this before driving the designer; the live designer's `.djs-validate-outline` remains the final authority.
+- `describe-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{id,dataId,type,label,parameters}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-code` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Reuses the existing `ProcessSchemaRequest` parsing. v1 does not decode filter/mapping expressions.
+
+What an external AI can practically do here:
+
+- pre-check a planned process graph for invalid connections (start with an incoming flow, default without a sibling conditional, orphan/unreachable nodes, etc.) before building anything
+- pair with the `process-modeling` guidance (`get-guidance name=process-modeling`) for the element catalog + rules
+
+Companion surfaces (see the `process-modeling` guidance):
+
+- `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
+- `generate-process-model` — reads an existing process into a C# model (existing tool).
+
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
 The `50` prompts do not add new execution power, but they materially change how an external AI can reason about the surface.
