@@ -417,6 +417,9 @@ public sealed class MobilePageGuidanceResource {
 		                 showNotification? (boolean),
 		                 notificationText? (string),
 		                 saveAtProcessStart? (boolean)
+		         NOTE: keys in processParameters are process parameter CODES, NOT captions — a wrong code is
+		         silently dropped. Call get-process-signature and the run-process-button guide before
+		         authoring this button.
 
 		       ── Files ───────────────────────────────────────────────────
 

@@ -224,7 +224,10 @@ public sealed class PageUpdateTool(
 	/// When the environment cannot resolve the signature the call is downgraded to a warning rather
 	/// than blocking the write.
 	/// </summary>
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtons(
+	// internal (not private) so the run-process orchestration — environment gating, signature
+	// caching, hard-fail vs. warning routing, and warning aggregation — is unit-testable without
+	// driving the full UpdatePage body-validation pipeline. See PageUpdateToolRunProcessTests.
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtons(
 		PageUpdateOptions options) {
 		IReadOnlyList<RunProcessButtonConfig> configs = RunProcessButtonConfigReader.Read(options.Body);
 		if (configs.Count == 0) {
@@ -238,12 +241,16 @@ public sealed class PageUpdateTool(
 				+ "Pass environment-name so update-page can verify codes against the process signature."
 			]);
 		}
-		// Resolving the process signature runs the generator, which writes log warnings to the shared
-		// logger. Drain them under the execution lock so they do not leak into the next tool response.
-		return ExecuteWithCleanLog(() => ValidateRunProcessButtonsAgainstSignatures(options, configs));
+		// Resolve signatures WITHOUT holding the global MCP execution lock — the generator makes a
+		// retrying HTTP call (up to 3x10s) and must not block the single-lane MCP control plane.
+		// The generator writes log warnings to the shared logger; drain them afterwards under the
+		// lock (no network inside) so they do not leak into the next tool response.
+		(PageUpdateResponse Failure, IReadOnlyList<string> Warnings) result =
+			ValidateRunProcessButtonsAgainstSignatures(options, configs);
+		return ExecuteWithCleanLog(() => result);
 	}
 
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(
 		PageUpdateOptions options, IReadOnlyList<RunProcessButtonConfig> configs) {
 		var warnings = new List<string>();
 		var signatures = new Dictionary<string, GetProcessSignatureResponse>(StringComparer.OrdinalIgnoreCase);
