@@ -167,7 +167,9 @@ public class GetProcessSignatureCommand(IProcessModelGenerator generator, ILogge
 			Name = parameter.Name,
 			Caption = caption,
 			ClrType = parameter.DataValueTypeResolved?.FullName,
-			DataValueTypeId = parameter.DataValueType.ToString(),
+			DataValueTypeId = parameter.DataValueType == Guid.Empty
+				? null
+				: parameter.DataValueType.ToString(),
 			Direction = parameter.Direction.ToString(),
 			IsLookup = parameter.ReferenceSchemaUId.HasValue
 				&& parameter.ReferenceSchemaUId.Value != Guid.Empty,

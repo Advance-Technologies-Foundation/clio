@@ -238,6 +238,7 @@ public sealed class RunProcessButtonConfigReaderTests {
 							"request": "crt.RunBusinessProcessRequest",
 							"params": {
 								"processName": "UsrProcess_e629820",
+								"processRunType": "RegardlessOfThePage",
 								"processParameters": {
 									"ProcessSchemaParameter1": "ok string",
 									"ProcessSchemaParameter2": 3.14,
@@ -285,6 +286,36 @@ public sealed class RunProcessButtonConfigReaderTests {
 		result.IsValid.Should().BeFalse(because: "processName is required on a run-process button");
 		result.Errors.Should().ContainSingle(because: "one button is missing processName")
 			.Which.Should().Contain("BrokenButton").And.Contain("processName",
+				because: "the error should name the button and the missing field");
+	}
+
+	[Test]
+	[Description("Structural validation fails and names the button when processRunType is missing.")]
+	public void ValidateRunProcessButtonStructure_Should_Fail_When_ProcessRunType_Missing() {
+		// Arrange
+		string body = WrapViewConfigDiff("""
+			[
+				{
+					"operation": "insert",
+					"name": "NoRunTypeButton",
+					"values": {
+						"type": "crt.Button",
+						"clicked": {
+							"request": "crt.RunBusinessProcessRequest",
+							"params": { "processName": "UsrProcess_e629820" }
+						}
+					}
+				}
+			]
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateRunProcessButtonStructure(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "processRunType is required on a run-process button");
+		result.Errors.Should().ContainSingle(because: "only processRunType is missing")
+			.Which.Should().Contain("NoRunTypeButton").And.Contain("processRunType",
 				because: "the error should name the button and the missing field");
 	}
 

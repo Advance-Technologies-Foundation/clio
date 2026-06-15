@@ -37,6 +37,11 @@ internal static class RunProcessButtonConfigReader {
 		if (string.IsNullOrWhiteSpace(body)) {
 			return configs;
 		}
+		// Cheap early-out: the vast majority of page updates have no run-process button, so skip the
+		// JSON parse entirely unless the request type literal appears somewhere in the body.
+		if (body.IndexOf(RunBusinessProcessRequestType, StringComparison.Ordinal) < 0) {
+			return configs;
+		}
 		// The run-process button shape (operation/insert -> values.clicked.crt.RunBusinessProcessRequest)
 		// is identical across surfaces; only where viewConfigDiff lives differs. Web bodies carry it
 		// inside the SCHEMA_VIEW_CONFIG_DIFF marker of the AMD module; mobile bodies are plain JSON with

@@ -944,21 +944,32 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Body-only structural validation for <c>crt.RunBusinessProcessRequest</c> buttons:
-	/// every such button must carry a non-empty <c>processName</c>. Parameter-code correctness is
-	/// validated separately against the live process signature (it needs the environment).
+	/// every such button must carry a non-empty <c>processName</c> AND a non-empty
+	/// <c>processRunType</c>. Both are required by the request contract; omitting
+	/// <c>processRunType</c> does not error at runtime but silently runs the process without the
+	/// intended record context (the same silent-misbehavior class as a wrong parameter code).
+	/// Parameter-code correctness is validated separately against the live process signature
+	/// (it needs the environment).
 	/// </summary>
 	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
 		SchemaValidationResult result = new() { IsValid = true };
-		foreach (string buttonName in RunProcessButtonConfigReader.Read(jsBody)
-			.Where(config => string.IsNullOrWhiteSpace(config.ProcessName))
-			.Select(config => config.ButtonName)) {
-			string buttonLabel = string.IsNullOrWhiteSpace(buttonName)
+		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
+			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
 				? "a crt.RunBusinessProcessRequest button"
-				: $"run-process button '{buttonName}'";
-			result.IsValid = false;
-			result.Errors.Add(
-				$"{buttonLabel} is missing the required 'processName' (the process schema code). "
-				+ "Resolve it with get-process-signature and set params.processName.");
+				: $"run-process button '{config.ButtonName}'";
+			if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} is missing the required 'processName' (the process schema code). "
+					+ "Resolve it with get-process-signature and set params.processName.");
+			}
+			if (string.IsNullOrWhiteSpace(config.ProcessRunType)) {
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} is missing the required 'processRunType' "
+					+ "('RegardlessOfThePage', 'ForTheSelectedPage', or 'ForTheSelectedRecords'). "
+					+ "Without it the process does not run against the intended record context.");
+			}
 		}
 		return result;
 	}

@@ -30,14 +30,14 @@ internal static class ProcessLibResolver {
 		}
 		IReadOnlyList<VwProcessLib> captionMatches = byCaption ?? [];
 		if (captionMatches.Count == 0) {
-			return Error.NotFound("GetProcessIdFromName",
+			return Error.NotFound("ResolveProcessByNameOrCaption",
 				$"Could not find process with name or caption:{nameOrCaption}");
 		}
 		// Caption is not unique — a multi-match is reported as an ambiguity to resolve by code.
 		if (captionMatches.Count > 1) {
 			string candidates = string.Join("; ",
 				captionMatches.Select(p => $"'{p.Caption}' (code: {p.Name})"));
-			return Error.Conflict("GetProcessIdFromName",
+			return Error.Conflict("ResolveProcessByNameOrCaption",
 				$"Multiple processes match caption '{nameOrCaption}': {candidates}. "
 				+ "Re-run with the exact process code.");
 		}
