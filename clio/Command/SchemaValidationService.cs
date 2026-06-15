@@ -80,6 +80,19 @@ public static class SchemaValidationService
 		@"^#ResourceString\(([^)]+)\)#$",
 		RegexOptions.Compiled,
 		RegexTimeout);
+
+	/// <summary>
+	/// Matches a <c>#ResourceString(Key)#</c> localization macro anywhere within a value (unanchored).
+	/// Unlike <see cref="ResourceStringPattern"/> (which requires the whole value to be exactly the
+	/// macro), this recognises a resource reference that is concatenated with other text or wrapped in
+	/// another macro — most notably the platform's <c>#MacrosTemplateString(…#ResourceString(Key)#…)#</c>
+	/// form, the dominant OOTB caption shape. Used by <see cref="IsInlineUserVisibleTextLiteral"/> so a
+	/// localized-but-wrapped value is not misclassified as a hardcoded inline literal.
+	/// </summary>
+	private static readonly Regex ResourceStringReferencePattern = new(
+		@"#ResourceString\(([^)]+)\)#",
+		RegexOptions.Compiled,
+		RegexTimeout);
 	private const string ResourceBindingPrefix = "$Resources.Strings.";
 	private static readonly Regex CustomFieldResourcePattern = new(
 		@"^Usr[A-Za-z0-9_]*_(label|caption)$",
@@ -1119,8 +1132,9 @@ public static class SchemaValidationService
 	/// <returns>
 	/// A <see cref="SchemaValidationResult"/> that is invalid when any targeted text property carries an
 	/// inline literal. Binding forms (<c>$Resources.Strings.*</c> and any other <c>$</c>-prefixed
-	/// expression) and the <c>#ResourceString(...)#</c> macro are accepted; non-string and empty values
-	/// are ignored.
+	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
+	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
+	/// accepted; non-string and empty values are ignored.
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -1229,7 +1243,10 @@ public static class SchemaValidationService
 		if (IsBindingExpression(value)) {
 			return false;
 		}
-		return !ResourceStringPattern.IsMatch(value);
+		// A value that references a #ResourceString(Key)# macro anywhere is localized — bare,
+		// concatenated, or wrapped (e.g. #MacrosTemplateString(#ResourceString(Key)#)#, the dominant
+		// OOTB caption form). Only a value with no resource reference at all is a hardcoded literal.
+		return !ResourceStringReferencePattern.IsMatch(value);
 	}
 
 	/// <summary>

@@ -2734,6 +2734,76 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A caption authored with the platform #MacrosTemplateString(#ResourceString(Key)#)# wrapper is accepted — it references a resource string, so it is localized even though the macro is wrapped. This is the dominant OOTB caption shape and must not be hard-rejected.")]
+	public void ValidateLocalizableTextLiterals_MacrosTemplateStringWrappedResourceString_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"PageTitle","values":{"type":"crt.Label","caption":"#MacrosTemplateString(#ResourceString(PageTitle_caption)#)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a #ResourceString() macro wrapped in #MacrosTemplateString() still references a localizable resource");
+		result.Errors.Should().BeEmpty(
+			because: "the wrapped macro form is localized and must not be flagged as an inline literal");
+	}
+
+	[Test]
+	[Description("A caption that concatenates a #ResourceString() macro with surrounding text is accepted — any value that references a resource string is treated as localized, not as a hardcoded literal.")]
+	public void ValidateLocalizableTextLiterals_ResourceStringConcatenatedWithText_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Header","values":{"type":"crt.Label","caption":"#MacrosTemplateString(#ResourceString(A_caption)# — #ResourceString(B_caption)#)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a value embedding one or more #ResourceString() macros references localizable resources");
+		result.Errors.Should().BeEmpty(
+			because: "an embedded resource reference is not a hardcoded inline literal");
+	}
+
+	[Test]
+	[Description("A #MacrosTemplateString() wrapper that contains NO #ResourceString() macro is still rejected — without a resource reference the wrapped value is effectively hardcoded user-visible text.")]
+	public void ValidateLocalizableTextLiterals_MacrosTemplateStringWithoutResourceString_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Header","values":{"type":"crt.Label","caption":"#MacrosTemplateString(Hardcoded title)#"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a macro wrapper with no resource reference does not localize the text");
+		result.Errors.Should().ContainSingle(error => error.Contains("Header") && error.Contains("caption"),
+			because: "the hardcoded wrapped caption must still be reported as an inline literal");
+	}
+
+	[Test]
+	[Description("The mobile variant also accepts the #MacrosTemplateString(#ResourceString(Key)#)# wrapper, mirroring the web rule so real mobile page bodies are not falsely rejected.")]
+	public void ValidateMobileLocalizableTextLiterals_MacrosTemplateStringWrappedResourceString_ReturnsValid() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"PageTitle","values":{"type":"crt.Label","caption":"#MacrosTemplateString(#ResourceString(PageTitle_caption)#)#"}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the mobile localizable-text rule recognises the same wrapped macro form as the web rule");
+		result.Errors.Should().BeEmpty(
+			because: "the wrapped macro references a localizable resource and is not an inline literal");
+	}
+
+	[Test]
 	[Description("A non-string placeholder (the boolean toggle some components expose) is ignored — only string text values are subject to the literal rule.")]
 	public void ValidateLocalizableTextLiterals_NonStringPlaceholder_ReturnsValid() {
 		// Arrange
