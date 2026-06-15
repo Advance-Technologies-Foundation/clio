@@ -258,7 +258,7 @@ public sealed class PageUpdateToolE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects a run-process button that omits processName through update-page before any remote calls are attempted (ENG-91168).")]
+	[Description("Rejects a run-process button that omits processName through update-page before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects run-process button without processName")]
 	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a crt.RunBusinessProcessRequest button missing processName, and verifies a structured validation failure that names the button and processName.")]

@@ -8,7 +8,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 /// <summary>
-/// Unit tests for the pure process-resolution selection logic (ENG-91168): resolve by system Name
+/// Unit tests for the pure process-resolution selection logic: resolve by system Name
 /// (code) with a fallback to display Caption, and ambiguity handling.
 /// </summary>
 [TestFixture]

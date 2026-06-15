@@ -12,7 +12,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the get-process-signature MCP tool (ENG-91168).
+/// End-to-end tests for the get-process-signature MCP tool.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
