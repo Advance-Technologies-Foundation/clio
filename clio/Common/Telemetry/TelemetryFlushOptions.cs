@@ -1,5 +1,7 @@
 using System;
 using Clio.UserEnvironment;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Clio.Common.Telemetry;
 
@@ -37,13 +39,16 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 	internal const string IngestKeyEnvironmentVariable = "CLIO_TELEMETRY_INGEST_KEY";
 
 	private readonly ISettingsRepository _settingsRepository;
+	private readonly ILogger<TelemetryFlushOptionsProvider> _logger;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="TelemetryFlushOptionsProvider"/> class.
 	/// </summary>
-	public TelemetryFlushOptionsProvider(ISettingsRepository settingsRepository)
+	public TelemetryFlushOptionsProvider(ISettingsRepository settingsRepository,
+		ILogger<TelemetryFlushOptionsProvider> logger = null)
 	{
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
+		_logger = logger ?? NullLogger<TelemetryFlushOptionsProvider>.Instance;
 	}
 
 	/// <inheritdoc />
@@ -54,7 +59,11 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 			Environment.GetEnvironmentVariable(EndpointEnvironmentVariable), settings?.Endpoint);
 		string ingestKey = FirstNonEmpty(
 			Environment.GetEnvironmentVariable(IngestKeyEnvironmentVariable), settings?.IngestKey);
-		if (!IsValidEndpoint(endpoint)) {
+		if (!string.IsNullOrWhiteSpace(endpoint) && !IsValidEndpoint(endpoint)) {
+			// Distinct from the "no endpoint configured" case: a real endpoint was set but rejected,
+			// so surface why uploading stays disabled instead of letting it look unconfigured.
+			_logger.LogWarning(
+				"telemetry endpoint rejected reason=requires-https-or-loopback-http; uploading disabled");
 			endpoint = null;
 		}
 		return new TelemetryFlushOptions(endpoint, ingestKey);

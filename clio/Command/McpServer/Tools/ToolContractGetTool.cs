@@ -578,13 +578,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file after user consent.",
+			"Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file after user consent. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
 				["session_id", EventNameFieldName, "coding_agent", "skill_version", "plugin_version"],
 				[
 					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
-					Field(EventNameFieldName, StringType, "Product event name. Allowed values: session_started, pre_plan_clarification_requested, pre_plan_user_input_received, business_plan_generated, business_plan_generation_skipped, business_plan_feedback_received, business_plan_regenerated, business_plan_approved, implementation_started, implementation_completed, implementation_failed, implementation_user_input_received, implementation_changes_requested, implementation_changes_applied."),
-					Field("coding_agent", StringType, "Agent or host name, for example Codex, Claude Code, Cursor, Copilot, or VS Code."),
+					Field(EventNameFieldName, StringType,
+						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
+					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("skill_version", StringType, "Product skill version."),
 					Field("plugin_version", StringType, "Product plugin version."),
 					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")

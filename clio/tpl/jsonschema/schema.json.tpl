@@ -59,6 +59,10 @@
 			"type": "string",
 			"description": "Default local Redis server key from redis section when multiple servers are enabled"
 		},
+		"telemetry": {
+			"$ref": "#/definitions/telemetrysettings",
+			"description": "Product telemetry upload configuration for the MCP server"
+		},
 		"Environments": {
 			"type": "object",
 			"patternProperties": {
@@ -222,6 +226,20 @@
 				"Enabled"
 			]
 		},
+		"telemetrysettings": {
+			"type": "object",
+			"properties": {
+				"endpoint": {
+					"type": "string",
+					"description": "Full OTLP/HTTP logs endpoint URL (https, or http only for a loopback host); empty disables telemetry uploads"
+				},
+				"ingest-key": {
+					"type": "string",
+					"description": "Optional public ingest key sent as the X-Ingest-Key request header"
+				}
+			},
+			"description": "Product telemetry upload configuration"
+		},
 		"localredisserverconfiguration": {
 			"type": "object",
 			"properties": {
@@ -265,7 +283,7 @@
 				"Password": "password",
 				"Enabled": true,
 				"Description": "Local Redis server"
-			]
+			}
 		}
 	}
 }

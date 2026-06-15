@@ -108,6 +108,8 @@ public sealed class TelemetryFlushServiceTests
 		JsonElement logRecord = resourceLogs[0].GetProperty("scopeLogs")[0].GetProperty("logRecords")[0];
 		logRecord.GetProperty("timeUnixNano").ValueKind.Should().Be(JsonValueKind.String,
 			because: "the OTLP JSON encoding maps int64 fields to JSON strings");
+		logRecord.GetProperty("severityNumber").GetInt32().Should().Be(9,
+			because: "severityNumber (9 = INFO) must accompany severityText so backends can classify severity numerically");
 		logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
 			because: "the stored snake_case body must map onto the camelCase OTLP body");
 		JsonElement durationAttribute = logRecord.GetProperty("attributes").EnumerateArray()
@@ -317,6 +319,84 @@ public sealed class TelemetryFlushServiceTests
 			because: "recent session-state files are still needed for in-session duration inference");
 		handler.Requests.Should().BeEmpty(
 			because: "session pruning runs regardless of whether an upload endpoint is configured");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps a really-stored event onto spec-valid OTLP without dropping attributes (storage-to-wire round trip).")]
+	public async Task FlushAsync_Should_Map_Stored_Event_To_Otlp_Without_Dropping_Attributes()
+	{
+		// Arrange: write through the real store so the on-disk shape is authoritative, not hand-built.
+		TelemetryService store = new(new System.IO.Abstractions.FileSystem(), _telemetryHome,
+			new MutableTimeProvider(BaseTime));
+		store.Send(new TelemetryEventRequest("sess-roundtrip", "business_plan_generated", "Codex", "0.1.0", "0.2.0")
+			with { TelemetryConsent = "granted" });
+		FakeHttpHandler handler = new();
+		TelemetryFlushService service = CreateService(handler);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		CapturedRequest request = handler.Requests.Should().ContainSingle(
+			because: "the single stored event should upload as one OTLP batch").Subject;
+		using JsonDocument document = JsonDocument.Parse(request.Body!);
+		JsonElement attributes = document.RootElement
+			.GetProperty("resourceLogs")[0].GetProperty("scopeLogs")[0]
+			.GetProperty("logRecords")[0].GetProperty("attributes");
+		AttributeString(attributes, "session_id").Should().Be("sess-roundtrip",
+			because: "the stored session_id attribute must survive the store-to-wire mapping");
+		AttributeString(attributes, "coding_agent").Should().Be("Codex",
+			because: "agent metadata must survive the mapping");
+		AttributeString(attributes, "schema_version").Should().Be("1",
+			because: "the schema_version enrichment must survive the mapping");
+	}
+
+	private static string AttributeString(JsonElement attributes, string key) =>
+		attributes.EnumerateArray()
+			.Single(attribute => attribute.GetProperty("key").GetString() == key)
+			.GetProperty("value").GetProperty("stringValue").GetString();
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reaps crash-orphaned .json.tmp writer files older than the grace period.")]
+	public async Task FlushAsync_Should_Reap_Aged_Orphan_Tmp_Files()
+	{
+		// Arrange
+		Directory.CreateDirectory(EventsDirectory);
+		string agedTmp = Path.Combine(EventsDirectory,
+			$"{BaseTime.AddHours(-48):yyyyMMddTHHmmssfffZ}_orphan.json.tmp");
+		File.WriteAllText(agedTmp, "half-written");
+		FakeHttpHandler handler = new();
+		TelemetryFlushService service = CreateService(
+			handler, endpoint: null, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		File.Exists(agedTmp).Should().BeFalse(
+			because: "a .json.tmp orphaned by a crashed writer must be reclaimed once it is clearly past any live write");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends nothing when the locally stored telemetry consent is unknown (not just denied).")]
+	public async Task FlushAsync_Should_Not_Post_When_Consent_Unknown()
+	{
+		// Arrange
+		WriteEventFile(BaseTime);
+		FakeHttpHandler handler = new();
+		TelemetryFlushService service = CreateService(handler, consent: "unknown");
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().BeEmpty(
+			because: "events must never leave the machine unless consent is explicitly granted");
+		EventFiles().Should().ContainSingle(
+			because: "the flusher must keep events spooled while consent is still unknown");
 	}
 
 	private TelemetryFlushService CreateService(FakeHttpHandler handler, string endpoint = DefaultEndpoint,

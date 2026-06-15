@@ -49,7 +49,14 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 	internal static readonly TimeSpan PostTimeout = TimeSpan.FromSeconds(30);
 
 	private const string EventFileSuffix = ".json";
+	private const string TempFileSuffix = ".tmp";
 	private const string ServiceName = "clio";
+
+	/// <summary>
+	/// Grace period before a crash-orphaned writer temp file (<c>*.json.tmp</c>) is reaped. Well
+	/// past any live write, so an in-progress temp belonging to a concurrent writer is never deleted.
+	/// </summary>
+	internal static readonly TimeSpan MaxTmpAge = TimeSpan.FromHours(24);
 
 	/// <summary>
 	/// Parse format for the event filename timestamp prefix written by
@@ -128,6 +135,7 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		if (!_fileSystem.Directory.Exists(eventsDirectory)) {
 			return;
 		}
+		PruneTmp(eventsDirectory);
 		List<string> spool = ListSpool(eventsDirectory);
 		spool = PruneSpool(spool);
 		if (spool.Count == 0) {
@@ -256,6 +264,7 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		List<OtlpLogRecord> logRecords = events
 			.Select(logEvent => new OtlpLogRecord(
 				logEvent.TimeUnixNano.ToString(CultureInfo.InvariantCulture),
+				SeverityNumberFor(logEvent.SeverityText),
 				logEvent.SeverityText,
 				ToOtlpValue(logEvent.Body),
 				logEvent.Attributes?.Select(attribute => new OtlpKeyValue(attribute.Key, ToOtlpValue(attribute.Value))).ToList()
@@ -271,6 +280,13 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 
 	private static OtlpAnyValue ToOtlpValue(OpenTelemetryValue value) =>
 		new(value?.StringValue, value?.IntValue?.ToString(CultureInfo.InvariantCulture));
+
+	private const int SeverityNumberInfo = 9;
+
+	// OTLP severity_number paired with severity_text so backends that key on the numeric severity
+	// classify the record as INFO. Serialized as a JSON number (32-bit enum), unlike the int64 fields.
+	private static int? SeverityNumberFor(string severityText) =>
+		string.Equals(severityText, "INFO", StringComparison.Ordinal) ? SeverityNumberInfo : null;
 
 	private async Task<PostOutcome> PostWithRetryAsync(HttpClient http, TelemetryFlushOptions options,
 		string payload, CancellationToken cancellationToken)
@@ -370,6 +386,28 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 			return new DateTimeOffset(_fileSystem.File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
 		} catch {
 			return null;
+		}
+	}
+
+	private void PruneTmp(string eventsDirectory)
+	{
+		List<string> tempFiles;
+		try {
+			tempFiles = _fileSystem.Directory.GetFiles(eventsDirectory)
+				.Where(path => path.EndsWith(TempFileSuffix, StringComparison.Ordinal))
+				.ToList();
+		} catch (Exception ex) {
+			_logger.LogDebug(ex, "telemetry-flush tmp-list failed error={Error}", ex.Message);
+			return;
+		}
+		DateTimeOffset cutoff = _timeProvider.GetUtcNow().Subtract(MaxTmpAge);
+		foreach (string path in tempFiles) {
+			// Event temp files carry the same timestamp prefix as their target; reap only those
+			// clearly past any live write (or with an unparseable prefix), leaving fresh temps alone.
+			DateTimeOffset? writtenAt = TryParseFileTimestamp(System.IO.Path.GetFileName(path));
+			if (writtenAt is null || writtenAt < cutoff) {
+				DeleteFile(path);
+			}
 		}
 	}
 

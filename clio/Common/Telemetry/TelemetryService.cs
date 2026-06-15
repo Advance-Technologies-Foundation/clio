@@ -4,9 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Ms = System.IO.Abstractions;
@@ -59,7 +61,14 @@ public sealed class TelemetryService : ITelemetryService
 	private readonly string _telemetryRoot;
 	private readonly ILogger<TelemetryService> _logger;
 
-	private static readonly HashSet<string> AllowedEventNames = new(StringComparer.Ordinal) {
+	/// <summary>
+	/// Canonical, ordered set of product workflow event names accepted by the telemetry tool.
+	/// Single source of truth: both the runtime allow-list (<see cref="AllowedEventNameSet"/>) and
+	/// the <c>get-tool-contract</c> <c>event_name</c> description are derived from this list, so the
+	/// announced contract can never drift from what clio actually enforces. Kept in the same order
+	/// as the CAADT telemetry contract (<c>context/product-telemetry.md</c>).
+	/// </summary>
+	internal static readonly IReadOnlyList<string> AllowedEventNames = [
 		SessionStartedEvent,
 		"pre_plan_clarification_requested",
 		"pre_plan_user_input_received",
@@ -69,12 +78,23 @@ public sealed class TelemetryService : ITelemetryService
 		"business_plan_regenerated",
 		"business_plan_approved",
 		"implementation_started",
-		"implementation_completed",
-		"implementation_failed",
 		"implementation_user_input_received",
+		"implementation_completed",
 		"implementation_changes_requested",
-		"implementation_changes_applied"
-	};
+		"implementation_changes_applied",
+		"implementation_failed"
+	];
+
+	private static readonly HashSet<string> AllowedEventNameSet = new(AllowedEventNames, StringComparer.Ordinal);
+
+	/// <summary>Maximum accepted length for the session identifier.</summary>
+	private const int MaxSessionIdLength = 128;
+
+	/// <summary>Maximum accepted length for short scalar metadata fields (agent/version strings).</summary>
+	private const int MaxFieldLength = 64;
+
+	private static readonly Regex SessionIdPattern =
+		new("^[A-Za-z0-9._:-]+$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
 	private static readonly HashSet<string> AllowedConsents = new(StringComparer.Ordinal) {
 		ConsentGranted, ConsentDenied
@@ -169,7 +189,11 @@ public sealed class TelemetryService : ITelemetryService
 				return Invalid("missing-required-field", $"Telemetry field '{name}' is required.");
 			}
 		}
-		if (!AllowedEventNames.Contains(request.EventName)) {
+		TelemetryEventResult shapeResult = ValidateFieldShapes(request);
+		if (!shapeResult.Success) {
+			return shapeResult;
+		}
+		if (!AllowedEventNameSet.Contains(request.EventName)) {
 			return Invalid("unknown-event-name", $"Unsupported event_name '{request.EventName}'.");
 		}
 		if (!string.IsNullOrWhiteSpace(request.TelemetryConsent) && !AllowedConsents.Contains(request.TelemetryConsent)) {
@@ -177,6 +201,31 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		return new TelemetryEventResult(true, "valid");
 	}
+
+	// Value-level guards (defense in depth): the agent-supplied free strings are bounded and the
+	// session id is shape-checked so a buggy or hostile client cannot smuggle oversized blobs or
+	// PII-shaped content past the field-name allow-list, and the values stay safe to embed as
+	// attributes and to derive a session file name from.
+	private static TelemetryEventResult ValidateFieldShapes(TelemetryEventRequest request)
+	{
+		if (request.SessionId.Length > MaxSessionIdLength || !SessionIdPattern.IsMatch(request.SessionId)) {
+			return Invalid("invalid-session-id",
+				$"session_id must be 1-{MaxSessionIdLength} characters of letters, digits, '.', '_', ':' or '-'.");
+		}
+		foreach ((string name, string value) in BoundedFields(request)) {
+			if (value.Length > MaxFieldLength) {
+				return Invalid("field-too-long", $"Telemetry field '{name}' exceeds {MaxFieldLength} characters.");
+			}
+		}
+		return new TelemetryEventResult(true, "valid");
+	}
+
+	private static IReadOnlyList<(string name, string value)> BoundedFields(TelemetryEventRequest request) =>
+	[
+		("coding_agent", request.CodingAgent),
+		("skill_version", request.SkillVersion),
+		("plugin_version", request.PluginVersion)
+	];
 
 	private static IReadOnlyList<(string name, string value)> RequiredFields(TelemetryEventRequest request) =>
 	[
@@ -305,10 +354,7 @@ public sealed class TelemetryService : ITelemetryService
 	private void WriteEvent(string eventId, OpenTelemetryLogEvent logEvent)
 	{
 		string fileName = $"{_timeProvider.GetUtcNow():yyyyMMddTHHmmssfffZ}_{eventId}.json";
-		string tempPath = Path.Combine(EventsDirectory, fileName + ".tmp");
-		string finalPath = Path.Combine(EventsDirectory, fileName);
-		WriteJson(tempPath, logEvent);
-		_fileSystem.File.Move(tempPath, finalPath);
+		WriteJson(Path.Combine(EventsDirectory, fileName), logEvent);
 	}
 
 	private void EnsureDirectories()
@@ -318,24 +364,53 @@ public sealed class TelemetryService : ITelemetryService
 		_fileSystem.Directory.CreateDirectory(SessionsDirectory);
 	}
 
+	// Atomic write: serialize to a sibling ".tmp" then move-with-overwrite into place so a reader
+	// (this process or another clio process) never observes a half-written file. For fixed-path
+	// targets (consent/session) the temp name is reused, so it self-heals; for the unique-named
+	// event files a crash between write and move leaves an orphan ".json.tmp" that the flusher reaps.
 	private void WriteJson<T>(string path, T value)
 	{
 		_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 		string json = JsonSerializer.Serialize(value, JsonOptions);
-		_fileSystem.File.WriteAllText(path, json, Encoding.UTF8);
+		string tempPath = path + ".tmp";
+		_fileSystem.File.WriteAllText(tempPath, json, Encoding.UTF8);
+		_fileSystem.File.Move(tempPath, path, overwrite: true);
 	}
 
 	private string GetOrCreateInstallationId()
 	{
-		if (_fileSystem.File.Exists(InstallationIdPath)) {
-			string current = _fileSystem.File.ReadAllText(InstallationIdPath, Encoding.UTF8).Trim();
-			if (!string.IsNullOrWhiteSpace(current)) {
-				return current;
-			}
+		string existing = ReadInstallationId();
+		if (!string.IsNullOrWhiteSpace(existing)) {
+			return existing;
 		}
 		string installationId = Guid.NewGuid().ToString("N");
-		_fileSystem.File.WriteAllText(InstallationIdPath, installationId, Encoding.UTF8);
-		return installationId;
+		string tempPath = $"{InstallationIdPath}.{installationId}.tmp";
+		_fileSystem.File.WriteAllText(tempPath, installationId, Encoding.UTF8);
+		// Replace only a blank/corrupt file; for a missing file use create-only Move so concurrent
+		// clio processes converge on a single installation id (first writer wins) instead of churning.
+		bool replaceExisting = _fileSystem.File.Exists(InstallationIdPath);
+		try {
+			_fileSystem.File.Move(tempPath, InstallationIdPath, replaceExisting);
+			return installationId;
+		} catch (IOException) {
+			TryDeleteFile(tempPath);
+			string winner = ReadInstallationId();
+			return string.IsNullOrWhiteSpace(winner) ? installationId : winner;
+		}
+	}
+
+	private string ReadInstallationId() =>
+		_fileSystem.File.Exists(InstallationIdPath)
+			? _fileSystem.File.ReadAllText(InstallationIdPath, Encoding.UTF8).Trim()
+			: string.Empty;
+
+	private void TryDeleteFile(string path)
+	{
+		try {
+			_fileSystem.File.Delete(path);
+		} catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+			_logger.LogDebug(ex, "telemetry-store temp cleanup failed file={File}", Path.GetFileName(path));
+		}
 	}
 
 	private static string GetClioVersion() =>
@@ -364,11 +439,12 @@ public sealed class TelemetryService : ITelemetryService
 	private string InstallationIdPath => Path.Combine(TelemetryRoot, "installation-id.txt");
 	private string SessionsDirectory => TelemetryStoragePaths.SessionsDirectory(TelemetryRoot);
 	private string SessionStatePath(string sessionId) =>
-		Path.Combine(SessionsDirectory, $"{SafeFileName(sessionId)}.json");
+		Path.Combine(SessionsDirectory, $"{SessionFileName(sessionId)}.json");
 
-	private static string SafeFileName(string value) =>
-		new(value.Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '_')
-			.ToArray());
+	// Derive the session-state file name from a hash of the (validated) session id: collision-free
+	// (distinct ids can never share state, unlike a lossy character-replace) and traversal-safe.
+	private static string SessionFileName(string sessionId) =>
+		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId))).ToLowerInvariant();
 
 	private string EventsDirectory => TelemetryStoragePaths.EventsDirectory(TelemetryRoot);
 }

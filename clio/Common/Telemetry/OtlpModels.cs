@@ -33,6 +33,7 @@ internal sealed record OtlpScope(
 
 internal sealed record OtlpLogRecord(
 	[property: JsonPropertyName("timeUnixNano")] string TimeUnixNano,
+	[property: JsonPropertyName("severityNumber")] int? SeverityNumber,
 	[property: JsonPropertyName("severityText")] string SeverityText,
 	[property: JsonPropertyName("body")] OtlpAnyValue Body,
 	[property: JsonPropertyName("attributes")] IReadOnlyList<OtlpKeyValue> Attributes

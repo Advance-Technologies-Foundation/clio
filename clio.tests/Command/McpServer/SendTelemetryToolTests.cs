@@ -428,6 +428,113 @@ public sealed class SendTelemetryToolTests
 			because: "the caller receives a structured, non-throwing storage error");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an over-long or malformed session_id before persisting any event.")]
+	public void TelemetryService_Should_Reject_Invalid_Session_Id()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryEventResult tooLong = service.Send(
+			CreateRequest() with { SessionId = new string('a', 200), TelemetryConsent = "granted" });
+		TelemetryEventResult badChars = service.Send(
+			CreateRequest() with { SessionId = "has space/slash", TelemetryConsent = "granted" });
+
+		// Assert
+		tooLong.Error!.Code.Should().Be("invalid-session-id",
+			because: "an over-long session_id is bounded to keep the local spool and wire payload small");
+		badChars.Error!.Code.Should().Be("invalid-session-id",
+			because: "session_id must be a safe identifier so it cannot smuggle content or unsafe path characters");
+		EventFiles().Should().BeEmpty(
+			because: "invalid identifiers must be rejected before any event is written");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an over-long scalar metadata field before persisting any event.")]
+	public void TelemetryService_Should_Reject_Over_Long_Scalar_Field()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryEventResult result = service.Send(
+			CreateRequest() with { CodingAgent = new string('x', 100), TelemetryConsent = "granted" });
+
+		// Assert
+		result.Error!.Code.Should().Be("field-too-long",
+			because: "agent-supplied free strings are length-bounded as defense in depth against oversized or PII-shaped values");
+		EventFiles().Should().BeEmpty(
+			because: "an oversized field must be rejected before persistence");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stores distinct session-state files for session ids a lossy sanitizer would have collapsed together.")]
+	public void TelemetryService_Should_Not_Collide_Session_State_For_Similar_Session_Ids()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		service.Send(CreateRequest() with { SessionId = "sess.1", TelemetryConsent = "granted" });
+		service.Send(CreateRequest() with { SessionId = "sess_1" });
+
+		// Assert
+		SessionFiles().Should().HaveCount(2,
+			because: "session ids differing only in punctuation must not share duration-inference state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not infer a step duration for a completion event when its start event is absent from the session.")]
+	public void TelemetryService_Should_Not_Infer_Duration_Without_Start_Event()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		service.Send(CreateRequest("implementation_completed") with { TelemetryConsent = "granted" });
+
+		// Assert
+		string completedFile = EventFiles().Single();
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(completedFile));
+		AttributeValue(document.RootElement.GetProperty("attributes"), "duration_ms").Should().BeNull(
+			because: "implementation_completed without a prior implementation_started has no measurable step duration");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract announces exactly the event names clio enforces (single source of truth).")]
+	public void GetToolContract_Should_Announce_All_Enforced_Event_Names()
+	{
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs([SendTelemetryTool.ToolName]));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the send-telemetry contract must resolve");
+		ToolContractField eventField = response.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "event_name");
+		foreach (string eventName in TelemetryService.AllowedEventNames) {
+			eventField.Description.Should().Contain(eventName,
+				because: "the announced event_name allow-list must not drift from the enforced allow-list");
+		}
+	}
+
+	private string[] SessionFiles()
+	{
+		string sessionsDirectory = Path.Combine(_telemetryHome, "sessions");
+		return Directory.Exists(sessionsDirectory)
+			? Directory.GetFiles(sessionsDirectory, "*.json")
+			: [];
+	}
+
 	private static TelemetryEventRequest CreateRequest(string eventName = "session_started") =>
 		new(
 			SessionId: "018f6e4a-0000-7000-9000-000000000001",
