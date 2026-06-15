@@ -22,6 +22,7 @@ public static class SchemaValidationService
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
+	private const string LabelPropertyName = "label";
 	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
@@ -154,7 +155,7 @@ public static class SchemaValidationService
 	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
 	/// </summary>
 	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
-		"label",
+		LabelPropertyName,
 		"caption",
 		"title",
 		"tooltip",
@@ -1336,7 +1337,7 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
-		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
+		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
@@ -1678,7 +1679,7 @@ public static class SchemaValidationService
 				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
-		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
+		if (TryGetStringProperty(componentValues, LabelPropertyName, out string labelExpression) &&
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
@@ -1788,7 +1789,7 @@ public static class SchemaValidationService
 	}
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
-		return TryGetStringProperty(componentValues, "label", out captionExpression)
+		return TryGetStringProperty(componentValues, LabelPropertyName, out captionExpression)
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
 	}
 
