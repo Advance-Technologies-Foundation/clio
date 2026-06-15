@@ -17,19 +17,10 @@ internal sealed record RunProcessButtonConfig(
 	IReadOnlyList<string> ParameterCodes);
 
 /// <summary>
-/// Extracts <c>crt.RunBusinessProcessRequest</c> button configurations from the
-/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> section of a Freedom UI page body. Best-effort: returns
-/// an empty list when the section is missing or is not parseable as JSON, so callers never throw on
-/// non-run-process bodies.
-/// <para>
-/// SCOPE: web (desktop) Freedom UI pages only. The reader keys off the web
-/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker; mobile page bodies are plain JSON without that marker,
-/// so a run-process button authored on a mobile page is intentionally NOT discovered here and its
-/// parameter codes are NOT validated against the live process signature. This is a deliberate
-/// scoping decision for the initial iteration — the CODE-not-caption rule is still documented in the
-/// mobile-page guidance so authors are warned. Extending signature validation to mobile bodies is
-/// tracked as follow-up work.
-/// </para>
+/// Extracts <c>crt.RunBusinessProcessRequest</c> button configurations from a Freedom UI page body —
+/// both web bodies (the <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker inside the AMD module) and mobile bodies
+/// (plain JSON with a top-level <c>viewConfigDiff</c> array). Best-effort: returns an empty list when
+/// the section is missing or is not parseable as JSON, so callers never throw on non-run-process bodies.
 /// </summary>
 internal static class RunProcessButtonConfigReader {
 	private const string ViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
@@ -46,21 +37,50 @@ internal static class RunProcessButtonConfigReader {
 		if (string.IsNullOrWhiteSpace(body)) {
 			return configs;
 		}
+		// The run-process button shape (operation/insert -> values.clicked.crt.RunBusinessProcessRequest)
+		// is identical across surfaces; only where viewConfigDiff lives differs. Web bodies carry it
+		// inside the SCHEMA_VIEW_CONFIG_DIFF marker of the AMD module; mobile bodies are plain JSON with
+		// a top-level "viewConfigDiff" array. Read both so codes are validated on either surface (ENG-91168).
+		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
+			ReadMobileBody(body, configs);
+		}
+		else {
+			ReadWebBody(body, configs);
+		}
+		return configs;
+	}
+
+	private static void ReadWebBody(string body, List<RunProcessButtonConfig> configs) {
 		if (!PageSchemaSectionReader.TryRead(body, out string viewConfigDiff, ViewConfigDiffMarker)
 			|| string.IsNullOrWhiteSpace(viewConfigDiff)) {
-			return configs;
+			return;
 		}
 		JsonDocument document;
 		try {
 			document = JsonDocument.Parse(viewConfigDiff, ParseOptions);
 		}
 		catch (JsonException) {
-			return configs;
+			return;
 		}
 		using (document) {
 			Walk(document.RootElement, currentButtonName: null, configs);
 		}
-		return configs;
+	}
+
+	private static void ReadMobileBody(string body, List<RunProcessButtonConfig> configs) {
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body, ParseOptions);
+		}
+		catch (JsonException) {
+			return;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind == JsonValueKind.Object
+				&& document.RootElement.TryGetProperty("viewConfigDiff", out JsonElement viewConfigDiff)) {
+				Walk(viewConfigDiff, currentButtonName: null, configs);
+			}
+		}
 	}
 
 	private static void Walk(JsonElement element, string currentButtonName, List<RunProcessButtonConfig> configs) {

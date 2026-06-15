@@ -204,6 +204,17 @@ public sealed class PageUpdateTool(
 					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
+			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
+			// run-process structural check (processName required) here too — the signature code check runs
+			// afterwards in ValidateRunProcessButtons for both surfaces.
+			SchemaValidationResult mobileRunProcess =
+				SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
+			if (!mobileRunProcess.IsValid) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+				}, null);
+			}
 			return (null, mobileResult.Warnings);
 		}
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);

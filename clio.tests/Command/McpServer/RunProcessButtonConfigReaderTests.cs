@@ -139,6 +139,61 @@ public sealed class RunProcessButtonConfigReaderTests {
 	}
 
 	[Test]
+	[Description("Extracts a run-process button from a mobile page body (top-level JSON viewConfigDiff, no marker).")]
+	public void Read_Should_Extract_From_Mobile_Json_Body() {
+		// Arrange
+		// Mobile bodies are plain JSON with viewConfigDiff at the root (no SCHEMA_VIEW_CONFIG_DIFF marker).
+		string mobileBody = """
+			{
+				"viewConfigDiff": [
+					{
+						"operation": "insert",
+						"name": "RunBusinessProcessButton",
+						"values": {
+							"type": "crt.Button",
+							"clicked": {
+								"request": "crt.RunBusinessProcessRequest",
+								"params": {
+									"processName": "UsrProcess_2fa4621",
+									"processRunType": "ForTheSelectedPage",
+									"recordIdProcessParameterName": "ProcessSchemaParameter1"
+								}
+							}
+						},
+						"parentName": "AreaProfileContainer",
+						"propertyName": "items",
+						"index": 1
+					}
+				]
+			}
+			""";
+
+		// Act
+		var configs = RunProcessButtonConfigReader.Read(mobileBody);
+
+		// Assert
+		configs.Should().HaveCount(1, because: "a mobile body exposes viewConfigDiff at the JSON root");
+		configs[0].ButtonName.Should().Be("RunBusinessProcessButton", because: "the operation carries the button name");
+		configs[0].ProcessName.Should().Be("UsrProcess_2fa4621", because: "processName is read from mobile params");
+		configs[0].ProcessRunType.Should().Be("ForTheSelectedPage", because: "processRunType is read from mobile params");
+		configs[0].ParameterCodes.Should().BeEquivalentTo(new[] { "ProcessSchemaParameter1" },
+			because: "recordIdProcessParameterName is captured as a parameter code on mobile too");
+	}
+
+	[Test]
+	[Description("Returns no configs for a mobile body that has no viewConfigDiff at the JSON root.")]
+	public void Read_Should_Return_Empty_For_Mobile_Body_Without_ViewConfigDiff() {
+		// Arrange
+		string mobileBody = """{ "modelConfigDiff": [] }""";
+
+		// Act
+		var configs = RunProcessButtonConfigReader.Read(mobileBody);
+
+		// Assert
+		configs.Should().BeEmpty(because: "without a root viewConfigDiff there is nothing to parse on mobile");
+	}
+
+	[Test]
 	[Description("Returns no configs when the view-config-diff marker is absent from the body.")]
 	public void Read_Should_Return_Empty_When_Marker_Missing() {
 		// Arrange
