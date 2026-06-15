@@ -54,9 +54,11 @@ D references a taxonomy A does not produce.
   is **A2**.
 - **A owns the category taxonomy** (a controlled ~5–15 vocabulary, the single source — scalar `category`
   per component). Implementation note (2026-06-15): the assumed pre-existing hardcoded `CategoryOrder`
-  does **not** exist anywhere (clio, generator, or creatio-ui) — there is nothing to reconcile; A defines
-  the taxonomy from scratch and populates the already-declared-but-empty producer `category` field on
-  `ComponentRegistryEntry` as that one source. D consumes it; D does not define it.
+  does **not** exist anywhere (clio, generator, or creatio-ui). The only prior category notion is a
+  human-authored `## Metadata · Category` line in some `.component.md` recipe docs (e.g. `crt.Gallery` =
+  "interactive"), reconciled into this controlled taxonomy. A defines the taxonomy from scratch; the
+  canonical machine source is a new `@category` JSDoc tag on the component class that the registry
+  generator emits onto the producer `category` field (A2 producer change). D consumes it; D does not define it.
 - **At-scale generation** produces reviewable diffs in `static-files-mcp`; presence is snapshot-gated
   (automatable), quality for the confusable set (Gallery/DataGrid/List/FileList/ImageInput/Timeline…)
   has a **named human owner** signing off. Presence ≠ quality — both bars are explicit.
