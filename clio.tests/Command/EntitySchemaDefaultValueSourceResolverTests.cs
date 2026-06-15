@@ -359,6 +359,27 @@ internal sealed class EntitySchemaDefaultValueSourceResolverTests
 	}
 
 	[Test]
+	[Description("Does not probe record existence for a lookup Const default whose value is not a GUID.")]
+	public void Resolve_LookupConst_Should_NotCheckExistence_When_ValueIsNotGuid() {
+		// Act
+		EntitySchemaDefaultValueConfig result = _resolver.Resolve(
+			new EntitySchemaDefaultValueConfig {
+				Source = "Const",
+				Value = "Draft"
+			},
+			dataValueType: 10,
+			context: "Column 'UsrColor'",
+			options: new RemoteCommandOptions(),
+			referenceSchemaName: "UsrEng91318Color");
+
+		// Assert
+		result.Value.Should().Be("Draft",
+			because: "a non-GUID Const value cannot identify a referenced record, so it passes through unvalidated");
+		_designerClient.DidNotReceive()
+			.CheckRecordExists(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Does not check record existence for a Const default when no reference schema is supplied.")]
 	public void Resolve_Const_Should_NotCheckExistence_When_NoReferenceSchema() {
 		// Act

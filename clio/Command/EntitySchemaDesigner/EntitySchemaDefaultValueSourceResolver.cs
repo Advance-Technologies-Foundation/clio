@@ -52,6 +52,8 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 	private readonly Dictionary<Guid, IReadOnlyList<SystemValueLookupValueDto>> _systemValuesCache = new();
 	private readonly Dictionary<string, IReadOnlyList<SysSettingsSelectQueryRowDto>> _settingsCache =
 		new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, LookupRecordExistence> _recordExistenceCache =
+		new(StringComparer.OrdinalIgnoreCase);
 
 	public EntitySchemaDefaultValueSourceResolver(IRemoteEntitySchemaDesignerClient designerClient) {
 		_designerClient = designerClient;
@@ -89,7 +91,13 @@ internal sealed class EntitySchemaDefaultValueSourceResolver : IEntitySchemaDefa
 			|| recordId == Guid.Empty) {
 			return config;
 		}
-		LookupRecordExistence existence = _designerClient.CheckRecordExists(referenceSchemaName!, recordId, options);
+		// Cache per (schema, recordId) for the resolver's lifetime (one command execution) so a multi-column
+		// batch that references the same record does not re-probe the environment.
+		string cacheKey = $"{referenceSchemaName!.Trim()}|{recordId:D}";
+		if (!_recordExistenceCache.TryGetValue(cacheKey, out LookupRecordExistence existence)) {
+			existence = _designerClient.CheckRecordExists(referenceSchemaName.Trim(), recordId, options);
+			_recordExistenceCache[cacheKey] = existence;
+		}
 		if (existence == LookupRecordExistence.NotFound) {
 			throw new EntitySchemaDesignerException(
 				$"{context} default value record '{recordId:D}' was not found in referenced schema '{referenceSchemaName}'.");

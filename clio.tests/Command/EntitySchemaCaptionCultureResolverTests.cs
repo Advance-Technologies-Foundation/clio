@@ -76,6 +76,22 @@ internal sealed class EntitySchemaCaptionCultureResolverTests
 	}
 
 	[Test]
+	[Description("Treats a whitespace-only caption-culture override as no override and falls through to the profile/en-US path.")]
+	public void ResolveEffectiveCulture_ShouldIgnoreWhitespaceOverride_AndUseFallback() {
+		// Arrange
+		_cultureResolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(CultureResolution.Failed(CurrentUserCultureResolver.ReasonUserCultureMissing)));
+
+		// Act
+		string result = _resolver.ResolveEffectiveCulture(new RemoteCommandOptions(), "   ");
+
+		// Assert
+		result.Should().Be("en-US",
+			because: "a whitespace-only override is ignored and resolution falls through to profile then the en-US fallback");
+		_settingsRepository.Received().GetEnvironment(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
 	[Description("Falls back to en-US when no override is supplied and profile resolution fails.")]
 	public void ResolveEffectiveCulture_ShouldFallBackToEnUs_WhenResolutionFails() {
 		// Arrange

@@ -1028,6 +1028,62 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Propagates the record-resolution marker to readback when a lookup Const default's display value cannot be resolved.")]
+	public void GetColumnProperties_ShouldPropagateRecordResolutionMarker_WhenDisplayValueUnavailable() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		EntitySchemaColumnDto colorColumn = CreateLookupColumn("UsrColor", NameColumnUId, "UsrEng91318Color");
+		colorColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = recordId.ToString("D")
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		SetupLoadedSchema();
+		_lookupDefaultDisplayValueResolver
+			.Resolve("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(new LookupDefaultResolution(null, "no-access"));
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrColor"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.RecordResolution.Should().Be("no-access",
+			because: "an unresolved display value must surface its honest marker end to end through the readback");
+		result.DefaultValueConfig.DisplayValue.Should().BeNull(
+			because: "no display value is available when a marker is returned");
+	}
+
+	[Test]
+	[Description("Does not enrich a lookup Const default whose stored value is not a GUID.")]
+	public void GetColumnProperties_ShouldNotEnrich_WhenLookupConstValueIsNotGuid() {
+		// Arrange
+		EntitySchemaColumnDto colorColumn = CreateLookupColumn("UsrColor", NameColumnUId, "UsrEng91318Color");
+		colorColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = "not-a-guid"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrColor"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.DisplayValue.Should().BeNull(
+			because: "a non-GUID Const value cannot identify a referenced record, so enrichment is skipped");
+		_lookupDefaultDisplayValueResolver.DidNotReceive()
+			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Returns additive resolved-value-source metadata for system-value defaults in structured readback.")]
 	public void GetColumnProperties_ReturnsResolvedValueSource_ForSystemValueDefault() {
 		// Arrange

@@ -59,7 +59,12 @@ internal sealed class EntitySchemaCaptionCultureResolver : IEntitySchemaCaptionC
 			CultureResolution resolution = _cultureResolverFactory.Create(settings)
 				.ResolveAsync().GetAwaiter().GetResult();
 			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
-		} catch (Exception ex) {
+		} catch (Exception ex) when (ex is not OperationCanceledException
+				|| ex is System.Threading.Tasks.TaskCanceledException) {
+			// Best-effort (M-4): profile resolution must degrade to en-US on ANY recoverable failure — the
+			// settings lookup can throw a plain Exception ("no environment registered") and the profile HTTP
+			// call can time out (TaskCanceledException). The filter still lets a genuine cooperative
+			// cancellation propagate, satisfying the no-bare-catch convention.
 			_logger.WriteWarning(
 				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
 			return EntitySchemaDesignerSupport.DefaultCultureName;
