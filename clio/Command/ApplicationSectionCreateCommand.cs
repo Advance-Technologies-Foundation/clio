@@ -168,8 +168,16 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
-		string effectiveCultureName = captionCultureResolver.Resolve(
-			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
+		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		string effectiveCultureName = captionCultureResolver.Resolve(cultureOptions, request.CaptionCulture);
+		// ENG-91044: the stored section caption is localized server-side under the connected user's
+		// PROFILE culture — the caption-culture override only selects which value the readback surfaces,
+		// not the stored language. Validate the written text against the profile culture (override =
+		// null), so a non-matching --caption-culture cannot smuggle the wrong language past the guard
+		// (e.g. Cyrillic text stored under an 'en-US' profile).
+		string profileCultureForCaption = captionCultureResolver.Resolve(cultureOptions, null);
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		ApplicationInfoResult beforeInfo;
 		ResolvedApplicationSectionCreateRequest resolvedRequest;

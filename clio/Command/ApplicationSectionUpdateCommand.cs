@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -54,7 +55,8 @@ public sealed class ApplicationSectionUpdateService(
 	ISettingsRepository settingsRepository,
 	IApplicationClientFactory applicationClientFactory,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IApplicationInfoService applicationInfoService)
+	IApplicationInfoService applicationInfoService,
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationSectionUpdateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdField = "ApplicationId";
@@ -78,6 +80,14 @@ public sealed class ApplicationSectionUpdateService(
 			throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
+
+		// ENG-91044: the section caption/description are localized server-side under the connected
+		// user's profile culture (update-app-section has no caption-culture knob), so reject text whose
+		// script does not match the profile culture (e.g. Cyrillic under an en-US profile).
+		string profileCultureForCaption = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, null);
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ApplicationInfoResult applicationInfo = applicationInfoService.GetApplicationInfo(

@@ -465,6 +465,39 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects Cyrillic text under the en-US title key before environment resolution so a caption cannot be stored in the wrong language for the profile (ENG-91044).")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Create entity schema rejects non-Latin text under the en-US localization key")]
+	[AllureDescription("Uses the real MCP server to call create-entity-schema with Cyrillic text under the en-US title key and verifies the tool returns a structured validation failure that names en-US before any remote schema creation.")]
+	public async Task CreateEntitySchema_Should_Reject_NonLatin_Text_Under_EnUs_Title() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["package-name"] = "UsrPkg",
+					["schema-name"] = "UsrCyrillicSchema",
+					["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Заявка" }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the script/culture guard should surface as a structured command failure, not a protocol error");
+		execution.ExitCode.Should().Be(1,
+			because: "create-entity-schema must fail when non-English text is stored under the mandatory en-US key");
+		execution.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("en-US", StringComparison.Ordinal),
+			because: "the failure must name the en-US culture whose value is written in the wrong script");
+	}
+
+	[Test]
 	[Description("Reports a readable failure when create-entity-schema is invoked with an unknown environment name.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("Create entity schema reports invalid environment failures")]
