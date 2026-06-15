@@ -5,13 +5,14 @@ using Clio.Command;
 using Clio.Common;
 using Clio.Package;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-[TestFixture(Category = "Unit")]
+[TestFixture]
 [Property("Module", "Command")]
 public class AddPackageDependencyCommandTestCase : BaseCommandTests<AddPackageDependencyOptions>
 {
@@ -32,19 +33,31 @@ public class AddPackageDependencyCommandTestCase : BaseCommandTests<AddPackageDe
 
 	#region Setup/Teardown
 
-	[SetUp]
-	public void Init() {
+	public override void Setup() {
+		base.Setup();
+		// Resolve the SUT from the container so the real BindingsModule wiring of
+		// IPackageDependencyManager -> AddPackageDependencyCommand is exercised; a broken/missing
+		// registration must fail here rather than passing against a hand-constructed instance.
+		_command = Container.GetRequiredService<AddPackageDependencyCommand>();
+		_command.Logger = _logger;
+	}
+
+	public override void TearDown() {
+		_packageDependencyManager.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
+		base.TearDown();
+	}
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
 		_packageDependencyManager = Substitute.For<IPackageDependencyManager>();
 		_logger = Substitute.For<ILogger>();
-		_command = new AddPackageDependencyCommand(_packageDependencyManager, new EnvironmentSettings()) {
-			Logger = _logger
-		};
+		containerBuilder.AddTransient<IPackageDependencyManager>(_ => _packageDependencyManager);
 	}
 
 	#endregion
 
 	[Test]
-	[Category("Unit")]
 	[Description("Returns success and forwards the parsed dependency name to the manager for a single dependency.")]
 	public void Execute_ShouldReturnZeroAndAddDependency_WhenSingleDependencyProvided() {
 		// Arrange
@@ -67,7 +80,6 @@ public class AddPackageDependencyCommandTestCase : BaseCommandTests<AddPackageDe
 	}
 
 	[Test]
-	[Category("Unit")]
 	[Description("Parses a 'name:version' dependency entry into a name and an explicit version.")]
 	public void Execute_ShouldParseExplicitVersion_WhenDependencyHasVersionSuffix() {
 		// Arrange
@@ -89,7 +101,6 @@ public class AddPackageDependencyCommandTestCase : BaseCommandTests<AddPackageDe
 	}
 
 	[Test]
-	[Category("Unit")]
 	[Description("Returns an error exit code and never calls the manager when no dependency is supplied.")]
 	public void Execute_ShouldReturnOneAndNotCallManager_WhenNoDependencyProvided() {
 		// Arrange
@@ -109,7 +120,6 @@ public class AddPackageDependencyCommandTestCase : BaseCommandTests<AddPackageDe
 	}
 
 	[Test]
-	[Category("Unit")]
 	[Description("Returns an error exit code and logs the failure when the manager throws.")]
 	public void Execute_ShouldReturnOneAndLogError_WhenManagerThrows() {
 		// Arrange

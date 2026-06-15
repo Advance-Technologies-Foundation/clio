@@ -3730,3 +3730,13 @@ Decision: повне прибирання логування. Видалено _
 Discovery: warning був ЄДИНИМ споживачем logger у CreatioClientAdapter; поведінковий re-auth (login×1 + retry, version-dedupe) лишається покритим CreatioClientAdapterReauthTests + рештою ReauthExecutorTests. Емуляція збою для ретесту: clear-redis-db у MCP-процесі (singleton тримає старий cookie). update-sys-setting на .NET FW — поганий probe (Invalid response format quirk + ховає логи).
 Files: clio/Common/ReauthExecutor.cs, clio/Common/CreatioClientAdapter.cs, clio/BindingsModule.cs, clio.tests/Common/ReauthExecutorTests.cs
 Impact: re-auth тепер повністю прозорий — жодного сліду в нормальному виводі. MCP reviewed, no update required (ReauthExecutor — внутрішній HTTP-шар, не команда). Build 0 warnings, повний Unit 3757 passed.
+
+## 2026-06-15 – ENG-91314 add-package-dependency: PR #698 review fixes
+Context: drive-pr-green on PR #698. Sonar 0, CI green, but 3 unresolved Major threads from b-horodyskyi.
+Decision:
+- Load-path NRE: PackageDependencyManager.LoadPackageProperties no longer delegates to BasePackageOperation.ThrowsErrorIfUnsuccessfulResponseReceived (which dereferences response.ErrorInfo.Message). It now guards Success locally and falls back to `Could not read properties of package "<name>".` when ErrorInfo is null — mirrors the save path's BuildSaveErrorMessage guard.
+- Command test fixture now resolves AddPackageDependencyCommand from the DI Container (registers IPackageDependencyManager substitute in AdditionalRegistrations, Logger set post-resolve, ClearReceivedCalls in teardown) instead of `new` — exercises the real BindingsModule wiring (IPackageDependencyManager is auto-bound via RegisterAssemblyInterfaceTypes).
+- Manager tests now capture the GetPackageProperties request body via Arg.Do<string> and assert it equals JsonConvert.SerializeObject(targetUId) (bare quoted GUID), pinning the reverse-engineered wire contract; added load-failure tests for both null and non-null ErrorInfo.
+Discovery: IPackageDependencyManager is not explicitly registered to its interface — it relies on BindingsModule.RegisterAssemblyInterfaceTypes (auto-binds Clio.* I-prefixed interfaces). additionalRegistrations runs after it (line 622 > 99) so test substitutes win.
+Files: clio/Package/PackageDependencyManager.cs, clio.tests/Package/PackageDependencyManager.Tests.cs, clio.tests/Command/AddPackageDependencyCommand.Tests.cs
+Impact: command no longer surfaces a bare NRE on a failed/permission-denied GetPackageProperties; tests now guard both the DI registration and the GET wire shape. docs/MCP reviewed, no update required (command contract, options, MCP tool args unchanged). Targeted: dotnet test --filter "Category=Unit&(Module=Package|Module=Command)" → 1545 passed, 0 failed.

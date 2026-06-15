@@ -36,6 +36,7 @@ public class PackageDependencyManagerTests
 	private Guid _targetUId;
 	private Guid _dependencyUId;
 	private string _savedRequestBody;
+	private string _loadRequestBody;
 
 	#endregion
 
@@ -52,6 +53,7 @@ public class PackageDependencyManagerTests
 		_targetUId = Guid.NewGuid();
 		_dependencyUId = Guid.NewGuid();
 		_savedRequestBody = null;
+		_loadRequestBody = null;
 	}
 
 	#endregion
@@ -70,7 +72,8 @@ public class PackageDependencyManagerTests
 
 	private void ArrangeGetPackageProperties(WorkspacePackageDto package) {
 		_applicationClient
-			.ExecutePostRequest<PackagePropertiesResponse>(Arg.Any<string>(), Arg.Any<string>())
+			.ExecutePostRequest<PackagePropertiesResponse>(
+				Arg.Any<string>(), Arg.Do<string>(body => _loadRequestBody = body))
 			.Returns(new PackagePropertiesResponse { Success = true, Package = package });
 	}
 
@@ -224,6 +227,65 @@ public class PackageDependencyManagerTests
 			because: "server-owned fields must round-trip so the save does not wipe package metadata");
 		saved.AdditionalData["installBehavior"].Value<int>().Should().Be(1,
 			because: "server-owned fields must round-trip so the save does not wipe package metadata");
+	}
+
+	[Test]
+	[Description("Sends the target package UId to GetPackageProperties as a bare quoted JSON GUID (wire-contract guard).")]
+	public void AddDependencies_ShouldSendBareQuotedGuid_WhenLoadingPackageProperties() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName });
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		_manager.AddDependencies(TargetPackageName, [new PackageDependencySpec(DependencyPackageName)]);
+
+		// Assert
+		_loadRequestBody.Should().Be(JsonConvert.SerializeObject(_targetUId),
+			because: "GetPackageProperties expects the package UId serialized as a bare quoted JSON string, "
+				+ "so the wire contract reverse-engineered from the NUI client must stay pinned");
+	}
+
+	[Test]
+	[Description("Surfaces the server error message when GetPackageProperties reports a failure with error detail.")]
+	public void AddDependencies_ShouldThrowServerError_WhenLoadFailsWithErrorInfo() {
+		// Arrange
+		ArrangeInstalledPackages();
+		_applicationClient
+			.ExecutePostRequest<PackagePropertiesResponse>(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new PackagePropertiesResponse {
+				Success = false,
+				ErrorInfo = new Clio.Common.Responses.ErrorInfo { Message = "Access denied" }
+			});
+
+		// Act
+		Action act = () =>
+			_manager.AddDependencies(TargetPackageName, [new PackageDependencySpec(DependencyPackageName)]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*Access denied*",
+				because: "a failed load carrying server error detail must surface that detail to the user");
+	}
+
+	[Test]
+	[Description("Throws a descriptive error (not an NRE) when GetPackageProperties fails with a null ErrorInfo.")]
+	public void AddDependencies_ShouldThrowDescriptiveError_WhenLoadFailsWithNullErrorInfo() {
+		// Arrange
+		ArrangeInstalledPackages();
+		_applicationClient
+			.ExecutePostRequest<PackagePropertiesResponse>(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new PackagePropertiesResponse { Success = false, ErrorInfo = null });
+
+		// Act
+		Action act = () =>
+			_manager.AddDependencies(TargetPackageName, [new PackageDependencySpec(DependencyPackageName)]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage($"*{TargetPackageName}*",
+				because: "a failed load with no server error detail must produce an actionable message "
+					+ "instead of a bare NullReferenceException from dereferencing ErrorInfo.Message");
 	}
 
 }

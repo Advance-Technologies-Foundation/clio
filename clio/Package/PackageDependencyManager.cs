@@ -98,9 +98,14 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 	private WorkspacePackageDto LoadPackageProperties(Guid packageUId, string packageName) {
 		PackagePropertiesResponse response =
 			SendRequest<Guid, PackagePropertiesResponse>(PackageServiceUrl, "GetPackageProperties", packageUId);
-		ThrowsErrorIfUnsuccessfulResponseReceived(response);
-		return response.Package
-			?? throw new InvalidOperationException($"Could not read properties of package \"{packageName}\".");
+		string couldNotReadMessage = $"Could not read properties of package \"{packageName}\".";
+		if (!response.Success) {
+			// Mirror the save path's null-safe guard: a failed GetPackageProperties response may carry a null
+			// ErrorInfo (the permission / HTML-error failure modes this feature diagnoses), so fall back to a
+			// descriptive message instead of dereferencing ErrorInfo.Message and surfacing a bare NullReferenceException.
+			throw new InvalidOperationException(response.ErrorInfo?.Message ?? couldNotReadMessage);
+		}
+		return response.Package ?? throw new InvalidOperationException(couldNotReadMessage);
 	}
 
 	private void SavePackageProperties(WorkspacePackageDto package) {
