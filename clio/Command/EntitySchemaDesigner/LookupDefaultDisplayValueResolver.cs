@@ -114,9 +114,13 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 		try {
 			RuntimeEntitySchemaResult schema = _runtimeEntitySchemaReader.GetByName(key);
 			displayColumn = schema.PrimaryDisplayColumnName;
-		} catch (InvalidOperationException ex) {
-			// Could not read the referenced schema (missing or access-restricted); treat as no resolvable
-			// display column rather than failing the column readback.
+		} catch (Exception ex) when (ex is InvalidOperationException
+				or HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or JsonException) {
+			// Could not read the referenced schema (missing, access-restricted, transport/timeout, or a
+			// malformed response); treat as no resolvable display column rather than failing the column readback.
 			_logger.WriteWarning(
 				$"Could not determine the display column of referenced schema '{key}'. {ex.Message}");
 		}
@@ -145,7 +149,7 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 				_serviceUrlBuilder,
 				query,
 				options.TimeOut);
-			LookupRecordRow? row = response.Rows.FirstOrDefault();
+			LookupRecordRow? row = response.Rows?.FirstOrDefault();
 			if (row is null) {
 				return new LookupDefaultResolution(null, NotFoundMarker);
 			}
@@ -156,13 +160,14 @@ internal sealed class LookupDefaultDisplayValueResolver : ILookupDefaultDisplayV
 			_logger.WriteWarning(
 				$"Could not resolve the lookup default display value for '{schemaName}' record '{recordId:D}'. {ex.Message}");
 			return new LookupDefaultResolution(null, NotFoundMarker);
-		} catch (HttpRequestException ex) {
+		} catch (Exception ex) when (ex is HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or JsonException) {
+			// Transport, timeout, or malformed-response fault: degrade to a GUID-only resolution so enrichment
+			// can never make the column readback fail.
 			_logger.WriteWarning(
 				$"Could not resolve the lookup default display value for '{schemaName}' record '{recordId:D}'. {ex.Message}");
-			return new LookupDefaultResolution(null, null);
-		} catch (JsonException ex) {
-			_logger.WriteWarning(
-				$"Could not parse the lookup default display value for '{schemaName}' record '{recordId:D}'. {ex.Message}");
 			return new LookupDefaultResolution(null, null);
 		}
 	}

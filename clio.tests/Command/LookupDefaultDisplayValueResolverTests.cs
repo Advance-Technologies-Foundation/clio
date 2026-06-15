@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -134,6 +136,56 @@ internal sealed class LookupDefaultDisplayValueResolverTests
 		result.RecordResolution.Should().BeNull(
 			because: "a non-applicable enrichment degrades silently so the readback stays GUID-only with no regression");
 		_runtimeEntitySchemaReader.DidNotReceive().GetByName(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Reports display-column-unavailable (no throw) when display-column discovery fails with a transport fault.")]
+	public void Resolve_ShouldReturnDisplayColumnUnavailable_WhenDisplayColumnLookupThrowsTransport() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName(ReferenceSchema)
+			.Returns(_ => throw new HttpRequestException("connection reset"));
+
+		// Act
+		LookupDefaultResolution result = _resolver.Resolve(ReferenceSchema, RecordId, new RemoteCommandOptions());
+
+		// Assert
+		result.RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.DisplayColumnUnavailableMarker,
+			because: "a transport fault while discovering the display column must degrade, not fail the readback");
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Degrades to a GUID-only resolution (no throw) when the display-value SelectQuery times out.")]
+	public void Resolve_ShouldDegradeSilently_WhenSelectQueryTimesOut() {
+		// Arrange
+		ArrangeDisplayColumn("Name");
+		_applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new TaskCanceledException("timed out"));
+
+		// Act
+		LookupDefaultResolution result = _resolver.Resolve(ReferenceSchema, RecordId, new RemoteCommandOptions());
+
+		// Assert
+		result.DisplayValue.Should().BeNull(because: "a timed-out enrichment query yields no display value");
+		result.RecordResolution.Should().BeNull(
+			because: "a timeout degrades to GUID-only (no marker) so enrichment never fails the readback");
+	}
+
+	[Test]
+	[Description("Degrades to a GUID-only resolution (no throw) when the display-value response is malformed JSON.")]
+	public void Resolve_ShouldDegradeSilently_WhenSelectQueryReturnsMalformedJson() {
+		// Arrange
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse("<<<not-json>>>");
+
+		// Act
+		LookupDefaultResolution result = _resolver.Resolve(ReferenceSchema, RecordId, new RemoteCommandOptions());
+
+		// Assert
+		result.DisplayValue.Should().BeNull(because: "a malformed response yields no display value");
+		result.RecordResolution.Should().BeNull(
+			because: "a parse fault degrades to GUID-only (no marker) so enrichment never fails the readback");
 	}
 
 	[Test]

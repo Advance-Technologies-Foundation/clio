@@ -208,10 +208,15 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 				query,
 				options,
 				$"SelectQuery({schemaName})");
-			return response.Rows.Length > 0 ? LookupRecordExistence.Exists : LookupRecordExistence.NotFound;
-		} catch (InvalidOperationException) {
-			// Cannot verify existence (security denial on the referenced entity, or a transport/parse error):
-			// degrade to Unknown so the write is not blocked on a check that could not be performed.
+			return (response.Rows?.Length ?? 0) > 0 ? LookupRecordExistence.Exists : LookupRecordExistence.NotFound;
+		} catch (Exception ex) when (ex is InvalidOperationException
+				or System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or Newtonsoft.Json.JsonException) {
+			// Cannot verify existence (security denial on the referenced entity, or a transport/timeout/parse
+			// fault): degrade to Unknown so a previously-working write is never blocked on a check that could
+			// not be performed (LookupRecordExistence.Unknown contract).
 			return LookupRecordExistence.Unknown;
 		}
 	}

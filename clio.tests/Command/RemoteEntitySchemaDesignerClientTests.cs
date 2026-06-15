@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -229,5 +230,41 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		result.Should().Be(LookupRecordExistence.Unknown,
 			because: "a failed existence query must degrade to Unknown rather than block the write");
+	}
+
+	[Test]
+	[Description("Reports Unknown when the existence query throws a transport fault, so a write is never blocked on an unverifiable check.")]
+	public void CheckRecordExists_ReturnsUnknown_WhenTransportFaultThrows() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(_ => throw new HttpRequestException("connection reset"));
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.Unknown,
+			because: "a transport fault must degrade to Unknown instead of aborting a previously-working column write");
+	}
+
+	[Test]
+	[Description("Reports NotFound (no NullReferenceException) when the existence query returns a null rows array.")]
+	public void CheckRecordExists_ReturnsNotFound_WhenRowsIsNull() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://local/DataService/Select");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":null}");
+
+		// Act
+		LookupRecordExistence result = _client.CheckRecordExists("UsrEng91318Color", recordId, new RemoteCommandOptions());
+
+		// Assert
+		result.Should().Be(LookupRecordExistence.NotFound,
+			because: "a null rows array must be treated as no record found, not throw a NullReferenceException");
 	}
 }
