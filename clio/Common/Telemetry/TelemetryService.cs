@@ -8,7 +8,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Ms = System.IO.Abstractions;
@@ -37,9 +36,11 @@ public sealed class TelemetryService : ITelemetryService
 	internal const string ConsentGranted = "granted";
 
 	/// <summary>
-	/// Result status returned when an event has been persisted to the local spool.
+	/// Result status returned when clio has recorded the event. The caller is done; any upload to a
+	/// collector happens separately and is not confirmed by this result. Deliberately describes the
+	/// contract outcome, not the mechanism, so the buffering/sending strategy can change freely.
 	/// </summary>
-	internal const string StatusStored = "stored";
+	internal const string StatusRecorded = "recorded";
 
 	private const string ConsentDenied = "denied";
 	private const string Unknown = "unknown";
@@ -92,9 +93,6 @@ public sealed class TelemetryService : ITelemetryService
 
 	/// <summary>Maximum accepted length for short scalar metadata fields (agent/version strings).</summary>
 	private const int MaxFieldLength = 64;
-
-	private static readonly Regex SessionIdPattern =
-		new("^[A-Za-z0-9._:-]+$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
 	private static readonly HashSet<string> AllowedConsents = new(StringComparer.Ordinal) {
 		ConsentGranted, ConsentDenied
@@ -166,14 +164,14 @@ public sealed class TelemetryService : ITelemetryService
 				OpenTelemetryLogEvent logEvent = BuildLogEvent(enrichedRequest, eventId, eventTimestamp, durationSinceSessionStartMs);
 				WriteEvent(eventId, logEvent);
 				UpdateSessionState(sessionState, request.EventName, eventTimestamp);
-				return new TelemetryEventResult(true, StatusStored, eventId);
+				return new TelemetryEventResult(true, StatusRecorded, eventId);
 			} catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) {
-				// Telemetry must never disturb the caller: a local storage I/O failure is reported as a
-				// soft result, never thrown into the MCP tool call. Mirrors the flusher's contract.
-				_logger.LogDebug(ex, "telemetry-store failed error={Error}", ex.Message);
-				return new TelemetryEventResult(false, "store-failed",
-					Error: new TelemetryError("storage-unavailable",
-						"Local telemetry storage is unavailable; the event was not recorded."));
+				// Telemetry must never disturb the caller: a local I/O failure is reported as a soft
+				// result, never thrown into the MCP tool call. Mirrors the flusher's contract.
+				_logger.LogDebug(ex, "telemetry-record failed error={Error}", ex.Message);
+				return new TelemetryEventResult(false, "record-failed",
+					Error: new TelemetryError("record-unavailable",
+						"clio could not record the telemetry event; it was not retained."));
 			}
 		}
 	}
@@ -208,7 +206,7 @@ public sealed class TelemetryService : ITelemetryService
 	// attributes and to derive a session file name from.
 	private static TelemetryEventResult ValidateFieldShapes(TelemetryEventRequest request)
 	{
-		if (request.SessionId.Length > MaxSessionIdLength || !SessionIdPattern.IsMatch(request.SessionId)) {
+		if (request.SessionId.Length > MaxSessionIdLength || !IsAllowedSessionId(request.SessionId)) {
 			return Invalid("invalid-session-id",
 				$"session_id must be 1-{MaxSessionIdLength} characters of letters, digits, '.', '_', ':' or '-'.");
 		}
@@ -226,6 +224,12 @@ public sealed class TelemetryService : ITelemetryService
 		("skill_version", request.SkillVersion),
 		("plugin_version", request.PluginVersion)
 	];
+
+	// Linear character-set check instead of a regex: a session id is letters/digits plus '.', '_',
+	// ':' or '-'. No regex means no ReDoS surface, and runtime is O(length) on an already
+	// length-capped input.
+	private static bool IsAllowedSessionId(string value) =>
+		value.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or ':' or '-');
 
 	private static IReadOnlyList<(string name, string value)> RequiredFields(TelemetryEventRequest request) =>
 	[

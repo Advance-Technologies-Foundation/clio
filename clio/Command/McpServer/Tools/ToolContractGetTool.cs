@@ -601,8 +601,8 @@ internal static class ToolContractCatalog {
 					"status == rejected"
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field(StatusFieldName, StringType, "Telemetry status: stored, consent-denied, or rejected."),
-				Field("event_id", StringType, "Generated event identifier when an event is stored."),
+				Field(StatusFieldName, StringType, "Telemetry status: recorded (clio accepted the event; any upload to a collector happens separately and is not confirmed by this call), consent-denied, record-failed, or rejected."),
+				Field("event_id", StringType, "Generated event identifier when an event is recorded."),
 				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
 			CommonErrorContract,
 			[],

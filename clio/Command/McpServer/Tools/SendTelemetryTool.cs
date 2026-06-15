@@ -45,7 +45,7 @@ public sealed class SendTelemetryTool
 		TelemetryEventRequest args)
 	{
 		TelemetryEventResult result = _telemetryService.Send(args);
-		if (result.Success && result.Status == TelemetryService.StatusStored) {
+		if (result.Success && result.Status == TelemetryService.StatusRecorded) {
 			// Opportunistic, fire-and-forget upload of the spooled events; never blocks the tool call.
 			_flushScheduler.TryScheduleFlush();
 		}

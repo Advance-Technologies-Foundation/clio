@@ -65,6 +65,14 @@ Both the store (`Send`) and the flusher swallow I/O failures and degrade to a so
 never throwing into the MCP tool call. Validation errors (caller-actionable) are still returned
 as structured rejections.
 
+The result `status` describes the **contract outcome, not the mechanism**, so the
+buffering/sending strategy can change without altering the contract: `recorded` (clio accepted the
+event and the caller is done — any upload to a collector is separate and not confirmed by the
+call), `consent-denied`, `record-failed` (clio could not record it — an I/O fault, not the
+caller's fault), and `rejected` (validation failure the caller can fix). Notably it does **not**
+say `stored`/`spooled`/`sent`, none of which would survive a change of strategy or could be
+misread as confirmed delivery.
+
 ### 7. Privacy / value-level guards
 Only an allow-listed set of scalar attributes is stored (`schema_version`, `session_id`,
 `event_name`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random

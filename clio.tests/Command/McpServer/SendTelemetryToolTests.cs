@@ -101,7 +101,7 @@ public sealed class SendTelemetryToolTests
 		ITelemetryService service = Substitute.For<ITelemetryService>();
 		ITelemetryFlushScheduler scheduler = Substitute.For<ITelemetryFlushScheduler>();
 		TelemetryEventRequest request = CreateRequest() with { TelemetryConsent = "granted" };
-		TelemetryEventResult expected = new(true, "stored", "event-id");
+		TelemetryEventResult expected = new(true, "recorded", "event-id");
 		service.Send(request).Returns(expected);
 		SendTelemetryTool tool = new(service, scheduler);
 
@@ -123,7 +123,7 @@ public sealed class SendTelemetryToolTests
 		ITelemetryService service = Substitute.For<ITelemetryService>();
 		ITelemetryFlushScheduler scheduler = Substitute.For<ITelemetryFlushScheduler>();
 		TelemetryEventRequest request = CreateRequest();
-		service.Send(request).Returns(new TelemetryEventResult(true, "stored", "event-id"));
+		service.Send(request).Returns(new TelemetryEventResult(true, "recorded", "event-id"));
 		SendTelemetryTool tool = new(service, scheduler);
 
 		// Act
@@ -273,8 +273,8 @@ public sealed class SendTelemetryToolTests
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "granted consent should allow product telemetry persistence");
-		result.Status.Should().Be("stored",
-			because: "the service should report local event persistence");
+		result.Status.Should().Be("recorded",
+			because: "the service should report that the event was recorded");
 		string eventFile = EventFiles().Should().ContainSingle(
 			because: "the service should write one local event file").Subject;
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile));
@@ -421,11 +421,11 @@ public sealed class SendTelemetryToolTests
 
 		// Assert
 		result.Success.Should().BeFalse(
-			because: "a storage I/O failure must be reported, not silently treated as stored");
-		result.Status.Should().Be("store-failed",
+			because: "a local I/O failure must be reported, not silently treated as recorded");
+		result.Status.Should().Be("record-failed",
 			because: "telemetry persistence errors degrade to a soft status instead of throwing into the MCP tool");
-		result.Error!.Code.Should().Be("storage-unavailable",
-			because: "the caller receives a structured, non-throwing storage error");
+		result.Error!.Code.Should().Be("record-unavailable",
+			because: "the caller receives a structured, non-throwing record error");
 	}
 
 	[Test]
