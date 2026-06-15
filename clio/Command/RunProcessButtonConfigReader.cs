@@ -26,9 +26,9 @@ internal sealed record RunProcessButtonConfig(
 /// <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker; mobile page bodies are plain JSON without that marker,
 /// so a run-process button authored on a mobile page is intentionally NOT discovered here and its
 /// parameter codes are NOT validated against the live process signature. This is a deliberate
-/// scoping decision for the initial iteration (ENG-91168) — the CODE-not-caption rule is still
-/// documented in the mobile-page guidance so authors are warned. Extending signature validation to
-/// mobile bodies is tracked as follow-up work.
+/// scoping decision for the initial iteration — the CODE-not-caption rule is still documented in the
+/// mobile-page guidance so authors are warned. Extending signature validation to mobile bodies is
+/// tracked as follow-up work.
 /// </para>
 /// </summary>
 internal static class RunProcessButtonConfigReader {

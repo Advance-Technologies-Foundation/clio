@@ -478,8 +478,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
 			because: "handler guidance should expose the cancel-edits request contract");
-		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` required, `processParameters`, `recordIdProcessParameterName?`, `resultParameterNames?`, `processRunType?`, `dataSourceName?`, `filters?`, `sorting?`, `parameterMappings?`, `showNotification?`, `notificationText?`, `selectionStateAttributeName?`, `saveAtProcessStart?` | `processRunType`: `ForTheSelectedPage`, `RegardlessOfThePage`, `ForTheSelectedRecords` |",
-			because: "handler guidance should keep the process request in the parameter catalog");
+		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |",
+			because: "the handler catalog should point to the single-source-of-truth run-process-button guide and carry the CODE-not-caption rule instead of restating the full param list");
 		article.Text.Should().Contain("| `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |",
 			because: "handler guidance should expose the create-email request contract");
 		article.Text.Should().Contain("| `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |",

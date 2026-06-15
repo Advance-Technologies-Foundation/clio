@@ -155,9 +155,26 @@ public sealed class RunProcessButtonGuidanceResource {
 			         - Date:     "2026-12-31" — works;  Time: "18:45:00" — works
 
 
+			       FULL PARAMETER CONTRACT (this guide is the single source of truth — the page-schema-handlers
+			       and mobile-page guides only point here; keep this list in sync with the platform contract)
+			       - processName                  (string, REQUIRED) — the process CODE from get-process-signature.
+			       - processRunType               (string, REQUIRED) — see the reference below.
+			       - processParameters            (object) — { "<ParameterCODE>": value }; keys are CODES, not captions.
+			       - parameterMappings            (object) — { "<ParameterCODE>": "<sourceColumn>" }; keys are CODES.
+			       - recordIdProcessParameterName (string) — parameter CODE that receives the current/selected record Id.
+			       - resultParameterNames         (string[]) — process OUTPUT parameter CODES to read back.
+			       - dataSourceName               (string) — datasource used by ForTheSelectedRecords.
+			       - filters / sorting            (object) — record selection for ForTheSelectedRecords.
+			       - selectionStateAttributeName  (string) — attribute holding the grid selection state.
+			       - showNotification / notificationText / saveAtProcessStart — see "Behavior flags" above.
+			       - Mobile-only: activeRow / activeRowAttributeName — current row context on a mobile list.
+
 			       processRunType reference
 			       - `RegardlessOfThePage` — run globally, no record context (V1/V2).
 			       - `ForTheSelectedPage` — run for the current form record (V3).
+			       - `ForTheSelectedRecords` — run for grid-selected records; pair with dataSourceName /
+			         filters / sorting / selectionStateAttributeName. NOTE: accepted by the web and mobile
+			         runtime, but the mobile designer does not yet emit it (ENG-87164) — author it for web for now.
 
 			       resources parameter
 			       - Register the caption key you used, e.g. resources = {"RunBusinessProcessButton_caption":"Run process"}.

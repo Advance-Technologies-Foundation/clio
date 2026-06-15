@@ -410,22 +410,14 @@ public sealed class MobilePageGuidanceResource {
 		       ── Business process ────────────────────────────────────────
 
 		       crt.RunBusinessProcessRequest
-		         Starts a business process.
-		         params: processName (string, required),
-		                 processRunType (string, REQUIRED: 'RegardlessOfThePage' | 'ForTheSelectedPage';
-		                     'ForTheSelectedRecords' is not yet supported on mobile),
-		                 processParameters? (Record<string, unknown>),
-		                 recordIdProcessParameterName? (string),
-		                 showNotification? (boolean),
-		                 notificationText? (string),
-		                 saveAtProcessStart? (boolean)
-		         NOTE: processRunType is REQUIRED. Use 'ForTheSelectedPage' to run against the current
-		         record (pair with recordIdProcessParameterName to pass the open record id into a parameter);
-		         use 'RegardlessOfThePage' to run with no record context. "For the selected page" maps to
-		         processRunType: 'ForTheSelectedPage' — recordIdProcessParameterName alone does NOT set it.
-		         NOTE: keys in processParameters are process parameter CODES, NOT captions — a wrong code is
-		         silently dropped. Call get-process-signature and the run-process-button guide before
-		         authoring this button.
+		         Starts a business process. processName AND processRunType are both REQUIRED
+		         (e.g. 'ForTheSelectedPage' for the current record; 'RegardlessOfThePage' for none).
+		         "For the selected page" maps to processRunType: 'ForTheSelectedPage' — setting
+		         recordIdProcessParameterName alone does NOT select the run type.
+		         FULL parameter contract is the run-process-button guide (single source of truth):
+		         call get-guidance run-process-button and resolve the process with get-process-signature
+		         FIRST. Keys in processParameters / parameterMappings / recordIdProcessParameterName are
+		         process parameter CODES, NOT captions — a wrong code is silently dropped.
 
 		       ── Files ───────────────────────────────────────────────────
 
