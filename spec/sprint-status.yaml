@@ -288,3 +288,122 @@ stories:
     adr: spec/adr/adr-mcp-progress-heartbeat.md
     depends_on: [mcp-progress-heartbeat-2]
     blocks: []
+
+  # --- read-column-default-values stories (ENG-91318, epic ENG-85256) — added 2026-06-12 ---
+  # Two-phase feature per ADR. Phase A (stories 1-5): documents-only investigation,
+  # SM-01 counter = empty code diff (spec/** only). Phase B (stories 6-8): CONDITIONAL
+  # implementation — `deferred` here means GATED, not descoped: story 4's keep/adopt/hybrid
+  # decision must confirm the gap (FR-03 predicate verdict = fail) before stories 6-8 may
+  # move to ready-for-dev; if story 4 closes FR-05/06/07 as "not needed", strike 6-8 with
+  # evidence. Recommended order: 1 ∥ 2 -> 3 -> 4 -> 5; then (if gated open) 6 ∥ 7 -> 8.
+  - id: story-read-column-default-values-1
+    title: "Document current read path (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: S
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-current-path.md. Verified read path = EntitySchemaDesignerService.svc/GetSchemaDesignItem (not OData); lookup-Const readback is GUID-only. Empty code diff."
+    file: spec/stories/story-read-column-default-values-1.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-01]
+    ac: [AC-01]
+    depends_on: []
+    blocks: []
+
+  - id: story-read-column-default-values-2
+    title: "OData $metadata probe across environment matrix (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-odata-probe.md. FINDING: CSDL $metadata carries ZERO DefaultValue facets (0 in 1.43MB) on studio0614 (.NET FW 8.x) — OData metadata unusable for defaults. AC-ERR: .NET Core row uncovered (no Core env reachable). Side finding: clio call-service broken on duplicate-URI appsettings (.Single() bug) — used authenticated curl fallback; zero production code touched."
+    file: spec/stories/story-read-column-default-values-2.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-02]
+    ac: [AC-02, AC-ERR]
+    depends_on: []
+    blocks: [story-read-column-default-values-4]
+
+  - id: story-read-column-default-values-3
+    title: "Ticket-case E2E scenario + supplementary OQ-03/OQ-05 evidence (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: L
+    status: done
+    note: "DONE 2026-06-13 on studio0614: spec/read-column-default-values/read-column-default-values-e2e-scenario.md. All 6 steps clio/MCP only. Predicate FAIL (component d display-value absent); runtime application PASS (UsrColorId auto-set to default GUID on insert). OQ-03: persisted defValue.Value is a plain GUID (A-04=false). A-02 cleared."
+    file: spec/stories/story-read-column-default-values-3.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-03]
+    ac: [AC-03]
+    depends_on: []
+    blocks: [story-read-column-default-values-4]
+
+  - id: story-read-column-default-values-4
+    title: "Comparison matrix + keep/adopt/hybrid decision + gap→DRAFT-AC mapping + ADR update (Phase A)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-comparison.md. Decision = HYBRID (Option B): keep designer readback + enrich in clio. OData $metadata (A) rejected (0/4 on D1). D7 = OData data endpoint (SelectQuery fallback). OQ-04 = enrichment default-on/fail-soft. Gap CONFIRMED -> Phase B in scope. ADR Status -> Accepted."
+    file: spec/stories/story-read-column-default-values-4.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-04]
+    ac: [AC-04]
+    depends_on: [story-read-column-default-values-2, story-read-column-default-values-3]
+    blocks: [story-read-column-default-values-5, story-read-column-default-values-6, story-read-column-default-values-7]
+
+  - id: story-read-column-default-values-5
+    title: "Jira ENG-91318 closure + epic ENG-85256 surfacing (Phase A)"
+    feature: "read-column-default-values"
+    size: S
+    status: in-progress
+    note: "In progress 2026-06-13: posting decision summary to ENG-91318 + surfacing to epic ENG-85256."
+    file: spec/stories/story-read-column-default-values-5.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-08]
+    ac: []
+    depends_on: [story-read-column-default-values-4]
+    blocks: []
+
+  - id: story-read-column-default-values-6
+    title: "[CONDITIONAL] Readback enrichment: display-value + record-resolution (Phase B)"
+    feature: "read-column-default-values"
+    size: L
+    status: done
+    note: "DONE 2026-06-13. OQ-06 resolved (display column via IRuntimeEntitySchemaReader.PrimaryDisplayColumnName; value in session culture; imageLookup/no-display -> display-column-unavailable marker). New ILookupDefaultDisplayValueResolver (SelectQuery transport via IApplicationClient) + display-value/record-resolution on EntitySchemaDefaultValueConfig; enrichment wired into RemoteEntitySchemaColumnManager.GetColumnProperties (Const+lookup only, fail-soft). DI via convention auto-registration. Unit tests: LookupDefaultDisplayValueResolverTests (6) + manager enrichment tests (2). Validated: dotnet test --filter Category=Unit&(Module=Command|Module=McpServer) = 2584 pass."
+    file: spec/stories/story-read-column-default-values-6.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-05]
+    ac: [DRAFT-AC-05]
+    depends_on: [story-read-column-default-values-4]
+    blocks: [story-read-column-default-values-8]
+
+  - id: story-read-column-default-values-7
+    title: "[CONDITIONAL] Write-side Const-GUID validation + display-name resolution (Phase B)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13. EntitySchemaDefaultValueSourceResolver.Resolve extended with a Const branch + referenceSchemaName param: validates the referenced record exists (IRemoteEntitySchemaDesignerClient.CheckRecordExists via SelectQuery) before save; unknown GUID -> EntitySchemaDesignerException 'was not found in referenced schema'. Unknown/no-access -> pass through (TOCTOU caveat documented). Validation wired at apply sites (manager 926, creator 241). Unit tests: 4 resolver Const cases + 3 CheckRecordExists client cases."
+    file: spec/stories/story-read-column-default-values-7.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-06]
+    ac: [DRAFT-AC-06]
+    depends_on: [story-read-column-default-values-4]
+    blocks: [story-read-column-default-values-8]
+
+  - id: story-read-column-default-values-8
+    title: "[CONDITIONAL] Docs + MCP surface + E2E coverage + manual E2E run (Phase B)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13. MCP: EntitySchemaTool descriptions (get-entity-schema-column-properties enrichment + markers; modify-entity-schema-column Const-GUID validation), EntitySchemaPrompt lookup-default guidance, ToolContractGetTool field description + lookup-Const example + readback description. Docs: help/en/{get-entity-schema-column-properties,modify-entity-schema-column}.txt + docs/commands/{...}.md updated; Commands.md reviewed, no change needed. E2E: clio.mcp.e2e write-rejection test + reference-schema-name harness param. NOTE: MCP E2E NOT in CI — positive enrichment path was manually verified live on studio0614 (Story 3 evidence); the automated rejection E2E must be run manually before merge (SM-01 Phase B counter)."
+    file: spec/stories/story-read-column-default-values-8.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-07]
+    ac: []
+    depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
+    blocks: []
