@@ -97,19 +97,27 @@ internal static class CaptionCultureScriptGuard {
 	}
 
 	/// <summary>
-	/// Returns <see langword="true"/> when the culture's language is a known Latin-script language, so
-	/// the "no non-Latin letters" rule should be enforced for it.
+	/// Returns <see langword="true"/> when the culture is written in Latin script, so the "no non-Latin
+	/// letters" rule should be enforced for it. An explicit ISO 15924 script subtag (e.g. <c>Cyrl</c> in
+	/// <c>az-Cyrl-AZ</c>) is authoritative and overrides the language allow-list; otherwise the base
+	/// language is matched against the curated Latin-script allow-list.
 	/// </summary>
 	internal static bool IsLatinScriptCulture(string cultureName) {
-		string language = ExtractTwoLetterLanguage(cultureName);
-		return language.Length > 0 && LatinScriptLanguages.Contains(language);
-	}
+		string[] parts = cultureName.Trim().Split(['-', '_'], StringSplitOptions.RemoveEmptyEntries);
+		if (parts.Length == 0) {
+			return false;
+		}
 
-	private static string ExtractTwoLetterLanguage(string cultureName) {
-		string trimmed = cultureName.Trim();
-		int separatorIndex = trimmed.IndexOfAny(['-', '_']);
-		string language = separatorIndex >= 0 ? trimmed[..separatorIndex] : trimmed;
-		return language;
+		// An ISO 15924 script subtag is exactly four LETTERS (e.g. "Latn", "Cyrl") and, when present,
+		// declares the script explicitly — a region subtag is two letters or three digits, never four
+		// letters. A culture that explicitly requests a non-Latin script must never have its
+		// matching-script captions rejected, so the script subtag wins over the language allow-list.
+		// The all-letters check keeps a malformed four-char subtag (e.g. "en-1234") on the language path.
+		if (parts.Length >= 2 && parts[1].Length == 4 && parts[1].All(char.IsAsciiLetter)) {
+			return string.Equals(parts[1], "Latn", StringComparison.OrdinalIgnoreCase);
+		}
+
+		return LatinScriptLanguages.Contains(parts[0]);
 	}
 
 	private static List<Rune> CollectNonLatinLetters(string value) {
@@ -128,7 +136,10 @@ internal static class CaptionCultureScriptGuard {
 		return value is (>= 'A' and <= 'Z')
 			or (>= 'a' and <= 'z')
 			or (>= 0x00C0 and <= 0x024F)   // Latin-1 Supplement letters + Latin Extended-A/-B (accented Latin)
-			or (>= 0x1E00 and <= 0x1EFF);  // Latin Extended Additional (e.g. Vietnamese)
+			or (>= 0x1E00 and <= 0x1EFF)   // Latin Extended Additional (e.g. Vietnamese)
+			or (>= 0xFB00 and <= 0xFB06)   // Latin small ligatures (ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ) — deliberately NOT 0xFB13+ (Armenian/Hebrew)
+			or (>= 0xFF21 and <= 0xFF3A)   // Fullwidth Latin capital letters (Ａ–Ｚ)
+			or (>= 0xFF41 and <= 0xFF5A);  // Fullwidth Latin small letters (ａ–ｚ)
 	}
 
 	private static string DescribeOffenders(IEnumerable<Rune> offenders) {

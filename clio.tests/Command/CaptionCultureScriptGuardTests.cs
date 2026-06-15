@@ -215,18 +215,86 @@ public sealed class CaptionCultureScriptGuardTests {
 	[TestCase("de-DE", true)]
 	[TestCase("fr-FR", true)]
 	[TestCase("vi-VN", true)]
+	[TestCase("en", true)]
+	[TestCase("es-419", true)]
 	[TestCase("uk-UA", false)]
 	[TestCase("ru-RU", false)]
 	[TestCase("ja-JP", false)]
 	[TestCase("zh-CN", false)]
 	[TestCase("el-GR", false)]
-	[Description("IsLatinScriptCulture recognises Latin-script locales and excludes non-Latin ones.")]
-	public void IsLatinScriptCulture_ShouldClassifyCulture_ByLanguageScript(string cultureName, bool expected) {
+	[TestCase("az-Latn-AZ", true)]
+	[TestCase("sr-Latn-RS", true)]
+	[TestCase("az-Cyrl-AZ", false)]
+	[TestCase("sr-Cyrl-RS", false)]
+	[TestCase("zh-Hans", false)]
+	[TestCase("en-1234", true)]
+	[Description("IsLatinScriptCulture recognises Latin-script locales, honours explicit script subtags, and excludes non-Latin ones.")]
+	public void IsLatinScriptCulture_ShouldClassifyCulture_ByScriptSubtagThenLanguage(string cultureName, bool expected) {
 		// Act
 		bool isLatin = CaptionCultureScriptGuard.IsLatinScriptCulture(cultureName);
 
 		// Assert
 		isLatin.Should().Be(expected,
 			$"because '{cultureName}' Latin-script classification must be {expected}");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture allows Cyrillic text when the culture explicitly requests Cyrillic script via a subtag (az-Cyrl-AZ), overriding the Latin language allow-list.")]
+	public void EnsureCaptionMatchesCulture_ShouldNotThrow_WhenScriptSubtagDeclaresCyrillic() {
+		// Arrange
+		const string cultureName = "az-Cyrl-AZ";
+		const string caption = "Аваданлыг";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().NotThrow(
+			"because the explicit Cyrl script subtag declares Cyrillic, so Cyrillic text is correct even though 'az' is on the Latin allow-list");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture rejects Cyrillic text when the culture explicitly requests Latin script via a subtag (az-Latn-AZ).")]
+	public void EnsureCaptionMatchesCulture_ShouldThrow_WhenScriptSubtagDeclaresLatin() {
+		// Arrange
+		const string cultureName = "az-Latn-AZ";
+		const string caption = "Заявки";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			"because the explicit Latn script subtag requires Latin text, so Cyrillic must be rejected");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture allows Latin small ligatures (e.g. ﬁ) under en-US — they are Latin letters and must not be a false positive.")]
+	public void EnsureCaptionMatchesCulture_ShouldNotThrow_WhenLatinLigatureUnderEnUs() {
+		// Arrange
+		const string cultureName = "en-US";
+		const string caption = "Oﬃce ﬁle";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().NotThrow(
+			"because Latin presentation-form ligatures are Latin script and must not be rejected under en-US");
+	}
+
+	[Test]
+	[Description("EnsureCaptionMatchesCulture allows fullwidth Latin letters under en-US — they are Latin letters and must not be a false positive.")]
+	public void EnsureCaptionMatchesCulture_ShouldNotThrow_WhenFullwidthLatinUnderEnUs() {
+		// Arrange
+		const string cultureName = "en-US";
+		const string caption = "ＩＤ Code";
+
+		// Act
+		System.Action act = () => CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(cultureName, caption, "caption");
+
+		// Assert
+		act.Should().NotThrow(
+			"because fullwidth Latin letters are Latin script and must not be rejected under en-US");
 	}
 }

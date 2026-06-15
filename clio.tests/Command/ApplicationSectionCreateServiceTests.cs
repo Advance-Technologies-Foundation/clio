@@ -527,17 +527,16 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Allows a Cyrillic section caption when the caption-culture override declares the matching uk-UA language.")]
-	public void CreateSection_ShouldAllowCyrillicCaption_WhenCaptionCultureOverrideIsUkrainian() {
+	[Description("A caption-culture override does not bypass the section guard: the caption is validated against the profile culture because the stored caption is localized under the profile, not the readback override.")]
+	public void CreateSection_ShouldThrow_WhenCaptionCultureOverrideMasksNonProfileScript() {
 		// Arrange
-		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
-		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), "uk-UA").Returns("uk-UA");
-		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
-		// A distinctive marker thrown from GetApplicationInfo (the first call AFTER the guard) proves
-		// execution passed the guard: had the guard fired it would throw EntitySchemaDesignerException
-		// first, before GetApplicationInfo was ever reached.
-		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
-			.Returns(_ => throw new NotSupportedException("past-guard-marker"));
+		// Profile is en-US (override = null resolves to the profile); the caller passes a uk-UA readback
+		// override. Because the stored section caption is localized under the en-US profile, a Cyrillic
+		// caption must still be rejected — the override must NOT smuggle it past the guard.
+		ICaptionCultureResolver resolver = Substitute.For<ICaptionCultureResolver>();
+		resolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		resolver.Resolve(Arg.Any<EnvironmentOptions>(), "uk-UA").Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(resolver);
 		ApplicationSectionCreateRequest request = new(
 			ApplicationCode: "UsrOrdersApp",
 			Caption: "Заявки",
@@ -547,10 +546,12 @@ public sealed class ApplicationSectionCreateServiceTests {
 		Action action = () => sut.CreateSection("sandbox", request);
 
 		// Assert
-		action.Should().Throw<NotSupportedException>(
-				because: "the caption-culture override declares uk-UA, so the Cyrillic caption passes the guard and reaches the remote flow")
-			.WithMessage("*past-guard-marker*",
-				because: "execution must reach GetApplicationInfo, which only happens after the guard accepts the caption");
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "for sections the caption-culture override is readback-only; the caption is stored under the en-US profile, so a Cyrillic caption must still be rejected")
+			.Which.Message.Should().Contain("en-US",
+				because: "the guard must validate against the resolved profile culture, not the readback override");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
 	}
 
 	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {

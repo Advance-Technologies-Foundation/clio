@@ -91,6 +91,10 @@ namespace Clio.Command {
 
 				LogStep(ref stepNumber, totalSteps, $"Saving schema '{options.SchemaName}' (uId={newSchemaUId})");
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
+				// ENG-91044: the schema caption is stored under the effective culture, so reject text whose
+				// script does not match it (e.g. Cyrillic under en-US).
+				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
+				Clio.Command.EntitySchemaDesigner.CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
 				JObject payload = BuildSaveSchemaPayload(newSchemaUId, options.SchemaName, caption,
 					options.Description, packageUId, options.PackageName, captionCulture);
 				if (!TrySaveSchema(payload, out string saveError)) {

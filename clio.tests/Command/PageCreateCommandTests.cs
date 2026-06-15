@@ -184,6 +184,35 @@ public sealed class PageCreateCommandTests
 	}
 
 	[Test]
+	public void TryCreatePage_Rejects_Caption_Whose_Script_Mismatches_Resolved_Culture() {
+		// Arrange — resolve the profile culture to the Latin-script en-US, then pass a Cyrillic caption.
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver enUsResolver =
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>();
+		enUsResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		PageCreateCommand command = new(_applicationClient, _serviceUrlBuilder, _catalog, _logger, enUsResolver);
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_BlankPage",
+			Template = TemplateName,
+			PackageName = "Custom",
+			Caption = "Замовлення"
+		};
+
+		// Act
+		bool result = command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse("because a Cyrillic caption must not be stored under the Latin-script en-US culture (ENG-91044)");
+		response.Error.Should().Contain("en-US", "because the failure must name the culture whose value is in the wrong script");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>());
+	}
+
+	[Test]
 	public void TryCreatePage_Copies_Template_Localizable_Strings_To_SaveSchema_Payload() {
 		Queue<string> selectResponses = new([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",

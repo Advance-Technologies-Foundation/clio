@@ -281,15 +281,29 @@ Resolution alone does not guarantee correct output: the caption *text* is author
    or an unrecognised language — it is a no-op, so localized captions and Latin acronyms inside
    non-Latin captions (`"Email адреса"` under `uk-UA`) are never blocked. False-positive rate is zero;
    the exact reproduced case (Cyrillic under `en-US`) and every European Latin profile are caught.
-   - **Wiring (two write chokepoints, scoped exactly like Decision 4's In/Out discipline):**
-     - `EntitySchemaLocalizationContract.NormalizeOptionalLocalizations` — the single funnel for
+   - **Wiring — every caption/title write path, with the validation culture matched to the ACTUAL
+     storage culture of each path.** The cardinal rule (Codex review): validate against the culture the
+     value is *stored* under, never a readback-only override.
+     - **Localization-map paths → validate each map key against its own value.**
+       `EntitySchemaLocalizationContract.NormalizeOptionalLocalizations` is the single funnel for
        `title-localizations`/`description-localizations` shared by `create-entity-schema`,
        `update-entity-schema`, `modify-entity-schema-column`, `create-lookup`, and `sync-schemas`.
-       Validates each `culture → value` pair after normalization. Read/display paths do NOT pass
-       through this contract, so they are unaffected (same principle as Mi-3).
-     - `ApplicationSectionCreateService.CreateSection` — validates the scalar `caption`/`description`
-       against the resolved effective culture. `--caption-culture` is the documented escape hatch
-       (declaring the caption's real language passes the guard).
+       Validates each `culture → value` pair after normalization; immune to any override because the
+       keys are explicit. Read/display paths do NOT pass through this contract (same principle as Mi-3).
+     - **Effective-culture paths → validate against the resolved effective culture (override > profile >
+       `en-US`), because for these the override IS the storage-key culture (the OQ-03 force-language
+       knob).** `PageCreateCommand` (create-page) and `SchemaDesignerHelper.ApplySchemaMetadata`
+       (create-sql-schema, create-source-code-schema) store the caption keyed by the effective culture,
+       and `ClientUnitSchemaCreate` (create-page client-unit) likewise. The guard runs against that same
+       effective culture, so a forced `--caption-culture uk-UA` correctly accepts Cyrillic.
+     - **Profile-localized scalar paths → validate against the PROFILE culture (`overrideCulture =
+       null`), because the value is localized server-side under the profile regardless of any override.**
+       `ApplicationSectionCreateService.CreateSection` and `ApplicationSectionUpdateService.UpdateSection`
+       (section caption/description) and `ApplicationCreateService.CreateApplication` (application
+       name/description). For sections the `--caption-culture` override is readback-only, so validating
+       against it would let a mismatched override smuggle the wrong language past the guard (the exact
+       Codex finding); `create-app`/`update-app-section` have no override at all. The override is
+       therefore deliberately NOT an escape hatch on these paths.
    - **Severity: hard-fail.** Throws `EntitySchemaDesignerException`; on the MCP path the tool's
      existing catch turns it into a structured `ExitCode 1` failure. Guidance-only was rejected: the
      guidance had already failed once (the agent read it and still mis-stored the text), so a

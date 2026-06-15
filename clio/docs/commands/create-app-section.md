@@ -153,12 +153,13 @@ retry once the underlying issue is resolved.
   `--code Contacts`), or use a Latin caption. The caption stays as the
   localized display title. clio reports this before creating the section.
 - **"caption: the '...' value ... contains non-Latin characters ..."** — the
-  caption is written in a script that does not match the effective culture (for
-  example Cyrillic text while the connected user's profile is the Latin-script
-  `en-US`). The stored caption is localized under the profile language, so this
-  would render foreign-language labels. Author the caption in the profile
-  language, or pass `--caption-culture` for the language you actually wrote (for
-  example `--caption-culture uk-UA`). clio reports this before creating the section.
+  caption is written in a script that does not match the connected user's
+  profile culture (for example Cyrillic text while the profile is the
+  Latin-script `en-US`). The stored caption is localized under the profile
+  language, so this would render foreign-language labels. Author the caption in
+  the profile language. Note that `--caption-culture` only changes which value
+  the readback surfaces, not the stored language, so it is **not** an escape
+  hatch here. clio reports this before creating the section.
 - **"Entity schema ... does not exist ..."** — the object passed via
   --entity-schema-name was not found in the environment. Object names are
   case-sensitive. Verify the name, or omit --entity-schema-name to create a new
