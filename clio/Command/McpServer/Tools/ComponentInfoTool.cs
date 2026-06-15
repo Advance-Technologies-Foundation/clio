@@ -38,13 +38,6 @@ public sealed class ComponentInfoTool(
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
-	/// Upper bound on the "did you mean" entries returned when a requested <c>component-type</c>
-	/// is unknown. Keeps the not-found envelope a small, actionable shortlist instead of echoing
-	/// the full ~199-item catalog as "suggestions".
-	/// </summary>
-	private const int MaxNotFoundSuggestions = 8;
-
-	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
@@ -91,7 +84,7 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog), search (optional keyword filter). " +
+		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog), search (optional; ranks list results by relevance — pass a natural-language need such as 'photo gallery for cards', not just a single keyword). " +
 			"schema-type: 'web' (default) or 'mobile'. environment-name: PREFERRED — scopes the catalog to the target platform version (mutually exclusive with version). " +
 			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
 		[Required] ComponentInfoArgs args,
@@ -181,8 +174,8 @@ public sealed class ComponentInfoTool(
 
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
 			|| string.Equals(args.ComponentType, "list", StringComparison.OrdinalIgnoreCase)) {
-			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, args.Search);
-			return CreateListResponse(filtered, state.ResolvedVersion, resolvedFrom);
+			IReadOnlyList<ComponentRegistryEntry> ranked = ComponentInfoGrouping.RankEntries(state.Entries, args.Search);
+			return CreateListResponse(ranked, state.ResolvedVersion, resolvedFrom);
 		}
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
@@ -191,8 +184,8 @@ public sealed class ComponentInfoTool(
 		}
 
 		string requestedType = args.ComponentType.Trim();
-		IReadOnlyList<ComponentRegistryEntry> suggestions =
-			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
+		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.SuggestForUnknown(
+			state.Entries, requestedType, args.Search, ComponentInfoGrouping.MaxNotFoundSuggestions);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
@@ -387,7 +380,7 @@ public sealed record ComponentInfoArgs(
 	string? ComponentType = null,
 
 	[property: JsonPropertyName("search")]
-	[property: Description("Optional keyword filter applied in list mode and in not-found suggestions, for example 'tab'.")]
+	[property: Description("Optional search query. In list mode the catalog is ranked by relevance to this query (weighting synonyms/use-cases over description over type/category over inputs/outputs), so a natural-language need such as 'photo gallery for cards' surfaces the best-fit component first; a single keyword like 'tab' also works. Also narrows not-found suggestions.")]
 	string? Search = null,
 
 	[property: JsonPropertyName("schema-type")]

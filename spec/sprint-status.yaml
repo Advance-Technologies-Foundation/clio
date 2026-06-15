@@ -515,9 +515,10 @@ stories:
     title: "[Solution B] Ranked synonym/use-case search in get-component-info (replace binary substring)"
     feature: "component-discovery-selection"
     size: M
-    status: deferred
+    status: in-progress
+    pr: stacked on Solution A branch feature/ENG-91571_selection-metadata (PR base), rebases onto epic after A merges
     jira: ENG-91572
-    note: "Scored top-N; weighting synonyms/useCases>description>...; deterministic tie-break. Parity scoped to DETERMINISTIC tool output only — LLM rerank is client-side, out of clio scope. Uses the shared labelled set (Decision 6). Code can land before A; acceptance blocked on A's CDN data."
+    note: "STARTED 2026-06-15 (stacked on A — B's ranking weights A's synonyms/useCases POCO fields). RankEntries replaces the binary Matches with a tokenised weighted scorer: synonyms/useCases>description/whenToUse>type/category/parents/children>inputs/outputs; tie-break score desc then ComponentType OrdinalIgnoreCase asc (cross-OS stable). CLI+MCP both call RankEntries (parity); not-found path unified via SuggestForUnknown on both surfaces. Shared labelled set added (Decision 6, clio.tests Fixtures) — used by B now, C/E later; deterministic recall@5 >= 0.8 asserted in [Category(Unit)]. Parity scoped to DETERMINISTIC tool output only — LLM rerank is client-side, out of clio scope. Code lands before A's CDN data; full acceptance still blocked on A2 backfill."
     prd: spec/prd/prd-component-discovery-selection.md
     adr: spec/adr/adr-component-discovery-selection.md
     depends_on: [story-component-discovery-A]

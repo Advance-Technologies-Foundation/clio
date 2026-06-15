@@ -338,12 +338,21 @@ both fields, not just `properties`, when generating `viewConfigDiff`
 inserts or matching output events to handler `request` strings — see the
 canonical guidance in `Resources/PageModificationGuidanceResource.cs`.
 
-List-mode search (`ComponentInfoGrouping.Matches`) inspects the wrapped
-shape too: it walks every `inputs`/`outputs` key and the well-known
-`type` / `description` / `values` properties inside each binding value.
-Without this branch the search filter would be useless on the new payload
-because the legacy `category`/`description`/`properties` fields are empty
-in the wrapped shape.
+List-mode search (`ComponentInfoGrouping.RankEntries`) scores each entry by
+relevance to the tokenised query and orders by score descending, then
+`ComponentType` `OrdinalIgnoreCase` ascending (Solution B / ENG-91572 —
+deterministic, cross-OS stable). The scorer weights Solution A's selection
+metadata (`synonyms`/`useCases`) above `description`/`whenToUse`, above the
+identity fields (`componentType`/`category`/parents/children), above the
+wrapped-shape binding surface. It still walks every `inputs`/`outputs` key and
+the well-known `type` / `description` / `values` properties inside each binding
+value — but as the lowest-weighted tier. Without that binding branch the search
+would be blind to the new payload because the legacy
+`category`/`description`/`properties` fields are empty in the wrapped shape. An
+empty query returns the full catalog alphabetically. The CLI verb and the MCP
+tool both call `RankEntries`, so their ordered output is identical (CLI/MCP
+parity, scoped to this deterministic tool output); the not-found suggestion
+path is unified through `SuggestForUnknown` on both surfaces.
 
 When changing the catalog data source, refer to:
 

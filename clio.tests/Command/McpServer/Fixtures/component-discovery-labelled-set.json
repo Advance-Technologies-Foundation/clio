@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "owner": "epic ENG-89871 (component-discovery-selection); ADR Decision 6",
+  "purpose": "Single shared, versioned query -> expected-component(s) set used by Solution B (ranked-search target), Solution C (deterministic recall@k go/no-go) and Solution E (version-unknown communication case). Authored in-repo so the three tasks share one labelled set with no per-task duplication or drift. The 'components' array is a self-contained mini-catalog with populated selection metadata so the deterministic ranker can be measured BEFORE the producer backfills the live CDN payload (Solution A2) — i.e. it benchmarks the ranking algorithm, not the production data.",
+  "recallThreshold": { "k": 5, "minRecall": 0.8, "source": "ADR Decision 3" },
+  "components": [
+    {
+      "componentType": "crt.Gallery",
+      "category": "media",
+      "description": "Image/card gallery that displays a collection of records as visual preview cards, optionally with bulk actions.",
+      "synonyms": ["photo grid", "image gallery", "picture cards", "thumbnail grid", "media gallery"],
+      "useCases": [
+        "Display a collection of images as browsable preview cards",
+        "Show product photos as a card gallery",
+        "Property listing photo cards"
+      ],
+      "whenToUse": "Use to display a collection of images or visual cards, for example product photos or property cards.",
+      "whenNotToUse": "Not for a single image — use crt.ImageInput."
+    },
+    {
+      "componentType": "crt.DataGrid",
+      "category": "data",
+      "description": "Editable tabular grid that shows records in rows and sortable columns.",
+      "synonyms": ["data table", "records grid", "editable table", "spreadsheet", "column grid"],
+      "useCases": [
+        "Show records in an editable table with columns",
+        "Tabular grid of records with sortable columns"
+      ],
+      "whenToUse": "Use for a table or grid of records with columns."
+    },
+    {
+      "componentType": "crt.List",
+      "category": "data",
+      "description": "Vertical list of records without table columns.",
+      "synonyms": ["record list", "vertical list", "item list", "simple list"],
+      "useCases": [
+        "Show records as a simple vertical list",
+        "List items without table columns"
+      ],
+      "whenToUse": "Use for a simple vertical list of records."
+    },
+    {
+      "componentType": "crt.FileList",
+      "category": "data",
+      "description": "List of files attached to a record.",
+      "synonyms": ["attachments", "attached files", "file list", "documents list"],
+      "useCases": [
+        "List files attached to a record",
+        "Show uploaded documents"
+      ],
+      "whenToUse": "Use to show files or attachments on a record."
+    },
+    {
+      "componentType": "crt.MultiList",
+      "category": "data",
+      "description": "Multi-column list that groups records into several parallel columns.",
+      "synonyms": ["multi column list", "kanban columns", "grouped list", "board columns"],
+      "useCases": [
+        "Show records grouped into multiple parallel columns",
+        "Kanban-style board of records"
+      ],
+      "whenToUse": "Use to group records into several parallel columns, for example a kanban board."
+    },
+    {
+      "componentType": "crt.ImageInput",
+      "category": "media",
+      "description": "Single image field for uploading or displaying one image such as an avatar or logo.",
+      "synonyms": ["image upload", "avatar", "single image", "photo field", "picture upload", "logo field"],
+      "useCases": [
+        "Upload or display a single image such as an avatar or logo"
+      ],
+      "whenToUse": "Use for a single image such as an avatar or logo.",
+      "whenNotToUse": "Not for a collection of images — use crt.Gallery."
+    },
+    {
+      "componentType": "crt.Timeline",
+      "category": "data",
+      "description": "Chronological feed of activities or events on a record.",
+      "synonyms": ["activity feed", "history timeline", "chronological feed", "events timeline"],
+      "useCases": [
+        "Show a chronological history of activities or events"
+      ],
+      "whenToUse": "Use for a time-ordered activity or history feed."
+    },
+    {
+      "componentType": "crt.DateTimeInput",
+      "category": "fields",
+      "description": "Date and time picker field.",
+      "synonyms": ["date picker", "calendar field", "datetime", "date and time"],
+      "useCases": [
+        "Pick a date and time value"
+      ],
+      "whenToUse": "Use to select a date and/or time."
+    },
+    {
+      "componentType": "crt.ComboBox",
+      "category": "fields",
+      "description": "Dropdown that selects a lookup or option value.",
+      "synonyms": ["dropdown", "select", "lookup field", "picklist", "combo box"],
+      "useCases": [
+        "Select a value from a lookup or list of options"
+      ],
+      "whenToUse": "Use to select a single value from a lookup or option set."
+    },
+    {
+      "componentType": "crt.CommunicationOptions",
+      "category": "fields",
+      "description": "Phone and email communication options for a Contact or Account.",
+      "synonyms": ["phone numbers", "emails", "contact details", "communication options"],
+      "useCases": [
+        "Show and edit a contact's phone numbers and email addresses"
+      ],
+      "whenToUse": "Use on Contact or Account to show phones and emails.",
+      "whenNotToUse": "Not available on custom entities — it is bound to the built-in Contact/Account communication model.",
+      "appliesToCustomEntities": false,
+      "entityCouplingNote": "Bound to the built-in Contact/Account communication model; not available on custom entities."
+    },
+    {
+      "componentType": "crt.Button",
+      "category": "actions",
+      "description": "Clickable action button.",
+      "synonyms": ["action button", "cta", "clickable button", "command button"],
+      "useCases": [
+        "Trigger an action when clicked"
+      ],
+      "whenToUse": "Use for a clickable action."
+    },
+    {
+      "componentType": "crt.Input",
+      "category": "fields",
+      "description": "Single-line text input field.",
+      "synonyms": ["text field", "text input", "single line text", "textbox"],
+      "useCases": [
+        "Enter a single line of text"
+      ],
+      "whenToUse": "Use for single-line text entry."
+    },
+    {
+      "componentType": "crt.NumberInput",
+      "category": "fields",
+      "description": "Numeric input field for integer or decimal values.",
+      "synonyms": ["number field", "numeric input", "amount field", "quantity"],
+      "useCases": [
+        "Enter a numeric amount or quantity"
+      ],
+      "whenToUse": "Use for numeric entry such as an amount or quantity."
+    },
+    {
+      "componentType": "crt.Label",
+      "category": "display",
+      "description": "Static read-only caption or text label.",
+      "synonyms": ["caption", "static text", "title text"],
+      "useCases": [
+        "Show a static caption or heading"
+      ],
+      "whenToUse": "Use for a static caption or heading."
+    }
+  ],
+  "queries": [
+    {
+      "query": "photo gallery for property cards",
+      "kind": "ranking",
+      "expected": ["crt.Gallery"],
+      "note": "ENG-91134 motivating case — a natural-language need for a card gallery must surface crt.Gallery, not a grid/file-list."
+    },
+    {
+      "query": "image collection preview cards",
+      "kind": "ranking",
+      "expected": ["crt.Gallery"]
+    },
+    {
+      "query": "editable data table with columns",
+      "kind": "ranking",
+      "expected": ["crt.DataGrid"]
+    },
+    {
+      "query": "spreadsheet grid of records",
+      "kind": "ranking",
+      "expected": ["crt.DataGrid"]
+    },
+    {
+      "query": "simple vertical list of records",
+      "kind": "ranking",
+      "expected": ["crt.List"]
+    },
+    {
+      "query": "attached files and documents",
+      "kind": "ranking",
+      "expected": ["crt.FileList"]
+    },
+    {
+      "query": "kanban board grouped into columns",
+      "kind": "ranking",
+      "expected": ["crt.MultiList"]
+    },
+    {
+      "query": "upload a single avatar image",
+      "kind": "ranking",
+      "expected": ["crt.ImageInput"]
+    },
+    {
+      "query": "chronological activity history feed",
+      "kind": "ranking",
+      "expected": ["crt.Timeline"]
+    },
+    {
+      "query": "pick a date and time",
+      "kind": "ranking",
+      "expected": ["crt.DateTimeInput"]
+    },
+    {
+      "query": "dropdown to select a lookup value",
+      "kind": "ranking",
+      "expected": ["crt.ComboBox"]
+    },
+    {
+      "query": "phone numbers and emails for a contact",
+      "kind": "ranking",
+      "expected": ["crt.CommunicationOptions"],
+      "note": "Applicability case — the right component when the target entity supports it; crt.CommunicationOptions.appliesToCustomEntities is false (consumed by Solution D fail-fast / Solution E)."
+    },
+    {
+      "query": "clickable action button",
+      "kind": "ranking",
+      "expected": ["crt.Button"]
+    },
+    {
+      "query": "single line text field",
+      "kind": "ranking",
+      "expected": ["crt.Input"]
+    },
+    {
+      "query": "what platform version is this environment running",
+      "kind": "version-unknown",
+      "expected": [],
+      "note": "Version-unknown communication case for Solution E (ENG-91583). Not a component-ranking query — Solution B's recall metric ignores rows whose kind is not 'ranking'."
+    }
+  ]
+}

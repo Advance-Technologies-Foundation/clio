@@ -410,6 +410,83 @@ public sealed class ComponentInfoToolE2ETests {
 		}
 		""";
 
+	[Test]
+	[Description("Ranks list-mode results by relevance end-to-end through the real MCP server: a multi-term natural-language query returns the best-fit component first (crt.Gallery ahead of crt.ImageInput), driven by Solution B's scored ranking (ENG-91572). Fed from a local-override catalog so the ranking signal does not depend on the producer backfill reaching the live CDN.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info ranks list results by relevance from a local catalog")]
+	[AllureDescription("Starts the real clio MCP server with CLIO_COMPONENT_REGISTRY_LOCAL_FILE pointing at a catalog carrying selection metadata, searches a natural-language phrase, and verifies the best-fit component is ranked first through the real MCP serialization path.")]
+	public async Task ComponentInfoTool_List_Should_Rank_By_Relevance_From_Local_Catalog() {
+		// Arrange — local-override catalog with selection metadata so the ranking signal is present
+		// without waiting for the producer backfill to reach the academy CDN (the A2 step).
+		string catalogPath = Path.Combine(Path.GetTempPath(), $"clio-component-registry-b-rank-e2e-{Guid.NewGuid():N}.json");
+		await File.WriteAllTextAsync(catalogPath, LocalRankingCatalogJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = catalogPath;
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+			// Act — a natural-language need that hits crt.Gallery's synonyms/useCases hardest.
+			ComponentInfoResponse ranked = await CallComponentInfoAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["search"] = "image cards collection" });
+
+			// Assert — the ranked order surfaces through the real MCP server; best fit is first.
+			ranked.Success.Should().BeTrue(
+				because: "a ranked list search must succeed against the local catalog");
+			ranked.Mode.Should().Be("list",
+				because: "a search without component-type stays in list mode");
+			ranked.Items.Should().NotBeNullOrEmpty(
+				because: "the query matches at least crt.Gallery in the local catalog");
+			List<string> order = ranked.Items!.Select(item => item.ComponentType).ToList();
+			order[0].Should().Be("crt.Gallery",
+				because: "the scored ranking must put the best-fit image-card component first, end to end through the real server (ENG-91572)");
+			if (order.Contains("crt.ImageInput")) {
+				order.IndexOf("crt.Gallery").Should().BeLessThan(order.IndexOf("crt.ImageInput"),
+					because: "crt.Gallery (a collection of image cards) must outrank crt.ImageInput (a single image) for this need");
+			}
+		}
+		finally {
+			File.Delete(catalogPath);
+		}
+	}
+
+	/// <summary>
+	/// A local-override registry payload carrying selection metadata for several components, used to
+	/// exercise Solution B's scored ranking end-to-end (best-fit first) without depending on the
+	/// producer backfill reaching the CDN.
+	/// </summary>
+	private const string LocalRankingCatalogJson =
+		"""
+		{
+		  "components": [
+		    {
+		      "componentType": "crt.Gallery",
+		      "description": "Image/card gallery showing a collection of records as preview cards.",
+		      "category": "media",
+		      "synonyms": ["photo grid", "image gallery", "picture cards"],
+		      "useCases": ["Display a collection of images as browsable preview cards"]
+		    },
+		    {
+		      "componentType": "crt.ImageInput",
+		      "description": "Single image upload field such as an avatar or logo.",
+		      "category": "media",
+		      "synonyms": ["single image", "avatar", "image upload"],
+		      "useCases": ["Upload or display a single image"]
+		    },
+		    {
+		      "componentType": "crt.DataGrid",
+		      "description": "Editable data table of records with columns.",
+		      "category": "data",
+		      "synonyms": ["data table", "records grid", "spreadsheet"],
+		      "useCases": ["Show records in an editable table with columns"]
+		    }
+		  ],
+		  "references": {}
+		}
+		""";
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

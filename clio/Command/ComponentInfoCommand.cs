@@ -186,12 +186,12 @@ public sealed class ComponentInfoCommand {
 			|| string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
 
 		if (listMode) {
-			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+			IReadOnlyList<ComponentRegistryEntry> ranked = ComponentInfoGrouping.RankEntries(state.Entries, options.Search);
 			return new ComponentInfoResponse {
 				Success = true,
 				Mode = "list",
-				Count = filtered.Count,
-				Items = ComponentInfoGrouping.CreateItems(filtered),
+				Count = ranked.Count,
+				Items = ComponentInfoGrouping.CreateItems(ranked),
 				ResolvedTargetVersion = state.ResolvedVersion,
 				ResolvedFrom = resolvedFrom
 			};
@@ -204,11 +204,17 @@ public sealed class ComponentInfoCommand {
 			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
 		}
 
-		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+		// Unified with the MCP tool's not-found path (ADR Decision 2): both surfaces return the same
+		// bounded closest-match shortlist via SuggestForUnknown (Levenshtein), instead of the CLI's
+		// previous full keyword filter — so the suggestion path has CLI/MCP parity, not just list mode.
+		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.SuggestForUnknown(
+			state.Entries, componentType, options.Search, ComponentInfoGrouping.MaxNotFoundSuggestions);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
-			Error = $"Component type '{componentType}' was not found.",
+			Error = $"Component type '{componentType}' was not found. "
+				+ $"Showing the {suggestions.Count} closest known type(s) — pass one of these as the "
+				+ "component-type argument, or omit it to list the full catalog.",
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
 			ResolvedTargetVersion = state.ResolvedVersion,

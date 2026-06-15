@@ -15,8 +15,12 @@ The get-component-info command exposes the same curated Freedom UI component
 catalog that the MCP `get-component-info` tool serves to AI clients, but as
 a regular CLI verb. It supports two modes:
 
-- **List mode** (default): grouped catalog summary by category, optionally
-  filtered with `--search`.
+- **List mode** (default): a flat list of component types. With `--search` the
+  list is **ranked by relevance** to the query — a natural-language need such as
+  `--search "photo gallery for cards"` puts the best-fit component first
+  (weighting synonyms/use-cases over description over type/category over
+  inputs/outputs); without `--search` the full catalog is returned
+  alphabetically.
 - **Detail mode**: full metadata for a specific component type passed as the
   first positional argument.
 
@@ -106,8 +110,10 @@ component-info
                                    type (e.g. crt.TabContainer). Omit or
                                    pass 'list' to return the grouped catalog.
 
---search                           Keyword filter applied in list mode and
-                                   in not-found suggestions.
+--search                           Search query. In list mode the catalog is
+                                   ranked by relevance to the query (best-fit
+                                   component first); also narrows the
+                                   not-found suggestions.
 
 --version                          Explicit catalog version to load
                                    (3-part semver, e.g. 8.3.4). Mutually
@@ -158,7 +164,7 @@ clio get-component-info --schema-type mobile
 clio get-component-info crt.Toggle --schema-type mobile
 
 # Pipe into jq
-clio get-component-info | jq '.groups[].items[].componentType'
+clio get-component-info | jq '.items[].componentType'
 ```
 
 ## Exit codes

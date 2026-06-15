@@ -170,7 +170,7 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`
-  Inspect a shipped local catalog of Freedom UI component contracts, grouped by category or returned in detail mode.
+  Inspect a shipped local catalog of Freedom UI component contracts: list mode (ranked by relevance when a search query is passed) or detail mode for a single type.
 
 What an external AI can practically do here:
 
