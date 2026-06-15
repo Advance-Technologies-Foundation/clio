@@ -761,7 +761,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Passes the default 300-second budget to the ApplicationSection insert when no override is configured.")]
+	[Description("Passes the default 90-second budget to the ApplicationSection insert when no override is configured.")]
 	public void CreateSection_Should_Pass_Default_Insert_Timeout_When_EnvVar_Not_Set() {
 		// Arrange
 		Environment.SetEnvironmentVariable(
@@ -772,8 +772,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
-			because: "the insert budget should default to 300 seconds when no env override is set");
+		_capturedInsertTimeout.Should().Be(90_000,
+			because: "the insert budget should default to 90 seconds (below the MCP client request ceiling) when no env override is set");
 	}
 
 	[Test]
@@ -806,7 +806,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
+		_capturedInsertTimeout.Should().Be(90_000,
 			because: "invalid override values must not silently disable or corrupt the insert budget");
 	}
 
@@ -861,6 +861,18 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		result.Section.Code.Should().Be("UsrOrders",
 			because: "a timed-out insert whose section is already visible must be treated as a recovered success");
+	}
+
+	[Test]
+	[Description("Bounds the post-timeout verification readback with the 30-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
+	public void CreateSection_Should_Pass_Bounded_Readback_Timeout_When_Insert_Times_Out_But_Section_Is_Visible() {
+		// Arrange
+		SetUpTimedOutInsertWithReadbackMocks();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		_capturedReadbackTimeout.Should().Be(30_000,
+			because: "the recovery readback must run under the bounded 30-second verification budget so the full response stays below the MCP client request ceiling after the insert timed out");
 	}
 
 	[Test]
@@ -1134,6 +1146,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 	private string? _capturedInsertBody;
 
+	private int? _capturedReadbackTimeout;
+
 	private void SetUpInsertThrowingMocks(Exception insertException) {
 		SetUpCommonReadMocks();
 		_capturedInsertBody = null;
@@ -1180,8 +1194,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
 				Arg.Any<int>())
-			.Returns(_ =>
-				$$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+			.Returns(callInfo => {
+				_capturedReadbackTimeout = callInfo.ArgAt<int>(2);
+				return $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""";
+			});
 		// LoadCreatedSection re-reads the app info and persists the icon background after recovery;
 		// the recovery readback runs bounded, so the update stub must accept the explicit timeout.
 		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
