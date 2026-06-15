@@ -3,7 +3,7 @@
 - **id**: story-component-discovery-B
 - **jira**: ENG-91572
 - **epic**: ENG-89871 · **feature**: component-discovery-selection
-- **status**: in-progress
+- **status**: review ([PR #709](https://github.com/Advance-Technologies-Foundation/clio/pull/709))
 - **PRD**: spec/prd/prd-component-discovery-selection.md
 - **ADR**: spec/adr/adr-component-discovery-selection.md (Decision 2; Decision 3 metric; Decision 6 labelled set)
 - **depends_on**: story-component-discovery-A (B weights A's `synonyms`/`useCases` POCO fields — stacked on A's branch)
