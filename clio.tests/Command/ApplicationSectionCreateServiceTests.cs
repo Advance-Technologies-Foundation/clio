@@ -711,7 +711,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Passes the default 300-second budget to the ApplicationSection insert when no override is configured.")]
+	[Description("Passes the default 90-second budget to the ApplicationSection insert when no override is configured.")]
 	public void CreateSection_Should_Pass_Default_Insert_Timeout_When_EnvVar_Not_Set() {
 		// Arrange
 		Environment.SetEnvironmentVariable(
@@ -722,8 +722,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
-			because: "the insert budget should default to 300 seconds when no env override is set");
+		_capturedInsertTimeout.Should().Be(90_000,
+			because: "the insert budget should default to 90 seconds (below the MCP client request ceiling) when no env override is set");
 	}
 
 	[Test]
@@ -756,7 +756,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
+		_capturedInsertTimeout.Should().Be(90_000,
 			because: "invalid override values must not silently disable or corrupt the insert budget");
 	}
 

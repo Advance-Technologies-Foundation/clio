@@ -101,12 +101,20 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <summary>
 	/// Environment variable that overrides the ApplicationSection insert budget, in whole seconds.
-	/// Non-numeric or non-positive values fall back to the 300-second default (ENG-90679).
+	/// Non-numeric or non-positive values fall back to the 90-second default (ENG-91540).
 	/// </summary>
 	internal const string InsertTimeoutEnvironmentVariable = "CLIO_CREATE_SECTION_TIMEOUT_SECONDS";
 
-	private const int DefaultInsertTimeoutMs = 300_000;
-	private const int VerificationTimeoutMs = 30_000;
+	// The budget must fire BEFORE the MCP client's hard request ceiling so clio returns its
+	// structured creatio-timeout envelope (error-class / section-created / retry-guidance) instead
+	// of letting the client abandon the call with an opaque "-32001 Request timed out" (ENG-91540).
+	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
+	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
+	// clients never send a progressToken, so no beat is emitted at all). 90 s insert + 20 s readback
+	// keeps clio's full response under ~120 s — comfortably below the observed 180 s ceiling — while
+	// CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients / large stands extend it.
+	private const int DefaultInsertTimeoutMs = 90_000;
+	private const int VerificationTimeoutMs = 20_000;
 
 	private const string TransportRetryGuidance =
 		"The request never reached Creatio, so no section was created and retrying is safe. "

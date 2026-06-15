@@ -77,9 +77,12 @@ EXAMPLE
         create a web-only section and let clio choose icon metadata automatically
 
 TIMEOUT AND FAILURE DIAGNOSTICS
-    The section insert runs under a finite budget of 300 seconds. Set the
-    CLIO_CREATE_SECTION_TIMEOUT_SECONDS environment variable (whole seconds,
-    positive integer) to extend or shrink the budget.
+    The section insert runs under a finite budget of 90 seconds. The default is
+    deliberately shorter than a typical MCP client's per-request timeout
+    (around 180 seconds for some agent CLIs) so clio can return its structured
+    creatio-timeout response before the client abandons the call with an opaque
+    transport error. Set the CLIO_CREATE_SECTION_TIMEOUT_SECONDS environment
+    variable (whole seconds, positive integer) to extend or shrink the budget.
 
     On failure clio classifies the outcome and prints an actionable next
     step ("Next step: ..."):

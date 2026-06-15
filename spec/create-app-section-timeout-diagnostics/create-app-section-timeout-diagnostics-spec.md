@@ -28,7 +28,8 @@ deliberately overlaps none of #688's mechanics.
 ## Requirements
 
 R1. The `ApplicationSection` InsertQuery must run under a finite request budget.
-    Default 300 s, overridable via env var `CLIO_CREATE_SECTION_TIMEOUT_SECONDS`
+    Default 90 s (lowered from 300 s — see ENG-91540 follow-up below),
+    overridable via env var `CLIO_CREATE_SECTION_TIMEOUT_SECONDS`
     (values ≤ 0 or non-numeric → default).
 
 R2. On failure, the operation must classify the outcome into exactly one of:
@@ -41,7 +42,7 @@ R2. On failure, the operation must classify the outcome into exactly one of:
       the same arguments will likely fail again.
 
 R3. After a `creatio-timeout`, clio must itself verify the side effect with a
-    bounded (30 s) `ApplicationSection` readback:
+    bounded (20 s) `ApplicationSection` readback:
     - section found → continue the normal readback flow and return **success**
       (timeout recovered);
     - section absent → report `section-created: false` plus guidance that the
@@ -71,3 +72,57 @@ AC7. All structured fields appear in the MCP JSON envelope; absent (null) on
      success responses.
 AC8. Unit + MCP e2e coverage for the above; docs updated
      (help txt, command md, Commands.md, MCP guidance resources).
+
+## ENG-91540 follow-up — the budget must beat the client's request ceiling
+
+> Jira: [ENG-91540](https://creatio.atlassian.net/browse/ENG-91540) — `MCP error -32001 is still reproducing` (sub-bug of ENG-90679)
+
+### What was still wrong
+
+The ENG-90679 classification logic is correct, but the 300 s default budget made
+it unreachable through real MCP clients. The `create-task-section` regression
+(GitHub Copilot CLI) kept surfacing the opaque `MCP error -32001: Request timed
+out` every ~180 s:
+
+- The MCP **client** enforces a fixed per-request ceiling (~180 s for the Copilot
+  CLI) and abandons the call at that point.
+- The progress heartbeat (ENG-91274) does **not** rescue this client: it either
+  sends no `progressToken` (so clio emits no beats) or keeps a hard ceiling that
+  progress notifications do not reset.
+- Because the clio insert budget (300 s) was **longer** than that ceiling, clio
+  was still blocked inside `ExecutePostRequest` when the client gave up. The
+  structured `creatio-timeout` envelope (`error-class` / `section-created` /
+  `retry-guidance`) was never produced in time — the agent only ever saw the
+  raw transport `-32001` and blind-retried.
+
+### Fix
+
+- Lower the default insert budget to **90 s** and the verification readback to
+  **20 s**, so clio's full response (insert budget + readback ≈ 110 s, plus a few
+  seconds of preparation reads) returns comfortably **before** the ~180 s client
+  ceiling. The agent now receives the actionable `creatio-timeout` envelope
+  instead of `-32001`, and the section — which may still materialize
+  server-side minutes later — is found by the recommended `list-app-sections`
+  check.
+- `CLIO_CREATE_SECTION_TIMEOUT_SECONDS` still raises the budget for patient
+  clients (those that honor progress and have a generous ceiling) or large
+  environments where the insert legitimately needs longer.
+
+### Acceptance criteria (ENG-91540)
+
+AC9.  Default insert budget is 90 s; verification readback is 20 s.
+AC10. When the insert exceeds the budget and the section is not yet visible,
+      `create-app-section` returns a structured `creatio-timeout` envelope
+      (`error-class=creatio-timeout`, `section-created` ∈ {`false`,`unknown`},
+      `retry-guidance`) — never a bare transport timeout — within the budget.
+AC11. `CLIO_CREATE_SECTION_TIMEOUT_SECONDS` still overrides the 90 s default
+      (and AC1's invalid/non-positive fallback rules are unchanged).
+
+### Residual (out of scope here)
+
+The pre-insert preparation reads (`get-app-info`, icon resolution, schema
+existence) still run unbounded. On a pathologically slow stand they could
+themselves exceed the client ceiling before the insert begins (the separate
+`get-app-info` latency concern is tracked under ENG-91316). The ENG-91540 repro
+showed fast preparation and a slow insert, so bounding the insert is the
+targeted fix.
