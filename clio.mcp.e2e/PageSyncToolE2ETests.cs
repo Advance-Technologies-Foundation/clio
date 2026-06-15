@@ -142,6 +142,58 @@ public sealed class PageSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a marker-valid page body that sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding, before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages rejects inline placeholder literal during client-side validation")]
+	[AllureDescription("Uses any reachable environment, sends a marker-valid page body whose inserted crt.Input carries a hardcoded placeholder through sync-pages with validation enabled, and verifies that the localizable-text check fails the call without requiring a real page save.")]
+	public async Task PageSyncTool_Should_Reject_Inline_Placeholder_Literal_When_Validation_Is_Enabled() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+			"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		await using ArrangeContext context = await ArrangeAsync();
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = $"UsrInlinePlaceholder_{Guid.NewGuid():N}",
+							["body"] = inlinePlaceholderBody
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "validation failures should be reported as structured tool results");
+		response.Success.Should().BeFalse(
+			because: "client-side validation should reject a hardcoded placeholder that cannot be translated");
+		response.Pages.Should().ContainSingle(because: "one page was submitted for validation");
+		response.Pages[0].Success.Should().BeFalse(because: "the inline placeholder literal must fail validation");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "validation details should be returned when validation is enabled");
+		response.Pages[0].Validation!.ContentOk.Should().BeFalse(
+			because: "the localizable-text rule is a content-level validator");
+		response.Pages[0].Validation.Errors!.Should().Contain(
+			e => e.Contains("EmailField") && e.Contains("placeholder") && e.Contains("page-schema-resources"),
+			because: "the diagnostic must name the node, the offending property, and point to the localization guide");
+	}
+
+	[Test]
 	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]

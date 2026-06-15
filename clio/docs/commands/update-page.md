@@ -44,6 +44,13 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **User-visible text must be localizable.** Any `label`, `caption`, `title`, `tooltip`, or
+  `placeholder` in `viewConfigDiff` (at any nesting depth) set to an inline string literal is
+  **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
+  column captions and validator messages) and register the key's default-language value through
+  `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
+  `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
+  for the full rule.
 
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.

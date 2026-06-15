@@ -322,6 +322,41 @@ public sealed class PageValidateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects inline placeholder literal")]
+	[AllureDescription("Sends a page body whose inserted crt.Input carries a hardcoded placeholder string and verifies that validate-page surfaces an actionable error naming the node and the placeholder property and pointing to the page-schema-resources guide.")]
+	public async Task PageValidateTool_Should_Reject_Inline_Placeholder_Literal() {
+		// Arrange
+		string bodyWithInlinePlaceholder = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+				"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithInlinePlaceholder);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a hardcoded placeholder string is not localizable and must be rejected by the localizable-text check");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "the localizable-text rule is a content-level validator");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list at least one error for the inline placeholder literal");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("EmailField") && e.Contains("placeholder") && e.Contains("page-schema-resources"),
+			because: "the diagnostic must name the node, the offending property, and point to the localization guide");
+	}
+
+	[Test]
 	[Description("validate-page rejects a body whose JavaScript syntax is invalid (the production incident shape `await X = Y`) — proves the new Acornima syntax pre-flight gate fires through the real MCP transport, not just the regex brace-counter that previously passed this body as syntax-OK.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects body with await-as-assignment-target syntax error")]

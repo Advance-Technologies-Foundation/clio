@@ -2641,6 +2641,183 @@ public sealed class SchemaValidationServiceTests
 			because: "the diagnostic should list every matching declared attribute instead of picking one alphabetically");
 	}
 
+	[Test]
+	[Description("An input placeholder set as an inline literal is rejected — user-visible text must be a localizable-string binding, not a plain string.")]
+	public void ValidateLocalizableTextLiterals_PlaceholderInlineLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","control":"$Email","placeholder":"name@firm.com"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "an inline placeholder literal is not localizable and must be rejected");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("EmailField") &&
+				error.Contains("placeholder") &&
+				error.Contains("name@firm.com") &&
+				error.Contains("page-schema-resources"),
+			because: "the diagnostic must name the node, the offending property, the literal value, and point to the guide");
+	}
+
+	[Test]
+	[Description("A panel/tab title set as an inline literal is rejected — titles are user-visible text and must be localizable.")]
+	public void ValidateLocalizableTextLiterals_TitleInlineLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"DetailsPanel","values":{"type":"crt.ExpansionPanel","title":"Contact details"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "an inline title literal is not localizable and must be rejected");
+		result.Errors.Should().ContainSingle(error => error.Contains("DetailsPanel") && error.Contains("title"),
+			because: "the diagnostic must name the node and the title property");
+	}
+
+	[Test]
+	[Description("An inline literal on a child node nested under the inserted container is rejected — the scan recurses through the whole values subtree.")]
+	public void ValidateLocalizableTextLiterals_NestedChildCaptionLiteral_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Toolbar","values":{"type":"crt.Container","items":[{"name":"SaveButton","type":"crt.Button","caption":"Save record"}]}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a caption literal on a nested child must be caught regardless of nesting depth");
+		result.Errors.Should().ContainSingle(error => error.Contains("SaveButton") && error.Contains("caption"),
+			because: "the diagnostic must attribute the literal to the nearest named node, not the container");
+	}
+
+	[Test]
+	[Description("A label authored as a $Resources.Strings.* binding is accepted — only inline literals are rejected by the localizable-text check.")]
+	public void ValidateLocalizableTextLiterals_ResourceBinding_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","control":"$Email","label":"$Resources.Strings.Email","placeholder":"$Resources.Strings.EmailPlaceholder"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "values authored as $Resources.Strings.* bindings are already localizable");
+		result.Errors.Should().BeEmpty(because: "no inline literal is present");
+	}
+
+	[Test]
+	[Description("A caption authored with the #ResourceString()# macro is accepted — the macro form is the data-grid/validator localization convention.")]
+	public void ValidateLocalizableTextLiterals_ResourceStringMacro_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"DataTable","values":{"type":"crt.DataGrid","columns":[{"caption":"#ResourceString(PDS_Name)#"}]}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the #ResourceString()# macro is an accepted localizable form for grid column captions");
+		result.Errors.Should().BeEmpty(because: "the macro form is not an inline literal");
+	}
+
+	[Test]
+	[Description("A non-string placeholder (the boolean toggle some components expose) is ignored — only string text values are subject to the literal rule.")]
+	public void ValidateLocalizableTextLiterals_NonStringPlaceholder_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Combo","values":{"type":"crt.ComboBox","placeholder":false}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a boolean placeholder is not user-visible text and must not be flagged");
+		result.Errors.Should().BeEmpty(because: "non-string values are out of scope for the localizable-text check");
+	}
+
+	[Test]
+	[Description("A placeholder bound to an attribute ($-prefixed expression) is accepted — binding expressions are not inline literals.")]
+	public void ValidateLocalizableTextLiterals_AttributeBoundPlaceholder_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Field","values":{"type":"crt.Input","placeholder":"$UsrPlaceholderText"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a $-prefixed binding expression resolves through the view model, not a hardcoded literal");
+		result.Errors.Should().BeEmpty(because: "binding expressions are out of scope for the literal check");
+	}
+
+	[Test]
+	[Description("The 'description' property is intentionally outside the hard-reject set (it also names non-display metadata) so a description literal does not fail validation.")]
+	public void ValidateLocalizableTextLiterals_DescriptionLiteral_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Widget","values":{"type":"crt.Container","description":"internal note"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "'description' is excluded from the hard reject and covered by guidance only");
+		result.Errors.Should().BeEmpty(because: "the overloaded description key must not produce false positives");
+	}
+
+	[Test]
+	[Description("Multiple inline literals across separate nodes each produce their own diagnostic so the agent can fix them in one pass.")]
+	public void ValidateLocalizableTextLiterals_MultipleLiterals_ReturnsErrorPerOccurrence() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","placeholder":"name@firm.com","tooltip":"Work email"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "both the placeholder and the tooltip are inline literals");
+		result.Errors.Should().HaveCount(2, because: "each offending property must be reported separately");
+		result.Errors.Should().Contain(e => e.Contains("placeholder"), because: "the placeholder literal must be reported");
+		result.Errors.Should().Contain(e => e.Contains("tooltip"), because: "the tooltip literal must be reported");
+	}
+
+	[Test]
+	[Description("The mobile variant reads viewConfigDiff from the plain-JSON root and rejects an inline placeholder literal the same way the web variant does.")]
+	public void ValidateMobileLocalizableTextLiterals_PlaceholderInlineLiteral_ReturnsInvalid() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"EmailField","values":{"type":"crt.Input","placeholder":"name@firm.com"}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the mobile localizable-text rule mirrors the web rule");
+		result.Errors.Should().ContainSingle(error => error.Contains("EmailField") && error.Contains("placeholder"),
+			because: "the mobile diagnostic must name the node and the placeholder property");
+	}
+
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return $$"""
 			define(

@@ -209,6 +209,7 @@ public sealed class PageUpdateTool(
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
+		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
@@ -261,7 +262,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
