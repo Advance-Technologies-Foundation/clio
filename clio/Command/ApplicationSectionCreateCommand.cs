@@ -111,14 +111,14 @@ public sealed class ApplicationSectionCreateService(
 	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
 	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
 	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
-	// call (90 s) and the post-timeout recovery readback (20 s) — the dominant slow span on the
+	// call (90 s) and the post-timeout recovery readback (30 s) — the dominant slow span on the
 	// not-visible timeout path that is the actual repro — so clio answers well under the observed 180 s
 	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert,
 	// the success-path readback (Timeout.Infinite), and the 15-attempt poll loop have no cumulative
 	// deadline (residual ENG-91316). CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients /
 	// large stands extend the insert budget.
 	private const int DefaultInsertTimeoutMs = 90_000;
-	private const int VerificationTimeoutMs = 20_000;
+	private const int VerificationTimeoutMs = 30_000;
 
 	private const string TransportRetryGuidance =
 		"The request never reached Creatio, so no section was created and retrying is safe. "

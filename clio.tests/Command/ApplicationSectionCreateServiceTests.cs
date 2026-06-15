@@ -814,15 +814,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Bounds the post-timeout verification readback with the 20-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
+	[Description("Bounds the post-timeout verification readback with the 30-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
 	public void CreateSection_Should_Pass_Bounded_Readback_Timeout_When_Insert_Times_Out_But_Section_Is_Visible() {
 		// Arrange
 		SetUpTimedOutInsertWithReadbackMocks();
 		// Act
 		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
 		// Assert
-		_capturedReadbackTimeout.Should().Be(20_000,
-			because: "the recovery readback must run under the bounded 20-second budget so the full response stays below the MCP client request ceiling after the insert timed out");
+		_capturedReadbackTimeout.Should().Be(30_000,
+			because: "the recovery readback must run under the bounded 30-second verification budget so the full response stays below the MCP client request ceiling after the insert timed out");
 	}
 
 	[Test]

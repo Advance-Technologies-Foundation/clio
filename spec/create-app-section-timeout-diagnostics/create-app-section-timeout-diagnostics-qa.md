@@ -24,7 +24,7 @@
 | TC-U-20 | Readback after timeout returns a pre-existing section bound to the same entity (different Id) | NOT recovered: `CreatioTimeout`, `SectionCreated=false`, no UpdateQuery issued (verification matches strictly by the generated section Id) |
 | TC-U-21 | Env var value whose ms equivalent exceeds `int.MaxValue` (`3000000`) | clamped to `int.MaxValue` |
 | TC-U-22 | Insert returns JSON `null` (empty response) | `ServerError`, `SectionCreated=unknown`, spinner closed |
-| TC-U-23 | Insert times out, section visible on verification readback | recovery readback runs under the bounded 20 000 ms budget (verification `ExecutePostRequest` timeout = 20 000) |
+| TC-U-23 | Insert times out, section visible on verification readback | recovery readback runs under the bounded 30 000 ms budget (verification `ExecutePostRequest` timeout = 30 000) |
 
 ## Unit — `Module=McpServer` (`ApplicationToolTests`)
 

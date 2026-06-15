@@ -42,7 +42,7 @@ R2. On failure, the operation must classify the outcome into exactly one of:
       the same arguments will likely fail again.
 
 R3. After a `creatio-timeout`, clio must itself verify the side effect with a
-    bounded (20 s) `ApplicationSection` readback:
+    bounded (30 s) `ApplicationSection` readback:
     - section found → continue the normal readback flow and return **success**
       (timeout recovered);
     - section absent → report `section-created: false` plus guidance that the
@@ -97,8 +97,8 @@ out` every ~180 s:
 
 ### Fix
 
-- Lower the default insert budget to **90 s** and the verification readback to
-  **20 s**, so clio's full response (insert budget + readback ≈ 110 s, plus a few
+- Lower the default insert budget to **90 s** (the verification readback stays at
+  **30 s**), so clio's full response (insert budget + readback ≈ 120 s, plus a few
   seconds of preparation reads) returns comfortably **before** the ~180 s client
   ceiling. The agent now receives the actionable `creatio-timeout` envelope
   instead of `-32001`, and the section — which may still materialize
@@ -110,7 +110,7 @@ out` every ~180 s:
 
 ### Acceptance criteria (ENG-91540)
 
-AC9.  Default insert budget is 90 s; verification readback is 20 s.
+AC9.  Default insert budget is 90 s; verification readback is 30 s.
 AC10. When the insert exceeds the budget and the section is not yet visible,
       `create-app-section` returns a structured `creatio-timeout` envelope
       (`error-class=creatio-timeout`, `section-created` ∈ {`false`,`unknown`},
