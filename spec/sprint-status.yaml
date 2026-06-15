@@ -502,7 +502,8 @@ stories:
     title: "[Solution A] Component selection metadata in registry (synonyms/use-cases/when-to-use + taxonomy)"
     feature: "component-discovery-selection"
     size: L
-    status: in-progress
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/708
     jira: ENG-91571
     note: "STARTED 2026-06-15 (A1 slice): umbrella ADR ACCEPTED (Alex), gate cleared. Typed POCO mapping (NOT passthrough) + de-truncate snapshot fixture + A owns category taxonomy + applicability field. CORRECTION: the assumed hardcoded CategoryOrder does NOT exist (clio/generator/creatio-ui) — A defines taxonomy from scratch and fills the empty producer `category` field; nothing to reconcile. A1 = schema + confusable-set seed (clio-self-sufficient, fixture-gated), unblocks B/C/D. A2 = full ~200 backfill + live CDN seed (static-files-mcp) + JSDoc derivation (creatio-ui), trails. Does NOT touch ComponentInfoListItem/ComponentRelations (D owns)."
     prd: spec/prd/prd-component-discovery-selection.md
