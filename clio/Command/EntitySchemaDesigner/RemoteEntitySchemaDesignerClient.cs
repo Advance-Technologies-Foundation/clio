@@ -34,6 +34,18 @@ internal interface IRemoteEntitySchemaDesignerClient
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
 		string valueTypeName,
 		RemoteCommandOptions options);
+
+	/// <summary>
+	/// Checks whether a record with the given identifier exists in the referenced entity schema, used to
+	/// validate a lookup <c>Const</c> default before it is persisted. Returns
+	/// <see cref="LookupRecordExistence.Unknown"/> when the check cannot be performed (for example the
+	/// current user has no read access to the referenced entity), so an unverifiable check never blocks a write.
+	/// </summary>
+	/// <param name="schemaName">Referenced entity schema name to query.</param>
+	/// <param name="recordId">Record identifier to look up.</param>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <returns>Whether the record exists, was not found, or could not be verified.</returns>
+	LookupRecordExistence CheckRecordExists(string schemaName, Guid recordId, RemoteCommandOptions options);
 }
 
 internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesignerClient
@@ -174,6 +186,39 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			options,
 			"SelectQuery(SysSettings)");
 		return response.Rows ?? [];
+	}
+
+	public LookupRecordExistence CheckRecordExists(string schemaName, Guid recordId, RemoteCommandOptions options) {
+		if (string.IsNullOrWhiteSpace(schemaName) || recordId == Guid.Empty) {
+			return LookupRecordExistence.Unknown;
+		}
+		object query = SelectQueryHelper.BuildSelectQuery(
+			schemaName,
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition(
+					"Id",
+					recordId.ToString("D"),
+					SelectQueryHelper.GuidDataValueType)
+			],
+			rowCount: 1);
+		try {
+			RecordIdSelectQueryResponse response = PostToUrl<object, RecordIdSelectQueryResponse>(
+				_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+				query,
+				options,
+				$"SelectQuery({schemaName})");
+			return (response.Rows?.Length ?? 0) > 0 ? LookupRecordExistence.Exists : LookupRecordExistence.NotFound;
+		} catch (Exception ex) when (ex is InvalidOperationException
+				or System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or Newtonsoft.Json.JsonException) {
+			// Cannot verify existence (security denial on the referenced entity, or a transport/timeout/parse
+			// fault): degrade to Unknown so a previously-working write is never blocked on a check that could
+			// not be performed (LookupRecordExistence.Unknown contract).
+			return LookupRecordExistence.Unknown;
+		}
 	}
 
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)

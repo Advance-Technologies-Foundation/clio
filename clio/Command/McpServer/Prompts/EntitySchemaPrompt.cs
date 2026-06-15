@@ -62,6 +62,12 @@ public static class EntitySchemaPrompt {
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save.
+		 For a lookup column, a `Const` default is the GUID of a record in the referenced schema — obtain it
+		 by inserting/reading that record first (e.g. `odata-create` returns the new record `id`), then set
+		 `default-value-config` `source=Const`, `value=<that GUID>`. clio validates the record exists before
+		 save and rejects an unknown GUID. On readback, `get-entity-schema-column-properties` enriches the
+		 lookup `Const` default-value-config with `display-value` (and a `record-resolution` marker when it
+		 cannot be resolved) so you can verify which record the default points to without a second query.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
 		 `{extendParent}`.
 		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the schema and column captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
