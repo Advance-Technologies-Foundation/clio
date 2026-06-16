@@ -312,6 +312,24 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonNode ViewModelConfig { get; init; }
 
+	/// <summary>
+	/// Ready-to-paste <c>modelConfigDiff</c> built from <see cref="ModelConfig"/> — a single root merge
+	/// (<c>[{ "operation":"merge", "path":[], "values": &lt;modelConfig&gt; }]</c>). Paste it VERBATIM as the
+	/// mobile page's <c>modelConfigDiff</c>; do NOT hand-build it and NEVER source it from a pre-existing
+	/// body (that is how attribute <c>type</c> metadata gets dropped). Null when there is no model config.
+	/// </summary>
+	[JsonPropertyName("modelConfigDiff")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode ModelConfigDiff { get; init; }
+
+	/// <summary>
+	/// Ready-to-paste <c>viewModelConfigDiff</c> built from the filtered <see cref="ViewModelConfig"/> — a
+	/// single root merge. Paste it VERBATIM as the mobile page's <c>viewModelConfigDiff</c>. Null when none.
+	/// </summary>
+	[JsonPropertyName("viewModelConfigDiff")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode ViewModelConfigDiff { get; init; }
+
 	// ── Template recommendation ───────────────────────────────────────
 	[JsonPropertyName("recommendedMobileTemplate")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

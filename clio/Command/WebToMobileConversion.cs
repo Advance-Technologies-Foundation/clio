@@ -7,6 +7,8 @@ using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
 using Newtonsoft.Json.Linq;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
+using JsonArray = System.Text.Json.Nodes.JsonArray;
+using JsonObject = System.Text.Json.Nodes.JsonObject;
 
 // Freedom UI WEB -> Freedom UI MOBILE conversion ANALYSIS (advisory-only, ENG-89620).
 // This service builds NOTHING and performs no Creatio I/O. It inspects the source web page
@@ -98,6 +100,10 @@ public static class WebToMobileAnalysisService {
 		//    viewModelConfig drops attributes used only by dropped components.
 		JsonNode modelConfig = PassthroughModelConfig(bundle);
 		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap);
+		// Prebuilt, ready-to-paste diffs (single root merge) so the caller never hand-builds the
+		// data-source section (the step where attribute `type` was being dropped).
+		JsonNode modelConfigDiff = BuildRootMergeDiff(modelConfig);
+		JsonNode viewModelConfigDiff = BuildRootMergeDiff(viewModelConfig);
 
 		return new MobilePageConversionGuide {
 			SourcePage = sourcePage,
@@ -108,6 +114,8 @@ public static class WebToMobileAnalysisService {
 			DataSources = dataSources.Count > 0 ? dataSources : null,
 			ModelConfig = modelConfig,
 			ViewModelConfig = viewModelConfig,
+			ModelConfigDiff = modelConfigDiff,
+			ViewModelConfigDiff = viewModelConfigDiff,
 			RecommendedMobileTemplate = templateRule?.Mobile,
 			TemplateNote = templateRule?.Note,
 			ContainerMap = BuildContainerMap(templateRule),
@@ -392,6 +400,21 @@ public static class WebToMobileAnalysisService {
 		bundle.ModelConfig is { Count: > 0 } ? bundle.ModelConfig.DeepClone() : null;
 
 	/// <summary>
+	/// Wraps a full config object into a single ready-to-paste diff: one root merge that applies the whole
+	/// config (<c>[{ "operation":"merge", "path":[], "values": &lt;config&gt; }]</c>). Carries the config —
+	/// including every attribute's <c>type</c> — verbatim, so the caller pastes it instead of rebuilding the
+	/// data-source section by hand. The config is deep-cloned (a JsonNode can have only one parent).
+	/// </summary>
+	private static JsonNode BuildRootMergeDiff(JsonNode config) =>
+		config is null
+			? null
+			: new JsonArray(new JsonObject {
+				["operation"] = "merge",
+				["path"] = new JsonArray(),
+				["values"] = config.DeepClone()
+			});
+
+	/// <summary>
 	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
 	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
 	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
@@ -470,10 +493,11 @@ public static class WebToMobileAnalysisService {
 		};
 		if (hasModelConfig) {
 			constraints.Add(
-				"Apply the provided modelConfig VERBATIM via modelConfigDiff — keep every attribute and ALL of its " +
-				"properties exactly as provided (do not omit, rename, or reconstruct any fields). Dropping or altering " +
-				"an attribute's declared metadata can make its binding unresolvable in Mobile Designer " +
-				"(\"Item with the path … not found\").");
+				"Use the provided modelConfigDiff VERBATIM as the page's modelConfigDiff (it is a single root merge of " +
+				"the full modelConfig). Do NOT hand-build the data-source section and NEVER source it from a pre-existing " +
+				"or reference mobile body — that is how an attribute's \"type\" gets dropped, which makes its binding " +
+				"unresolvable in Mobile Designer (\"Item with the path … not found\"). Keep every attribute and all of " +
+				"its properties exactly as provided.");
 		}
 		if (hasViewModelConfig) {
 			constraints.Add(
@@ -497,7 +521,7 @@ public static class WebToMobileAnalysisService {
 			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed)."
 		};
 		if (hasDataSections) {
-			steps.Add("Apply the provided modelConfig and viewModelConfig VERBATIM (identical structural support on mobile) — build modelConfigDiff / viewModelConfigDiff from them and keep every attribute with all of its properties exactly as provided.");
+			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is a single root merge carrying the full config). Do NOT rebuild them by hand and never copy the data-source section from an existing body — keep every attribute's type and path.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");

@@ -26,6 +26,7 @@ public static class SchemaValidationService
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
+	private const string PathPropertyName = "path";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -139,6 +140,9 @@ public static class SchemaValidationService
 
 		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
+
+		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
+		if (!dsAttrTypeResult.IsValid) errors.AddRange(dsAttrTypeResult.Errors);
 
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
@@ -462,6 +466,82 @@ public static class SchemaValidationService
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Validates data-source attributes in a mobile body: a related/lookup-path attribute (its <c>path</c>
+	/// contains a dot, e.g. <c>QualifiedContact.JobTitle</c>) MUST declare a <c>type</c> (e.g.
+	/// <c>ForwardReference</c>). Without it the design-time data schema never registers the attribute and its
+	/// binding resolves to nothing in Mobile Designer (<c>Item with the path … not found</c>). Scans the whole
+	/// body so it also covers list / viewElement-scoped data sources, not just the page data source.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when a lookup-path attribute has no type.</returns>
+	public static SchemaValidationResult ValidateMobileDataSourceAttributeTypes(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			ScanDataSourceAttributeTypes(document.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Recursively finds every <c>attributes</c> map and flags any attribute whose direct <c>path</c> is a
+	/// related/lookup path (contains a dot) but is missing <c>type</c>. Attribute maps in viewModelConfig use
+	/// <c>modelConfig.path</c> (no direct <c>path</c>) and own columns have a dot-free path — neither is flagged.
+	/// </summary>
+	private static void ScanDataSourceAttributeTypes(JsonElement element, SchemaValidationResult result) {
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					if (string.Equals(property.Name, AttributesPropertyName, StringComparison.OrdinalIgnoreCase) &&
+						property.Value.ValueKind == JsonValueKind.Object) {
+						CheckDataSourceAttributes(property.Value, result);
+					}
+					ScanDataSourceAttributeTypes(property.Value, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					ScanDataSourceAttributeTypes(item, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckDataSourceAttributes(JsonElement attributes, SchemaValidationResult result) {
+		foreach (JsonProperty attr in attributes.EnumerateObject()) {
+			if (attr.Value.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!attr.Value.TryGetProperty(PathPropertyName, out JsonElement pathEl) ||
+				pathEl.ValueKind != JsonValueKind.String) {
+				continue; // not a data-source attribute (a viewModel attribute uses modelConfig.path)
+			}
+			string? path = pathEl.GetString();
+			if (string.IsNullOrEmpty(path) || !path.Contains('.')) {
+				continue; // own column (dot-free path) — no related-column type required
+			}
+			if (attr.Value.TryGetProperty(TypePropertyName, out _)) {
+				continue; // type present — OK
+			}
+			result.Errors.Add(
+				$"\"{attr.Name}\" has a related path \"{path}\" but no \"type\" (expected \"ForwardReference\" " +
+				"or other valid related-column type). The binding may resolve to nothing in Mobile Designer " +
+				"(\"Item with the path … not found\").");
+		}
 	}
 
 	/// <summary>

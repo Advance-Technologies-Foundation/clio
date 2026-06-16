@@ -465,4 +465,39 @@ public sealed class WebToMobileConversionServiceTests {
 		attrs.ContainsKey("AttrB").Should().BeTrue(because: "referenced by the surviving NameField");
 		attrs.ContainsKey("AttrC").Should().BeTrue(because: "no consumer → kept");
 	}
+
+	[Test]
+	[Description("The guide emits ready-to-paste modelConfigDiff/viewModelConfigDiff as a single root merge carrying the full config verbatim (attribute types preserved).")]
+	public void Analyze_PrebuiltDiffs_RootMergeCarriesConfigVerbatim() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "config": { "attributes": {
+				"QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } } } } } }
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.QualifiedContactJobTitle" } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		// modelConfigDiff: single root merge that carries the attribute type verbatim.
+		guide.ModelConfigDiff.Should().NotBeNull();
+		JsonArray mcd = guide.ModelConfigDiff!.AsArray();
+		mcd.Should().HaveCount(1);
+		JsonObject op = mcd[0]!.AsObject();
+		op["operation"]!.GetValue<string>().Should().Be("merge");
+		op["path"]!.AsArray().Should().BeEmpty();
+		op["values"]!["dataSources"]!["PDS"]!["config"]!["attributes"]!
+			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>().Should().Be("ForwardReference");
+
+		// viewModelConfigDiff: single root merge carrying the (filtered) viewModelConfig.
+		guide.ViewModelConfigDiff.Should().NotBeNull();
+		JsonObject vop = guide.ViewModelConfigDiff!.AsArray()[0]!.AsObject();
+		vop["operation"]!.GetValue<string>().Should().Be("merge");
+		vop["values"]!["attributes"]!["QualifiedContactJobTitle"].Should().NotBeNull();
+	}
 }

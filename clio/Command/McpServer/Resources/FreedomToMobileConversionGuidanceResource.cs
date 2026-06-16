@@ -52,10 +52,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    re-derive placement from containerMap + componentSuggestions.
 			  - mobileContracts — for each suggested mobile type: allowedProperties + example +
 			    designerDefaults, so you can build the component's values inline.
-			  - modelConfig — the source page's FULL model config (data sources + attributes). Mobile has
-			    identical structural support: APPLY IT VERBATIM (see DATA SECTIONS below).
-			  - viewModelConfig — the source viewModelConfig, already FILTERED for mobile (attributes used
-			    only by dropped components removed). Apply it via viewModelConfigDiff (see DATA SECTIONS below).
+			  - modelConfigDiff / viewModelConfigDiff — READY-TO-PASTE diffs (each a single root merge of the
+			    full config). Paste them VERBATIM as the page's modelConfigDiff / viewModelConfigDiff
+			    (see DATA SECTIONS below). This is the supported way to apply the data sections.
+			  - modelConfig / viewModelConfig — the same configs in full-object form, for REFERENCE only.
+			    viewModelConfig is already FILTERED (attributes used only by dropped components removed).
 			  - constraints + nextSteps — the hard mobile rules and the ordered flow.
 
 			─────────────────────────────────────────────────────────────
@@ -89,9 +90,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   For many→one suggestions (primaryWebMerge set, e.g. crt.FolderTree + crt.FolderTreeActions
 			   -> crt.FolderTreeActions), emit a SINGLE mobile component and merge in the secondary
 			   component's properties; do not emit the secondary as a separate component.
-			5. Apply the data sections (guide.modelConfig + guide.viewModelConfig) to the body — build
-			   modelConfigDiff / viewModelConfigDiff from them VERBATIM (see DATA SECTIONS below). Do this
-			   for the data sections instead of reconstructing attributes by hand.
+			5. Apply the data sections — paste guide.modelConfigDiff and guide.viewModelConfigDiff VERBATIM as
+			   the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). Do NOT rebuild them
+			   by hand, and NEVER copy the data-source section from a pre-existing / reference body.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
 			7. Persist with update-page. Then tell the user to open the result in Freedom UI Mobile
@@ -107,22 +108,30 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			- requiresManualDecision : unknown/custom or ambiguous UX; decide with the user.
 
 			─────────────────────────────────────────────────────────────
-			DATA SECTIONS — modelConfig / viewModelConfig (apply, don't rebuild)
+			DATA SECTIONS — modelConfigDiff / viewModelConfigDiff (paste, don't rebuild)
 			─────────────────────────────────────────────────────────────
-			Both metadata sections have IDENTICAL structural support in the mobile runtime, so the guide
-			hands them to you ready to apply — do NOT reconstruct them from memory.
+			Both metadata sections have IDENTICAL structural support in the mobile runtime, and the guide
+			already hands them to you as ready-to-paste diffs.
 
-			- modelConfig (guide.modelConfig): copy it VERBATIM into modelConfigDiff. CRITICAL: keep every
-			  attribute and ALL of its properties exactly as provided — do not omit, rename, or reconstruct any
-			  fields. Related/lookup-path columns (columns reached through a lookup) carry extra metadata in their
-			  attribute declaration; if any of it is dropped, the binding resolves to nothing and the Mobile
-			  Designer shows "Item with the path … not found" (and the auto-derived caption breaks too). Own
-			  columns that are not declared in attributes resolve automatically. When in doubt, apply each
-			  attribute object exactly as the guide gives it.
-			- viewModelConfig (guide.viewModelConfig): structurally supported on mobile; apply it via
+			HARD RULE — NEVER source data-source attributes (modelConfigDiff) from a pre-existing or reference
+			mobile body. That is exactly how an attribute's "type" (e.g. ForwardReference on a related/lookup
+			column) gets dropped, and the binding then resolves to nothing in Mobile Designer ("Item with the
+			path … not found"). Always build modelConfigDiff from the guide. If a target page already exists,
+			DISCARD its data-source section and rebuild it from guide.modelConfigDiff.
+
+			- modelConfigDiff (guide.modelConfigDiff): paste it VERBATIM as the page's modelConfigDiff. It is a
+			  single root merge that carries the full modelConfig (data sources + attributes) with every
+			  attribute's "type" and "path" intact. Do not omit, rename, or reconstruct any fields. (Own columns
+			  that are not declared in attributes resolve automatically; only related/lookup-path columns are
+			  declared, and each MUST keep its "type".)
+			- viewModelConfigDiff (guide.viewModelConfigDiff): paste it VERBATIM as the page's
 			  viewModelConfigDiff. The guide ALREADY removed attributes referenced only by dropped/unsupported
-			  components — keep the rest as provided. Converters: reference only OOTB mobile converters; a
-			  definitive mobile converter list is forthcoming — flag any custom converter for manual review.
+			  components. Converters: reference only OOTB mobile converters; a definitive mobile converter list
+			  is forthcoming — flag any custom converter for manual review.
+			- guide.modelConfig / guide.viewModelConfig are the same data in full-object form, for reference.
+
+			CHECKLIST before validate-page: verify every data-source attribute whose "path" contains a "."
+			still has its "type". (validate-page now also flags this as an error and update-page blocks the save.)
 
 			─────────────────────────────────────────────────────────────
 			HARD MOBILE RULES (see also get-guidance `mobile-page-modification`)
