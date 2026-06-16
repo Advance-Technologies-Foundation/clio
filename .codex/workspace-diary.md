@@ -3895,3 +3895,17 @@ Decision: Inject Clio.Common.ILogger; wrap extraction in BeginSpinner/try-finall
 Discovery: ConsoleLogger spinner only no-ops when Console.IsOutputRedirected; tests must inject NullLogger via AdditionalRegistrations (applied after base ILogger reg at BindingsModule.cs:643, last-wins) to stay deterministic cross-OS.
 Files: clio/Common/ScenarioHandlers/Unzip.cs, clio.tests/Requests/UnzipHandlerTests.cs
 Impact: Reference for migrating other hand-rolled Console spinners to the ILogger spinner; shows DI-override pattern to neutralize spinner in command/handler tests.
+
+## 2026-06-16 – CLIO005 false-positive reduction (broadened consumption)
+Context: CLIO005 (UnusedDiServiceAnalyzer) fired ~336 raw / ~168 unique on real clio build, mostly *Command/*Tool resolved indirectly via generic dispatch Resolve<T>() (type arg, not GetRequiredService<Concrete>).
+Decision: broadened consumption in UnusedDiServiceAnalyzer.cs — non-registration generic invocation type-args + generic object-creation type-args (new Bar<Foo>() → Foo) + typeof(Foo) all now count as consumption. Add* registrations excluded from self-consumption (registration branch returns early; typeof inside Add* skipped via IsTypeOfInsideRegistration). Unbound type params skipped naturally (not INamedTypeSymbol).
+Discovery: after fix, unique flagged services 168→71 (raw 336→284; clio multi-targets net8.0+net10.0 so raw doubles, 71 unique on either single or full build). Remaining 71 = 46 MCP *Tool (AddTransient<XTool>() in BindingsModule, instantiated by reflection/[McpServerToolAttribute] scan in McpToolSchemaCatalog — never a type-arg/typeof literal, so legitimately flagged), 11 *Validator, 14 other services. *Command flood gone (now seen via Resolve<T>() in Program.cs).
+Files: Clio.Analyzers/UnusedDiServiceAnalyzer.cs, Clio.Analyzers.Tests/UnusedDiServiceAnalyzerTests.cs
+Impact: analyzer no longer floods on indirect-generic-dispatch resolution; remaining list is the honest candidate set (reflection-resolved MCP tools dominate — would need [ResolvedDynamically] or a reflection-aware heuristic, deliberately NOT applied here).
+
+## 2026-06-16 – CLIO005 MCP reflection heuristic + triage evidence
+Context: CLIO005 flagged 71 services; 46 were MCP tools instantiated by reflection.
+Decision: Generalized the ResolvedDynamically attribute check into a name set {ResolvedDynamicallyAttribute, McpServerToolAttribute}; check type-level AND declared-method-level attributes (McpServerTool sits on a tool METHOD, mirroring McpToolSchemaCatalog's DeclaredOnly assembly scan).
+Discovery: BindingsModule.RegisterFluentValidators (typeof(IValidator<>) loop) and RegisterAssemblyInterfaceTypes (every Clio I* interface) auto-register interfaces reflectively — the analyzer cannot see these, so every explicit concrete AddTransient<XValidator>/<XAssertion>/<XService>() is REDUNDANT-CONCRETE when the type is consumed only via its interface. 71→25 after the MCP heuristic; the remaining 25 are all redundant-concrete (validators, assertions, interface-backed services) except IisScannerHandler concrete (used via static GetSites + alive via IIisScanner/IExternalLinkHandler).
+Files: Clio.Analyzers/UnusedDiServiceAnalyzer.cs, Clio.Analyzers.Tests/UnusedDiServiceAnalyzerTests.cs
+Impact: Heuristic suppresses all 46 MCP tools; triage table classifies the residual 25 for a future removal unit. No production removals in this unit.
