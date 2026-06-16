@@ -126,7 +126,6 @@
 	<ItemGroup Label="Centrally Managed Package Versions">
 		<PackageReference Include="creatio.client" />
 		<PackageReference Include="ATF.Repository" />
-		<PackageReference Include="MediatR" />
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />

@@ -108,7 +108,7 @@ is enforced via Claude Code slash commands and specialized agents.
         ▼
   [architect-agent]   → spec/adr/adr-{feature}.md
   Architect: codebase analysis, design decisions, file list,
-  MediatR handler contract, test strategy
+  command/service contract, test strategy
         │
         ▼
   [story-writer]      → spec/stories/story-{feature}-N.md
