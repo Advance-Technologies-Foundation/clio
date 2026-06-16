@@ -75,6 +75,7 @@ internal class Program {
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
 		typeof(SetAutoupdateOptions),
+		typeof(ExperimentalOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
@@ -247,6 +248,22 @@ internal class Program {
 	}
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
+		// Defense-in-depth feature gate at the single dispatch chokepoint: every path that runs a
+		// command (normal parse, scenario runner, any future caller) flows through here, so a
+		// gated-off command is unreachable on all surfaces — not only the filtered parse array.
+		// IFeatureToggleService is resolved through the same Resolve mechanism the switch uses to get
+		// commands (passing the options so the container bootstraps with the matching profile), so we
+		// never introduce a second container-bootstrap pattern. The decision is delegated entirely to
+		// IsEnabled (the single rule); the [FeatureToggle] attribute is only re-read here to format the
+		// user-facing message, and in the disabled branch it is guaranteed present.
+		IFeatureToggleService featureToggleService = Resolve<IFeatureToggleService>(instance);
+		if (TryGetDisabledFeatureName(instance, featureToggleService, out string disabledFeatureName)) {
+			string verb = instance.GetType().GetCustomAttribute<VerbAttribute>()?.Name ?? "undefined-command";
+			ConsoleLogger.Instance.WriteError(
+				$"Error: command '{verb}' is part of a disabled experimental feature '{disabledFeatureName}'. "
+				+ $"Enable it with: clio experimental --name {disabledFeatureName} --enable");
+			return 1;
+		}
 		return instance switch {
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
@@ -306,6 +323,7 @@ internal class Program {
 			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
+			ExperimentalOptions opts => Resolve<ExperimentalCommand>().Execute(opts),
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 			PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
@@ -427,6 +445,34 @@ internal class Program {
 			var _ => 1
 		};
 	};
+
+	/// <summary>
+	/// Determines whether the supplied options object's type is gated behind a feature flag that is
+	/// currently disabled, and if so yields the feature name for messaging.
+	/// </summary>
+	/// <param name="options">The parsed command options object whose type carries the gate.</param>
+	/// <param name="featureToggleService">The service that decides whether the type is enabled.</param>
+	/// <param name="featureName">
+	/// When the method returns <c>true</c>, the disabled feature key; otherwise <c>null</c>.
+	/// </param>
+	/// <returns>
+	/// <c>true</c> when the type is gated and its feature flag is off (dispatch must be refused);
+	/// <c>false</c> when the type is ungated or its flag is on.
+	/// </returns>
+	internal static bool TryGetDisabledFeatureName(
+		object options, IFeatureToggleService featureToggleService, out string featureName) {
+		featureName = null;
+		if (options is null || featureToggleService is null) {
+			return false;
+		}
+		Type optionsType = options.GetType();
+		if (featureToggleService.IsEnabled(optionsType)) {
+			return false;
+		}
+		// IsEnabled returns true for an unattributed type, so reaching here guarantees the attribute.
+		featureName = optionsType.GetCustomAttribute<FeatureToggleAttribute>(inherit: false)?.FeatureName;
+		return true;
+	}
 
 	private static string[] OriginalArgs;
 
@@ -1096,7 +1142,12 @@ internal class Program {
 		
 		RunStartupUpdateCheck(args, bm);
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
-		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
+		// Feature gate: only enabled command option types reach the parser. A verb whose
+		// [FeatureToggle] flag is off is filtered out here, so the parser treats it as unknown
+		// (indistinguishable from a typo). Types without [FeatureToggle] are always kept.
+		IFeatureToggleService featureToggleService = bm.GetRequiredService<IFeatureToggleService>();
+		Type[] enabledCommandOption = FeatureToggleFilter.GetEnabled(CommandOption, featureToggleService);
+		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, enabledCommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
@@ -1199,7 +1250,13 @@ internal class Program {
 		IServiceProvider serviceProvider = bindingsModule.Register();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = serviceProvider.GetRequiredService<IWorkingDirectoriesProvider>();
 		string repositoryRoot = FindRepositoryRoot(workingDirectoriesProvider.ExecutingDirectory);
-		HelpArtifactExporter exporter = serviceProvider.GetRequiredService<HelpArtifactExporter>();
+		// Generate docs with the deterministic export-baseline feature service (gated commands are
+		// treated as off) so committed artifacts never depend on the local appsettings.json flags of
+		// whoever runs the regeneration. The runtime help path keeps the live settings-backed service.
+		System.IO.Abstractions.IFileSystem fileSystem = serviceProvider.GetRequiredService<System.IO.Abstractions.IFileSystem>();
+		CommandHelpCatalog catalog = serviceProvider.GetRequiredService<CommandHelpCatalog>();
+		CommandHelpRenderer renderer = new(fileSystem, catalog, new ExportFeatureToggleService());
+		HelpArtifactExporter exporter = new(fileSystem, catalog, renderer);
 		return exporter.Export(repositoryRoot);
 	}
 
