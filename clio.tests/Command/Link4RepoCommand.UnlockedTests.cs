@@ -6,12 +6,12 @@ using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
+using Clio.Requests;
 using Clio.UserEnvironment;
 using ConsoleTables;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
-using MediatR;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -53,7 +53,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 		_logger = new CapturedLogger();
 		_command = new TestableUnlockedLink4RepoCommand(
 			_logger,
-			Substitute.For<IMediator>(),
+			Substitute.For<IIisScanner>(),
 			_settingsRepository,
 			_fileSystem,
 			new RfsEnvironment(
@@ -424,7 +424,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 
 		public TestableUnlockedLink4RepoCommand(
 			ILogger logger,
-			IMediator mediator,
+			IIisScanner iisScanner,
 			ISettingsRepository settingsRepository,
 			Clio.Common.IFileSystem fileSystem,
 			RfsEnvironment rfsEnvironment,
@@ -434,7 +434,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 			ISysSettingsManager sysSettingsManager,
 			IPackageLockManager packageLockManager,
 			IFileDesignModePackages fileDesignModePackages)
-			: base(logger, mediator, settingsRepository, fileSystem, rfsEnvironment, validator,
+			: base(logger, iisScanner, settingsRepository, fileSystem, rfsEnvironment, validator,
 				applicationPackageListProvider, jsonConverter, sysSettingsManager, packageLockManager,
 				fileDesignModePackages) {
 		}

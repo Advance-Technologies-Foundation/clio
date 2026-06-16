@@ -1,10 +1,8 @@
 using System;
 using FluentValidation;
-using MediatR;
 using OneOf;
 using System.IO;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 
@@ -49,16 +47,44 @@ namespace Clio.Common.ScenarioHandlers {
         }
     }
 
-    internal class UpdateIISSitePhysicalPathRequestHandler : IRequestHandler<UpdateIISSitePhysicalPathRequest, OneOf<BaseHandlerResponse, HandlerError>> {
+    /// <summary>
+    /// Handles <see cref="UpdateIISSitePhysicalPathRequest"/> scenario steps by updating the
+    /// physical path of an existing IIS site (and its <c>0</c> web application) for a Creatio deployment.
+    /// </summary>
+    public interface IUpdateIISSitePhysicalPathHandler {
+
+        /// <summary>
+        /// Validates the request and, when valid, updates the physical path of the IIS site's
+        /// root virtual directory (and the <c>0</c> web application virtual directory when present)
+        /// described by the request <c>Arguments</c> (site name and physical path).
+        /// </summary>
+        /// <param name="request">The request carrying the IIS site physical path arguments.</param>
+        /// <returns>
+        /// A <see cref="OneOf{T0, T1}"/> containing a <see cref="BaseHandlerResponse"/>
+        /// (a <see cref="UpdateIISSitePhysicalPathResponse"/>) on success or a <see cref="HandlerError"/> on failure.
+        /// </returns>
+        /// <exception cref="FluentValidation.ValidationException">
+        /// Thrown when the request fails validation (for example, missing required arguments
+        /// or a non-existent physical path).
+        /// </exception>
+        Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request);
+    }
+
+    internal class UpdateIISSitePhysicalPathRequestHandler : IUpdateIISSitePhysicalPathHandler {
         private readonly IProcessExecutor _processExecutor;
         private readonly ILogger _logger;
+        private readonly IValidator<UpdateIISSitePhysicalPathRequest> _validator;
 
-        public UpdateIISSitePhysicalPathRequestHandler(IProcessExecutor processExecutor, ILogger logger) {
+        public UpdateIISSitePhysicalPathRequestHandler(IProcessExecutor processExecutor, ILogger logger, IValidator<UpdateIISSitePhysicalPathRequest> validator) {
             _processExecutor = processExecutor;
             _logger = logger;
+            _validator = validator;
         }
 
-        public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request, CancellationToken cancellationToken) {
+        /// <inheritdoc />
+        public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request) {
+            _validator.ValidateAndThrow(request);
+
             string siteName = request.Arguments["siteName"].Trim();
             string physicalPath = request.Arguments["physicalPath"].Trim();
 

@@ -6,37 +6,36 @@ using Clio.Common.ScenarioHandlers;
 using Clio.Tests.Command;
 using FluentAssertions;
 using FluentValidation;
-using MediatR;
 using NUnit.Framework;
 
 namespace Clio.Tests.Requests;
 
 [TestFixture]
 [Property("Module", "Requests")]
-internal class MediatorPipelineIntegrationTests : BaseClioModuleTests {
+internal class UnzipHandlerTests : BaseClioModuleTests {
 	[Test]
-	[Description("Applies ValidationBehaviour to mediator requests and rejects invalid scenario handler input before the handler runs.")]
-	public async Task Send_Should_Throw_ValidationException_For_Invalid_Unzip_Request() {
+	[Description("Validates the unzip request explicitly and rejects invalid scenario handler input before extraction runs.")]
+	public async Task Handle_ShouldThrowValidationException_WhenUnzipRequestIsInvalid() {
 		// Arrange
-		IMediator mediator = Container.GetRequiredService<IMediator>();
+		IUnzipHandler handler = Container.GetRequiredService<IUnzipHandler>();
 		UnzipRequest request = new() {
 			Arguments = []
 		};
 
 		// Act
-		Func<Task> act = async () => await mediator.Send(request);
+		Func<Task> act = async () => await handler.Handle(request);
 
 		// Assert
 		await act.Should().ThrowAsync<ValidationException>(
-			because: "the open MediatR validation behavior should execute registered FluentValidation validators before handler execution");
+			because: "the handler should run the registered FluentValidation validator before extracting files");
 	}
 
 	[Test]
-	[Description("Dispatches valid scenario handler requests through MediatR and reaches the registered handler implementation.")]
-	public async Task Send_Should_Run_Unzip_Handler_For_Valid_Request() {
+	[Description("Extracts a valid archive to the target directory when the unzip request passes validation.")]
+	public async Task Handle_ShouldExtractArchive_WhenUnzipRequestIsValid() {
 		// Arrange
-		IMediator mediator = Container.GetRequiredService<IMediator>();
-		string workingDirectory = Path.Combine(Path.GetTempPath(), $"clio-mediatr-{Guid.NewGuid():N}");
+		IUnzipHandler handler = Container.GetRequiredService<IUnzipHandler>();
+		string workingDirectory = Path.Combine(Path.GetTempPath(), $"clio-unzip-{Guid.NewGuid():N}");
 		string archivePath = Path.Combine(workingDirectory, "archive.zip");
 		string destinationDirectory = Path.Combine(workingDirectory, "out");
 		string extractedDirectory = Path.Combine(destinationDirectory, "nested");
@@ -55,12 +54,12 @@ internal class MediatorPipelineIntegrationTests : BaseClioModuleTests {
 
 		try {
 			// Act
-			var result = await mediator.Send(request);
+			var result = await handler.Handle(request);
 
 			// Assert
 			Directory.Exists(extractedDirectory).Should().BeTrue(
-				because: "a valid request should pass through the MediatR pipeline and execute the unzip handler");
-			result.Value.Should().NotBeNull(because: "the handler should return a success response through MediatR");
+				because: "a valid request should pass validation and execute the unzip handler");
+			result.Value.Should().NotBeNull(because: "the handler should return a success response");
 		}
 		finally {
 			if (Directory.Exists(workingDirectory)) {

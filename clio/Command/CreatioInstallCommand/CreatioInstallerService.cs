@@ -16,7 +16,6 @@ using Clio.Common.DeploymentStrategies;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
-using MediatR;
 using IFileSystem = Clio.Common.IFileSystem;
 using MsFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -120,7 +119,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly string _iisRootFolder;
 	private readonly k8Commands _k8;
 	private readonly ILogger _logger;
-	private readonly IMediator _mediator;
+	private readonly IConfigureConnectionStringHandler _configureConnectionStringHandler;
 	private readonly MsFileSystem _msFileSystem;
 	private readonly ILocalRedisServerResolver _localRedisServerResolver;
 	private readonly IPackageArchiver _packageArchiver;
@@ -144,7 +143,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// </summary>
 	/// <param name="packageArchiver">Archive service used to unpack deployment files.</param>
 	/// <param name="k8">Kubernetes command facade.</param>
-	/// <param name="mediator">Mediator for scenario handler requests.</param>
+	/// <param name="configureConnectionStringHandler">Handler that writes deployment connection strings.</param>
 	/// <param name="registerCommand">Command used to register the deployed application environment.</param>
 	/// <param name="settingsRepository">Settings repository for deployment paths and defaults.</param>
 	/// <param name="fileSystem">Filesystem abstraction.</param>
@@ -162,7 +161,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
-		IMediator mediator, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
+		IConfigureConnectionStringHandler configureConnectionStringHandler, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, MsFileSystem msFileSystem, ILogger logger,
 		DeploymentStrategyFactory deploymentStrategyFactory,
 		HealthCheckCommand healthCheckCommand, IDbClientFactory dbClientFactory,
@@ -176,7 +175,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
-		_mediator = mediator;
+		_configureConnectionStringHandler = configureConnectionStringHandler;
 		_registerCommand = registerCommand;
 		_fileSystem = fileSystem;
 		_msFileSystem = msFileSystem;
@@ -1066,7 +1065,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		};
 
-		return (await _mediator.Send(request)).Value switch {
+		return (await _configureConnectionStringHandler.Handle(request)).Value switch {
 				   HandlerError error => ExitWithErrorMessage(error.ErrorDescription),
 				   ConfigureConnectionStringResponse {
 					   Status: BaseHandlerResponse.CompletionStatus.Success

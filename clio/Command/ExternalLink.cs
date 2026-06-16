@@ -4,7 +4,6 @@ namespace Clio.Command {
 	using CommandLine;
 	using FluentValidation;
 	using FluentValidation.Results;
-	using MediatR;
 	using System;
 	using System.Collections.Generic;
 	using System.Globalization;
@@ -45,15 +44,15 @@ namespace Clio.Command {
 	public class ExternalLinkCommand : Command<ExternalLinkOptions> {
 
 		#region Fields: Private
-		private readonly IMediator _mediator;
+		private readonly IEnumerable<IExternalLinkHandler> _handlers;
 		private readonly IValidator<ExternalLinkOptions> _validator;
 		private readonly ILogger _logger;
 		#endregion
 
 		#region Constructors: Public
 
-		public ExternalLinkCommand(IMediator mediator, IValidator<ExternalLinkOptions> validator, ILogger logger) {
-			_mediator = mediator;
+		internal ExternalLinkCommand(IEnumerable<IExternalLinkHandler> handlers, IValidator<ExternalLinkOptions> validator, ILogger logger) {
+			_handlers = handlers;
 			_validator = validator;
 			_logger = logger;
 		}
@@ -87,11 +86,19 @@ namespace Clio.Command {
 			IExternalLink xRequest = Activator.CreateInstance(runtimeType, true) as IExternalLink;
 			xRequest.Content = options.Content;
 
+			IExternalLinkHandler handler = _handlers
+				.FirstOrDefault(h => h.RequestType == runtimeType);
+			if (handler is null)
+			{
+				_logger.WriteError($"No handler is registered for deep-link request '{_uri.Host}'.");
+				return 1;
+			}
+
 			Task.Run(async () =>
 			{
 				try
 				{
-					await _mediator.Send(xRequest);
+					await handler.Handle(xRequest);
 				}
 				catch (ValidationException vex)
 				{
