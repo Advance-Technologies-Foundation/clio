@@ -15,6 +15,7 @@ namespace Clio.Command.McpServer.Tools;
 /// Pure analysis: no environment, no I/O.
 /// </summary>
 [McpServerToolType]
+[FeatureToggle("validate-process-graph")]
 public sealed class ValidateProcessGraphTool {
 	internal const string ToolName = "validate-process-graph";
 
