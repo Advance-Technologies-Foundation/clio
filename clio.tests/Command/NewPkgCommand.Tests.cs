@@ -86,4 +86,46 @@ public class NewPkgCommandTestCase
 		}
 	}
 
+	[Test, Category("Unit")]
+	[Description("ReferenceCommand must be resolvable from the DI container that Program.cs uses (guards against issue #674 where the command could not be constructed for the ref-to / new-pkg verbs)")]
+	public void ReferenceCommand_ShouldResolveFromContainer_WhenRegisteredInBindingsModule() {
+		// Arrange — build the same container Program.cs resolves commands from.
+		IServiceProvider container = new BindingsModule().Register(new EnvironmentSettings());
+
+		// Act
+		ReferenceCommand command = container.GetRequiredService<ReferenceCommand>();
+
+		// Assert
+		command.Should().NotBeNull(
+			because: "Program.cs resolves ReferenceCommand from DI for the ref-to verb and all of its dependencies must be registered");
+	}
+
+	[Test, Category("Unit")]
+	[Description("NewPkgCommand must be resolvable from the DI container that Program.cs uses, including its Command<ReferenceOptions> dependency (guards against the wiring regression from issue #674)")]
+	public void NewPkgCommand_ShouldResolveFromContainer_WhenRegisteredInBindingsModule() {
+		// Arrange — build the same container Program.cs resolves commands from.
+		IServiceProvider container = new BindingsModule().Register(new EnvironmentSettings());
+
+		// Act
+		NewPkgCommand command = container.GetRequiredService<NewPkgCommand>();
+
+		// Assert
+		command.Should().NotBeNull(
+			because: "Program.cs resolves NewPkgCommand from DI for the new-pkg verb and its Command<ReferenceOptions> dependency must be registered");
+	}
+
+	[Test, Category("Unit")]
+	[Description("The Command<ReferenceOptions> dependency that NewPkgCommand requires must resolve to ReferenceCommand (this is the exact registration that broke in issue #674)")]
+	public void CommandReferenceOptions_ShouldResolveToReferenceCommand_WhenRegisteredInBindingsModule() {
+		// Arrange — build the same container Program.cs resolves commands from.
+		IServiceProvider container = new BindingsModule().Register(new EnvironmentSettings());
+
+		// Act
+		Command<ReferenceOptions> command = container.GetRequiredService<Command<ReferenceOptions>>();
+
+		// Assert
+		command.Should().BeOfType<ReferenceCommand>(
+			because: "NewPkgCommand depends on Command<ReferenceOptions> and issue #674 broke exactly this mapping");
+	}
+
 }

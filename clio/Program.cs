@@ -19,7 +19,6 @@ using Clio.Command.Update;
 using Clio.Common;
 using Clio.Help;
 using Clio.Package;
-using Clio.Project;
 using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -256,7 +255,7 @@ internal class Program {
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
-			UnregAppOptions opts => CreateCommand<UnregAppCommand>(Resolve<ISettingsRepository>(), ConsoleLogger.Instance).Execute(opts),
+			UnregAppOptions opts => Resolve<UnregAppCommand>().Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 			PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
 			InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
@@ -276,11 +275,8 @@ internal class Program {
 			GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
 			CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
 			DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
-			ReferenceOptions opts => CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>())
-				.Execute(opts),
-			NewPkgOptions opts => CreateCommand<NewPkgCommand>(Resolve<ISettingsRepository>(),
-					CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>()), ConsoleLogger.Instance)
-				.Execute(opts),
+			ReferenceOptions opts => Resolve<ReferenceCommand>().Execute(opts),
+			NewPkgOptions opts => Resolve<NewPkgCommand>().Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
@@ -551,16 +547,6 @@ internal class Program {
 		return Resolve<IPackageConverter>().Convert(opts);
 	}
 
-	/// <summary>
-	/// Creates a command of the specified type with the provided constructor arguments.
-	/// </summary>
-	/// <typeparam name="TCommand">Type of command to create</typeparam>
-	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
-	/// <returns>Instantiated command</returns>
-	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs){
-		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
-	}
-	
 	/// <summary>
 	/// Creates a remote command with a client connection to the Creatio environment.
 	/// </summary>
