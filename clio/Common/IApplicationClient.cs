@@ -19,19 +19,19 @@ public interface IApplicationClient{
 	void DownloadFile(string url, string filePath, string requestData);
 
 	string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1);
+		int maxAttempts = 1, int delaySec = 1);
 
-	string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1, int delaySec = 1);
+	string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1);
 
 	string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1);
+		int maxAttempts = 1, int delaySec = 1);
 
 	T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1)
+		int maxAttempts = 1, int delaySec = 1)
 		where T : BaseResponse, new();
 
 	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1);
+		int maxAttempts = 1, int delaySec = 1);
 
 	void Listen(CancellationToken cancellationToken);
 	void Login();

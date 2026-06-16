@@ -134,7 +134,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);
 		string saveResponseJson = ApplicationClient.ExecutePostRequest(saveSchemaUrl, saveRequestBody, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 		SaveDesignItemDesignerResponse saveResponse = UserTaskSchemaSupport
 			.Deserialize<SaveDesignItemDesignerResponse>(saveResponseJson, "SaveSchema");
 		UserTaskSchemaSupport.EnsureSaveSucceeded(saveResponse);
@@ -171,7 +171,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 	private WorkspaceExplorerItemDto FindWorkspaceUserTaskItem(string userTaskName, HashSet<string> workspacePackages) {
 		string getWorkspaceItemsUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems);
 		string responseJson = ApplicationClient.ExecutePostRequest(getWorkspaceItemsUrl, string.Empty, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 		WorkspaceItemsResponse response =
 			UserTaskSchemaSupport.Deserialize<WorkspaceItemsResponse>(responseJson, "GetWorkspaceItems");
 
@@ -202,7 +202,7 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 			Cultures = []
 		});
 		string responseJson = ApplicationClient.ExecutePostRequest(getSchemaUrl, requestBody, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 		DesignerResponse<ProcessUserTaskDesignSchemaDto> response = UserTaskSchemaSupport
 			.Deserialize<DesignerResponse<ProcessUserTaskDesignSchemaDto>>(responseJson, "GetSchema");
 		UserTaskSchemaSupport.EnsureResponseSucceeded(response, "GetSchema");
@@ -336,6 +336,6 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 			PackageName = packageName
 		});
 		Logger.WriteInfo($"Building package '{packageName}'...");
-		ApplicationClient.ExecutePostRequest(buildPackageUrl, buildRequestBody, RequestTimeout, RetryCount, DelaySec);
+		ApplicationClient.ExecutePostRequest(buildPackageUrl, buildRequestBody, RequestTimeout, MaxAttempts, DelaySec);
 	}
 }
