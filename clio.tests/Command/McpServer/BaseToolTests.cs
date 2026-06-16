@@ -4,6 +4,7 @@ using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -100,16 +101,163 @@ public sealed class BaseToolTests {
 		}
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The environment-scoped gate fails the tool with the PackageRequirementException message and never runs the command when a gated options type's requirement is unmet.")]
+	public void InternalExecuteGeneric_ShouldReturnFailedResultWithMessageAndNotRunCommand_WhenPackageRequirementCheckerThrowsPackageRequirementException() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<Type>()))
+			.Do(_ => throw new PackageRequirementException("Install the cliogate package."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new GatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "an unsatisfied package requirement must fail the MCP tool before the command runs");
+		messageValues.Should().Contain("Install the cliogate package.",
+			because: "the PackageRequirementException message must be surfaced verbatim to the MCP caller");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its package requirement is not satisfied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A non-PackageRequirementException failure during requirement verification (e.g. a GetPackages/HTTP failure) is converted into a clean failed result and the command never runs; no exception escapes the gate.")]
+	public void InternalExecuteGeneric_ShouldReturnCleanFailedResultAndNotRunCommand_WhenRequirementVerificationThrowsNonPackageRequirementException() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<Type>()))
+			.Do(_ => throw new InvalidOperationException("GetPackages failed: 401 Unauthorized."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new GatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "a verification failure must surface as a clean failed result, not an uncaught exception");
+		messageValues.Should().ContainMatch("*Could not verify package requirements*401 Unauthorized*",
+			because: "the infra failure must be converted into a graceful operator-facing message");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its package requirements could not be verified");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An options type without [RequiresPackage] never resolves a checker from the resolver and the command runs normally, keeping non-gated tools zero-cost and environment-free.")]
+	public void InternalExecuteGeneric_ShouldRunCommandWithoutResolvingChecker_WhenOptionsTypeHasNoRequiresPackageAttribute() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeUngatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Operation completed.");
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeUngatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		UngatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions());
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a tool without package requirements must run normally");
+		command.WasExecuted.Should().BeTrue(
+			because: "the command must run when its options type declares no package requirement");
+		resolver.DidNotReceive().Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().ResolveWithoutEnvironment<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The checker is obtained from the same IToolCommandResolver that resolves the command (environment-scoped), not from a ctor-injected instance: when the resolver is the only source of the checker, the gate still runs.")]
+	public void InternalExecuteGeneric_ShouldResolveCheckerFromCommandResolver_WhenOptionsTypeIsGated() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Operation completed.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		// No ctor-injected checker exists on BaseTool anymore; the resolver is the only source.
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new GatedToolHarnessOptions());
+
+		// Assert
+		resolver.Received(1).Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
+		checker.Received(1).EnsureRequirements(typeof(GatedToolHarnessOptions));
+		result.ExitCode.Should().Be(0,
+			because: "a satisfied package requirement verified through the environment-scoped checker must not block execution");
+		command.WasExecuted.Should().BeTrue(
+			because: "the command must run once the environment-scoped checker reports its requirements satisfied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[RequiresPackage("cliogate", "2.0.0.0")]
+	private sealed class GatedToolHarnessOptions : EnvironmentOptions { }
+
+	private sealed class UngatedToolHarnessOptions : EnvironmentOptions { }
+
 	private sealed record BaseToolHarnessOptions(string Scenario);
 
-	private sealed class BaseToolHarness : BaseTool<BaseToolHarnessOptions> {
-		public BaseToolHarness(Command<BaseToolHarnessOptions> command, ILogger logger)
-			: base(command, logger) {
-		}
+	private sealed class GatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
+		: BaseTool<GatedToolHarnessOptions>(command: null, logger, commandResolver) {
+		public CommandExecutionResult Execute(GatedToolHarnessOptions options) =>
+			InternalExecute<FakeGatedCommand>(options);
+	}
 
+	private sealed class UngatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
+		: BaseTool<UngatedToolHarnessOptions>(command: null, logger, commandResolver) {
+		public CommandExecutionResult Execute(UngatedToolHarnessOptions options) =>
+			InternalExecute<FakeUngatedCommand>(options);
+	}
+
+	private sealed class BaseToolHarness(Command<BaseToolHarnessOptions> command, ILogger logger)
+		: BaseTool<BaseToolHarnessOptions>(command, logger) {
 		public CommandExecutionResult Execute(BaseToolHarnessOptions options) => InternalExecute(options);
 
 		public TResponse ExecuteClean<TResponse>(Func<TResponse> executor) => ExecuteWithCleanLog(executor);
+	}
+
+	private sealed class FakeGatedCommand(ILogger logger, int exitCode, string messageToWrite)
+		: Command<GatedToolHarnessOptions> {
+		public bool WasExecuted { get; private set; }
+
+		public override int Execute(GatedToolHarnessOptions options) {
+			WasExecuted = true;
+			logger.WriteInfo(messageToWrite);
+			return exitCode;
+		}
+	}
+
+	private sealed class FakeUngatedCommand(ILogger logger, int exitCode, string messageToWrite)
+		: Command<UngatedToolHarnessOptions> {
+		public bool WasExecuted { get; private set; }
+
+		public override int Execute(UngatedToolHarnessOptions options) {
+			WasExecuted = true;
+			logger.WriteInfo(messageToWrite);
+			return exitCode;
+		}
 	}
 
 	private sealed class FakeBaseToolCommand : Command<BaseToolHarnessOptions> {
@@ -129,7 +277,10 @@ public sealed class BaseToolTests {
 			_executeException = executeException;
 		}
 
+		public bool WasExecuted { get; private set; }
+
 		public override int Execute(BaseToolHarnessOptions options) {
+			WasExecuted = true;
 			_logger.WriteInfo(_messageToWrite);
 			if (_executeException is not null) {
 				throw _executeException;

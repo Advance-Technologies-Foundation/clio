@@ -17,7 +17,6 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 	private readonly IPackageLockManager _packageLockManager = Substitute.For<IPackageLockManager>();
 	private readonly ISysSettingsManager _sysSettingsManager = Substitute.For<ISysSettingsManager>();
-	private readonly IClioGateway _clioGateway = Substitute.For<IClioGateway>();
 
 	#endregion
 
@@ -25,7 +24,7 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_ReturnsError_WhenMaintainerIsMissing_ForUnlockAll() {
-		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _clioGateway, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev"
 		};
@@ -40,7 +39,7 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_ReturnsError_WhenSchemaNamePrefixUpdateFails_ForUnlockAll() {
-		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _clioGateway, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev_env_n8",
 			Maintainer = "Creatio"
@@ -57,7 +56,7 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_SetsMaintainerAndUnlocksAllPackages_WhenMaintainerProvided() {
-		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _clioGateway, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev_env_n8",
 			Maintainer = "Creatio"
@@ -79,7 +78,7 @@ internal class UnlockPackageCommandTests : BaseCommandTests<UnlockPackageOptions
 
 	[Test]
 	public void Execute_UnlocksNamedPackages_WithoutMaintainerUpdate() {
-		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _clioGateway, _logger);
+		UnlockPackageCommand sut = new(_packageLockManager, _sysSettingsManager, _logger);
 		UnlockPackageOptions options = new() {
 			Environment = "dev",
 			Name = "Pkg1,Pkg2"

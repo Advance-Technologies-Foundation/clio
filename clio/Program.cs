@@ -265,6 +265,18 @@ internal class Program {
 				+ $"Enable it with: clio experimental --name {disabledFeatureName} --enable");
 			return 1;
 		}
+		// Package-requirement gate at the same single dispatch chokepoint: every path that runs a
+		// command (normal parse, scenario runner, any future caller) flows through here, so a command
+		// whose options class carries [RequiresPackage] is validated against the target environment
+		// before it runs — on all surfaces, not just the CLI parse. IRequiredPackageChecker is
+		// resolved through the same Resolve mechanism (passing the options so the container bootstraps
+		// with the matching environment profile). Commands without [RequiresPackage] early-return inside
+		// EnsureRequirements and incur no extra HTTP call.
+		IRequiredPackageChecker requiredPackageChecker = Resolve<IRequiredPackageChecker>(instance);
+		if (TryGetPackageRequirementError(instance, requiredPackageChecker, out string packageRequirementError)) {
+			ConsoleLogger.Instance.WriteError(packageRequirementError);
+			return 1;
+		}
 		return instance switch {
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
@@ -475,6 +487,46 @@ internal class Program {
 		// IsEnabled returns true for an unattributed type, so reaching here guarantees the attribute.
 		featureName = optionsType.GetCustomAttribute<FeatureToggleAttribute>(inherit: false)?.FeatureName;
 		return true;
+	}
+
+	/// <summary>
+	/// Validates the declarative package requirements (<see cref="RequiresPackageAttribute"/>) of an
+	/// options instance against the target environment at the single dispatch chokepoint.
+	/// </summary>
+	/// <param name="options">The command options instance whose type carries any requirements.</param>
+	/// <param name="checker">The resolved package-requirement checker.</param>
+	/// <param name="errorMessage">The user-facing refusal message when a requirement is unmet.</param>
+	/// <returns>
+	/// <c>true</c> when a requirement is not satisfied (dispatch must be refused);
+	/// <c>false</c> when the options type has no requirement or every requirement is satisfied.
+	/// </returns>
+	/// <remarks>
+	/// The decision is delegated entirely to <see cref="IRequiredPackageChecker.EnsureRequirements"/>,
+	/// which early-returns (no package-list fetch / no HTTP) for an options type without
+	/// <see cref="RequiresPackageAttribute"/> — see
+	/// <c>RequiredPackageCheckerTests.EnsureRequirements_ShouldNotFetchPackages_WhenTypeHasNoAttribute</c>.
+	/// </remarks>
+	internal static bool TryGetPackageRequirementError(
+		object options, IRequiredPackageChecker checker, out string errorMessage) {
+		errorMessage = null;
+		if (options is null || checker is null) {
+			return false;
+		}
+		try {
+			checker.EnsureRequirements(options.GetType());
+			return false;
+		}
+		catch (PackageRequirementException ex) {
+			errorMessage = ex.Message;
+			return true;
+		}
+		catch (Exception ex) {
+			// Mirror the MCP gate: a non-PackageRequirementException (e.g. the target environment is
+			// unreachable so GetPackages() throws an HTTP/connection/auth exception) must not escape as a
+			// raw stack trace. Surface a readable message and refuse dispatch (caller maps true to exit 1).
+			errorMessage = ex.GetReadableMessageException(IsDebugMode);
+			return true;
+		}
 	}
 
 	private static string[] OriginalArgs;

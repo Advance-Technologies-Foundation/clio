@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 namespace Clio.Command.SqlScriptCommand
 {
 	[Verb("execute-sql-script", Aliases = ["sql"], HelpText = "Execute script on web application")]
+	[RequiresPackage("cliogate", "2.0.0.41", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public class ExecuteSqlScriptOptions : RemoteCommandOptions
 	{
 		[Value(0, MetaName = "Script", Required = false, HelpText = "Sql script")]
@@ -46,14 +47,12 @@ namespace Clio.Command.SqlScriptCommand
 		private readonly ILogger _logger;
 
 		public SqlScriptCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-				ISqlScriptExecutor sqlScriptExecutor, IClioGateway clioGateway, ILogger logger)
+				ISqlScriptExecutor sqlScriptExecutor, ILogger logger)
 			: base(applicationClient, settings) {
 			_sqlScriptExecutor = sqlScriptExecutor;
-			ClioGateWay = clioGateway;
 			_logger = logger;
 		}
 
-		protected override string ClioGateMinVersion { get; } = "2.0.0.41";
 		private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath) {
 			
 			bool isError = TryGetError(serverResponse, out var errorMessage);
@@ -166,10 +165,6 @@ namespace Clio.Command.SqlScriptCommand
 		}
 
 		public override int Execute(ExecuteSqlScriptOptions opts) {
-			
-			ClioGateWay.CheckCompatibleVersion(ClioGateMinVersion);
-			
-			
 			try {
 				string result = string.Empty;
 				if (!string.IsNullOrEmpty(opts.Script)) {
