@@ -1,11 +1,8 @@
-﻿using DocumentFormat.OpenXml.Drawing.Wordprocessing;
-using FluentValidation;
-using MediatR;
+﻿using FluentValidation;
 using OneOf;
 using System;
 using System.IO;
 using System.IO.Compression;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Clio.Common.ScenarioHandlers {
@@ -45,16 +42,45 @@ namespace Clio.Common.ScenarioHandlers {
     }
 
 
-    internal class UnzipRequestHandler : IRequestHandler<UnzipRequest, OneOf<BaseHandlerResponse, HandlerError>> {
-        
+    /// <summary>
+    /// Handles <see cref="UnzipRequest"/> scenario steps by extracting a zip archive
+    /// to a target directory.
+    /// </summary>
+    public interface IUnzipHandler {
+
+        /// <summary>
+        /// Validates the request and, when valid, extracts the archive referenced by the
+        /// <c>from</c> argument into the directory referenced by the <c>to</c> argument.
+        /// </summary>
+        /// <param name="request">The unzip request carrying the <c>from</c> and <c>to</c> arguments.</param>
+        /// <returns>
+        /// A <see cref="OneOf{T0, T1}"/> containing an <see cref="UnzipResponse"/> on success
+        /// or a <see cref="HandlerError"/> on failure.
+        /// </returns>
+        /// <exception cref="FluentValidation.ValidationException">
+        /// Thrown when the request fails validation (for example, missing <c>from</c>/<c>to</c>
+        /// arguments or a non-existent source file).
+        /// </exception>
+        Task<OneOf<UnzipResponse, HandlerError>> Handle(UnzipRequest request);
+    }
+
+
+    internal class UnzipRequestHandler : IUnzipHandler {
+
+        private readonly IValidator<UnzipRequest> _validator;
         private readonly char[] _sequence;
         private int _counter;
-        public UnzipRequestHandler()
+        public UnzipRequestHandler(IValidator<UnzipRequest> validator)
         {
+            _validator = validator;
             _sequence = new[] { '/', '-', '\\', '|' };
             _counter = 0;
         }
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UnzipRequest request, CancellationToken cancellationToken) {
+
+        /// <inheritdoc />
+        public async Task<OneOf<UnzipResponse, HandlerError>> Handle(UnzipRequest request) {
+
+            _validator.ValidateAndThrow(request);
 
             string zipFileName = request.Arguments["from"];
             string destinationDirectory = request.Arguments["to"];

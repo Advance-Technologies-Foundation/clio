@@ -1,7 +1,5 @@
 ﻿using Clio.Command;
-using MediatR;
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Clio.Requests
@@ -20,7 +18,7 @@ namespace Clio.Requests
 	/// Handles requests received via 
 	/// clio://Restart/?environmentName=bundle8055
 	/// </remarks>
-	internal class RestartHandler : BaseExternalLinkHandler, IRequestHandler<Restart>
+	internal class RestartHandler : BaseExternalLinkHandler, IExternalLinkHandler
 	{
 		private readonly RestartCommand _restartCommand;
 
@@ -29,7 +27,9 @@ namespace Clio.Requests
 			_restartCommand = restartCommand;
 		}
 
-		public Task Handle(Restart request, CancellationToken cancellationToken)
+		public Type RequestType => typeof(Restart);
+
+		public Task Handle(IExternalLink request)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 			RestartOptions opt = new()
@@ -37,7 +37,7 @@ namespace Clio.Requests
 				Environment = ClioParams["environmentName"]
 			};
 			_restartCommand.Execute(opt);
-			return Unit.Task;
+			return Task.CompletedTask;
 		}
 	}
 }

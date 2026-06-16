@@ -1,7 +1,5 @@
-﻿using MediatR;
-using System;
+﻿using System;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Clio.Requests
@@ -20,16 +18,18 @@ namespace Clio.Requests
 	/// Handles extenral link request
 	/// <example><code>clio externalLink clio://OpenUrl/?url=https%3A%2F%2Fgoogle.ca</code></example>
 	/// </remarks>
-	internal class OpenUrlHandler : BaseExternalLinkHandler, IRequestHandler<OpenUrl>
+	internal class OpenUrlHandler : BaseExternalLinkHandler, IExternalLinkHandler
 	{
-		public Task Handle(OpenUrl request, CancellationToken cancellationToken)
+		public Type RequestType => typeof(OpenUrl);
+
+		public Task Handle(IExternalLink request)
 		{
 			Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 			string requestedLink = ClioParams["url"];
 #pragma warning disable CLIO004 // UseShellExecute=true is required for cross-platform URL opening; IProcessExecutor always uses UseShellExecute=false
 			Process.Start(new ProcessStartInfo { FileName = requestedLink, UseShellExecute = true });
 #pragma warning restore CLIO004
-			return Unit.Task;
+			return Task.CompletedTask;
 		}
 	}
 }

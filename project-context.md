@@ -20,9 +20,8 @@
 ## Architecture Rules (non-obvious)
 
 ### Command pattern
-- **Do NOT use MediatR for new commands.** MediatR is a legacy approach that is
-  being actively removed from the codebase — do not add new `Request` + `Handler`
-  pairs and do not route new commands through MediatR.
+- **Do NOT use MediatR.** MediatR has been fully removed from the codebase — do not
+  add new `Request` + `Handler` pairs and do not route new commands through MediatR.
 - New CLI commands derive from `Command<TOptions>` (see `clio/Command/Command.cs`),
   take their dependencies via **constructor injection**, and call collaborating
   **services** directly. Existing command families such as the skill commands

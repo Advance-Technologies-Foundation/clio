@@ -8,7 +8,6 @@ using Clio.Common.K8;
 using Clio.Requests;
 using Clio.Tests.Command;
 using Clio.UserEnvironment;
-using MediatR;
 using NSubstitute;
 using NUnit.Framework;
 using ILogger = Clio.Common.ILogger;
@@ -31,7 +30,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	private readonly ISettingsRepository _settingsRepositoryMock = Substitute.For<ISettingsRepository>();
 	private ICreatioUninstaller _sut;
-	private readonly IMediator _mediatorMock = Substitute.For<IMediator>();
+	private readonly IIisScanner _iisScannerMock = Substitute.For<IIisScanner>();
 	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
 	private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
 	private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
@@ -39,26 +38,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	#endregion
 
-	#region Properties: Private
-
-	private Action<IEnumerable<UnregisteredSite>> MockMediator =>
-		allSitesMock => {
-			_mediatorMock.When(i =>
-					i.Send(Arg.Any<AllUnregisteredSitesRequest>()))
-				.Do(i => {
-						AllUnregisteredSitesRequest allUnregisteredSitesRequest = i[0] as AllUnregisteredSitesRequest;
-						allUnregisteredSitesRequest?.Callback.Invoke(allSitesMock);
-					}
-				);
-		};
-
-	#endregion
-
 	#region Methods: Private
 
 	private void MockNoSitesFound(){
 		IEnumerable<UnregisteredSite> allSitesMock = [];
-		MockMediator(allSitesMock);
+		_iisScannerMock.GetAllUnregisteredSites().Returns(allSitesMock);
 	}
 
 	private void MockStartedSite(string url = "", string siteName = EnvironmentName){
@@ -71,7 +55,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 				],
 				SiteType.NetFramework)
 		];
-		MockMediator(allSitesMock);
+		_iisScannerMock.GetAllUnregisteredSites().Returns(allSitesMock);
 	}
 
 	#endregion
@@ -84,7 +68,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
-		containerBuilder.AddSingleton<IMediator>(_mediatorMock);
+		containerBuilder.AddSingleton<IIisScanner>(_iisScannerMock);
 		containerBuilder.AddSingleton<ILogger>(_loggerMock);
 		containerBuilder.AddSingleton<Ik8Commands>(_k8CommandsMock);
 		containerBuilder.AddSingleton<IMssql>(_mssqlMock);

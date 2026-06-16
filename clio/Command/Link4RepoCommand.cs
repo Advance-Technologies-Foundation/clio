@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Package;
 using Clio.Requests;
@@ -9,7 +8,6 @@ using Clio.UserEnvironment;
 using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
-using MediatR;
 using static Clio.Common.OperationSystem;
 
 namespace Clio.Command;
@@ -139,7 +137,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	private const string UnlockedPackagesFilter = "{\"isCustomer\": true}";
 
 	private readonly ILogger _logger;
-	private readonly IMediator _mediator;
+	private readonly IIisScanner _iisScanner;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IFileSystem _fileSystem;
 	private readonly RfsEnvironment _rfsEnvironment;
@@ -157,13 +155,13 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Link4RepoCommand"/> class.
 	/// </summary>
-	public Link4RepoCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
+	public Link4RepoCommand(ILogger logger, IIisScanner iisScanner, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, RfsEnvironment rfsEnvironment, IValidator<Link4RepoOptions> validator,
 		IApplicationPackageListProvider applicationPackageListProvider, IJsonConverter jsonConverter,
 		ISysSettingsManager sysSettingsManager, IPackageLockManager packageLockManager,
 		IFileDesignModePackages fileDesignModePackages){
 		_logger = logger;
-		_mediator = mediator;
+		_iisScanner = iisScanner;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
 		_rfsEnvironment = rfsEnvironment;
@@ -181,26 +179,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 	private IEnumerable<RegisteredSite> AllSites { get; set; }
 
-	/// <summary>
-	/// Gets the action that stores all discovered registered IIS sites.
-	/// </summary>
-	private Action<IEnumerable<RegisteredSite>> OnAllSitesRequestCompleted =>
-		sites => { AllSites = sites; };
-
 	#endregion
 
 	#region Methods: Private
-
-	private void ExecuteMediatorRequest(Action<IEnumerable<RegisteredSite>> callback){
-		AllRegisteredSitesRequest request = new() {
-			Callback = callback
-		};
-
-		Task.Run(async () => { await _mediator.Send(request); })
-			.ConfigureAwait(false)
-			.GetAwaiter()
-			.GetResult();
-	}
 
 	private IEnumerable<string> GetEnvironmentPackagePathCandidates(EnvironmentSettings environment) {
 		if (environment is null || string.IsNullOrWhiteSpace(environment.EnvironmentPath)) {
@@ -558,7 +539,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	}
 
 	private int HandleLinkingByEnvNameOnWindows(string envName, string repoPath, string packages){
-		ExecuteMediatorRequest(OnAllSitesRequestCompleted);
+		AllSites = _iisScanner.GetAllRegisteredSites();
 		EnvironmentSettings environment = _settingsRepository.GetEnvironment(envName);
 		if (environment is null) {
 			_logger.WriteError(

@@ -2,14 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using Clio.Requests;
 using Clio.Tests.Extensions;
 using Clio.UserEnvironment;
 using FluentAssertions;
-using MediatR;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -24,7 +22,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 
 	private CustomizeDataProtectionCommand _sut;
 	private readonly ILogger _logger = Substitute.For<ILogger>();
-	private readonly IMediator _mediator = Substitute.For<IMediator>();
+	private readonly IIisScanner _iisScanner = Substitute.For<IIisScanner>();
 	private readonly ISettingsRepository _settingsRepository = Substitute.For<ISettingsRepository>();
 
 	#endregion
@@ -62,7 +60,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton(_logger);
-		containerBuilder.AddSingleton(_mediator);
+		containerBuilder.AddSingleton(_iisScanner);
 		containerBuilder.AddSingleton(_settingsRepository);
 	}
 
@@ -168,9 +166,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, false);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+		_iisScanner.GetAllRegisteredSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -204,9 +200,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		Dictionary<string, string> envs = new();
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+		_iisScanner.GetAllRegisteredSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -242,9 +236,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+		_iisScanner.GetAllRegisteredSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -280,9 +272,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_mediator.Send(Arg.Any<AllRegisteredSitesRequest>())
-				.Returns(Task.CompletedTask)
-				.AndDoes(callInfo => { (callInfo[0] as AllRegisteredSitesRequest).Callback?.Invoke(sites); });
+		_iisScanner.GetAllRegisteredSites().Returns(sites);
 
 		FileSystem.MockExamplesFolder("Sites/N8_Site", GetPlatformPath("T", envName));
 

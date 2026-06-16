@@ -9,7 +9,6 @@ using Clio.Common.K8;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using DocumentFormat.OpenXml.Wordprocessing;
-using MediatR;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using OneOf;
@@ -74,7 +73,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ISettingsRepository _settingsRepository;
-	private readonly IMediator _mediator;
+	private readonly IIisScanner _iisScanner;
 	private readonly ILogger _logger;
 	private readonly Ik8Commands _k8Commands;
 	private readonly IMssql _mssql;
@@ -84,11 +83,11 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	#region Constructors: Public
 
-	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository, 
-		IMediator mediator, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres){
+	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
+		IIisScanner iisScanner, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres){
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
-		_mediator = mediator;
+		_iisScanner = iisScanner;
 		_logger = logger;
 		_k8Commands = k8Commands;
 		_mssql = mssql;
@@ -100,9 +99,6 @@ public class CreatioUninstaller : ICreatioUninstaller
 	#region Properties: Private
 
 	private IEnumerable<UnregisteredSite> AllSites { get; set; }
-
-	private Action<IEnumerable<UnregisteredSite>> OnAllSitesRequestCompleted =>
-		sites => { AllSites = sites; };
 
 	#endregion
 
@@ -221,10 +217,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 	#region Methods: Public
 
 	public void UninstallByEnvironmentName(string environmentName){
-		AllUnregisteredSitesRequest request = new() {
-			Callback = OnAllSitesRequestCompleted
-		};
-		_mediator.Send(request);
+		AllSites = _iisScanner.GetAllUnregisteredSites();
 
 		EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
 		Uri envUri = new(settings.Uri);
@@ -248,33 +241,25 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private void StopIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllUnregisteredSitesRequest request = new() {
-				Callback = OnAllSitesRequestCompleted
-			};
-			_mediator.Send(request);
+			AllSites = _iisScanner.GetAllUnregisteredSites();
 		}
 		var site = AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
 		if(site is not null) {
-			var removeRequest = new StopInstanceByNameRequest{SiteName = site.siteBinding.name};
-			_mediator.Send(removeRequest);
-			_logger.WriteInfo($"IIS Stopped: {removeRequest.SiteName}");
+			_iisScanner.StopSiteByName(site.siteBinding.name);
+			_logger.WriteInfo($"IIS Stopped: {site.siteBinding.name}");
 		}else {
 			_logger.WriteWarning($"IIS NOT Stopped Name: {site.siteBinding.name} DIR: {creatioDirectoryPath}");
 		}
 	}
-	
+
 	private void DeleteIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllUnregisteredSitesRequest request = new() {
-				Callback = OnAllSitesRequestCompleted
-			};
-			_mediator.Send(request);
+			AllSites = _iisScanner.GetAllUnregisteredSites();
 		}
 		var site = AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
 		if(site is not null) {
-			var removeRequest = new DeleteInstanceByNameRequest{SiteName = site.siteBinding.name};
-			_mediator.Send(removeRequest);
-			_logger.WriteInfo($"IIS Removed: {removeRequest.SiteName}");
+			_iisScanner.DeleteSiteByName(site.siteBinding.name);
+			_logger.WriteInfo($"IIS Removed: {site.siteBinding.name}");
 		}else {
 			_logger.WriteWarning($"IIS NOT Removed: {creatioDirectoryPath}");
 		}
