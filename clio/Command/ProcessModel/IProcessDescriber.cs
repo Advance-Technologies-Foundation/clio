@@ -41,6 +41,8 @@ public sealed class ServerProcessDescriber(
 	IDataProvider dataProvider,
 	IServiceUrlBuilder serviceUrlBuilder) : IProcessDescriber {
 
+	private const string DescribeErrorCode = "DescribeProcess";
+
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
@@ -62,25 +64,25 @@ public sealed class ServerProcessDescriber(
 		try {
 			responseBody = applicationClient.ExecutePostRequest(url, body, 10_000, 3, 1);
 		} catch (Exception e) {
-			return Error.Failure("DescribeProcess", e.Message);
+			return Error.Failure(DescribeErrorCode, e.Message);
 		}
 		if (string.IsNullOrWhiteSpace(responseBody)) {
-			return Error.Failure("DescribeProcess", "empty response from the server");
+			return Error.Failure(DescribeErrorCode, "empty response from the server");
 		}
 
 		DescribeProcessResultEnvelope envelope;
 		try {
 			envelope = JsonSerializer.Deserialize<DescribeProcessResultEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException e) {
-			return Error.Failure("DescribeProcess", $"could not parse server response: {e.Message}");
+			return Error.Failure(DescribeErrorCode, $"could not parse server response: {e.Message}");
 		}
 
 		DescribeProcessWireResult result = envelope?.Result;
 		if (result is null) {
-			return Error.Failure("DescribeProcess", "unexpected server response shape");
+			return Error.Failure(DescribeErrorCode, "unexpected server response shape");
 		}
 		if (!result.Success) {
-			return Error.Failure("DescribeProcess", result.ErrorMessage ?? "describe-process failed on the server");
+			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-process failed on the server");
 		}
 		return result;
 	}
