@@ -185,13 +185,7 @@ public static class ComponentInfoGrouping {
 	/// </summary>
 	private static int CountMatchingTerms(IReadOnlyList<string> terms, IEnumerable<string?> texts) {
 		List<string?> materialised = texts.ToList();
-		int count = 0;
-		foreach (string term in terms) {
-			if (materialised.Any(text => ContainsCi(text, term))) {
-				count++;
-			}
-		}
-		return count;
+		return terms.Count(term => materialised.Any(text => ContainsCi(text, term)));
 	}
 
 	/// <summary>
@@ -199,15 +193,10 @@ public static class ComponentInfoGrouping {
 	/// <c>properties</c> dictionary and the wrapped-shape <c>inputs</c>/<c>outputs</c> dictionaries.
 	/// </summary>
 	private static int CountMatchingBindingTerms(IReadOnlyList<string> terms, ComponentRegistryEntry entry) {
-		int count = 0;
-		foreach (string term in terms) {
-			if (PropertiesMatch(entry.Properties, term)
-				|| BindingsMatch(entry.Inputs, term)
-				|| BindingsMatch(entry.Outputs, term)) {
-				count++;
-			}
-		}
-		return count;
+		return terms.Count(term =>
+			PropertiesMatch(entry.Properties, term)
+			|| BindingsMatch(entry.Inputs, term)
+			|| BindingsMatch(entry.Outputs, term));
 	}
 
 	/// <summary>
