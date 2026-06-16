@@ -3311,7 +3311,10 @@ internal static class ToolContractCatalog {
 				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
 				Field("componentType", StringType, "Component type echoed back in detail mode."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
-				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' or 'latest-fallback'."),
+				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
+				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
+				Field("requiresVersionConfirmation", BooleanType, "Machine-readable hard stop, true only on 'latest-fallback': the version is unknown — tell the user and request explicit confirmation before proceeding instead of assuming the 'latest' superset. Omitted otherwise."),
+				Field("resolvedFromReason", StringType, "Why the version fell back, present only on 'latest-fallback': 'probe-error' (transient — a retry/reachable environment may help) or the stable 'no-active-environment' / 'core-version-missing' / 'core-version-unparseable'."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
