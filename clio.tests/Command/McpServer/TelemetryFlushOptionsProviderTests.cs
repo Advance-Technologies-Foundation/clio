@@ -39,14 +39,14 @@ public sealed class TelemetryFlushOptionsProviderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Pins the shipped default endpoint to the production HTTPS collector so an accidental edit is caught.")]
-	public void DefaultEndpoint_Should_Be_The_Production_Https_Collector()
+	[Description("TEST DISTRIBUTION build: pins the shipped default to the R&D staging collector so tester builds upload with zero config. On master this asserts the production HTTPS collector instead.")]
+	public void DefaultEndpoint_Should_Be_The_Staging_Collector_For_Test_Distribution()
 	{
 		// Assert
-		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().Be("https://caadt-telemetry.creatio.com/v1/logs",
-			because: "the production OTLP/HTTP collector is the default that installed clients point at");
+		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().Be("https://caadt-telemetry-rnd.creatio.com/v1/logs",
+			because: "the test distribution build ships the R&D staging collector as the default so internal testers need no config");
 		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().StartWith("https://",
-			because: "the shipped default must satisfy the https-only transport guard for a remote host");
+			because: "even the staging default must be https so it satisfies the transport guard without any relaxation");
 	}
 
 	[Test]
