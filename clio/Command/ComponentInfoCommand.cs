@@ -159,10 +159,9 @@ public sealed class ComponentInfoCommand {
 
 		// No flags — default to latest with a non-authoritative source so the response carries
 		// "latest-fallback" regardless of what the catalog returns. Nothing to probe, so the reason
-		// is the input gap (no-active-environment), not a probe error.
-		return Task.FromResult(new PlatformVersionResolution(
-			PlatformVersionResolver.LatestVersion,
-			VersionResolutionSource.LatestFallback) { Reason = VersionFallbackReason.NoActiveEnvironment });
+		// is the input gap (no-active-environment), not a probe error. Built via the shared factory so
+		// this CLI verb and the MCP tool stay byte-identical on the no-flags fallback.
+		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
 	}
 
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoCommandOptions options) {

@@ -95,6 +95,17 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	internal const string GetSysInfoServicePath = CreatioServicePaths.GetSysInfo;
 	internal const string LatestVersion = "latest";
 	internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+	/// <summary>
+	/// Short TTL applied only to the transient <see cref="VersionFallbackReason.ProbeError"/> outcome.
+	/// That class is the single fallback a retry can resolve (ENG-91583 AC#3), so it must not be pinned
+	/// for the full <see cref="CacheTtl"/>: a momentary network blip during the first probe would
+	/// otherwise force every subsequent <c>get-component-info</c> into the version-unknown hard stop for
+	/// five minutes, even after the environment recovers seconds later — and the retry the response
+	/// advertises as worthwhile could never succeed in-window. The stable outcomes keep the full TTL.
+	/// A short non-zero window (rather than skipping the cache outright) still shields a genuinely-down
+	/// environment from a probe storm while keeping the recovery latency low.
+	/// </summary>
+	internal static readonly TimeSpan TransientCacheTtl = TimeSpan.FromSeconds(30);
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly EnvironmentSettings _environmentSettings;
@@ -133,7 +144,12 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		}
 
 		PlatformVersionResolution resolution = await ProbeAsync(environmentKey, cancellationToken).ConfigureAwait(false);
-		_cache[environmentKey] = new CacheEntry(resolution, now + CacheTtl);
+		// Gate the cache lifetime on the fallback class: only the transient ProbeError gets the short TTL
+		// so a recovered environment is re-probed quickly; stable outcomes (success / no-active-environment
+		// / core-version-missing / core-version-unparseable) keep the full 5-min TTL — a retry alone would
+		// not change them, so re-probing sooner would be pure overhead (ENG-91583 AC#3).
+		TimeSpan ttl = resolution.Reason == VersionFallbackReason.ProbeError ? TransientCacheTtl : CacheTtl;
+		_cache[environmentKey] = new CacheEntry(resolution, now + ttl);
 		return resolution;
 	}
 

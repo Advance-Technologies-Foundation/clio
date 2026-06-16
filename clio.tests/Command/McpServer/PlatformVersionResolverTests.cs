@@ -253,6 +253,80 @@ public sealed class PlatformVersionResolverTests {
 	}
 
 	[Test]
+	[Description("When the ApplicationInfo probe throws (transient) but the cliogate probe responds with an empty body (stable core-version-missing), the transient ProbeError wins via the |= accumulation so a retry stays signalled as worthwhile (ENG-91583 AC#3).")]
+	public async Task ResolveAsync_Reports_ProbeError_When_AppInfo_Throws_And_Cliogate_Empty() {
+		// Arrange — ApplicationInfo (POST) throws (transient); cliogate GetSysInfo (GET) responds but
+		// carries no usable CoreVersion (stable). This is the mixed case the `transientProbeError |=`
+		// accumulation exists to resolve: transient on one probe must outrank stable on the other.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("application-info unreachable"));
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PlatformVersionResolver resolver = CreateResolver(client);
+
+		// Act
+		PlatformVersionResolution resolution = await resolver.ResolveAsync();
+
+		// Assert
+		resolution.Source.Should().Be(VersionResolutionSource.LatestFallback,
+			because: "neither probe yielded a version, so the catalog still degrades to the latest superset");
+		resolution.Reason.Should().Be(VersionFallbackReason.ProbeError,
+			because: "a thrown probe on either path must outrank the stable core-version-missing the other returned, guarding the |= seam against a future &=/reset regression (ENG-91583 AC#3)");
+	}
+
+	[Test]
+	[Description("A transient probe-error fallback is cached only for the short TransientCacheTtl, so a retry after that window re-probes and a recovered environment resolves cleanly instead of being pinned to latest-fallback for the full 5-minute CacheTtl (ENG-91583 AC#3).")]
+	public async Task ResolveAsync_ReProbes_After_TransientCacheTtl_When_Previous_Was_ProbeError() {
+		// Arrange — the first ApplicationInfo probe throws (transient); the environment recovers and the
+		// second probe succeeds. cliogate is never installed, so the GET probe always throws.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		int appInfoRound = 0;
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				appInfoRound++;
+				if (appInfoRound == 1) {
+					throw new HttpRequestException("transient blip on first probe");
+				}
+				return """{ "applicationInfo": { "sysValues": { "coreVersion": "8.3.3.1" } } }""";
+			});
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("cliogate not installed"));
+		FakeTimeProvider clock = new();
+		PlatformVersionResolver resolver = CreateResolver(client, clock: clock);
+
+		// Act
+		PlatformVersionResolution first = await resolver.ResolveAsync();
+		clock.Advance(PlatformVersionResolver.TransientCacheTtl + TimeSpan.FromSeconds(1));
+		PlatformVersionResolution second = await resolver.ResolveAsync();
+
+		// Assert
+		first.Reason.Should().Be(VersionFallbackReason.ProbeError,
+			because: "the first round saw both probes throw, a transient failure");
+		second.Source.Should().Be(VersionResolutionSource.Environment,
+			because: "a transient probe-error must not be pinned for the full CacheTtl — re-probing after the short window lets the recovered environment resolve (ENG-91583 AC#3)");
+		second.ResolvedVersion.Should().Be("8.3.3",
+			because: "the recovered ApplicationInfo probe yields the real version once re-probed");
+	}
+
+	[Test]
+	[Description("A stable fallback (core-version-missing) keeps the full 5-minute CacheTtl: advancing past the short transient window but within CacheTtl serves the cached result without re-probing, so only the transient class gets the short TTL (ENG-91583 AC#3).")]
+	public async Task ResolveAsync_Keeps_Full_Ttl_For_Stable_Fallback() {
+		// Arrange — probes respond but carry no usable CoreVersion (stable core-version-missing).
+		IApplicationClient client = SubstituteClient(string.Empty);
+		FakeTimeProvider clock = new();
+		PlatformVersionResolver resolver = CreateResolver(client, clock: clock);
+
+		// Act — advance past the short transient TTL but stay well within the full CacheTtl.
+		await resolver.ResolveAsync();
+		clock.Advance(PlatformVersionResolver.TransientCacheTtl + TimeSpan.FromSeconds(30));
+		await resolver.ResolveAsync();
+
+		// Assert — the second call is served from cache; a stable outcome is not re-probed early.
+		client.Received(1).ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("When ApplicationInfo yields a version the cliogate GetSysInfo probe is never attempted — the non-cliogate path is primary, not a fallback.")]
 	public async Task ResolveAsync_Does_Not_Probe_Cliogate_When_ApplicationInfo_Succeeds() {
 		// Arrange

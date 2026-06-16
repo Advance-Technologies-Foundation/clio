@@ -220,10 +220,9 @@ public sealed class ComponentInfoTool(
 		}
 
 		// Neither an explicit version nor an environment was supplied, so there is nothing to probe:
-		// a clear input gap (no-active-environment), not a probe error.
-		return Task.FromResult(new PlatformVersionResolution(
-			PlatformVersionResolver.LatestVersion,
-			VersionResolutionSource.LatestFallback) { Reason = VersionFallbackReason.NoActiveEnvironment });
+		// a clear input gap (no-active-environment), not a probe error. Built via the shared factory so
+		// the CLI verb and this MCP tool stay byte-identical on the no-flags fallback.
+		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
 	}
 
 	/// <summary>

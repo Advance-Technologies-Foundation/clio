@@ -672,12 +672,25 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses and omits it for environment-matched responses.")]
+	[Description("GetFallbackReason has an explicit arm for every declared VersionFallbackReason, so adding a new reason without a wire-token mapping fails here (via the guard) instead of silently surfacing as resolvedFromReason: null (ENG-91583 AC#3).")]
+	public void GetFallbackReason_Should_Map_Every_Declared_Reason_Without_Throwing() {
+		// Arrange / Act / Assert — every value the enum declares must be handled explicitly; the day a new
+		// reason is added without a token, this iteration trips the _ => throw guard and fails the build.
+		foreach (VersionFallbackReason reason in Enum.GetValues<VersionFallbackReason>()) {
+			Action act = () => ComponentInfoResolution.GetFallbackReason("latest-fallback", reason);
+			act.Should().NotThrow(
+				because: $"every declared VersionFallbackReason needs an explicit GetFallbackReason arm; {reason} fell through to the guard");
+		}
+	}
+
+	[Test]
+	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses, carries the machine-readable markers (requiresVersionConfirmation / resolvedFromReason) for human parity, and omits the warning for environment-matched responses.")]
 	public void ComponentInfoPrettyRenderer_Should_Render_Version_Warning_Only_On_Latest_Fallback() {
 		// Arrange
 		ComponentInfoResponse fallback = new() {
 			Success = true, Mode = "list", Count = 0, Items = [],
-			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback"
+			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback",
+			ResolvedFromReason = "probe-error"
 		};
 		ComponentInfoResponse matched = new() {
 			Success = true, Mode = "list", Count = 0, Items = [],
@@ -693,6 +706,10 @@ public sealed class ComponentInfoToolTests {
 			because: "the pretty surface must flag the latest superset so a human operator sees the same caveat AI gets");
 		fallbackText.Should().Contain("superset",
 			because: "the rendered warning must carry the LatestFallbackWarning text");
+		fallbackText.Should().Contain("requiresVersionConfirmation=true",
+			because: "the pretty WARNING line must reach parity with the JSON hard-stop marker, not only the prose caveat");
+		fallbackText.Should().Contain("resolvedFromReason=probe-error",
+			because: "the transient/stable reason must be visible to a human operator too, not only to JSON consumers");
 		matchedText.Should().NotContain("WARNING:",
 			because: "an environment-matched catalog has no superset risk to flag");
 	}

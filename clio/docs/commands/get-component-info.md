@@ -66,7 +66,10 @@ built against it can fail to render at runtime. Pass `--version` or
 `--environment` (the MCP tool accepts `environment-name`) to scope the
 catalog to a real version; the warning is omitted once `resolvedFrom` is
 `"environment"`. Under `--pretty` the warning renders on a `WARNING:` line
-beneath the header.
+beneath the header; on `latest-fallback` the machine-readable markers below are
+appended to that same line
+(`[requiresVersionConfirmation=true; resolvedFromReason=...]`) so the human view
+reaches parity with the JSON consumers.
 
 Alongside the prose `versionWarning`, a `latest-fallback` response also sets
 two machine-readable markers so a consumer can branch programmatically instead
