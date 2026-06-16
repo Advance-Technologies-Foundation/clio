@@ -43,20 +43,19 @@ public class McpServerCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("RequestShutdown is safe to invoke repeatedly after disposal, mirroring both a Ctrl+C and a ProcessExit signal arriving during the same EOF shutdown.")]
-	public void RequestShutdown_ShouldNotThrow_WhenInvokedRepeatedlyAfterDisposal() {
+	[Description("RequestShutdown is a tolerated no-op on a live source that was already cancelled, mirroring a second OS shutdown signal (Ctrl+C then ProcessExit) arriving while graceful cancellation is already in flight but before EOF teardown disposes the source.")]
+	public void RequestShutdown_ShouldNotThrow_WhenSourceAlreadyCancelled() {
 		// Arrange
-		CancellationTokenSource cancellationTokenSource = new();
-		cancellationTokenSource.Dispose();
+		using CancellationTokenSource cancellationTokenSource = new();
+		cancellationTokenSource.Cancel();
 
 		// Act
-		Action act = () => {
-			McpServerCommand.RequestShutdown(cancellationTokenSource);
-			McpServerCommand.RequestShutdown(cancellationTokenSource);
-		};
+		Action act = () => McpServerCommand.RequestShutdown(cancellationTokenSource);
 
 		// Assert
 		act.Should().NotThrow(
-			"because multiple overlapping OS shutdown signals after teardown must all be tolerated");
+			"because a redundant shutdown signal on an already-cancelling host loop must be tolerated without error");
+		cancellationTokenSource.IsCancellationRequested.Should().BeTrue(
+			"because the source must stay cancelled after a repeated shutdown request");
 	}
 }

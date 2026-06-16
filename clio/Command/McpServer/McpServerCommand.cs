@@ -16,11 +16,11 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 		McpLogNotifier.Initialize(server);
 		using var cts = new CancellationTokenSource();
 
-		// Delegates captured in locals (not inline lambdas) so they can be detached in
-		// `finally` before `cts` is disposed. EOF on stdin makes RunAsync return normally;
-		// a still-subscribed ProcessExit handler would otherwise call Cancel() on the
-		// already-disposed source and crash the process with ObjectDisposedException
-		// during an otherwise-clean exit.
+		// Capture the signal handlers in locals (rather than inline lambdas) so the finally
+		// block can detach them before the cancellation source is disposed. When standard
+		// input reaches end of file the host loop returns normally, yet a still-subscribed
+		// process-exit handler could cancel the already-disposed source and crash an
+		// otherwise-clean exit with an unhandled ObjectDisposedException.
 		ConsoleCancelEventHandler onCancelKeyPress = (_, e) => {
 			e.Cancel = true;
 			RequestShutdown(cts);
@@ -34,8 +34,13 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 		} catch (OperationCanceledException) {
 			// Graceful shutdown — expected when CancellationToken is triggered.
 		} finally {
-			// Detach the OS-signal handlers before `cts` is disposed so a late
-			// signal can no longer reach the disposed source.
+			// Detach the OS-signal handlers before the cancellation source is disposed so a
+			// late signal can no longer reach the disposed source. This unsubscribe is the
+			// deterministic fix for the EOF/ProcessExit race; the guard inside RequestShutdown
+			// is only a defense-in-depth net for the residual concurrent-teardown window.
+			// Detaching the Ctrl+C handler here also means a second Ctrl+C during the drain
+			// below is no longer intercepted and will hard-kill the process — intended, so a
+			// stuck drain stays interruptible.
 			Console.CancelKeyPress -= onCancelKeyPress;
 			AppDomain.CurrentDomain.ProcessExit -= onProcessExit;
 			// Flush any in-flight background CDN refreshes before the process
