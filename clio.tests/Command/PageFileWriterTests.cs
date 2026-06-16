@@ -14,16 +14,23 @@ public sealed class PageFileWriterTests {
 	private const string SchemaName = "Usr_FormPage";
 	private const string SchemaUId = "11111111-2222-3333-4444-555555555555";
 	private const string OutputDirectory = "/ws";
-	private const string SchemaDir = "/ws/.clio-pages/Usr_FormPage";
 
 	private MockFileSystem _fileSystem;
 	private PageFileWriter _writer;
+	// Built through the same GetFullPath + Combine normalization the writer uses, so path comparisons
+	// stay OS-agnostic (the Windows CI adds a drive prefix and uses backslashes; macOS/Linux do not).
+	private string _clioPagesDir;
+	private string _schemaDir;
 
 	[SetUp]
 	public void SetUp() {
 		_fileSystem = new MockFileSystem();
 		_writer = new PageFileWriter(_fileSystem);
+		_clioPagesDir = _fileSystem.Path.Combine(_fileSystem.Path.GetFullPath(OutputDirectory), ".clio-pages");
+		_schemaDir = _fileSystem.Path.Combine(_clioPagesDir, SchemaName);
 	}
+
+	private string SchemaFile(string fileName) => _fileSystem.Path.Combine(_schemaDir, fileName);
 
 	private static PageGetResponse CreateResponse(PageEditableSchemaInfo editable = null) =>
 		new() {
@@ -50,10 +57,10 @@ public sealed class PageFileWriterTests {
 
 		// Assert
 		written.Success.Should().BeTrue(because: "writing the page files for a successful read must succeed");
-		_fileSystem.FileExists($"{SchemaDir}/body.js").Should().BeTrue(because: "body.js holds the editable own-body for update-page");
-		_fileSystem.FileExists($"{SchemaDir}/bundle.json").Should().BeTrue(because: "bundle.json holds the merged hierarchy view");
-		_fileSystem.FileExists($"{SchemaDir}/meta.json").Should().BeTrue(because: "meta.json holds the conflict-detection baseline");
-		_fileSystem.GetFile($"{SchemaDir}/body.js").TextContents.Should().Be(response.Raw.Body,
+		_fileSystem.FileExists(SchemaFile("body.js")).Should().BeTrue(because: "body.js holds the editable own-body for update-page");
+		_fileSystem.FileExists(SchemaFile("bundle.json")).Should().BeTrue(because: "bundle.json holds the merged hierarchy view");
+		_fileSystem.FileExists(SchemaFile("meta.json")).Should().BeTrue(because: "meta.json holds the conflict-detection baseline");
+		_fileSystem.GetFile(SchemaFile("body.js")).TextContents.Should().Be(response.Raw.Body,
 			because: "body.js must contain the raw editable body verbatim");
 	}
 
@@ -67,7 +74,7 @@ public sealed class PageFileWriterTests {
 		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
 
 		// Assert
-		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile($"{SchemaDir}/meta.json").TextContents);
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(SchemaFile("meta.json")).TextContents);
 		meta.Baseline.Should().NotBeNull(because: "an existing editable schema must produce a baseline");
 		meta.Baseline.Checksum.Should().Be("checksum-1", because: "the baseline checksum is the change signal a later update-page compares against");
 		meta.Baseline.EditableSchemaUId.Should().Be(SchemaUId, because: "the editable schema UId is part of the baseline identity");
@@ -84,7 +91,7 @@ public sealed class PageFileWriterTests {
 		_writer.WritePageFiles(response, SchemaName, null, "https://localhost/", OutputDirectory);
 
 		// Assert
-		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile($"{SchemaDir}/meta.json").TextContents);
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(SchemaFile("meta.json")).TextContents);
 		meta.Baseline.EnvironmentUri.Should().Be("https://localhost/", because: "a URI-mode read must capture the URI for the env-identity guard");
 		meta.Baseline.EnvironmentName.Should().BeNull(because: "a URI-mode read has no registered environment name");
 	}
@@ -102,7 +109,7 @@ public sealed class PageFileWriterTests {
 		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
 
 		// Assert
-		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile($"{SchemaDir}/meta.json").TextContents);
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(SchemaFile("meta.json")).TextContents);
 		meta.Baseline.Should().BeNull(
 			because: "a failed checksum capture (null editable) must skip the baseline so update-page degrades to no check");
 	}
@@ -117,7 +124,7 @@ public sealed class PageFileWriterTests {
 		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
 
 		// Assert
-		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile($"{SchemaDir}/meta.json").TextContents);
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(SchemaFile("meta.json")).TextContents);
 		meta.Baseline.Should().NotBeNull(because: "an absent replacing schema is still a baseline state to detect external creation against");
 		meta.Baseline.EditableSchemaExists.Should().BeFalse(because: "the baseline must record that no editable schema existed at fetch time");
 	}
@@ -132,7 +139,7 @@ public sealed class PageFileWriterTests {
 		_writer.WritePageFiles(response, SchemaName, "dev", null, OutputDirectory);
 
 		// Assert
-		string gitignorePath = "/ws/.clio-pages/.gitignore";
+		string gitignorePath = _fileSystem.Path.Combine(_clioPagesDir, ".gitignore");
 		_fileSystem.FileExists(gitignorePath).Should().BeTrue(because: "the .clio-pages tree must be git-ignored by default");
 		_fileSystem.GetFile(gitignorePath).TextContents.Should().Contain("*",
 			because: "the gitignore must exclude all generated page artifacts");
@@ -149,7 +156,9 @@ public sealed class PageFileWriterTests {
 
 		// Assert
 		written.Files.Should().NotBeNull(because: "the response must expose the written file paths");
-		written.Files.BodyFile.Should().Be($"{SchemaDir}/body.js", because: "the body file path must point at the written body.js");
-		written.Files.MetaFile.Should().Be($"{SchemaDir}/meta.json", because: "the meta file path must point at the written meta.json");
+		_fileSystem.Path.GetFullPath(written.Files.BodyFile).Should().Be(_fileSystem.Path.GetFullPath(SchemaFile("body.js")),
+			because: "the body file path must point at the written body.js");
+		_fileSystem.Path.GetFullPath(written.Files.MetaFile).Should().Be(_fileSystem.Path.GetFullPath(SchemaFile("meta.json")),
+			because: "the meta file path must point at the written meta.json");
 	}
 }
