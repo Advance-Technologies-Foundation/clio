@@ -56,7 +56,9 @@ public sealed class MobilePageConversionGuideTool {
 		"(the full resolved component tree incl. inherited template components), componentSuggestions (per source component " +
 		"type: category directMapping/withAdaptation/alternativeAvailable/unsupported/requiresManualDecision + suggested " +
 		"mobile type(s) from the WebToMobilePageConversionRules matrix and registry comparison), mobileContracts (inline " +
-		"allowed properties + example + designer defaults for each suggested mobile type), plus constraints and ordered nextSteps. " +
+		"allowed properties + example + designer defaults for each suggested mobile type), modelConfig (apply VERBATIM via " +
+		"modelConfigDiff — keep every attribute and all of its properties exactly as provided) and viewModelConfig " +
+		"(already filtered: attributes of dropped components removed), plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(

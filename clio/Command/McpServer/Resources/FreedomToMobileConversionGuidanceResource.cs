@@ -52,6 +52,10 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    re-derive placement from containerMap + componentSuggestions.
 			  - mobileContracts — for each suggested mobile type: allowedProperties + example +
 			    designerDefaults, so you can build the component's values inline.
+			  - modelConfig — the source page's FULL model config (data sources + attributes). Mobile has
+			    identical structural support: APPLY IT VERBATIM (see DATA SECTIONS below).
+			  - viewModelConfig — the source viewModelConfig, already FILTERED for mobile (attributes used
+			    only by dropped components removed). Apply it via viewModelConfigDiff (see DATA SECTIONS below).
 			  - constraints + nextSteps — the hard mobile rules and the ordered flow.
 
 			─────────────────────────────────────────────────────────────
@@ -85,9 +89,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   For many→one suggestions (primaryWebMerge set, e.g. crt.FolderTree + crt.FolderTreeActions
 			   -> crt.FolderTreeActions), emit a SINGLE mobile component and merge in the secondary
 			   component's properties; do not emit the secondary as a separate component.
-			5. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
+			5. Apply the data sections (guide.modelConfig + guide.viewModelConfig) to the body — build
+			   modelConfigDiff / viewModelConfigDiff from them VERBATIM (see DATA SECTIONS below). Do this
+			   for the data sections instead of reconstructing attributes by hand.
+			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
-			6. Persist with update-page. Then tell the user to open the result in Freedom UI Mobile
+			7. Persist with update-page. Then tell the user to open the result in Freedom UI Mobile
 			   Designer for final layout review.
 
 			─────────────────────────────────────────────────────────────
@@ -98,6 +105,24 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			- alternativeAvailable   : maps to a different mobile type (e.g. crt.Checkbox → crt.Toggle).
 			- unsupported            : NOT available on mobile; replace it or configure manually.
 			- requiresManualDecision : unknown/custom or ambiguous UX; decide with the user.
+
+			─────────────────────────────────────────────────────────────
+			DATA SECTIONS — modelConfig / viewModelConfig (apply, don't rebuild)
+			─────────────────────────────────────────────────────────────
+			Both metadata sections have IDENTICAL structural support in the mobile runtime, so the guide
+			hands them to you ready to apply — do NOT reconstruct them from memory.
+
+			- modelConfig (guide.modelConfig): copy it VERBATIM into modelConfigDiff. CRITICAL: keep every
+			  attribute and ALL of its properties exactly as provided — do not omit, rename, or reconstruct any
+			  fields. Related/lookup-path columns (columns reached through a lookup) carry extra metadata in their
+			  attribute declaration; if any of it is dropped, the binding resolves to nothing and the Mobile
+			  Designer shows "Item with the path … not found" (and the auto-derived caption breaks too). Own
+			  columns that are not declared in attributes resolve automatically. When in doubt, apply each
+			  attribute object exactly as the guide gives it.
+			- viewModelConfig (guide.viewModelConfig): structurally supported on mobile; apply it via
+			  viewModelConfigDiff. The guide ALREADY removed attributes referenced only by dropped/unsupported
+			  components — keep the rest as provided. Converters: reference only OOTB mobile converters; a
+			  definitive mobile converter list is forthcoming — flag any custom converter for manual review.
 
 			─────────────────────────────────────────────────────────────
 			HARD MOBILE RULES (see also get-guidance `mobile-page-modification`)

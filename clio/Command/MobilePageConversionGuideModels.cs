@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 // Advisory contract for the `get-mobile-page-conversion-guide` MCP tool (ENG-89620).
@@ -288,6 +289,28 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("dataSources")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> DataSources { get; init; }
+
+	// ── Data sections (apply to the mobile body via *Diff) ────────────
+	/// <summary>
+	/// The source page's full merged <c>modelConfig</c> (data sources + attributes). Mobile has identical
+	/// structural support, so APPLY IT VERBATIM via <c>modelConfigDiff</c> — keep every attribute and ALL of
+	/// its properties exactly as provided (do not omit, rename, or reconstruct any fields). Dropping or
+	/// altering an attribute's declared metadata can make its binding unresolvable in Mobile Designer
+	/// (<c>Item with the path … not found</c>). Null when the source page declares no model config.
+	/// </summary>
+	[JsonPropertyName("modelConfig")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode ModelConfig { get; init; }
+
+	/// <summary>
+	/// The source page's merged <c>viewModelConfig</c>, already FILTERED for mobile: attributes referenced
+	/// only by dropped/unsupported components are removed (see <see cref="ElementMap"/>). Apply it via
+	/// <c>viewModelConfigDiff</c>. Reference only OOTB mobile converters — a definitive mobile converter
+	/// list is forthcoming; flag any custom converter for manual review. Null when none is declared.
+	/// </summary>
+	[JsonPropertyName("viewModelConfig")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode ViewModelConfig { get; init; }
 
 	// ── Template recommendation ───────────────────────────────────────
 	[JsonPropertyName("recommendedMobileTemplate")]

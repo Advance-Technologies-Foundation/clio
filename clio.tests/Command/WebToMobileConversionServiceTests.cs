@@ -414,4 +414,55 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "DataTable").MobileType.Should().Be("crt.List");
 		Element(guide, "DataTable").ParentName.Should().Be("MainContainer");
 	}
+
+	// ── data sections (modelConfig / viewModelConfig) ─────────────────────────────────────────
+
+	[Test]
+	[Description("modelConfig is passed through verbatim, preserving lookup-path attribute types (ForwardReference) so the binding resolves in Mobile Designer.")]
+	public void Analyze_ModelConfig_PassedThroughPreservingForwardReference() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
+			""",
+			modelConfigJson: """
+			{ "dataSources": { "PDS": { "config": { "attributes": {
+				"QualifiedContactJobTitle": { "path": "QualifiedContact.JobTitle", "type": "ForwardReference" } } } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		guide.ModelConfig.Should().NotBeNull();
+		string type = guide.ModelConfig!.AsObject()["dataSources"]!["PDS"]!["config"]!["attributes"]!
+			["QualifiedContactJobTitle"]!["type"]!.GetValue<string>();
+		type.Should().Be("ForwardReference", because: "modelConfig is passed through verbatim — attribute properties are preserved as-is");
+		guide.Constraints.Should().Contain(c => c.Contains("VERBATIM") && c.Contains("modelConfig"));
+		guide.NextSteps.Should().Contain(s => s.Contains("modelConfigDiff"));
+	}
+
+	[Test]
+	[Description("viewModelConfig drops attributes referenced only by dropped components; keeps attributes with a surviving consumer or no consumer at all.")]
+	public void Analyze_ViewModelConfig_DropsAttributesOfUnsupportedComponentsOnly() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "NameField", "type": "crt.Input", "value": "$AttrB" },
+				{ "name": "Color", "type": "crt.ColorButton", "value": "$AttrA" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": {
+				"AttrA": { "modelConfig": { "path": "PDS.SomeColumn" } },
+				"AttrB": { "modelConfig": { "path": "PDS.Name" } },
+				"AttrC": { "modelConfig": { "path": "PDS.Other" } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		Element(guide, "Color").Operation.Should().Be("drop", because: "crt.ColorButton is unsupported on mobile");
+		guide.ViewModelConfig.Should().NotBeNull();
+		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
+		attrs.ContainsKey("AttrA").Should().BeFalse(because: "referenced only by the dropped ColorButton");
+		attrs.ContainsKey("AttrB").Should().BeTrue(because: "referenced by the surviving NameField");
+		attrs.ContainsKey("AttrC").Should().BeTrue(because: "no consumer → kept");
+	}
 }

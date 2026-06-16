@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
 using Newtonsoft.Json.Linq;
+using JsonNode = System.Text.Json.Nodes.JsonNode;
 
 // Freedom UI WEB -> Freedom UI MOBILE conversion ANALYSIS (advisory-only, ENG-89620).
 // This service builds NOTHING and performs no Creatio I/O. It inspects the source web page
@@ -92,6 +93,12 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, mobileTypes, mobileByType, rules, attrToDs, dataSourceSet, primaryDs, resources);
 
+		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
+		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
+		//    viewModelConfig drops attributes used only by dropped components.
+		JsonNode modelConfig = PassthroughModelConfig(bundle);
+		JsonNode viewModelConfig = BuildMobileViewModelConfig(bundle, tree, elementMap);
+
 		return new MobilePageConversionGuide {
 			SourcePage = sourcePage,
 			SourceType = SourceTypeFreedomWeb,
@@ -99,6 +106,8 @@ public static class WebToMobileAnalysisService {
 			SourceStructure = structure,
 			WebOnlySections = webOnly.Count > 0 ? webOnly : null,
 			DataSources = dataSources.Count > 0 ? dataSources : null,
+			ModelConfig = modelConfig,
+			ViewModelConfig = viewModelConfig,
 			RecommendedMobileTemplate = templateRule?.Mobile,
 			TemplateNote = templateRule?.Note,
 			ContainerMap = BuildContainerMap(templateRule),
@@ -106,8 +115,8 @@ public static class WebToMobileAnalysisService {
 			ElementMap = elementMap,
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
-			Constraints = BuildConstraints(dataSources.Count > 1, webOnly),
-			NextSteps = BuildNextSteps(),
+			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -374,7 +383,84 @@ public static class WebToMobileAnalysisService {
 		return names;
 	}
 
-	private static List<string> BuildConstraints(bool multipleDataSources, IReadOnlyList<string> webOnlySections) {
+	/// <summary>
+	/// Returns the source page's merged modelConfig as-is (deep-cloned so it is detached from the bundle).
+	/// Mobile has identical structural support, so the model applies it verbatim — preserving each
+	/// attribute's <c>type</c> (e.g. ForwardReference) and <c>path</c>. Null when there is no model config.
+	/// </summary>
+	private static JsonNode PassthroughModelConfig(PageBundleInfo bundle) =>
+		bundle.ModelConfig is { Count: > 0 } ? bundle.ModelConfig.DeepClone() : null;
+
+	/// <summary>
+	/// Returns the source page's merged viewModelConfig filtered for mobile: an attribute is removed only
+	/// when EVERY component that references it (via a <c>$Attr</c> binding) was dropped from the mobile
+	/// page (see <paramref name="elementMap"/>). Attributes with no consumer, or with at least one surviving
+	/// consumer, are kept. All other viewModelConfig sections are passed through unchanged.
+	/// </summary>
+	private static JsonNode BuildMobileViewModelConfig(PageBundleInfo bundle, JArray tree, List<ElementMapEntry> elementMap) {
+		if (bundle.ViewModelConfig is not { Count: > 0 }) {
+			return null;
+		}
+		JObject vmc;
+		try {
+			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
+		} catch {
+			return null;
+		}
+		if (vmc["attributes"] is JObject attributes && attributes.Count > 0) {
+			HashSet<string> dropped = new(
+				elementMap
+					.Where(e => string.Equals(e.Operation, "drop", StringComparison.OrdinalIgnoreCase))
+					.Select(e => e.WebName)
+					.Where(n => !string.IsNullOrEmpty(n)),
+				StringComparer.OrdinalIgnoreCase);
+			Dictionary<string, HashSet<string>> consumers = BuildAttrConsumers(tree);
+			foreach (JProperty attr in attributes.Properties().ToList()) {
+				if (consumers.TryGetValue(attr.Name, out HashSet<string> users)
+					&& users.Count > 0
+					&& users.All(dropped.Contains)) {
+					attr.Remove();
+				}
+			}
+		}
+		try {
+			return JsonNode.Parse(vmc.ToString());
+		} catch {
+			return null;
+		}
+	}
+
+	/// <summary>Maps each attribute name to the set of named components that reference it via a <c>$Attr</c> binding.</summary>
+	private static Dictionary<string, HashSet<string>> BuildAttrConsumers(JArray tree) {
+		var consumers = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+		WalkConsumers(tree, consumers);
+		return consumers;
+	}
+
+	private static void WalkConsumers(JArray nodes, Dictionary<string, HashSet<string>> consumers) {
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			if (!string.IsNullOrEmpty(name)) {
+				foreach (string attr in ExtractDollarRefs(node)) {
+					if (!consumers.TryGetValue(attr, out HashSet<string> set)) {
+						set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+						consumers[attr] = set;
+					}
+					set.Add(name);
+				}
+			}
+			if (node["items"] is JArray items) {
+				WalkConsumers(items, consumers);
+			}
+		}
+	}
+
+	private static List<string> BuildConstraints(
+		bool multipleDataSources, IReadOnlyList<string> webOnlySections,
+		bool hasModelConfig, bool hasViewModelConfig) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -382,6 +468,19 @@ public static class WebToMobileAnalysisService {
 			"No handlers, no validators, no custom converters in a mobile body. Re-implement conditional visibility / required / read-only / set-value logic as entity-level business rules (create-entity-business-rule). Reference only OOTB converters inline in binding expressions.",
 			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
 		};
+		if (hasModelConfig) {
+			constraints.Add(
+				"Apply the provided modelConfig VERBATIM via modelConfigDiff — keep every attribute and ALL of its " +
+				"properties exactly as provided (do not omit, rename, or reconstruct any fields). Dropping or altering " +
+				"an attribute's declared metadata can make its binding unresolvable in Mobile Designer " +
+				"(\"Item with the path … not found\").");
+		}
+		if (hasViewModelConfig) {
+			constraints.Add(
+				"viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
+				"used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
+				"converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
+		}
 		if (multipleDataSources) {
 			constraints.Add("The source page declares MULTIPLE data sources — keep only the primary one on the mobile page and review the rest.");
 		}
@@ -391,13 +490,19 @@ public static class WebToMobileAnalysisService {
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps() => [
-		"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
-		"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
-		"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
-		"Validate the body with validate-page; resolve any findings.",
-		"Persist with update-page, then open the result in Freedom UI Mobile Designer for final review."
-	];
+	private static List<string> BuildNextSteps(bool hasDataSections) {
+		var steps = new List<string> {
+			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
+			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
+			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed)."
+		};
+		if (hasDataSections) {
+			steps.Add("Apply the provided modelConfig and viewModelConfig VERBATIM (identical structural support on mobile) — build modelConfigDiff / viewModelConfigDiff from them and keep every attribute with all of its properties exactly as provided.");
+		}
+		steps.Add("Validate the body with validate-page; resolve any findings.");
+		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
+		return steps;
+	}
 
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
