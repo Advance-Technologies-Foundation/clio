@@ -380,6 +380,10 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
+		services.AddTransient<ReferenceCommand>();
+		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
+		services.AddTransient<Command<ReferenceOptions>, ReferenceCommand>();
+		services.AddTransient<NewPkgCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
 		services.AddTransient<PushNuGetPackagesCommand>();
