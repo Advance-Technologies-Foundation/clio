@@ -70,7 +70,10 @@ use), `useCases` (concrete scenarios the component fits), one-line `whenToUse`
 `appliesToCustomEntities` applicability flag with an `entityCouplingNote`
 (e.g. `crt.CommunicationOptions` is bound to the Contact/Account model and
 cannot be built on a custom entity). Use these to match a natural-language
-request to the right component; list-mode `--search` also matches across them.
+request to the right component; list-mode `--search` also matches across
+`synonyms`, `useCases`, `whenToUse`, and `category` — but not `whenNotToUse`,
+which is anti-guidance that names *other* components and would otherwise
+surface a component on a query for the very type it steers away from.
 
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"latest-fallback"`) so consumers can tell when

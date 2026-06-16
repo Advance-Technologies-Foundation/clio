@@ -399,6 +399,25 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Round-trips an explicitly-cleared applicability flag — appliesToCustomEntities == true reaches the detail response (not only the restrictive false case), so a component explicitly marked unrestricted is distinguishable from one with no flag at all (ENG-91571).")]
+	public void CreateDetailResponse_ShouldSurfaceApplicability_WhenEntryAppliesToCustomEntities() {
+		// Arrange
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.Input",
+			AppliesToCustomEntities = true
+		};
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(entry, "8.2.1", "environment", null, null);
+
+		// Assert
+		response.AppliesToCustomEntities.Should().BeTrue(
+			because: "an explicit true must round-trip so an agent can tell an unrestricted component from one carrying no applicability flag at all");
+		response.EntityCouplingNote.Should().BeNull(
+			because: "an unrestricted component ships no coupling note");
+	}
+
+	[Test]
 	[Description("List-mode search (ComponentInfoGrouping.FilterEntries) matches Solution A selection metadata — a 'photo grid' synonym query and a use-case phrase resolve to crt.Gallery even though its description omits those words (ENG-91571; the binary filter Solution B will later replace with scored ranking).")]
 	public void FilterEntries_ShouldMatchBySelectionMetadata_WhenQueryHitsSynonymOrUseCase() {
 		// Arrange
@@ -412,16 +431,73 @@ public sealed class ComponentInfoToolTests {
 		ComponentRegistryEntry[] entries = { gallery, button };
 
 		// Act
-		System.Collections.Generic.IReadOnlyList<ComponentRegistryEntry> bySynonym =
-			ComponentInfoGrouping.FilterEntries(entries, "photo grid");
-		System.Collections.Generic.IReadOnlyList<ComponentRegistryEntry> byUseCase =
-			ComponentInfoGrouping.FilterEntries(entries, "collection of images");
+		var bySynonym = ComponentInfoGrouping.FilterEntries(entries, "photo grid");
+		var byUseCase = ComponentInfoGrouping.FilterEntries(entries, "collection of images");
 
 		// Assert
 		bySynonym.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
 			because: "a 'photo grid' synonym query must surface crt.Gallery even though its description omits the term");
 		byUseCase.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
 			because: "a use-case phrase must surface the component whose use-case describes it");
+	}
+
+	[Test]
+	[Description("List-mode search (ComponentInfoGrouping.FilterEntries) matches the taxonomy category — a 'media' query surfaces a component tagged with that category even when its description omits the word (ENG-91571).")]
+	public void FilterEntries_ShouldMatchByCategory_WhenQueryHitsTaxonomy() {
+		// Arrange
+		ComponentRegistryEntry gallery = new() {
+			ComponentType = "crt.Gallery",
+			Description = "Selectable cards with previews.",
+			Category = ComponentCategories.Media
+		};
+		ComponentRegistryEntry button = new() { ComponentType = "crt.Button", Description = "Action trigger." };
+		ComponentRegistryEntry[] entries = { gallery, button };
+
+		// Act
+		var byCategory = ComponentInfoGrouping.FilterEntries(entries, ComponentCategories.Media);
+
+		// Assert
+		byCategory.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
+			because: "a category query must surface the component tagged with that taxonomy id even though its description omits the word");
+	}
+
+	[Test]
+	[Description("List-mode search (ComponentInfoGrouping.FilterEntries) matches the one-line whenToUse guidance — a phrase that appears only in whenToUse resolves the component even when its description omits it (ENG-91571).")]
+	public void FilterEntries_ShouldMatchByWhenToUse_WhenQueryHitsGuidance() {
+		// Arrange
+		ComponentRegistryEntry gallery = new() {
+			ComponentType = "crt.Gallery",
+			Description = "Selectable cards.",
+			WhenToUse = "Pick this to display browsable thumbnails of uploaded photos."
+		};
+		ComponentRegistryEntry button = new() { ComponentType = "crt.Button", Description = "Action trigger." };
+		ComponentRegistryEntry[] entries = { gallery, button };
+
+		// Act
+		var byWhenToUse = ComponentInfoGrouping.FilterEntries(entries, "browsable thumbnails");
+
+		// Assert
+		byWhenToUse.Should().ContainSingle(entry => entry.ComponentType == "crt.Gallery",
+			because: "a whenToUse phrase must surface the component it steers the agent toward");
+	}
+
+	[Test]
+	[Description("List-mode search deliberately does NOT match whenNotToUse — it is anti-guidance that names other components (e.g. 'use crt.ImageInput'), so a query for the steered-away type must not surface the component steering away from it (ENG-91571).")]
+	public void FilterEntries_ShouldNotMatchByWhenNotToUse_WhenQueryHitsAntiGuidance() {
+		// Arrange
+		ComponentRegistryEntry gallery = new() {
+			ComponentType = "crt.Gallery",
+			Description = "Selectable cards with previews.",
+			WhenNotToUse = "Not for a single image — use crt.ImageInput."
+		};
+		ComponentRegistryEntry[] entries = { gallery };
+
+		// Act
+		var byAntiGuidance = ComponentInfoGrouping.FilterEntries(entries, "crt.ImageInput");
+
+		// Assert
+		byAntiGuidance.Should().BeEmpty(
+			because: "crt.ImageInput appears only in crt.Gallery's whenNotToUse anti-guidance, which is excluded from the matcher to avoid surfacing a component on a query for the very type it steers away from");
 	}
 
 	[Test]

@@ -43,7 +43,7 @@ public static class ComponentInfoGrouping {
 	// that hit any field in the tier, so multi-term coverage ranks above a single-term hit at the same tier.
 	private const int SelectionMetadataWeight = 100; // synonyms, useCases (Solution A curated match surface)
 	private const int CapabilityTextWeight = 40;     // description, whenToUse (human-facing capability text)
-	private const int IdentityWeight = 15;           // componentType, category, whenNotToUse, parentTypes, typicalChildren
+	private const int IdentityWeight = 15;           // componentType, category, parentTypes, typicalChildren (whenNotToUse excluded — anti-guidance, ENG-91571)
 	private const int BindingWeight = 5;             // inputs, outputs, legacy properties (structural surface)
 
 	/// <summary>
@@ -165,11 +165,15 @@ public static class ComponentInfoGrouping {
 		return terms.Count == 0 ? 0 : Score(entry, terms);
 	}
 
-	/// <summary>Flattens the identity tier's text fields (type, category, whenNotToUse, parents, children).</summary>
+	/// <summary>
+	/// Flattens the identity tier's text fields (type, category, parents, children). <c>whenNotToUse</c>
+	/// is deliberately excluded (ENG-91571): it is anti-guidance that names <i>other</i> components
+	/// (e.g. crt.Gallery's "Not for a single image — use crt.ImageInput.") so scoring it would surface a
+	/// component on a query for the very type it steers away from. It still ships on the detail response.
+	/// </summary>
 	private static IEnumerable<string?> IdentityTexts(ComponentRegistryEntry entry) {
 		yield return entry.ComponentType;
 		yield return entry.Category;
-		yield return entry.WhenNotToUse;
 		foreach (string parentType in entry.ParentTypes) {
 			yield return parentType;
 		}
