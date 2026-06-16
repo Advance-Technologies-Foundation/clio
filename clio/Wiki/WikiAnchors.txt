@@ -142,6 +142,7 @@ set-app-icon:set-app-icon,ai,appicon,set-icon,set-application-icon
 set-app-version:set-app-version,appversion,set-application-version
 set-dev-mode:set-dev-mode,dev,unlock
 set-feature:set-feature,feature
+set-file-content-storage-connection-string:set-file-content-storage-connection-string,set-fcs-connection-string
 set-fsm-config:set-fsm-config,fsmc,sfsmc
 set-pkg-version:set-pkg-version,spv
 set-syssetting:set-syssetting,get-syssetting,ss,sys-setting,syssetting

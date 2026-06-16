@@ -56,6 +56,7 @@ internal class Program {
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
+		typeof(SetFileContentStorageConnectionStringOptions),
 		typeof(PingAppOptions),
 		typeof(ShowLocalEnvironmentsOptions),
 		typeof(EnvManageUiOptions),
@@ -304,6 +305,8 @@ internal class Program {
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
 			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
+			SetFileContentStorageConnectionStringOptions opts =>
+				Resolve<SetFileContentStorageConnectionStringCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 			OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
