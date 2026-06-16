@@ -222,10 +222,10 @@ public sealed class ComponentInfoToolE2ETests {
 	}
 
 	[Test]
-	[Description("Couples versionWarning to the resolver tier on the real MCP server: a latest-fallback response (no environment passed) carries the superset caveat, and an environment-matched response omits it.")]
+	[Description("Couples the version signals to the resolver tier on the real MCP server: a latest-fallback response (no environment passed) carries the prose superset caveat AND the machine-readable requiresVersionConfirmation flag + resolvedFromReason (ENG-91583).")]
 	[AllureTag(ToolName)]
-	[AllureName("get-component-info emits versionWarning only on latest-fallback")]
-	[AllureDescription("Starts the real clio MCP server, requests detail without an environment, and verifies versionWarning is present exactly when resolvedFrom is latest-fallback.")]
+	[AllureName("get-component-info emits versionWarning + requiresVersionConfirmation on latest-fallback")]
+	[AllureDescription("Starts the real clio MCP server, requests detail without an environment, and verifies that a latest-fallback response carries the prose caveat, the enforced requiresVersionConfirmation flag, and a resolvedFromReason classification.")]
 	public async Task ComponentInfoTool_Should_Emit_VersionWarning_On_Latest_Fallback() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -249,6 +249,10 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "ENG-91134: when the version is unknown the agent must not silently assume a default component set");
 		response.VersionWarning.Should().Contain("request explicit",
 			because: "ENG-91134: the agent must inform the user and request confirmation before proceeding against 'latest'");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "ENG-91583: latest-fallback must set the machine-readable hard-stop flag so the client can branch on it programmatically, not only by parsing the prose warning");
+		response.ResolvedFromReason.Should().NotBeNullOrWhiteSpace(
+			because: "ENG-91583: a latest-fallback response must classify why the version is unknown (e.g. no-active-environment) so the agent can decide whether a retry would help");
 	}
 
 	[Test]

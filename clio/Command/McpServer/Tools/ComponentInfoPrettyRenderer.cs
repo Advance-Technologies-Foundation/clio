@@ -41,7 +41,19 @@ public static class ComponentInfoPrettyRenderer {
 			.Append(")")
 			.AppendLine();
 		if (!string.IsNullOrWhiteSpace(response.VersionWarning)) {
-			sb.Append("WARNING: ").AppendLine(response.VersionWarning);
+			sb.Append("WARNING: ").Append(response.VersionWarning);
+			// Surface the machine-readable markers the JSON consumers receive so the human --pretty view
+			// reaches parity: on latest-fallback the version is unknown (hard stop), and resolvedFromReason
+			// tells the operator whether it is worth a retry. Omitted on environment-superset (soft caveat,
+			// version known) and environment (exact match), exactly like the wire shape.
+			if (response.RequiresVersionConfirmation == true) {
+				sb.Append(" [requiresVersionConfirmation=true");
+				if (!string.IsNullOrWhiteSpace(response.ResolvedFromReason)) {
+					sb.Append("; resolvedFromReason=").Append(response.ResolvedFromReason);
+				}
+				sb.Append(']');
+			}
+			sb.AppendLine();
 		}
 	}
 
