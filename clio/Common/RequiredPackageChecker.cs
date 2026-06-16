@@ -51,18 +51,28 @@ public interface IRequiredPackageChecker
 	bool IsCompatible(string packageName, string version);
 
 	/// <summary>
-	/// Validates every <see cref="RequiresPackageAttribute"/> declared on the specified options type.
+	/// Validates every <see cref="RequiresPackageAttribute"/> declared on the specified options instance —
+	/// both class-level (always enforced) and property-level (enforced only when the decorated
+	/// <c>bool</c> property is <c>true</c> on this instance).
 	/// </summary>
-	/// <param name="optionsType">The type whose package requirements must be satisfied.</param>
+	/// <param name="instance">
+	/// The options instance whose package requirements must be satisfied. The instance (not just its
+	/// type) is required because property-level requirements are gated on the current value of the
+	/// decorated <c>bool</c> property.
+	/// </param>
 	/// <exception cref="PackageRequirementException">
-	/// Thrown when any declared requirement is not satisfied (missing package or incompatible version).
+	/// Thrown when any triggered requirement is not satisfied (missing package or incompatible version).
+	/// </exception>
+	/// <exception cref="InvalidOperationException">
+	/// Thrown when a non-<c>bool</c> property carries <see cref="RequiresPackageAttribute"/>; only
+	/// <c>bool</c> properties are supported as conditional triggers.
 	/// </exception>
 	/// <remarks>
-	/// When <paramref name="optionsType"/> declares no <see cref="RequiresPackageAttribute"/> the method
-	/// returns immediately without fetching the installed package list, so commands without requirements
-	/// incur no cost.
+	/// When no class-level attribute is present and no property-level attribute is triggered (its
+	/// <c>bool</c> value is <c>false</c>), the method returns without fetching the installed package
+	/// list, so commands without an active requirement incur no cost.
 	/// </remarks>
-	void EnsureRequirements(Type optionsType);
+	void EnsureRequirements(object instance);
 }
 
 /// <inheritdoc cref="IRequiredPackageChecker"/>
@@ -99,6 +109,36 @@ public class RequiredPackageChecker : IRequiredPackageChecker
 
 	private IReadOnlyList<PackageInfo> GetPackages() =>
 		_packagesCache ??= _applicationPackageListProvider.GetPackages().ToList();
+
+	// Builds the list of requirements that must be enforced for this invocation, doing only metadata
+	// reflection (no package-list fetch). Class-level attributes are always included; property-level
+	// attributes are included only when their decorated bool property is true on the given instance.
+	// A non-bool decorated property is a misuse and fails fast here, before any HTTP cost is incurred.
+	private static List<RequiresPackageAttribute> CollectTriggeredRequirements(object instance, Type optionsType) {
+		List<RequiresPackageAttribute> triggered = [
+			.. (RequiresPackageAttribute[])optionsType.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: true)
+		];
+
+		foreach (PropertyInfo property in optionsType.GetProperties()) {
+			RequiresPackageAttribute[] propertyRequirements = (RequiresPackageAttribute[])
+				property.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: true);
+			if (propertyRequirements.Length == 0) {
+				continue;
+			}
+
+			if (property.PropertyType != typeof(bool)) {
+				throw new InvalidOperationException(
+					$"[RequiresPackage] on property '{optionsType.Name}.{property.Name}' is unsupported: " +
+					"only bool properties may carry a conditional package requirement.");
+			}
+
+			if (property.GetValue(instance) is true) {
+				triggered.AddRange(propertyRequirements);
+			}
+		}
+
+		return triggered;
+	}
 
 	private static IReadOnlyList<string> ResolveNames(string packageName) {
 		List<string> names = [packageName];
@@ -139,16 +179,21 @@ public class RequiredPackageChecker : IRequiredPackageChecker
 		return installedVersion >= new PackageVersion(requiredVersion, string.Empty);
 	}
 
-	public void EnsureRequirements(Type optionsType) {
-		RequiresPackageAttribute[] requirements = (RequiresPackageAttribute[])
-			optionsType.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: true);
+	public void EnsureRequirements(object instance) {
+		ArgumentNullException.ThrowIfNull(instance);
+		Type optionsType = instance.GetType();
 
-		// Zero-cost path: no requirements means we must not touch the package list (no HTTP).
-		if (requirements.Length == 0) {
+		// Reflect FIRST and collect every triggered requirement; touch the package list only when at
+		// least one requirement actually fires. This preserves the zero-cost guarantee: a command with a
+		// property-level requirement whose bool flag is false performs no HTTP at all.
+		List<RequiresPackageAttribute> triggered = CollectTriggeredRequirements(instance, optionsType);
+
+		// Zero-cost path: nothing triggered means we must not touch the package list (no HTTP).
+		if (triggered.Count == 0) {
 			return;
 		}
 
-		foreach (RequiresPackageAttribute requirement in requirements) {
+		foreach (RequiresPackageAttribute requirement in triggered) {
 			bool presenceOnly = string.IsNullOrEmpty(requirement.Version);
 			if (presenceOnly) {
 				if (!IsInstalled(requirement.Name)) {

@@ -77,7 +77,7 @@ public abstract class BaseTool<T>(
 		}
 		try {
 			IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
-			checker.EnsureRequirements(typeof(T));
+			checker.EnsureRequirements(options);
 			return null;
 		}
 		catch (PackageRequirementException ex) {

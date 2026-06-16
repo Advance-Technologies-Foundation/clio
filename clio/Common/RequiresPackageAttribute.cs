@@ -3,7 +3,7 @@ using System;
 namespace Clio.Common;
 
 /// <summary>
-/// Declares that the annotated command (or any type) requires a Creatio package to be installed
+/// Declares that the annotated command (or option) requires a Creatio package to be installed
 /// in the target environment, optionally at a minimum version.
 /// </summary>
 /// <remarks>
@@ -13,15 +13,36 @@ namespace Clio.Common;
 /// presence-only — the package merely has to be installed, with no version comparison.
 /// </para>
 /// <para>
-/// The attribute is purely declarative. The runtime check is performed by
-/// <see cref="IRequiredPackageChecker"/>, which reads every <see cref="RequiresPackageAttribute"/>
-/// declared on a type and validates the requirements against the installed packages.
+/// The attribute can be placed on a <b>class</b> or on a <b>property</b>:
+/// <list type="bullet">
+/// <item>
+/// <description>
+/// On a class the requirement is <b>always</b> enforced — the command cannot run unless the
+/// package is present (and compatible).
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// On a <c>bool</c> option property the requirement is enforced <b>only when that property is
+/// <c>true</c></b> for the current invocation (the flag selects a code path that needs the
+/// package). When the flag is <c>false</c> the requirement is skipped. Only <c>bool</c>
+/// properties are supported; decorating a non-<c>bool</c> property is a misuse and fails fast.
+/// </description>
+/// </item>
+/// </list>
 /// </para>
 /// <para>
-/// Multiple attributes may be applied to a single type to declare several package requirements.
+/// The attribute is purely declarative. The runtime check is performed by
+/// <see cref="IRequiredPackageChecker"/>, which reads every <see cref="RequiresPackageAttribute"/>
+/// declared on the options type (and on its properties) and validates the requirements against the
+/// installed packages.
+/// </para>
+/// <para>
+/// Multiple attributes may be applied to a single class or property to declare several package
+/// requirements.
 /// </para>
 /// </remarks>
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property, AllowMultiple = true, Inherited = true)]
 public sealed class RequiresPackageAttribute : Attribute
 {
 	/// <summary>
@@ -56,21 +77,29 @@ public sealed class RequiresPackageAttribute : Attribute
 	public string Hint { get; set; }
 
 	/// <summary>
-	/// Determines whether the specified type declares at least one <see cref="RequiresPackageAttribute"/>.
+	/// Determines whether the specified type, or any of its properties, declares at least one
+	/// <see cref="RequiresPackageAttribute"/>.
 	/// </summary>
 	/// <param name="type">The type to inspect.</param>
 	/// <returns>
-	/// <c>true</c> when <paramref name="type"/> carries a (possibly inherited)
-	/// <see cref="RequiresPackageAttribute"/>; otherwise <c>false</c>.
+	/// <c>true</c> when <paramref name="type"/> — or any of its (possibly inherited) properties —
+	/// carries a <see cref="RequiresPackageAttribute"/>; otherwise <c>false</c>.
 	/// </returns>
 	/// <remarks>
 	/// This is a cheap, network-free pre-check used by callers (such as the MCP execution gate) to
 	/// decide whether a package-requirement verification is needed before paying any resolution cost.
-	/// Uses <c>inherit: true</c> to stay consistent with
-	/// <see cref="IRequiredPackageChecker.EnsureRequirements(Type)"/>.
+	/// Property-level attributes MUST be considered here: a property-only-decorated options type
+	/// would otherwise be silently skipped by the pre-check, leaving its gated flag unenforced. Uses
+	/// <c>inherit: true</c> to stay consistent with
+	/// <see cref="IRequiredPackageChecker.EnsureRequirements(object)"/>.
 	/// </remarks>
 	public static bool IsDefinedOn(Type type) {
 		ArgumentNullException.ThrowIfNull(type);
-		return type.IsDefined(typeof(RequiresPackageAttribute), inherit: true);
+		if (type.IsDefined(typeof(RequiresPackageAttribute), inherit: true)) {
+			return true;
+		}
+		return Array.Exists(
+			type.GetProperties(),
+			property => property.IsDefined(typeof(RequiresPackageAttribute), inherit: true));
 	}
 }

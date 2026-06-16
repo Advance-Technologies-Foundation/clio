@@ -110,7 +110,7 @@ public sealed class BaseToolTests {
 		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
 		checker
-			.When(c => c.EnsureRequirements(Arg.Any<Type>()))
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
 			.Do(_ => throw new PackageRequirementException("Install the cliogate package."));
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
@@ -140,7 +140,7 @@ public sealed class BaseToolTests {
 		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
 		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
 		checker
-			.When(c => c.EnsureRequirements(Arg.Any<Type>()))
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
 			.Do(_ => throw new InvalidOperationException("GetPackages failed: 401 Unauthorized."));
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
@@ -198,13 +198,14 @@ public sealed class BaseToolTests {
 		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
 		// No ctor-injected checker exists on BaseTool anymore; the resolver is the only source.
 		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		GatedToolHarnessOptions options = new();
 
 		// Act
-		CommandExecutionResult result = tool.Execute(new GatedToolHarnessOptions());
+		CommandExecutionResult result = tool.Execute(options);
 
 		// Assert
 		resolver.Received(1).Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
-		checker.Received(1).EnsureRequirements(typeof(GatedToolHarnessOptions));
+		checker.Received(1).EnsureRequirements(options);
 		result.ExitCode.Should().Be(0,
 			because: "a satisfied package requirement verified through the environment-scoped checker must not block execution");
 		command.WasExecuted.Should().BeTrue(

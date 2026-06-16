@@ -71,6 +71,31 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 	[RequiresPackage("MyPkg", "2.0.x")]
 	private sealed class MalformedVersionRequirementOptions { }
 
+	// Property-level (presence-only) requirement: enforced only when the bool flag is true.
+	private sealed class PropertyRequirementOptions {
+		[RequiresPackage("MyPkg")]
+		public bool UseGatedPath { get; set; }
+	}
+
+	// Property-level VERSIONED requirement: enforced (with a version comparison) only when the bool flag is true.
+	private sealed class VersionedPropertyRequirementOptions {
+		[RequiresPackage("SomePkg", "2.0.0")]
+		public bool UseGatedPath { get; set; }
+	}
+
+	// Mixed: a class-level requirement (always) plus a property-level requirement (conditional).
+	[RequiresPackage("AlwaysPkg")]
+	private sealed class MixedRequirementOptions {
+		[RequiresPackage("FlaggedPkg")]
+		public bool UseGatedPath { get; set; }
+	}
+
+	// Misuse: [RequiresPackage] on a non-bool property must fail fast.
+	private sealed class NonBoolPropertyRequirementOptions {
+		[RequiresPackage("MyPkg")]
+		public string PackageName { get; set; }
+	}
+
 	#endregion
 
 	#region Methods: Protected
@@ -131,7 +156,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(SingleVersionedRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "the required package is missing")
@@ -148,7 +173,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(SingleVersionedRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "1.0.0 is lower than the required 2.0.0")
@@ -165,7 +190,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(SingleVersionedRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
 
 		// Assert
 		act.Should().NotThrow(because: "3.0.0 satisfies the minimum required 2.0.0");
@@ -181,7 +206,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(SingleVersionedRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
 
 		// Assert
 		act.Should().NotThrow(because: "an equal version satisfies a minimum-version requirement");
@@ -232,7 +257,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(CliogateRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new CliogateRequirementOptions());
 
 		// Assert
 		act.Should().NotThrow(because: "cliogate_netcore 1.1.1 satisfies the cliogate 1.0.0 requirement");
@@ -264,7 +289,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(PresenceOnlyRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementOptions());
 
 		// Assert
 		act.Should().NotThrow(because: "a presence-only requirement performs no version comparison");
@@ -280,7 +305,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(PresenceOnlyRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "the presence-only package is absent")
@@ -297,7 +322,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(VersionedRequirementWithHintOptions));
+		Action act = () => checker.EnsureRequirements(new VersionedRequirementWithHintOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "the required package is missing")
@@ -315,7 +340,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(PresenceOnlyRequirementWithHintOptions));
+		Action act = () => checker.EnsureRequirements(new PresenceOnlyRequirementWithHintOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "the presence-only package is missing")
@@ -333,7 +358,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(SingleVersionedRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new SingleVersionedRequirementOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(because: "the required package is missing")
@@ -351,7 +376,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(MalformedVersionRequirementOptions));
+		Action act = () => checker.EnsureRequirements(new MalformedVersionRequirementOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(
@@ -389,7 +414,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		Action act = () => checker.EnsureRequirements(typeof(MultipleRequirementsOptions));
+		Action act = () => checker.EnsureRequirements(new MultipleRequirementsOptions());
 
 		// Assert
 		act.Should().Throw<PackageRequirementException>(
@@ -405,7 +430,7 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		checker.EnsureRequirements(typeof(NoRequirementOptions));
+		checker.EnsureRequirements(new NoRequirementOptions());
 
 		// Assert
 		_applicationPackageListProviderMock.DidNotReceive().GetPackages();
@@ -422,10 +447,135 @@ public class RequiredPackageCheckerTests : BaseClioModuleTests
 		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
 
 		// Act
-		checker.EnsureRequirements(typeof(MultipleRequirementsOptions));
+		checker.EnsureRequirements(new MultipleRequirementsOptions());
 
 		// Assert
 		_applicationPackageListProviderMock.Received(1).GetPackages();
+	}
+
+	[Test]
+	[Description("A property-level requirement throws when its bool flag is true and the package is absent.")]
+	public void EnsureRequirements_ShouldThrow_WhenPropertyFlagTrueAndPackageMissing(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(1, 0, 0), "not_my_pkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new PropertyRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+				because: "the flag selecting the gated path is true so its package requirement is enforced")
+			.WithMessage("*MyPkg*",
+				because: "the exception must name the package the triggered flag requires");
+	}
+
+	[Test]
+	[Description("A triggered property-level versioned requirement throws when the installed version is below the required minimum.")]
+	public void EnsureRequirements_ShouldThrow_WhenPropertyFlagTrueAndInstalledVersionIsOlder(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(1, 0, 0), "SomePkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new VersionedPropertyRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+				because: "the flag selecting the gated path is true and the installed 1.0.0 is below the required 2.0.0")
+			.WithMessage("*SomePkg*2.0.0*",
+				because: "the exception must name the package and its unmet minimum version");
+	}
+
+	[Test]
+	[Description("A triggered property-level versioned requirement does not throw when the installed version meets the required minimum.")]
+	public void EnsureRequirements_ShouldNotThrow_WhenPropertyFlagTrueAndInstalledVersionMeetsMinimum(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(2, 0, 0), "SomePkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new VersionedPropertyRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		act.Should().NotThrow(
+			because: "the gated path is selected and the installed 2.0.0 satisfies the required minimum 2.0.0");
+	}
+
+	[Test]
+	[Description("A property-level requirement is skipped (no throw) and the package list is never fetched when its bool flag is false.")]
+	public void EnsureRequirements_ShouldNotThrowOrFetch_WhenPropertyFlagFalse(){
+		// Arrange
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new PropertyRequirementOptions { UseGatedPath = false });
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a false flag does not select the gated path, so its package requirement is not enforced");
+		_applicationPackageListProviderMock.DidNotReceive().GetPackages();
+	}
+
+	[Test]
+	[Description("A class-level requirement is always enforced even when a property flag on the same type is false.")]
+	public void EnsureRequirements_ShouldThrowOnClassRequirement_WhenPropertyFlagFalseAndClassPackageMissing(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(1, 0, 0), "not_my_pkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new MixedRequirementOptions { UseGatedPath = false });
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+				because: "the class-level requirement is unconditional regardless of the property flag")
+			.WithMessage("*AlwaysPkg*",
+				because: "the unconditional class-level package is the one missing");
+	}
+
+	[Test]
+	[Description("Both a class-level and a triggered property-level requirement are enforced when the flag is true.")]
+	public void EnsureRequirements_ShouldThrowOnTriggeredProperty_WhenClassRequirementSatisfiedAndFlagTrue(){
+		// Arrange
+		_applicationPackageListProviderMock.GetPackages().Returns([
+			_createPackageInfo(new Version(1, 0, 0), "AlwaysPkg")
+		]);
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new MixedRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>(
+				because: "the triggered property-level requirement (FlaggedPkg) is unsatisfied")
+			.WithMessage("*FlaggedPkg*",
+				because: "the missing flag-gated package must be named even though the class package is present");
+	}
+
+	[Test]
+	[Description("A non-bool property carrying [RequiresPackage] fails fast with InvalidOperationException naming the property and never fetches packages.")]
+	public void EnsureRequirements_ShouldThrowInvalidOperation_WhenNonBoolPropertyIsDecorated(){
+		// Arrange
+		IRequiredPackageChecker checker = Container.GetRequiredService<IRequiredPackageChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new NonBoolPropertyRequirementOptions { PackageName = "x" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "only bool properties may carry a conditional [RequiresPackage]")
+			.WithMessage("*PackageName*",
+				because: "the misused property must be named so the developer can fix it");
+		_applicationPackageListProviderMock.DidNotReceive().GetPackages();
 	}
 
 	#endregion

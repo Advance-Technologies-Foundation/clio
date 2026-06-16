@@ -513,7 +513,7 @@ internal class Program {
 			return false;
 		}
 		try {
-			checker.EnsureRequirements(options.GetType());
+			checker.EnsureRequirements(options);
 			return false;
 		}
 		catch (PackageRequirementException ex) {

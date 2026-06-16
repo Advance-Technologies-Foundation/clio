@@ -26,7 +26,7 @@ public sealed class ProgramPackageRequirementGateTests {
 		// Arrange
 		SomeOptions options = new();
 		_checker
-			.When(c => c.EnsureRequirements(typeof(SomeOptions)))
+			.When(c => c.EnsureRequirements(options))
 			.Do(_ => throw new PackageRequirementException("Install the cliogate package."));
 
 		// Act
@@ -45,7 +45,7 @@ public sealed class ProgramPackageRequirementGateTests {
 		// Arrange
 		SomeOptions options = new();
 		_checker
-			.When(c => c.EnsureRequirements(typeof(SomeOptions)))
+			.When(c => c.EnsureRequirements(options))
 			.Do(_ => throw new InvalidOperationException("Unable to connect to the remote server."));
 
 		// Act
@@ -72,7 +72,7 @@ public sealed class ProgramPackageRequirementGateTests {
 			because: "a satisfied (or absent) package requirement must let the command dispatch normally");
 		errorMessage.Should().BeNull(
 			because: "no error message is produced when dispatch is permitted");
-		_checker.Received(1).EnsureRequirements(typeof(SomeOptions));
+		_checker.Received(1).EnsureRequirements(options);
 	}
 
 	[Test]
