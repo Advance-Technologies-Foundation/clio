@@ -46,8 +46,8 @@ public sealed class RelatedListGuidanceResource {
 		       There is NO single "detail" component
 		       - No `crt.Detail` / `crt.ExpandableList` / `crt.ExpandedList` type exists. The designer's
 		         "Expanded list" detail is a COMPOSITE you assemble yourself:
-		         - `crt.ExpansionPanel` — the collapsible frame: `title`, the header `tools` area (the "+ New"
-		           add button), and `items` (the body).
+		         - `crt.ExpansionPanel` — the collapsible frame: `title`, the header `tools` area (an optional add button — see
+		           "Adding records to the detail" below first), and `items` (the body).
 		         - `crt.DataGrid` (or `crt.List`) — the records list, placed inside the panel's `items`.
 		       - Dropping a bare `crt.DataGrid` into a tab/container produces a list that does NOT look like a
 		         native detail (no collapsible header, no title, no add action). Wrap it in `crt.ExpansionPanel`.
@@ -151,10 +151,33 @@ public sealed class RelatedListGuidanceResource {
 		         `parentName`/`propertyName`/`index` placement, and `get-component-info` for `columns`,
 		         `features`, and toolbar slots.
 
-		       Editable vs read-only
-		       - The inner `crt.DataGrid` is read-only by default (`features.editable.enable: false`). For inline
-		         add/edit set `features.editable.enable: true` and `features.editable.itemsCreation: true`; new
-		         rows inherit the master foreign key from the dependency relationship.
+		       Adding records to the detail — inline grid add is the DEFAULT; a header "Add" button needs a resolvable page
+		       - DEFAULT, always safe: enable INLINE add on the inner `crt.DataGrid` — it is read-only by default
+		         (`features.editable.enable: false`), so set `features.editable.enable: true` and
+		         `features.editable.itemsCreation: true`. The grid renders a "+ New" row; the new record inherits
+		         the master foreign key from the `dependencies` relationship, so it is scoped to the open record
+		         with NO extra wiring, NO separate page, and NO navigation. This works for ANY child entity —
+		         INCLUDING a standalone detail entity that has no section. Prefer this whenever the requirement is
+		         "add a related item" / "an Add button"; the "+ New" row IS the add affordance the user asked for.
+		       - FOOTGUN — do NOT, by default, satisfy "Add button" with a header `tools` button wired to
+		         `crt.CreateRecordRequest`. That request opens the child entity's navigation/edit page, which the
+		         runtime resolves from the entity's REGISTERED page. A standalone detail entity (created with
+		         `create-entity-schema` + a `create-page` FormPage but NO section) has no registered navigation/edit
+		         page, so clicking the button throws the runtime toast "There is no page for new or existing record.
+		         System administrator must check the button settings in the Freedom UI." (console: `_openEntityPage`
+		         -> `_showEntityNavigationError`). The page and the grid still load — only the click fails — and
+		         `update-page` reports `success: true`, so the break surfaces only in the browser. Reload and click
+		         the button to verify; never trust the save result alone.
+		       - If a separate header button is explicitly required (inline add is not wanted), make the target page
+		         resolvable in one of two ways, AND seed the master FK so the new record stays linked:
+		         - pass an explicit `entityPageName` in the request `params` naming an existing FormPage schema
+		           (e.g. `"entityPageName": "UsrContactItem_FormPage"`) so the runtime opens that page directly
+		           instead of looking one up; or
+		         - give the child entity a real section (`create-app-section`) so its edit page is registered for
+		           navigation.
+		         Either way set `params.defaultValues` to the master FK, e.g.
+		         `[{ "name": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
+		         `attributePath`), so the created record points back at the open record.
 
 		       Reuse, don't duplicate
 		       - Do NOT create a new child schema when an existing child entity + relationship already models the
@@ -185,6 +208,12 @@ public sealed class RelatedListGuidanceResource {
 		         It is the reverse: `attributePath` = child FK column, `relationPath` = master id path (`PDS.Id`).
 		       - Pointing `relationPath` at something other than the page `primaryDataSourceName` — the runtime
 		         cannot resolve the open record's id and the list is not scoped.
+		       - Satisfying an "Add button" with a header `tools` button wired to `crt.CreateRecordRequest` for a
+		         standalone detail entity that has no registered navigation/edit page. The click throws "There is
+		         no page for new or existing record" even though `update-page` returned `success: true`. Prefer
+		         inline grid add (`features.editable.enable` + `features.editable.itemsCreation`) — the safe
+		         default — or pass an explicit `entityPageName` (an existing FormPage) / register a section page.
+		         See "Adding records to the detail".
 		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters` column-path
 		         normalization; use the bare reference column name.
 		       """

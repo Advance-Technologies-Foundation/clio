@@ -71,6 +71,16 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |
 		         | page init, destroy, attribute-change orchestration, editor interaction, or domain-specific workflow | handler in `SCHEMA_HANDLERS` | handlers runtime | yes |
 
+		       crt.CreateRecordRequest page-resolution note
+		       - A button/menu wired to `crt.CreateRecordRequest` opens the target entity's navigation/edit page,
+		         which the runtime resolves from the entity's REGISTERED page. For a standalone detail/child
+		         entity with NO section (no registered edit page) the click throws this exact toast:
+		         "There is no page for new or existing record. System administrator must check the button settings in the Freedom UI." (even
+		         though `update-page` reported `success: true` — the break surfaces only on click in the browser).
+		         Pass an explicit `entityPageName` in `params` naming an existing FormPage schema, or register a
+		         section page (`create-app-section`). To simply ADD rows to a related list, prefer INLINE grid add
+		         (`features.editable.itemsCreation`) — no page needed; see get-guidance `related-list`.
+
 		       Request shape quick reference
 		       - Do NOT mix the declarative page-config shape with the imperative runtime-dispatch shape.
 		         | Use case | Shape | Canonical example |
