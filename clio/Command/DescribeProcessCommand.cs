@@ -7,6 +7,10 @@ using ErrorOr;
 
 namespace Clio.Command;
 
+// NOTE: process reading is delegated to the server-side ProcessDesignService package (universal element
+// typing incl. user-task schema names and parameter value sources). Requires the clioprocessbuilder package
+// on the target environment.
+
 /// <summary>
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
 /// </summary>
@@ -31,10 +35,12 @@ public class DescribeProcessOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Reads an existing process's schema and prints a structured JSON graph (elements, flows, parameters)
-/// so an AI agent can explain in plain language what the process does. The inverse of process generation.
+/// Reads an existing process into a structured JSON graph (elements, flows, parameters) so an AI agent can
+/// explain in plain language what the process does. The inverse of process generation. Delegates the read to
+/// the server-side <c>ProcessDesignService</c> package, which types elements from the real object model
+/// (including the specific user-task schema name and parameter value sources).
 /// </summary>
-public class DescribeProcessCommand(IProcessSchemaReader schemaReader, IProcessGraphExtractor extractor, ILogger logger)
+public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	: Command<DescribeProcessOptions> {
 
 	private static readonly JsonSerializerOptions OutputOptions = new() {
@@ -57,15 +63,14 @@ public class DescribeProcessCommand(IProcessSchemaReader schemaReader, IProcessG
 			return 1;
 		}
 
-		ErrorOr<ProcessSchemaResponse> schema = schemaReader.Read(
-			new ProcessIdentity(options.ProcessCode, options.ProcessUid, options.ProcessCaption));
-		if (schema.IsError) {
-			logger.WriteError($"Error: {schema.FirstError.Description}.");
+		ErrorOr<DescribeProcessResult> description = describer.Describe(
+			new ProcessIdentity(options.ProcessCode, options.ProcessUid, options.ProcessCaption), options.Culture);
+		if (description.IsError) {
+			logger.WriteError($"Error: {description.FirstError.Description}.");
 			return 1;
 		}
 
-		ProcessDescription description = extractor.Extract(schema.Value, options.Culture);
-		logger.WriteInfo(JsonSerializer.Serialize(description, OutputOptions));
+		logger.WriteInfo(JsonSerializer.Serialize(description.Value, OutputOptions));
 		return 0;
 	}
 }

@@ -99,8 +99,7 @@ public sealed class DescribeProcessToolTests {
 		public DescribeProcessOptions CapturedOptions { get; private set; }
 
 		public FakeDescribeProcessCommand()
-			: base(Substitute.For<IProcessSchemaReader>(), Substitute.For<IProcessGraphExtractor>(),
-				Substitute.For<ILogger>()) {
+			: base(Substitute.For<IProcessDescriber>(), Substitute.For<ILogger>()) {
 		}
 
 		public override int Execute(DescribeProcessOptions options) {

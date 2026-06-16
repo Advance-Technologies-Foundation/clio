@@ -54,6 +54,9 @@ externalLink:externalLink,link
 extract-pkg-zip:extract-pkg-zip,extract,unzip,extract-package
 generate-pkg-zip:generate-pkg-zip,comp-pkg,compress
 describe-process:describe-process,dp
+create-business-process:create-business-process,create-bp
+modify-business-process:modify-business-process,modify-bp
+list-user-tasks:list-user-tasks,luts
 generate-process-model:generate-process-model,gpm
 generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash

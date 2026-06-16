@@ -121,7 +121,27 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Generates source code for schemas that require it.
 		/// </summary>
-		GenerateRequiredSchemasSources = 41
+		GenerateRequiredSchemasSources = 41,
+
+		/// <summary>
+		///     Builds a business process from a declarative descriptor via the ProcessDesignService package.
+		/// </summary>
+		BuildProcess = 42,
+
+		/// <summary>
+		///     Lists the available user-facing user tasks (designer palette) via the ProcessDesignService package.
+		/// </summary>
+		ListUserTasks = 43,
+
+		/// <summary>
+		///     Reads an existing process as a structured graph via the ProcessDesignService package.
+		/// </summary>
+		DescribeProcessSchema = 44,
+
+		/// <summary>
+		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
+		/// </summary>
+		ModifyProcess = 45
 
 	}
 
@@ -176,6 +196,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
+		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
+		{KnownRoute.DescribeProcessSchema, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

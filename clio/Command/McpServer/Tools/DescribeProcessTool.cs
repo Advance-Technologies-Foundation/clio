@@ -25,7 +25,7 @@ public sealed class DescribeProcessTool(
 	/// Reads the identified process and returns its structured graph (elements, flows, parameters).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Reads an existing Creatio process and returns a STRUCTURED graph (elements with type/label/parameters, flows with source/target/kind, and process parameters) — not the raw metadata. Identify the process by exactly one of process-code / process-uid / process-caption. Pair with get-guidance name=process-modeling to explain it. (v1 does not decode filter/mapping expressions.)")]
+	[Description("Reads an existing Creatio process and returns a STRUCTURED graph (elements with runtime type, the specific user-task schema name, label and value-bearing parameters; flows with source/target/kind; and process parameters) — not the raw metadata. Element typing comes from the real object model server-side (universal, incl. custom user tasks); parameter values carry their source (Mapping/ConstValue/Script) and expression. Identify the process by exactly one of process-code / process-uid / process-caption. Pair with get-guidance name=process-modeling to explain it. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult DescribeProcess(
 		[Description("describe-process parameters")]
 		[Required]

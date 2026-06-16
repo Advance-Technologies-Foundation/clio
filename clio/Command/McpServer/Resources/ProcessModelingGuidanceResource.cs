@@ -6,7 +6,8 @@ namespace Clio.Command.McpServer.Resources;
 
 /// <summary>
 /// Provides canonical AI-facing guidance for designing Creatio business processes (BPMN) through clio MCP:
-/// the element catalog, the connection rules (R1–R17), and the validate-then-drive build recipe.
+/// the element catalog, the connection rules (R1–R17), and the declarative build recipe
+/// (create-business-process / modify-business-process / describe-process / list-user-tasks).
 /// </summary>
 [McpServerResourceType]
 public sealed class ProcessModelingGuidanceResource {
@@ -18,7 +19,7 @@ public sealed class ProcessModelingGuidanceResource {
 	/// Returns the canonical guidance article for AI-driven Creatio business process modeling.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "process-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for designing Creatio business processes: BPMN element catalog, connection rules R1-R17, and the validate-then-drive build recipe.")]
+	[Description("Returns canonical MCP guidance for designing Creatio business processes: the declarative build recipe (create-business-process / modify-business-process / list-user-tasks / describe-process), the BPMN element catalog, and connection rules R1-R17.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -27,36 +28,78 @@ public sealed class ProcessModelingGuidanceResource {
 		Text = """
 			clio MCP process-modeling guide — design Creatio business processes (BPMN)
 
-			== Determinism contract (read first) ==
-			- clio makes no LLM call. You own the intent->BPMN translation: you decide which elements the
-			  process needs, what their parameters are, and how they connect. clio only runs deterministic steps.
-			- Metadata is owned by the designer. Never hand-author process metadata, filters, or column
-			  mappings — express intent; the visual Process Designer (which clio drives via the process-* tools)
-			  serializes it. Producing valid process metadata by hand is error-prone and is not your job.
-			- Before driving the designer, call `validate-process-graph` with your planned graph (nodes as
-			  data-id strings + flows). Resolve every error-severity finding before building.
-			- The live designer is the FINAL authority. After each connection clio checks the flow for the
-			  `.djs-validate-outline` marker; if present, the connection is invalid and is reverted. Treat the
-			  static validator as a fast pre-check, not the source of truth — the designer's own rules win.
+			== How clio builds processes (read first) ==
+			- clio makes no LLM call. You own the intent->BPMN translation: decide which elements the process
+			  needs, their parameters, and how they connect. The server-side ProcessDesignService package owns
+			  metadata serialization — you NEVER hand-author process metadata, filters, or column mappings.
+			- The build is DECLARATIVE: you describe the process (elements + flows + parameters + mappings) and
+			  clio builds + saves it in one call. Diagram layout is automatic (start leftmost, end rightmost, no
+			  overlap) — do not set positions.
+			- Tools:
+			  * list-user-tasks         — the user-task palette (name + uid); pass a name as `userTaskName`.
+			  * create-business-process — build a NEW process from a JSON descriptor, and save it.
+			  * modify-business-process — edit an EXISTING process by an ordered list of operations.
+			  * describe-process        — read a process back as a structured graph (verify / explain).
+			  * validate-process-graph  — pre-check a planned graph against the connection rules R1-R17.
 
-			== Supported slice (what clio can DRIVE today) ==
-			- Start events: Simple/Signal/Timer start.
-			- Activity: Read data (data-id `readDataUserTask`).
-			- Everything else in the catalog below is described for context, not yet drivable by clio. Use it to
-			  reason about a solution and to read/explain existing processes (`describe-process`), but do not
-			  expect a `process-add-element` driver for those types in this increment.
+			== What you can build today (create-business-process) ==
+			- Events: `startEvent` (Simple start), `signalStart` (record signal: add/modify/delete), `endEvent`.
+			- Activities: `userTask` referencing any task from list-user-tasks via `userTaskName`
+			  (aliases `readData`->ReadDataUserTask, `performTask`->ActivityUserTask).
+			- Sequence flows; process-level parameters; element-parameter mappings.
+			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
+			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
+			  READ existing processes (`describe-process`); don't expect to build those types in this increment.
+
+			== Descriptor (create-business-process) ==
+			{
+			  "name": "UsrSchemaCode", "caption": "Title", "packageName": "Custom",
+			  "elements": [
+			    { "id": "Start1", "type": "startEvent" },
+			    { "id": "task1",  "type": "performTask", "caption": "..." },
+			    { "id": "End1",   "type": "endEvent" }
+			  ],
+			  "flows":      [ { "source": "Start1", "target": "task1" }, { "source": "task1", "target": "End1" } ],
+			  "parameters": [ { "name": "MyText", "type": "Text", "direction": "In", "caption": "..." } ],
+			  "mappings":   [ { "elementId": "task1", "elementParameter": "<ParamName>", "processParameter": "MyText" } ]
+			}
+			- `id` is the local element name used by flows/mappings. A `userTask` element auto-carries the task's
+			  parameters; map values into them with `mappings`. For a record trigger use `signalStart` (next section).
+
+			== Trigger a process on a record event ("run on save" of a page/record) — READ THIS ==
+			- When the goal is "run a process when a record is saved / added / changed / deleted" (e.g. on a page
+			  like UsrXxx_FormPage), that is a PROCESS trigger, NOT page logic. Make the process START with a
+			  Signal start element bound to the object. Do NOT add a client-side save handler
+			  (`crt.SaveRecordRequest` / any page handler) to launch a process on save — that is the wrong tool and
+			  a fragile workaround. The signal start is the platform-native, declarative trigger.
+			- Build it with `create-business-process`. The start element is:
+			    { "id": "Start1", "type": "signalStart", "signal": { "entity": "<EntityName>", "on": "modified" } }
+			  then the activity (e.g. a Perform task / `performTask` that shows a Task), then an `endEvent`,
+			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
+			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
+			  "added or modified"). "On save" of a record edited on a page = "modified"; a brand-new record = "added".
+			- To convert an EXISTING process to start on a record event, use `modify-business-process`:
+			  removeElement the current start, addElement a `signalStart`, addFlow signalStart -> (first activity).
 
 			== Build recipe (intent -> running process) ==
-			1. Translate the request into a graph: one start event, the activities, the sequence/conditional
-			   flows, and an end event.
-			2. `validate-process-graph(graph)` -> fix all errors.
-			3. For each element, `process-add-element(...)`: clio opens the authenticated designer (CDP), appends
-			   the element from the source element's context pad (`add.serviceTask` defaults to `readDataUserTask`),
-			   morphs it to the target data-id if needed (`[data-action=setup]` -> group -> data-id), fills the
-			   right-panel setup card, connects (`connect`), checks `.djs-validate-outline` is absent, and saves.
-			4. Verify: `describe-process` / `generate-process-model` / `execute-esq` (VwProcessLib by caption).
+			1. Translate the request into a graph: one start event, the activities, the sequence flows, one or
+			   more end events; plus process parameters and the value mappings between them.
+			2. (recommended) `validate-process-graph(graph)` -> fix every error-severity finding.
+			3. `list-user-tasks` -> pick the exact `userTaskName`(s) for your activities.
+			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
+			5. Verify: `describe-process` (element types, user-task names, parameter sources, the signal trigger) /
+			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
+			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow).
+			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
+			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
+			  physically fire yet.
 
 			== Element catalog (data-id -> label -> purpose) ==
+			(The `data-id` strings below are the vocabulary for `validate-process-graph` and for reasoning about /
+			reading processes. To BUILD, map them to the create-business-process `type` + `userTaskName`: events
+			`startEvent`/`startEventSignal`->`signalStart`/`endEvent`; a user/system task -> `type:"userTask"` with
+			`userTaskName` from list-user-tasks, e.g. Perform task = `performTask`/ActivityUserTask, Read data =
+			`readData`/ReadDataUserTask.)
 			System actions (palette group "System actions"):
 			- `readDataUserTask`  Read data    — read first record / aggregate / count / collection of an object.
 			    Setup fields: DataReadMode, EntitySchemaSelect (object), filters, SortByColumn_N, ColumnSelectMode.
@@ -78,15 +121,15 @@ public sealed class ProcessModelingGuidanceResource {
 			Flows: sequence (default `connect`), conditional (setup -> conditionalConnection), default (setup -> defaultConnection).
 
 			== Parameters / mapping / formulas ==
-			- Parameters: process-level (Parameters tab) vs element-level. Types: Text, Integer/Decimal, Boolean,
-			  Lookup, Date/Time, Currency, Collection, Id. Direction: Input (set before) / Output (set during) /
-			  bi-directional (sub-process). Value sources: constant, system setting/variable, formula, or another parameter.
-			- Mapping: bind a later element's input to an earlier element's output via the value-picker
-			  (Process parameter -> source element -> source parameter). Reference syntax `[#ElementName.PropertyPath#]`,
-			  e.g. `[#Read data.First item.Id#]`, `[#Read products.First element of the resulting collection.Name#]`.
-			  Add data returns only `Id` -> chain a Read data to read other fields.
-			- Formulas: C#-like, strictly typed (convert with `.ToString()` etc.). Examples: `"text " + [#param#]`,
-			  `[#System variable.Current date and time#].AddDays(3)`, `([#A#] - [#B#]).TotalHours`.
+			- Process parameters (`parameters[]`): { name, type (Text/Integer/Boolean/DateTime/Float/Lookup/...),
+			  direction (In/Out/Variable/Internal), caption }. A user-task element's own parameters come from the task.
+			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
+			  { elementId, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
+			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
+			  field (the server builds the correct reference); `expression` is a C#-like formula, e.g.
+			  `[#SysVariable.CurrentUserContact#]`, `[#System variable.Current date and time#].AddDays(3)`.
+			- Reference syntax when an expression must read another element's output: `[#ElementName.PropertyPath#]`
+			  (e.g. `[#Read data.First item.Id#]`). Formulas are strictly typed (convert with `.ToString()` etc.).
 
 			== Connection rules R1–R17 (pre-checked by validate-process-graph) ==
 			R1  Start event: no incoming flow; exactly one outgoing.

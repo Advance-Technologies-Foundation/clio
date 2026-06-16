@@ -21,13 +21,21 @@ OPTIONS
 Provide EXACTLY ONE of --process-code / --process-uid / --process-caption.
 
 OUTPUT
-  Structured JSON with three sections:
-    elements   - [{ id, dataId, type, label, parameters }]
+  Structured JSON with:
+    name, caption, schemaUId
+    elements   - [{ id, name, caption, type, userTaskName?, position, parameters }]
+                 type = runtime class (e.g. ProcessSchemaUserTask); userTaskName = the
+                 specific user-task schema (e.g. ActivityUserTask), incl. custom ones.
     flows      - [{ source, target, kind }]  (kind: sequence | conditional | default)
-    parameters - process-level parameters (name, type, direction, caption)
+    parameters - [{ name, uid, source, value }]  (process-level inputs / variables)
+  Each element/process parameter carries its value source (None | ConstValue | Mapping |
+  Script | SystemValue | ...) and the raw value/expression.
 
 NOTES
-  - Reuses the existing ProcessSchemaRequest read path; element types use the same
-    vocabulary as the `process-modeling` guidance and `validate-process-graph`.
-  - v1 does NOT decode element filter / mapping expressions — it returns structure,
-    element types, flows, and basic parameters only.
+  - The read is performed server-side by the ProcessDesignService (clioprocessbuilder)
+    package via platform managers (runtime instance, with a design-time fallback for
+    file-design-mode). The target environment must have the package installed.
+  - Element typing is universal (real object model), so custom user tasks resolve to their
+    actual schema name.
+  - Parameter value expressions are surfaced verbatim (incl. formula [#...#] references);
+    translating them into plain language is planned future work.

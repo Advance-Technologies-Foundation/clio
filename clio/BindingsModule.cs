@@ -252,6 +252,12 @@ public class BindingsModule {
 		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
+		services.AddTransient<IListUserTasksService, ListUserTasksService>();
+		services.AddTransient<ListUserTasksCommand>();
+		services.AddTransient<ICreateBusinessProcessService, CreateBusinessProcessService>();
+		services.AddTransient<CreateBusinessProcessCommand>();
+		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
+		services.AddTransient<ModifyBusinessProcessCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();

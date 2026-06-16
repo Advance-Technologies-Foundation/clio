@@ -5,6 +5,11 @@ process parameters) instead of the raw escaped metadata — so an AI agent can e
 language, what the process does. This is the inverse of process generation (the "read & explain"
 capability).
 
+The read is performed **server-side** by the `ProcessDesignService` package: element types come from
+the real object model (the runtime class plus the specific user-task schema name, including custom
+user tasks) and each parameter carries its value source. Requires the `clioprocessbuilder` package on
+the target environment.
+
 **Alias:** `dp`
 
 ## Usage
@@ -33,26 +38,36 @@ Structured JSON:
 
 ```jsonc
 {
-  "code": "UsrProcess_493d4c9",
+  "name": "UsrProcess_493d4c9",
   "caption": "AI PoC Read Contact",
-  "uId": "dd3a473e-736a-4957-bb6d-7315f6404bd6",
+  "schemaUId": "dd3a473e-736a-4957-bb6d-7315f6404bd6",
   "elements": [
-    { "id": "...", "dataId": "StartEvent", "type": "Start", "label": "Start", "parameters": [] },
-    { "id": "...", "dataId": "ServiceTask", "type": "Activity", "label": "Read data 1", "parameters": [ /* ... */ ] },
-    { "id": "...", "dataId": "EndEvent", "type": "End", "label": "End", "parameters": [] }
+    { "id": "...", "name": "StartEvent1", "caption": "Start", "type": "ProcessSchemaStartEvent", "position": "60;185", "parameters": [] },
+    {
+      "id": "...", "name": "task1", "caption": "Do task",
+      "type": "ProcessSchemaUserTask", "userTaskName": "ActivityUserTask", "position": "240;173",
+      "parameters": [
+        { "name": "Recommendation", "uid": "...", "source": "Script", "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{...}]#]" },
+        { "name": "Duration", "uid": "...", "source": "ConstValue", "value": "20" }
+      ]
+    },
+    { "id": "...", "name": "EndEvent1", "caption": "End", "type": "ProcessSchemaEndEvent", "position": "420;185", "parameters": [] }
   ],
   "flows": [
     { "source": "...", "target": "...", "kind": "sequence" }
   ],
   "parameters": [
-    { "name": "...", "type": "Guid", "direction": "Input", "caption": "..." }
+    { "name": "MyText", "uid": "...", "source": "None" }
   ]
 }
 ```
 
-- `elements[].type` is the coarse role (Start / End / Activity / Gateway / Intermediate), resolved
-  through the same `ManagerMap` taxonomy used by `validate-process-graph` and the `process-modeling`
-  guidance.
+- `elements[].type` is the element's **runtime class name** (e.g. `ProcessSchemaUserTask`,
+  `ProcessSchemaStartEvent`); for user tasks `userTaskName` carries the specific user-task schema
+  (e.g. `ReadDataUserTask`, `ActivityUserTask`, or a custom one).
+- `elements[].parameters[]` and the top-level `parameters[]` list each value-bearing parameter with its
+  `source` (`None` / `ConstValue` / `Mapping` / `Script` / `SystemValue` / …) and the raw `value`
+  expression (for a formula source, the `[#…#]` expression).
 - `flows[].kind` is `sequence`, `conditional`, or `default`.
 
 ## Examples
@@ -67,12 +82,14 @@ clio dp --process-caption "AI PoC Read Contact" -e my-env
 
 ## Notes
 
-- Reuses the existing `ProcessSchemaRequest` read path (`generate-process-model` parsing) — it simply
-  exposes the **element graph + flows** alongside the process parameters.
-- **Limitation (v1):** element **filter / mapping** expressions (the heavily-escaped
-  `FilterGroup` / `ParameterExpression` payloads) are **not** decoded. `describe-process` returns
-  structure, element types, flows, and basic parameters only. Decoding those expressions into plain
-  language is planned future work.
+- The read is delegated to the server-side `ProcessDesignService.DescribeProcess` (the
+  `clioprocessbuilder` package), which reads the schema through the platform managers (runtime
+  instance, with a design-time fallback for file-design-mode / uncompiled processes). The target
+  environment must have the package installed.
+- Element typing is **universal** — taken from the real object model rather than a client-side GUID
+  map — so custom user tasks resolve to their actual schema name.
+- Parameter `value` expressions are surfaced **verbatim** (including formula `[#…#]` references).
+  Translating those expressions into plain-language descriptions is planned future work.
 
 ## Related
 

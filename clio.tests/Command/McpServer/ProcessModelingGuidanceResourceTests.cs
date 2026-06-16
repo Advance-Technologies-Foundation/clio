@@ -50,32 +50,32 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The guidance instructs validate-before-drive and names .djs-validate-outline as the designer's final authority.")]
-	public void GetGuide_ShouldInstructValidateBeforeDrive_WhenRead() {
+	[Description("The guidance recommends validate-process-graph before building and names the declarative create-business-process build.")]
+	public void GetGuide_ShouldRecommendValidateBeforeBuild_WhenRead() {
 		// Act
 		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
 
 		// Assert
 		text.Should().Contain("validate-process-graph",
-			because: "the agent must call validate-process-graph before driving the designer");
-		text.Should().Contain(".djs-validate-outline",
-			because: "the guide must name the live designer's invalid-connection marker as the final authority");
+			because: "the agent should pre-check the planned graph against R1-R17 before building");
+		text.Should().Contain("create-business-process",
+			because: "the build path is the declarative create-business-process call, not a CDP driver");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The guidance scopes the drivable slice (Simple/Signal/Timer start + Read data) and marks other elements as not-yet-drivable.")]
+	[Description("The guidance scopes what is buildable today (start/signalStart/end + user tasks) and marks the rest as not yet buildable.")]
 	public void GetGuide_ShouldScopeSupportedSlice_WhenRead() {
 		// Act
 		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
 
 		// Assert
-		text.Should().Contain("Simple/Signal/Timer start",
-			because: "the supported start triggers for the slice must be stated");
+		text.Should().Contain("signalStart",
+			because: "the record-signal start is a buildable start element");
 		text.Should().Contain("Read data",
-			because: "Read data is the drivable activity for this increment");
-		text.Should().Contain("described for context, not yet drivable",
-			because: "non-slice elements must be explicitly marked as not yet drivable by clio");
+			because: "Read data is a buildable user-task activity");
+		text.Should().Contain("NOT yet buildable",
+			because: "elements outside the supported slice must be explicitly marked as not yet buildable");
 	}
 
 	[Test]
@@ -92,8 +92,22 @@ public sealed class ProcessModelingGuidanceResourceTests {
 			because: "the connection rules section must start at R1");
 		text.Should().Contain("R17",
 			because: "the connection rules section must run through R17");
-		text.Should().Contain("add.serviceTask",
-			because: "the build recipe must describe the context-pad append mechanic");
+		text.Should().Contain("create-business-process",
+			because: "the build recipe must name the declarative create-business-process call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance steers record-triggered processes (run on save) to a signalStart element, not a page save handler.")]
+	public void GetGuide_ShouldSteerRecordTriggerToSignalStart_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("signalStart",
+			because: "running a process on a record event is done with a signal start element");
+		text.Should().Contain("crt.SaveRecordRequest",
+			because: "the guidance must explicitly warn against using a page save handler to launch a process");
 	}
 
 	[Test]
