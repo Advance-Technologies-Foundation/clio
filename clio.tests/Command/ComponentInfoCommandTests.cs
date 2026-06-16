@@ -30,6 +30,27 @@ public sealed class ComponentInfoCommandTests {
 	]
 	""";
 
+	// A catalog larger than ComponentInfoGrouping.MaxNotFoundSuggestions (8) so the not-found bound is
+	// observable on the CLI surface (the 3-entry SampleRegistry cannot prove a cap of 8). 'crt.Button'
+	// is a single edit away from the 'crt.Buton' query so it must rank first by Levenshtein closeness,
+	// while the deliberately long, dissimilar last entry must be dropped by the bound.
+	private const string NotFoundSuggestionRegistry = """
+	[
+	  {"componentType":"crt.Button","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.Gallery","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.DataGrid","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.List","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.FileList","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.Timeline","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.ComboBox","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.Label","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.NumberInput","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.DateTimeInput","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.ImageInput","category":"c","description":"d","container":false,"properties":{}},
+	  {"componentType":"crt.ProgressBarIndicatorComponentX","category":"c","description":"d","container":false,"properties":{}}
+	]
+	""";
+
 	[Test]
 	[Description("With no positional component-type the verb emits a flat JSON list and exits 0.")]
 	public async Task Returns_List_When_No_Type_Specified() {
@@ -74,6 +95,39 @@ public sealed class ComponentInfoCommandTests {
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
 		parsed.Success.Should().BeFalse();
 		parsed.Error.Should().Contain("crt.DoesNotExist");
+	}
+
+	[Test]
+	[Description("On the CLI verb an unknown component-type returns the unified bounded closest-match shortlist (SuggestForUnknown), not the old full keyword filter: the count is capped at MaxNotFoundSuggestions, the count and item list agree, the closest type ranks first by Levenshtein distance, the farthest is dropped, and the new not-found message is emitted. This is the CLI surface of the not-found path that previously only the MCP tool asserted (CLI/MCP parity, ADR Decision 2).")]
+	public async Task Returns_Bounded_Closest_Match_Suggestions_For_Unknown_Type() {
+		// Arrange — a registry larger than the suggestion cap so the bound is observable; 'crt.Button'
+		// is one edit away from the query and must surface first, the long last entry must be dropped.
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(NotFoundSuggestionRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// Act — 'crt.Buton' is a single-character typo of the known 'crt.Button'
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Buton" }, CancellationToken.None);
+
+		// Assert
+		exit.Should().Be(1, because: "an unknown component type is a not-found result and must exit non-zero");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse(because: "the requested type does not exist in the catalog");
+		parsed.Error.Should().Contain("crt.Buton",
+			because: "the not-found message must echo the unknown type the user asked for");
+		parsed.Error.Should().Contain("closest known type(s)",
+			because: "the CLI must emit the unified SuggestForUnknown wording, not the previous full-keyword-filter message");
+		parsed.Count.Should().Be(ComponentInfoGrouping.MaxNotFoundSuggestions,
+			because: "a 12-entry catalog with no search filter must be capped at the shared suggestion bound, never echoed whole");
+		parsed.Items.Should().HaveCount(parsed.Count,
+			because: "the reported count and the emitted item list must agree");
+		parsed.Items![0].ComponentType.Should().Be("crt.Button",
+			because: "suggestions are ordered by closeness, so the one-character-different type must rank first (Levenshtein)");
+		parsed.Items.Select(item => item.ComponentType).Should().NotContain("crt.ProgressBarIndicatorComponentX",
+			because: "the farthest, most dissimilar type must be dropped by the bound — proving ordering by closeness, not arbitrary truncation");
 	}
 
 	[Test]

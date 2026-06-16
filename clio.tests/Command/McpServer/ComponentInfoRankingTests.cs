@@ -117,6 +117,31 @@ public sealed class ComponentInfoRankingTests {
 	}
 
 	[Test]
+	[Description("A non-empty query that tokenises to nothing — all stop words or all sub-2-character tokens (e.g. 'the a of crt', 'x y') — widens to the full catalog alphabetically instead of matching as a literal substring. This pins the deliberate semantic change from the old binary substring filter: an empty token set carries no ranking signal, so list mode (RankEntries) returns everything and the matched set (FilterEntries, used by the mobile SearchAsync path) is every entry. 'crt' is itself a stop word, so it cannot be searched as a prefix.")]
+	public void RankEntries_ShouldReturnFullCatalog_WhenQueryTokenisesToNothing() {
+		// Arrange
+		ComponentRegistryEntry[] entries = {
+			new() { ComponentType = "crt.Zed" },
+			new() { ComponentType = "crt.Abc" },
+			new() { ComponentType = "crt.Mid" }
+		};
+		string[] expectedAlphabetical = { "crt.Abc", "crt.Mid", "crt.Zed" };
+
+		// Act — "the a of crt" is all stop words; "x y" is all single-character tokens; both tokenise to empty.
+		IReadOnlyList<ComponentRegistryEntry> rankedStopWords = ComponentInfoGrouping.RankEntries(entries, "the a of crt");
+		IReadOnlyList<ComponentRegistryEntry> rankedShort = ComponentInfoGrouping.RankEntries(entries, "x y");
+		IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(entries, "the a of crt");
+
+		// Assert
+		rankedStopWords.Select(entry => entry.ComponentType).Should().Equal(expectedAlphabetical,
+			because: "an all-stop-word query has no ranking signal, so list mode widens to the whole catalog alphabetically — not zero matches as a literal substring filter would return");
+		rankedShort.Select(entry => entry.ComponentType).Should().Equal(expectedAlphabetical,
+			because: "sub-2-character tokens are dropped before scoring, so an all-short-token query also widens to the full catalog");
+		filtered.Should().HaveCount(entries.Length,
+			because: "FilterEntries shares the same tokeniser, so an empty token set matches every entry on the mobile SearchAsync path too");
+	}
+
+	[Test]
 	[Description("Entries that match no query term are excluded from the ranked list, preserving the filter semantics of the original binary matcher (only relevant components surface).")]
 	public void RankEntries_ShouldExcludeEntriesWithNoMatch() {
 		// Arrange
@@ -173,9 +198,10 @@ public sealed class ComponentInfoRankingTests {
 	}
 
 	[Test]
-	[Description("Deterministic (no-LLM) recall@5 over the shared labelled set meets the ADR threshold (>= 0.8), the go/no-go bar that lets the epic stop at A+B+D without vector search (ADR Decision 3). Uses the shared set, not a single anecdote (ADR Decision 6).")]
+	[Description("Deterministic (no-LLM) recall@5 over the shared labelled set meets the ADR threshold (>= 0.8), the go/no-go bar that lets the epic stop at A+B+D without vector search (ADR Decision 3). This is a FIXTURE-CONSISTENCY REGRESSION GUARD, not an external recall measurement: the queries and the mini-catalog's synonyms/useCases are co-authored in this same change, so the metric proves the deterministic scorer still ranks the curated set as intended — it cannot prove live-catalog recall, which is explicitly deferred to the A2 producer backfill / Solution C (ADR Decision 3 confidence caveat). Uses the shared set, not a single anecdote (ADR Decision 6). The companion precision@1+margin test below is the stronger guard against a scorer change that flattens the tiers.")]
 	public void RankEntries_ShouldMeetDeterministicRecallThresholdOnLabelledSet() {
-		// Arrange
+		// Arrange — fixture-consistency guard: a co-authored query/catalog pair, so a passing recall here
+		// asserts the scorer preserves the intended ranking of the curated set, NOT independent recall.
 		ComponentDiscoveryLabelledSet.LabelledSet set = ComponentDiscoveryLabelledSet.Load();
 		IReadOnlyList<ComponentDiscoveryLabelledSet.LabelledQuery> queries = set.RankingQueries;
 		ComponentRegistryEntry[] catalog = set.Components.ToArray();
@@ -194,6 +220,31 @@ public sealed class ComponentInfoRankingTests {
 		queries.Should().NotBeEmpty(because: "the labelled set must contribute ranking queries to measure");
 		recall.Should().BeGreaterThanOrEqualTo(threshold,
 			because: $"deterministic recall@{k} must clear the ADR go/no-go bar ({threshold:P0}); measured {recall:P0} on {queries.Count} queries");
+	}
+
+	[Test]
+	[Description("Stronger fixture-consistency guard than recall@k: for every labelled ranking query the expected 'gold' component ranks #1 (not merely inside the top-k) AND outscores the runner-up by a positive score margin. recall@5 cannot distinguish a 0.8 from a 1.0 ranking or detect a scorer that flattens the tiers so the gold wins only on the alphabetical tie-break; this precision@1 + margin assertion catches exactly that regression even though the co-authored fixture is unchanged (ADR Decision 3 confidence caveat).")]
+	public void RankEntries_ShouldRankGoldFirstWithPositiveMargin_ForEveryLabelledRankingQuery() {
+		// Arrange
+		ComponentDiscoveryLabelledSet.LabelledSet set = ComponentDiscoveryLabelledSet.Load();
+		ComponentRegistryEntry[] catalog = set.Components.ToArray();
+
+		// Act + Assert — each ranking row carries exactly one gold component; it must be the unique #1.
+		foreach (ComponentDiscoveryLabelledSet.LabelledQuery query in set.RankingQueries) {
+			string gold = query.Expected.Single();
+			IReadOnlyList<ComponentRegistryEntry> ranked = ComponentInfoGrouping.RankEntries(catalog, query.Query);
+
+			ranked.Should().NotBeEmpty(because: $"the gold component '{gold}' must be retrievable for its query '{query.Query}'");
+			ranked[0].ComponentType.Should().Be(gold,
+				because: $"the gold component must rank #1 for its own labelled query '{query.Query}', not merely appear in the top-k");
+
+			if (ranked.Count > 1) {
+				int goldScore = ComponentInfoGrouping.ScoreEntry(ranked[0], query.Query);
+				int runnerUpScore = ComponentInfoGrouping.ScoreEntry(ranked[1], query.Query);
+				goldScore.Should().BeGreaterThan(runnerUpScore,
+					because: $"the gold component must win query '{query.Query}' on score, not only on the alphabetical tie-break — a flattened scorer would collapse this margin");
+			}
+		}
 	}
 
 	[Test]
