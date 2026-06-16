@@ -19,6 +19,11 @@ context — read them before doing any work.
   (tool + prompt + resources + `clio.mcp.e2e`) and the docs
   (`help/en/<verb>.txt`, `docs/commands/<verb>.md`, `Commands.md`, `Wiki/WikiAnchors.txt`).
   A nested `clio/Command/McpServer/CLAUDE.md` carries the MCP-specific rules.
+- **Experimental commands are feature-toggled.** Hide a not-for-public command by adding
+  `[FeatureToggle("key")]` to its **options class** (and the same attribute to its MCP
+  tool/resource/prompt class if it has one — the MCP surface is gated separately). It is
+  off by default; enable with `clio experimental --name key --enable`. Full rules and the
+  MCP `WithTools(IEnumerable<Type>)` caveat are in `project-context.md` → "Feature toggles".
 - **Tests:** `[Category("Unit")]` (never `"UnitTests"`), naming
   `MethodName_ShouldExpectedBehavior_WhenCondition`, AAA + a `because` on every
   assertion + `[Description]` on every test; NUnit/FluentAssertions/NSubstitute;
