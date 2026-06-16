@@ -94,7 +94,8 @@ namespace Clio.Common.ScenarioHandlers {
             bool success = false;
             try {
                 // Open the archive through IFileSystem so the file-open is mockable; the per-entry
-                // ExtractToFile below writes bytes via concrete System.IO and is integration-tested.
+                // ExtractToFile below writes bytes via concrete System.IO and is covered by the
+                // [Category("Integration")] test Handle_ShouldExtractFileEntry_WhenArchiveContainsFile.
                 using var stream = _fileSystem.File.OpenRead(zipFileName);
                 using var archive = new ZipArchive(stream);
                 foreach (var entry in archive.Entries) {
