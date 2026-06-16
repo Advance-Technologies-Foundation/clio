@@ -36,7 +36,7 @@ DETAIL COLLECTIONS
 """;
 		FileSystem.AddFile(helpPath, originalContent);
 		CommandHelpCatalog catalog = new();
-		CommandHelpRenderer renderer = new(FileSystem, catalog, () => false);
+		CommandHelpRenderer renderer = new(FileSystem, catalog, featureToggleService: null, () => false);
 		HelpArtifactExporter exporter = new(FileSystem, catalog, renderer);
 
 		int exitCode = exporter.Export(_repositoryRoot);
