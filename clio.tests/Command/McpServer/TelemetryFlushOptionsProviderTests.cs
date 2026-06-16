@@ -205,6 +205,32 @@ public sealed class TelemetryFlushOptionsProviderTests
 			because: "https is the required transport for a remote OTLP collector");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("THROWAWAY build: permits cleartext http to RFC1918 private IPs (stage NodePort testing) but keeps public hosts and hostnames https-only.")]
+	public void Resolve_Should_Allow_Private_Ip_Http_But_Reject_Public_Cleartext()
+	{
+		// Arrange
+		TelemetryFlushOptionsProvider privateTen = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://10.48.14.67:31419/v1/logs" });
+		TelemetryFlushOptionsProvider private192 = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://192.168.1.10:31419/v1/logs" });
+		TelemetryFlushOptionsProvider publicIp = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://8.8.8.8/v1/logs" });
+		TelemetryFlushOptionsProvider privateHostname = CreateProvider(
+			new TelemetrySettings { Endpoint = "http://collector.internal/v1/logs" });
+
+		// Act / Assert
+		privateTen.Resolve().IsSendingEnabled.Should().BeTrue(
+			because: "the throwaway build allows cleartext http to an RFC1918 private IP for internal NodePort testing");
+		private192.Resolve().IsSendingEnabled.Should().BeTrue(
+			because: "192.168.0.0/16 is also a private range covered by the relaxation");
+		publicIp.Resolve().IsSendingEnabled.Should().BeFalse(
+			because: "a public IP over http must stay rejected - the relaxation never enables internet cleartext");
+		privateHostname.Resolve().IsSendingEnabled.Should().BeFalse(
+			because: "only IP literals qualify; a hostname could resolve anywhere and is never treated as private");
+	}
+
 	private static TelemetryFlushOptionsProvider CreateProvider(TelemetrySettings settings)
 	{
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();

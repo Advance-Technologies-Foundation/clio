@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -87,8 +89,15 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 			// so surface why uploading stays disabled instead of letting it look unconfigured. A
 			// rejected explicit endpoint disables uploading; it does not silently fall back to the default.
 			_logger.LogWarning(
-				"telemetry endpoint rejected reason=requires-https-or-loopback-http; uploading disabled");
+				"telemetry endpoint rejected reason=requires-https-or-private-http; uploading disabled");
 			endpoint = null;
+		} else if (!string.IsNullOrWhiteSpace(endpoint) && IsInsecurePrivateEndpoint(endpoint)) {
+			// THROWAWAY TEST BUILD ONLY (branch throwaway/eng-89424-insecure-private-ip). Every cleartext
+			// upload accepted via the private-IP relaxation is logged so the weakened transport is never
+			// silent. Do NOT merge to master.
+			_logger.LogWarning(
+				"telemetry using INSECURE cleartext http to a private address endpoint={Endpoint}; " +
+				"throwaway test build only, not for production", endpoint);
 		}
 		return new TelemetryFlushOptions(endpoint, ingestKey);
 	}
@@ -111,8 +120,36 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 
 	// HTTPS is required so the ingest key and event payload never traverse the network in
 	// cleartext; plaintext http is permitted only for a loopback host (local-collector testing).
+	//
+	// THROWAWAY TEST BUILD ONLY (branch throwaway/eng-89424-insecure-private-ip): this build also
+	// permits cleartext http to an RFC1918 private IPv4 address, so an internal tester can point clio
+	// straight at the stage collector NodePort (e.g. http://10.48.x.x:31419/v1/logs) without a tunnel.
+	// Public hosts and hostnames remain https-only — RFC1918 ranges are not internet-routable, so this
+	// can never enable cleartext across the public internet. Do NOT merge this relaxation to master.
 	private static bool IsValidEndpoint(string endpoint) =>
 		Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri)
 		&& (uri.Scheme == Uri.UriSchemeHttps
-			|| (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback));
+			|| (uri.Scheme == Uri.UriSchemeHttp && (uri.IsLoopback || IsPrivateHost(uri))));
+
+	// True only for an endpoint accepted via the throwaway private-IP relaxation (cleartext http to a
+	// non-loopback private address), so the caller can log every such upload — it is never silent.
+	private static bool IsInsecurePrivateEndpoint(string endpoint) =>
+		Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri)
+		&& uri.Scheme == Uri.UriSchemeHttp
+		&& !uri.IsLoopback
+		&& IsPrivateHost(uri);
+
+	// RFC1918 private IPv4 ranges (10/8, 172.16/12, 192.168/16). Hostnames return false: only IP
+	// literals qualify, so a private *name* (which could resolve anywhere) is never treated as trusted.
+	private static bool IsPrivateHost(Uri uri)
+	{
+		if (!IPAddress.TryParse(uri.Host, out IPAddress address)
+			|| address.AddressFamily != AddressFamily.InterNetwork) {
+			return false;
+		}
+		byte[] octets = address.GetAddressBytes();
+		return octets[0] == 10
+			|| (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+			|| (octets[0] == 192 && octets[1] == 168);
+	}
 }
