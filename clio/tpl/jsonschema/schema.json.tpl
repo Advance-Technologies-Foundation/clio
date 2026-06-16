@@ -229,9 +229,14 @@
 		"telemetrysettings": {
 			"type": "object",
 			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "Master switch for telemetry uploads; false disables uploading entirely even with the default endpoint and granted consent (overridden by CLIO_TELEMETRY_ENABLED)"
+				},
 				"endpoint": {
 					"type": "string",
-					"description": "Full OTLP/HTTP logs endpoint URL (https, or http only for a loopback host); empty disables telemetry uploads"
+					"description": "Full OTLP/HTTP logs endpoint URL (https, or http only for a loopback host); overrides the shipped production default, which is used when this is empty"
 				},
 				"ingest-key": {
 					"type": "string",

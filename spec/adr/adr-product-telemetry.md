@@ -49,8 +49,25 @@ home so relocation and cleanup cover it.
 
 ### 4. Transport is HTTPS-only (loopback HTTP allowed for local testing)
 `IsValidEndpoint` accepts `https`, or `http` only for a loopback host. The optional public ingest
-key (`X-Ingest-Key`) therefore never traverses the network in cleartext to a remote host. No
-default endpoint ships; absent configuration, events are spooled and pruned, never sent.
+key (`X-Ingest-Key`) therefore never traverses the network in cleartext to a remote host.
+
+A production OTLP/HTTP collector endpoint ships as a built-in default
+(`TelemetryFlushOptionsProvider.DefaultEndpoint`), so a freshly installed or in-place-updated clio
+uploads telemetry once consent is granted, without per-machine configuration. The default is the
+**lowest-precedence** endpoint source: `CLIO_TELEMETRY_ENDPOINT` and the settings
+`telemetry.endpoint` still override it, and a configured-but-invalid endpoint disables uploading
+rather than silently falling back to the default. Shipping the endpoint in the binary — rather than
+seeding the persisted settings file — keeps it a single source of truth that a normal clio release
+can relocate, and is the only delivery vehicle that reaches existing installs on update (clio
+neither ships `appsettings.json` nor creates it with a telemetry default). This reverses the earlier
+"no default endpoint ships" decision now that the production collector is the agreed target.
+
+Uploading is **opt-out** at the operator level: `CLIO_TELEMETRY_ENABLED=false` (environment, wins)
+or `telemetry.enabled: false` (settings) resolves the endpoint to none and hard-disables uploads
+regardless of the default and of granted consent — for centrally managed fleets that disallow
+product telemetry. The environment variable wins over the settings flag, mirroring the endpoint
+precedence. End-user opt-out remains the consent gate: nothing is uploaded unless consent is
+`granted`.
 
 ### 5. Loss-tolerant delivery
 Transient failures (5xx/408/429) retry with bounded exponential backoff + jitter, then keep the

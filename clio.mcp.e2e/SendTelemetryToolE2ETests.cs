@@ -34,7 +34,12 @@ public sealed class SendTelemetryToolE2ETests
 		// environment variable and uses it as its telemetry storage root.
 		string telemetryHome = Path.Combine(Path.GetTempPath(), "clio-telemetry-e2e", Guid.NewGuid().ToString("N"));
 		string? previousTelemetryHome = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
+		string? previousTelemetryEnabled = Environment.GetEnvironmentVariable(TelemetryEnabledEnvironmentVariable);
 		Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, telemetryHome);
+		// This test exercises only local event storage. With a production default endpoint now shipped,
+		// disable the background flusher so a granted-consent event is never uploaded to the real
+		// collector from a test run.
+		Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, "false");
 		await using RawMcpSession session = RawMcpSession.Start();
 
 		try {
@@ -71,6 +76,7 @@ public sealed class SendTelemetryToolE2ETests
 				because: "the OTel body should carry the event name");
 		} finally {
 			Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, previousTelemetryHome);
+			Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, previousTelemetryEnabled);
 			if (Directory.Exists(telemetryHome)) {
 				Directory.Delete(telemetryHome, recursive: true);
 			}
@@ -81,6 +87,11 @@ public sealed class SendTelemetryToolE2ETests
 	/// Environment variable understood by <c>TelemetryService</c> to redirect its local storage root.
 	/// </summary>
 	private const string TelemetryHomeEnvironmentVariable = "CLIO_TELEMETRY_HOME";
+
+	/// <summary>
+	/// Environment variable understood by <c>TelemetryFlushOptionsProvider</c> to disable uploads.
+	/// </summary>
+	private const string TelemetryEnabledEnvironmentVariable = "CLIO_TELEMETRY_ENABLED";
 
 	private static string? FindEventFile(string telemetryHome, string sessionId)
 	{

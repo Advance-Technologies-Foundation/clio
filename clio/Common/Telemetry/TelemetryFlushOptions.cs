@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,9 +20,12 @@ public sealed record TelemetryFlushOptions(string Endpoint, string IngestKey)
 }
 
 /// <summary>
-/// Resolves the telemetry flush configuration. Environment variables
-/// <c>CLIO_TELEMETRY_ENDPOINT</c> and <c>CLIO_TELEMETRY_INGEST_KEY</c> win over the
-/// <c>telemetry</c> section of the clio settings file.
+/// Resolves the telemetry flush configuration. The endpoint is resolved by precedence — the
+/// <c>CLIO_TELEMETRY_ENDPOINT</c> environment variable, then the <c>telemetry.endpoint</c> settings
+/// value, then the production default shipped in the binary; the ingest key follows the same
+/// env-over-settings precedence. The operator opt-out (<c>CLIO_TELEMETRY_ENABLED=false</c> or
+/// <c>telemetry.enabled: false</c>) disables uploading regardless of the resolved endpoint and of
+/// granted consent.
 /// </summary>
 public interface ITelemetryFlushOptionsProvider
 {
@@ -37,6 +41,19 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 {
 	internal const string EndpointEnvironmentVariable = "CLIO_TELEMETRY_ENDPOINT";
 	internal const string IngestKeyEnvironmentVariable = "CLIO_TELEMETRY_INGEST_KEY";
+	internal const string EnabledEnvironmentVariable = "CLIO_TELEMETRY_ENABLED";
+
+	/// <summary>
+	/// Production OTLP/HTTP logs endpoint shipped as the built-in default so any clio installation —
+	/// fresh or updated in place — uploads product telemetry once consent is granted, without
+	/// per-machine configuration. It is the lowest-precedence endpoint source:
+	/// <c>CLIO_TELEMETRY_ENDPOINT</c> and the settings <c>telemetry.endpoint</c> still override it,
+	/// and the opt-out (<c>CLIO_TELEMETRY_ENABLED=false</c> or <c>telemetry.enabled: false</c>)
+	/// suppresses uploading entirely. Shipping the endpoint in the binary — rather than seeding the
+	/// persisted settings file, which clio neither ships nor creates with a default — keeps it a
+	/// single source of truth that a normal clio release can relocate.
+	/// </summary>
+	internal const string DefaultEndpoint = "https://caadt-telemetry.creatio.com/v1/logs";
 
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger<TelemetryFlushOptionsProvider> _logger;
@@ -55,13 +72,20 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 	public TelemetryFlushOptions Resolve()
 	{
 		TelemetrySettings settings = _settingsRepository.GetTelemetrySettings();
+		if (IsUploadingDisabled(settings)) {
+			// Operator opt-out hard-disables uploading and wins over the shipped default and any
+			// configured endpoint, regardless of granted consent. Returning a null endpoint reuses
+			// the flusher's existing "not configured" skip path.
+			return new TelemetryFlushOptions(null, null);
+		}
 		string endpoint = FirstNonEmpty(
-			Environment.GetEnvironmentVariable(EndpointEnvironmentVariable), settings?.Endpoint);
+			Environment.GetEnvironmentVariable(EndpointEnvironmentVariable), settings?.Endpoint, DefaultEndpoint);
 		string ingestKey = FirstNonEmpty(
 			Environment.GetEnvironmentVariable(IngestKeyEnvironmentVariable), settings?.IngestKey);
 		if (!string.IsNullOrWhiteSpace(endpoint) && !IsValidEndpoint(endpoint)) {
 			// Distinct from the "no endpoint configured" case: a real endpoint was set but rejected,
-			// so surface why uploading stays disabled instead of letting it look unconfigured.
+			// so surface why uploading stays disabled instead of letting it look unconfigured. A
+			// rejected explicit endpoint disables uploading; it does not silently fall back to the default.
 			_logger.LogWarning(
 				"telemetry endpoint rejected reason=requires-https-or-loopback-http; uploading disabled");
 			endpoint = null;
@@ -69,8 +93,21 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 		return new TelemetryFlushOptions(endpoint, ingestKey);
 	}
 
-	private static string FirstNonEmpty(string preferred, string fallback) =>
-		string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;
+	// Operator opt-out, evaluated before endpoint resolution. The CLIO_TELEMETRY_ENABLED environment
+	// variable wins over the settings flag (mirroring the endpoint precedence) so a managed fleet or
+	// CI run can disable uploads without editing the settings file. An unset or unparsable env value
+	// falls back to the settings flag; an absent flag leaves uploading enabled (the shipped default).
+	private static bool IsUploadingDisabled(TelemetrySettings settings)
+	{
+		string environmentValue = Environment.GetEnvironmentVariable(EnabledEnvironmentVariable);
+		if (!string.IsNullOrWhiteSpace(environmentValue) && bool.TryParse(environmentValue, out bool enabled)) {
+			return !enabled;
+		}
+		return settings?.Enabled == false;
+	}
+
+	private static string FirstNonEmpty(params string[] values) =>
+		values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
 	// HTTPS is required so the ingest key and event payload never traverse the network in
 	// cleartext; plaintext http is permitted only for a loopback host (local-collector testing).

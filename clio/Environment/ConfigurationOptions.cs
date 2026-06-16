@@ -228,8 +228,18 @@ namespace Clio
 	public class TelemetrySettings
 	{
 		/// <summary>
-		/// Full OTLP/HTTP logs endpoint URL (for example https://telemetry.example.com/v1/logs).
-		/// Empty disables telemetry uploads; locally stored events are only pruned.
+		/// Master switch for product telemetry uploads. <c>false</c> disables uploading entirely —
+		/// even with the shipped default endpoint and granted consent; <c>null</c> (the key absent,
+		/// the default) leaves uploading enabled. Overridden by the <c>CLIO_TELEMETRY_ENABLED</c>
+		/// environment variable.
+		/// </summary>
+		[JsonProperty("enabled")]
+		public bool? Enabled { get; set; }
+
+		/// <summary>
+		/// Full OTLP/HTTP logs endpoint URL (for example https://telemetry.example.com/v1/logs);
+		/// must be https, or http only for a loopback host. Overrides the shipped production default;
+		/// when empty the default endpoint is used unless uploading is disabled via <see cref="Enabled"/>.
 		/// </summary>
 		[JsonProperty("endpoint")]
 		public string Endpoint { get; set; }
