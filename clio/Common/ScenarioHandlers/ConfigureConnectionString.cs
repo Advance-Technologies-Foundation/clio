@@ -40,9 +40,9 @@ namespace Clio.Common.ScenarioHandlers {
         /// <inheritdoc />
         public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request) {
 
-            string folder = request.Arguments["folderPath"];
-            string dbString = request.Arguments["dbString"]; 
-            string redisString = request.Arguments["redis"];
+            string folder = request.GetRequired("folderPath");
+            string dbString = request.GetRequired("dbString");
+            string redisString = request.GetRequired("redis");
             
             string cnPath = Path.Combine(folder, "ConnectionStrings.config");
             
@@ -55,7 +55,7 @@ namespace Clio.Common.ScenarioHandlers {
             
             string result = ConfigureConnectionStrings(cnPath, dbString, redisString);
             
-            bool isNetFrameWork = bool.Parse(request.Arguments["isNetFramework"]);
+            bool isNetFrameWork = request.GetRequired<bool>("isNetFramework");
             if(!isNetFrameWork) {
                 string webConfigPath = Path.Combine(folder, "Terrasoft.WebHost.dll.config");
                 if (File.Exists(webConfigPath)) {
