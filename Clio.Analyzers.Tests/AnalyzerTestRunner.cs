@@ -33,8 +33,8 @@ internal static class AnalyzerTestRunner {
 			new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
 		CompilationWithAnalyzers compilationWithAnalyzers = compilation.WithAnalyzers([analyzer]);
-		ImmutableArray<Diagnostic> diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
-		return diagnostics;
+		AnalysisResult result = await compilationWithAnalyzers.GetAnalysisResultAsync(System.Threading.CancellationToken.None);
+		return result.GetAllDiagnostics();
 	}
 
 	private static MetadataReference[] GetMetadataReferences() {

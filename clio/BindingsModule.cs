@@ -539,8 +539,6 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
 		services.AddTransient<AddItemOptionsValidator>();
 		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
-		services.AddTransient<UnzipRequestValidator>();
-		services.AddTransient<IUnzipHandler, UnzipRequestHandler>();
 		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
 		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
 		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();
