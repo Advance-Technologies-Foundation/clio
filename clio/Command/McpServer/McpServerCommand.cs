@@ -14,6 +14,10 @@ public class McpServerCommandOptions : BaseCommandOptions
 public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
 		McpLogNotifier.Initialize(server);
+		// The using-scoped source is disposed at the END of Execute — strictly after the finally
+		// block has detached the handlers and drained. Do not narrow this scope or dispose earlier:
+		// the detach-before-dispose ordering is precisely what keeps a late signal off the disposed
+		// source.
 		using var cts = new CancellationTokenSource();
 
 		// Capture the signal handlers in locals (rather than inline lambdas) so the finally
@@ -32,7 +36,8 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 		try {
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
-			// Graceful shutdown — expected when CancellationToken is triggered.
+			// Ctrl+C / ProcessExit path: the triggered token makes RunAsync throw here. A plain
+			// stdin EOF instead returns from RunAsync normally, without throwing.
 		} finally {
 			// Detach the OS-signal handlers before the cancellation source is disposed so a
 			// late signal can no longer reach the disposed source. This unsubscribe is the
@@ -64,6 +69,10 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 	/// callback can still fire afterwards, and calling <see cref="CancellationTokenSource.Cancel()"/> on the
 	/// disposed source would raise an unhandled <see cref="ObjectDisposedException"/> that crashes
 	/// the process during an otherwise-clean shutdown. Swallowing it keeps the exit code at 0.
+	/// <see cref="CancellationTokenSource.Cancel()"/> also runs the host's cancellation callbacks
+	/// synchronously, so a callback that throws during teardown surfaces as an
+	/// <see cref="AggregateException"/>; that is swallowed for the same reason, since the process is
+	/// already terminating and the fault is not actionable.
 	/// </remarks>
 	/// <param name="cancellationTokenSource">The shutdown token source driving the MCP host loop.</param>
 	internal static void RequestShutdown(CancellationTokenSource cancellationTokenSource) {
@@ -71,6 +80,10 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 			cancellationTokenSource.Cancel();
 		} catch (ObjectDisposedException) {
 			// The host already shut down (EOF teardown disposed the source); nothing to cancel.
+		} catch (AggregateException) {
+			// Cancel() runs the host's cancellation callbacks synchronously; a callback that throws
+			// during teardown surfaces here. Swallow it so the shutdown signal still exits cleanly —
+			// the process is already terminating, mirroring the disposed-source case above.
 		}
 	}
 }

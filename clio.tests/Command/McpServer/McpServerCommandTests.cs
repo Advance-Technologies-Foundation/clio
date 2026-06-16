@@ -58,4 +58,22 @@ public class McpServerCommandTests {
 		cancellationTokenSource.IsCancellationRequested.Should().BeTrue(
 			"because the source must stay cancelled after a repeated shutdown request");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RequestShutdown swallows the AggregateException that Cancel() surfaces when a synchronous cancellation callback throws during teardown, so a Ctrl+C / process-exit signal whose callback faults still exits cleanly instead of crashing the mcp-server host.")]
+	public void RequestShutdown_ShouldNotThrow_WhenCancellationCallbackThrows() {
+		// Arrange
+		using CancellationTokenSource cancellationTokenSource = new();
+		cancellationTokenSource.Token.Register(static () => throw new InvalidOperationException("cancellation callback fault"));
+
+		// Act
+		Action act = () => McpServerCommand.RequestShutdown(cancellationTokenSource);
+
+		// Assert
+		act.Should().NotThrow(
+			"because a faulting cancellation callback during shutdown must not crash the host with an unhandled AggregateException");
+		cancellationTokenSource.IsCancellationRequested.Should().BeTrue(
+			"because the shutdown request must still mark the source cancelled even when a callback throws");
+	}
 }

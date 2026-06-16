@@ -54,24 +54,30 @@ public sealed class McpServerShutdownE2ETests {
 		using Process process = new() { StartInfo = startInfo };
 		process.Start().Should().BeTrue(
 			because: "the clio mcp-server process must launch before its shutdown behaviour can be exercised");
-		Task<string> standardErrorTask = process.StandardError.ReadToEndAsync();
-		Task<string> standardOutputTask = process.StandardOutput.ReadToEndAsync();
-		// EOF on stdin is the exact termination signal an agent host (Claude Code / Copilot) sends
-		// when it closes the transport on exit; it must drive a clean shutdown, not a crash.
-		process.StandardInput.Close();
-		bool exitedWithinTimeout = await WaitForCleanExitAsync(process);
-		string standardError = await standardErrorTask;
-		_ = await standardOutputTask;
+		try {
+			Task<string> standardErrorTask = process.StandardError.ReadToEndAsync();
+			Task<string> standardOutputTask = process.StandardOutput.ReadToEndAsync();
+			// EOF on stdin is the exact termination signal an agent host (Claude Code / Copilot) sends
+			// when it closes the transport on exit; it must drive a clean shutdown, not a crash.
+			process.StandardInput.Close();
+			bool exitedWithinTimeout = await WaitForCleanExitAsync(process);
+			string standardError = await standardErrorTask;
+			_ = await standardOutputTask;
 
-		// Assert
-		exitedWithinTimeout.Should().BeTrue(
-			because: "EOF on stdin must make the mcp-server host loop return so the process exits promptly");
-		process.ExitCode.Should().Be(0,
-			because: "a clean EOF teardown is a successful shutdown, not a failure");
-		standardError.Should().NotContain(nameof(ObjectDisposedException),
-			because: "the late ProcessExit handler must no longer cancel an already-disposed CancellationTokenSource");
-		standardError.Should().NotContain("Unhandled exception",
-			because: "an otherwise-clean EOF shutdown must not surface any unhandled exception on stderr");
+			// Assert
+			exitedWithinTimeout.Should().BeTrue(
+				because: "EOF on stdin must make the mcp-server host loop return so the process exits promptly");
+			process.ExitCode.Should().Be(0,
+				because: "a clean EOF teardown is a successful shutdown, not a failure");
+			standardError.Should().NotContain(nameof(ObjectDisposedException),
+				because: "the late ProcessExit handler must no longer cancel an already-disposed CancellationTokenSource");
+			standardError.Should().NotContain("Unhandled exception",
+				because: "an otherwise-clean EOF shutdown must not surface any unhandled exception on stderr");
+		} finally {
+			// Guarantee the spawned child is gone even if an assertion above throws first, so a
+			// failed run never leaks a clio mcp-server process onto the runner.
+			TryKill(process);
+		}
 	}
 
 	private static async Task<bool> WaitForCleanExitAsync(Process process) {
