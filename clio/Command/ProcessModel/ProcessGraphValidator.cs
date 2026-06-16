@@ -129,17 +129,35 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				$"Gateway '{node.Id}' (parallel/event-based) must use plain sequence flows only.", node.Id));
 		}
 
-		// R10 — event-based gateway: each outgoing must lead directly to an intermediate catch event.
-		if (eventType == EventType.EventBasedGateway) {
-			foreach (ProcessGraphEdge edge in outs) {
-				if (nodeById.TryGetValue(edge.Target, out ProcessGraphNode target) && RoleOf(target) != Role.Intermediate) {
-					findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R10",
-						$"Event-based gateway '{node.Id}' outgoing must lead to an intermediate catch event; '{edge.Target}' is not.",
-						node.Id, edge));
-				}
+		CheckEventBasedGatewayTargets(node, eventType, outs, nodeById, findings);
+		CheckDefaultFlowRules(node, eventType, outs, findings);
+
+		// R12 (warning) — multiple outgoing sequence flows from a non-gateway = implicit parallel split.
+		if (role != Role.Gateway && outs.Count(o => o.FlowKind == ProcessFlowKind.Sequence) > 1) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R12",
+				$"Element '{node.Id}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Id));
+		}
+	}
+
+	// R10 — event-based gateway: each outgoing must lead directly to an intermediate catch event.
+	private static void CheckEventBasedGatewayTargets(ProcessGraphNode node, EventType eventType,
+			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeById,
+			List<ProcessGraphFinding> findings) {
+		if (eventType != EventType.EventBasedGateway) {
+			return;
+		}
+		foreach (ProcessGraphEdge edge in outs) {
+			if (nodeById.TryGetValue(edge.Target, out ProcessGraphNode target) && RoleOf(target) != Role.Intermediate) {
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R10",
+					$"Event-based gateway '{node.Id}' outgoing must lead to an intermediate catch event; '{edge.Target}' is not.",
+					node.Id, edge));
 			}
 		}
+	}
 
+	// R14 — a default flow needs a sibling conditional flow. R7/R9 — a diverging gateway should have a default flow.
+	private static void CheckDefaultFlowRules(ProcessGraphNode node, EventType eventType,
+			List<ProcessGraphEdge> outs, List<ProcessGraphFinding> findings) {
 		bool hasDefault = outs.Any(o => o.FlowKind == ProcessFlowKind.Default);
 		bool hasConditional = outs.Any(o => o.FlowKind == ProcessFlowKind.Conditional);
 
@@ -154,12 +172,6 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 			string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
 				$"Diverging gateway '{node.Id}' should have a default flow so the process never dead-ends.", node.Id));
-		}
-
-		// R12 (warning) — multiple outgoing sequence flows from a non-gateway = implicit parallel split.
-		if (role != Role.Gateway && outs.Count(o => o.FlowKind == ProcessFlowKind.Sequence) > 1) {
-			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R12",
-				$"Element '{node.Id}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Id));
 		}
 	}
 
