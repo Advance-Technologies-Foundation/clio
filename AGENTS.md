@@ -314,6 +314,12 @@ Treat custom `CLIO*` diagnostics as actionable and rely on `clio/.editorconfig` 
 - Favor DI resolution and constructor injection over manual construction.
 - Using `new`/`new()` for behavior classes should be a last resort, not normal practice.
 
+### CLIO005 specifics
+
+- Favor removing dead DI registrations over suppressing the diagnostic.
+- Use `[ResolvedDynamically]` only for services genuinely resolved via reflection or from another assembly (e.g. `clio.mcp.server`).
+- See the "Using [ResolvedDynamically]" callout in `project-context.md` for the full what/when/when-not guidance.
+
 # Workspace diary
 
 Keep a persistent engineering diary to speed up future tasks.

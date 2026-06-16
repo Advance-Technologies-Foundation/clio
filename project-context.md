@@ -36,10 +36,26 @@
 - ~65 existing violations are tracked in `spec/cli-naming/camelcase-violations.md` — do not add new ones
 - When renaming a flag, add an alias for the old name (breaking change policy)
 
-### Roslyn analyzers (CLIO001-CLIO004)
+### Roslyn analyzers (CLIO001-CLIO005)
 - CLIO001: CLI option naming (kebab-case)
 - CLIO002-CLIO004: see `Clio.Analyzers/` for details
+- CLIO005: DI service registered but never injected/resolved (catches dead DI registrations)
 - All analyzer warnings are treated as errors in CI
+
+### Using [ResolvedDynamically]
+- **WHAT:** `Clio.Common.ResolvedDynamicallyAttribute` marks a class or interface that IS used
+  but is resolved by a mechanism CLIO005 (a single-compilation analyzer) cannot see — reflection /
+  assembly scanning, or resolution from another assembly (e.g. `clio.mcp.server`). It tells CLIO005
+  the registration is alive.
+- **WHEN to use:** ONLY when CLIO005 flags a registration that is genuinely consumed via
+  reflection / cross-assembly / dynamic resolution with no statically-visible injection or
+  `GetService` / `GetRequiredService` / `GetServices<T>` call. Apply `[ResolvedDynamically]` to the
+  service or the implementation type.
+- **WHEN NOT to use:** do NOT use it to silence CLIO005 on a genuinely-dead registration. If nothing
+  actually resolves the type, REMOVE the DI registration (and the dead type) instead. Prefer fixing
+  (inject/resolve, or delete) over suppressing.
+- CLIO005 already auto-exempts types reflection-instantiated via `[McpServerTool]` methods and types
+  that implement a consumed interface — so the attribute is only for cases outside those.
 
 ### MCP server
 - `clio.mcp.server/` exposes CLI commands over Model Context Protocol
