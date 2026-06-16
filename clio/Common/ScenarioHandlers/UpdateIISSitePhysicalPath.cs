@@ -85,8 +85,8 @@ namespace Clio.Common.ScenarioHandlers {
         public Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(UpdateIISSitePhysicalPathRequest request) {
             _validator.ValidateAndThrow(request);
 
-            string siteName = request.Arguments["siteName"].Trim();
-            string physicalPath = request.Arguments["physicalPath"].Trim();
+            string siteName = request.GetRequired("siteName").Trim();
+            string physicalPath = request.GetRequired("physicalPath").Trim();
 
             StringBuilder sb = new();
 
