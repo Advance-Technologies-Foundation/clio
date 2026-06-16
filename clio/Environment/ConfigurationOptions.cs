@@ -234,6 +234,7 @@ namespace Clio
 
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
+			Features = new Dictionary<string, bool>();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -330,6 +331,17 @@ namespace Clio
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
+
+		/// <summary>
+		/// Feature flags keyed by feature name. A missing key or a <c>false</c> value means the
+		/// feature is disabled. Defaults to an empty dictionary so a missing "features" key in the
+		/// settings file deserializes to an empty collection rather than <c>null</c>.
+		/// </summary>
+		[JsonProperty("features")]
+		public Dictionary<string, bool> Features {
+			get; set;
+		}
+
 		public string RemoteArtefactServerPath
 		{
 			get;
@@ -454,6 +466,29 @@ namespace Clio
 		private void EnsureSettingsCollections() {
 			_settings ??= new Settings();
 			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			_settings.Features ??= new Dictionary<string, bool>();
+			EnsureFeaturesComparer();
+		}
+
+		// Feature keys are compared case-insensitively (see ISettingsRepository.IsFeatureEnabled).
+		// JSON deserialization hands back an ordinal-comparer dictionary, so rebuild it once with an
+		// OrdinalIgnoreCase comparer. This makes IsFeatureEnabled/SetFeature/GetFeatures all
+		// case-insensitive in one place; the convention is: the command writes the key as-given and
+		// lookups never depend on casing. The rebuild is idempotent and skipped once applied.
+		private void EnsureFeaturesComparer() {
+			if (ReferenceEquals(_settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
+				return;
+			}
+			// Rebuild manually rather than via the Dictionary(IDictionary, IEqualityComparer) copy-constructor:
+			// that constructor THROWS ArgumentException if the source (e.g. a hand-edited appsettings.json)
+			// contains two keys differing only by case. A manual last-wins assignment never throws.
+			Dictionary<string, bool> rebuilt = new(StringComparer.OrdinalIgnoreCase);
+			// On a case-collision the last-enumerated value wins; this is acceptable because such a
+			// state only arises from a manual appsettings.json edit (the command never writes colliding keys).
+			foreach (KeyValuePair<string, bool> kvp in _settings.Features) {
+				rebuilt[kvp.Key] = kvp.Value;
+			}
+			_settings.Features = rebuilt;
 		}
 
 		private void Save() {
@@ -610,6 +645,28 @@ namespace Clio
 		public void SetAutoupdate(bool value) {
 			_settings.Autoupdate = value;
 			Save();
+		}
+
+		public bool IsFeatureEnabled(string featureName) {
+			if (string.IsNullOrWhiteSpace(featureName)) {
+				return false;
+			}
+			EnsureSettingsCollections();
+			return _settings.Features.TryGetValue(featureName, out bool enabled) && enabled;
+		}
+
+		public void SetFeature(string featureName, bool enabled) {
+			if (string.IsNullOrWhiteSpace(featureName)) {
+				throw new ArgumentException("Feature name must be a non-empty value.", nameof(featureName));
+			}
+			EnsureSettingsCollections();
+			_settings.Features[featureName] = enabled;
+			Save();
+		}
+
+		public IReadOnlyDictionary<string, bool> GetFeatures() {
+			EnsureSettingsCollections();
+			return new Dictionary<string, bool>(_settings.Features, StringComparer.OrdinalIgnoreCase);
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
