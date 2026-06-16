@@ -21,7 +21,8 @@ public class ReadmeChecker
 
 	public ReadmeChecker() {
 		Parser.Default.Settings.HelpDirectory = HelpDirectoryPath;
-		_commandHelpRenderer = new CommandHelpRenderer(new System.IO.Abstractions.FileSystem(), new CommandHelpCatalog());
+		// Null feature-toggle service => no runtime gating, so the README/anchor checks cover every command.
+		_commandHelpRenderer = new CommandHelpRenderer(new System.IO.Abstractions.FileSystem(), new CommandHelpCatalog(), featureToggleService: null);
 	}
 
 	
