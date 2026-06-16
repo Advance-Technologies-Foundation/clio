@@ -86,7 +86,8 @@ public sealed class PageSyncToolBaselineTests
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			Substitute.For<IPageBodySamplingService>());
+			Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(fileSystem));
 	}
 
 	private static MockFileSystem CreateFileSystemWithBaseline(string checksum, string environmentName = "dev") {

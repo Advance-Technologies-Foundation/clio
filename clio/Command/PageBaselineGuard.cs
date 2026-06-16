@@ -1,0 +1,110 @@
+using System;
+using Clio.Common;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
+
+namespace Clio.Command;
+
+/// <summary>
+/// Orchestrates the conflict-detection baseline around a page write so that every page-modifying
+/// entry point — the CLI <c>update-page</c> verb, the MCP <c>update-page</c> tool, and the MCP
+/// <c>sync-pages</c> tool — discovers and refreshes the on-disk baseline identically. The baseline
+/// itself lives in <c>.clio-pages/{schema}/meta.json</c> and is owned by <see cref="PageBaselineStore"/>;
+/// this service is the single chokepoint that arms the in-memory check before a save and persists the
+/// fresh checksum afterwards. All operations are best-effort and fail toward "no check" — a missing,
+/// legacy, or foreign-environment baseline must never block a write with a false conflict.
+/// </summary>
+public interface IPageBaselineGuard {
+
+	/// <summary>
+	/// Discovers the on-disk baseline for the page targeted by <paramref name="options"/> and, when it
+	/// was captured against the same environment, arms the external-modification check by populating
+	/// <see cref="PageUpdateOptions.ExpectedChecksum"/>, <see cref="PageUpdateOptions.ExpectedSchemaUId"/>,
+	/// and <see cref="PageUpdateOptions.ExpectedSchemaAbsent"/> on <paramref name="options"/>.
+	/// </summary>
+	/// <param name="options">The pending write request. Mutated in place when a baseline is armed.</param>
+	/// <param name="outputDirectory">Optional anchor override (MCP <c>output-directory</c>); <c>null</c> for the CLI.</param>
+	/// <returns>
+	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed) and whether
+	/// the check is armed. When a caller already pinned <see cref="PageUpdateOptions.ExpectedChecksum"/>
+	/// explicitly (CLI <c>--expected-checksum</c>), that manual baseline wins and this method reports
+	/// not-armed so the post-save refresh leaves the on-disk baseline untouched.
+	/// </returns>
+	(string MetaFilePath, bool Armed) TryArm(PageUpdateOptions options, string outputDirectory);
+
+	/// <summary>
+	/// After a successful, non-dry-run save with an armed baseline: persists the fresh post-save
+	/// checksum into the existing <c>meta.json</c>, or removes the baseline block when the command
+	/// could not obtain fresh metadata — so the next write never compares against a stale checksum.
+	/// </summary>
+	/// <param name="metaFilePath">The <c>meta.json</c> path returned by <see cref="TryArm"/>.</param>
+	/// <param name="options">The write request whose environment identity the refreshed baseline records.</param>
+	/// <param name="response">The successful response carrying <c>NewChecksum</c>/<c>NewModifiedOn</c>/<c>SavedSchemaUId</c>.</param>
+	void RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response);
+}
+
+/// <inheritdoc />
+public sealed class PageBaselineGuard : IPageBaselineGuard {
+
+	private readonly IFileSystem _fileSystem;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="PageBaselineGuard"/> class.
+	/// </summary>
+	/// <param name="fileSystem">File-system abstraction used to read and rewrite <c>meta.json</c>.</param>
+	public PageBaselineGuard(IFileSystem fileSystem) {
+		_fileSystem = fileSystem;
+	}
+
+	/// <inheritdoc />
+	public (string MetaFilePath, bool Armed) TryArm(PageUpdateOptions options, string outputDirectory) {
+		// A caller-pinned --expected-checksum (CLI) is honored verbatim: do not overwrite it from disk
+		// and do not arm the on-disk refresh. For MCP callers ExpectedChecksum is always null here, so
+		// this guard is a no-op and the on-disk baseline drives the check exactly as before.
+		if (!string.IsNullOrWhiteSpace(options.ExpectedChecksum)) {
+			return (null, false);
+		}
+		string metaFilePath;
+		try {
+			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
+				_fileSystem,
+				_fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				outputDirectory,
+				options.BodyFile,
+				options.SchemaName);
+		} catch {
+			// A malformed anchor/body-file path must not break the write — degrade to no check.
+			return (null, false);
+		}
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(_fileSystem, metaFilePath);
+		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
+			return (metaFilePath, false);
+		}
+		options.ExpectedChecksum = baseline.Checksum;
+		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+		return (metaFilePath, true);
+	}
+
+	/// <inheritdoc />
+	public void RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response) {
+		if (string.IsNullOrWhiteSpace(response.NewChecksum)) {
+			PageBaselineStore.DeleteBaseline(_fileSystem, metaFilePath);
+			return;
+		}
+		PageBaselineStore.RefreshExistingBaseline(
+			_fileSystem,
+			metaFilePath,
+			new PageBaselineInfo {
+				SchemaName = options.SchemaName,
+				EnvironmentName = string.IsNullOrWhiteSpace(options.Environment) ? null : options.Environment,
+				EnvironmentUri = string.IsNullOrWhiteSpace(options.Uri) ? null : options.Uri,
+				EditableSchemaExists = true,
+				EditableSchemaUId = response.SavedSchemaUId,
+				Checksum = response.NewChecksum,
+				ModifiedOn = response.NewModifiedOn,
+				CapturedAt = DateTime.UtcNow.ToString("o")
+			});
+	}
+}
