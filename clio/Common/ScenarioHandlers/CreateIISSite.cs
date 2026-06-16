@@ -118,11 +118,11 @@ namespace Clio.Common.ScenarioHandlers {
 
             _validator.ValidateAndThrow(request);
 
-            string siteName = request.Arguments["siteName"].Trim();
-            int sitePort = int.Parse(request.Arguments["port"].Trim());
-            string sourceDirectory = request.Arguments["sourceDirectory"];
-            string destinationFolder = Path.Combine(request.Arguments["destinationDirectory"].Trim(), siteName);
-            bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
+            string siteName = request.GetRequired("siteName").Trim();
+            int sitePort = request.GetRequired<int>("port");
+            string sourceDirectory = request.GetRequired("sourceDirectory");
+            string destinationFolder = Path.Combine(request.GetRequired("destinationDirectory").Trim(), siteName);
+            bool isNetFramework = request.GetRequired<bool>("isNetFramework");
             
             StringBuilder sb = new();
 
