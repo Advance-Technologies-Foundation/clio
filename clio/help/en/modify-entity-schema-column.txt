@@ -104,6 +104,10 @@ NOTES
       normalized to setting code before save
     - If Settings or SystemValue lookup is ambiguous, the command fails with a
       validation error and requests explicit code/Guid input
+    - For a lookup column, a Const value is the GUID of a record in the
+      referenced schema; the command validates the record exists before save and
+      rejects an unknown GUID (point-in-time check; skipped when the referenced
+      record cannot be read)
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 

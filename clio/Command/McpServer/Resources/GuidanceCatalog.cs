@@ -117,7 +117,14 @@ internal static class GuidanceCatalog {
 			["process-modeling"] = Create(
 				"process-modeling",
 				"Canonical MCP guidance for designing Creatio business processes (BPMN): the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).",
-				ProcessModelingGuidanceResource.Guide)
+				ProcessModelingGuidanceResource.Guide),
+			["run-process-button"] = Create(
+				"run-process-button",
+				"Canonical MCP guidance for adding a Freedom UI button that runs a business process "
+				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
+				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
+				+ "view-model-attribute-binding / current-record variants.",
+				RunProcessButtonGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

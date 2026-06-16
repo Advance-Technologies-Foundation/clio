@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `62` tools
+- `63` tools
 - `50` prompts
 - `4` resources
-- `55` tools with explicit safety metadata
+- `56` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -210,6 +210,8 @@ This area gives the AI a clean application-level view of the platform.
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
+- `add-package-dependency`
+  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op.
 
 What an external AI can practically do here:
 
@@ -220,6 +222,7 @@ What an external AI can practically do here:
 - add, update, list, and remove sections inside an existing app
 - remove apps
 - install packaged apps into an environment
+- add missing package dependencies to recover a broken schema designer or compile
 
 The AI sees this as a higher abstraction layer than package-level commands.
 

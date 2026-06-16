@@ -445,7 +445,7 @@ public sealed class ApplicationToolTests {
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
 		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
-				"Creatio did not respond within 300s while creating section 'Orders' (code 'UsrOrders').",
+				"Creatio did not respond within 90s while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
 				sectionCreated: false,
 				"Do not retry immediately. Run list-app-sections first."));

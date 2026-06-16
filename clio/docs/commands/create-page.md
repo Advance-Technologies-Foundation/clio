@@ -85,6 +85,10 @@ clio create-page --schema-name UsrDemo_Mobile --template BlankMobilePageTemplate
 create a mobile Freedom UI page from the BlankMobilePageTemplate parent
 ```
 
+## Notes
+
+- The page caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

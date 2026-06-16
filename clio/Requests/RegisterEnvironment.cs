@@ -1,8 +1,5 @@
 using Clio.Command;
-using MediatR;
 using System;
-using System.Globalization;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Clio.Requests;
@@ -22,10 +19,12 @@ public class RegisterEnvironment : IExternalLink {
 /// <code>clio://RegisterEnvironment?uri=http://localhost:5000&amp;login=Supervisor&amp;password=Supervisor&amp;isnetcore=true&amp;safe=false&amp;environmentpath=/app</code>
 /// </summary>
 internal class RegisterEnvironmentHandler(RegAppCommand regCommand)
-	: BaseExternalLinkHandler, IRequestHandler<RegisterEnvironment> {
+	: BaseExternalLinkHandler, IExternalLinkHandler {
 	private readonly RegAppCommand _regCommand = regCommand;
 
-	public Task Handle(RegisterEnvironment request, CancellationToken cancellationToken) {
+	public Type RequestType => typeof(RegisterEnvironment);
+
+	public Task Handle(IExternalLink request) {
 		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
 		string uri = ClioParams["uri"]?.Trim();
@@ -46,7 +45,7 @@ internal class RegisterEnvironmentHandler(RegAppCommand regCommand)
 		};
 
 		_regCommand.Execute(options);
-		return Unit.Task;
+		return Task.CompletedTask;
 	}
 
 	private string ResolveEnvironmentName(Uri parsedUri) {

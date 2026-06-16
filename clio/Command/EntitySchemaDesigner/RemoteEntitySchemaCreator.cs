@@ -32,8 +32,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
 	private readonly ISysSettingsManager _sysSettingsManager;
-	private readonly ICurrentUserCultureResolverFactory _cultureResolverFactory;
-	private readonly Clio.UserEnvironment.ISettingsRepository _settingsRepository;
+	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 
 	#endregion
 
@@ -92,45 +91,22 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger,
 		ISysSettingsManager sysSettingsManager,
-		ICurrentUserCultureResolverFactory cultureResolverFactory,
-		Clio.UserEnvironment.ISettingsRepository settingsRepository) {
+		IEntitySchemaCaptionCultureResolver captionCultureResolver) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 		_sysSettingsManager = sysSettingsManager;
-		_cultureResolverFactory = cultureResolverFactory;
-		_settingsRepository = settingsRepository;
+		_captionCultureResolver = captionCultureResolver;
 	}
 
 	/// <summary>
-	/// Resolves the effective caption culture for a create-entity run: an explicit
-	/// <c>--caption-culture</c> override wins; otherwise the connected user's profile culture
-	/// (read once, cached); otherwise the <c>en-US</c> fallback. Never reads the host
-	/// <c>CultureInfo.CurrentCulture</c>. Resolution failure is non-fatal (M-4): it degrades to
-	/// <c>en-US</c> so scripted/CI entity creation keeps working.
+	/// Resolves the effective caption culture for a create-entity run via
+	/// <see cref="IEntitySchemaCaptionCultureResolver"/>: an explicit <c>--caption-culture</c> override
+	/// wins; otherwise the connected user's profile culture; otherwise the <c>en-US</c> fallback.
 	/// </summary>
 	private string ResolveEffectiveCultureName(CreateEntitySchemaOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.CaptionCulture)) {
-			string overrideCulture = options.CaptionCulture.Trim();
-			try {
-				return System.Globalization.CultureInfo.GetCultureInfo(overrideCulture).Name;
-			} catch (System.Globalization.CultureNotFoundException) {
-				throw new EntitySchemaDesignerException(
-					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");
-			}
-		}
-
-		try {
-			EnvironmentSettings settings = _settingsRepository.GetEnvironment(options);
-			CultureResolution resolution = _cultureResolverFactory.Create(settings)
-				.ResolveAsync().GetAwaiter().GetResult();
-			return resolution.Success ? resolution.Culture : EntitySchemaDesignerSupport.DefaultCultureName;
-		} catch (Exception ex) {
-			_logger.WriteWarning(
-				$"Could not resolve the user profile culture; using '{EntitySchemaDesignerSupport.DefaultCultureName}'. {ex.Message}");
-			return EntitySchemaDesignerSupport.DefaultCultureName;
-		}
+		return _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture);
 	}
 
 	#endregion
@@ -242,7 +218,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			defaultValueConfig,
 			column.DataValueType ?? 0,
 			$"Column '{parsedColumn.Name}'",
-			options);
+			options,
+			column.ReferenceSchema?.Name);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{parsedColumn.Name}'");
 	}

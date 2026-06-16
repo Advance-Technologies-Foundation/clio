@@ -106,6 +106,7 @@ public static class ApplicationPrompt {
 		 When the user's plan is web-only (no mobile app target), proactively set `with-mobile-pages` to `false` before calling `create-app` so the mobile pages are not created and do not need manual cleanup afterwards.
 		 Pass `optional-template-data-json` only when the selected template requires entity-specific options such as `entitySchemaName`, `useExistingEntitySchema`, `useAIContentGeneration`, or `appSectionDescription`.
 		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the application name and captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`.
+		 The detected culture is the LANGUAGE of the text, not just a key: author the name and captions IN that language (an `en-US` profile means English text), regardless of the conversation/task language.
 		 """;
 
 	/// <summary>
@@ -144,6 +145,7 @@ public static class ApplicationPrompt {
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `create-app-section`.
 		 If the target app is not fully known, use `{ApplicationGetListTool.ApplicationGetListToolName}` first, then `{ApplicationGetInfoTool.ApplicationGetInfoToolName}`, then `{ApplicationSectionCreateTool.ApplicationSectionCreateToolName}`.
 		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the section caption; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
+		 The detected culture is the LANGUAGE of the caption text, not just a key: author the caption IN that language (an `en-US` profile means an English caption), regardless of the conversation/task language. The stored section caption is localized under the user's PROFILE culture, so clio rejects a caption whose script does not match it (e.g. Cyrillic for an `en-US` profile). `caption-culture` only changes which value the readback surfaces — it does NOT change the stored language and is NOT an escape hatch here; author the caption in the profile language.
 		 """;
 
 	/// </summary>
@@ -175,6 +177,7 @@ public static class ApplicationPrompt {
 		 Pass `application-code` `{applicationCode}` as the installed application selector.
 		 Pass `section-code` `{sectionCode}` as the existing section selector inside that application.
 		 Use `caption`, `description`, `icon-id`, and `icon-background` as optional top-level partial update fields. Omit any field that should remain unchanged.
+		 Author the `caption`/`description` in the connected user's profile language (detect once via `get-user-culture`): the caption is localized under the profile, so clio rejects a caption whose script does not match it (e.g. Cyrillic for an `en-US` profile).
 		 When updating a broken JSON-style section heading, provide a new plain-text `caption`.
 		 Wrap all tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema; do not flatten or rename canonical fields.
 		 Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or other localization-map fields to `update-app-section`.

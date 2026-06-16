@@ -12,6 +12,14 @@ DESCRIPTION
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
 
+    After a successful non-dry-run save, update-page also attempts a
+    best-effort live Designer Presence notification so active Creatio
+    designers can be warned that the page was saved outside their session.
+    This live push requires forms-auth browser-session cookies (login/password
+    backed flow). In OAuth-only or credential-less environments the page save
+    still succeeds, and the structured response includes a warning when the
+    live notification is skipped or fails.
+
     When the body contains #ResourceString(key)# macros, update-page can
     register missing child-schema localizableStrings before saving. Pass
     --resources when you need explicit captions, or let clio derive captions
@@ -33,11 +41,27 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
+    - User-visible text (label, caption, title, tooltip, placeholder) in
+      viewConfigDiff must be a localizable-string binding, not an inline
+      literal. Bind via $Resources.Strings.<Key> (or #ResourceString(<Key>)#
+      for grid column captions / validator messages) and register the key's
+      default-language value with --resources. Inline literals are rejected.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
     - Call `clio get-guidance --name page-schema-handlers` for handler details
     - Call `clio get-guidance --name page-schema-validators` for validator details
+    - Call `clio get-guidance --name page-schema-resources` for localization details
+
+    CONFLICT DETECTION:
+    When --expected-checksum is supplied, update-page compares it against the
+    current SysSchema.Checksum of the editable schema before saving. If the
+    schema was modified outside your session (for example, edited in the
+    Creatio designer), the save is blocked with a structured conflict response
+    (conflict: true + conflictDetails) instead of silently overwriting the
+    external changes. Re-run get-page, re-apply your edit on top of the fresh
+    body, then retry — or pass --force to deliberately overwrite. A small
+    race window between the check and the save remains (last write wins).
 
 SYNOPSIS
     clio update-page [options]
@@ -58,6 +82,15 @@ OPTIONS
                                        merge into schema optionalProperties,
                                        e.g. '[{"key":"entitySchemaName",
                                        "value":"UsrMyEntity"}]'
+
+    --expected-checksum                Baseline SysSchema checksum of the
+                                       editable schema (from get-page). Blocks
+                                       the save with a conflict error when the
+                                       server-side checksum differs
+
+    --force                            Skip the external-modification check
+                                       and deliberately overwrite out-of-band
+                                       changes
 
     --uri                    -u       Application uri
 

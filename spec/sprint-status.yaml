@@ -257,6 +257,18 @@ stories:
     depends_on: [story-user-profile-language-detection-3]
     blocks: []
 
+  - id: story-update-page-designer-presence-push-1
+    title: "update-page best-effort Designer Presence save push"
+    feature: "update-page-designer-presence-push"
+    size: M
+    status: in-progress
+    file: spec/stories/story-update-page-designer-presence-push-1.md
+    prd: spec/prd/spec-update-page-designer-presence-push.md
+    adr: spec/adr/adr-update-page-designer-presence-push.md
+    test_plan: spec/test-plans/tp-update-page-designer-presence-push.md
+    depends_on: []
+    blocks: []
+
   - id: mcp-progress-heartbeat-1
     title: "Reusable progress-heartbeat helper"
     feature: "mcp-progress-heartbeat"
@@ -419,3 +431,197 @@ stories:
       - story-ai-business-process-generation-3
     blocks: []
     note: "Inverse of generation (research 'read & explain' quick win, backend ~0). Reuses the EXISTING read path: ProcessSchemaRequest + ProcessModelGenerator + Schema.cs (ProcessSchemaResponse/FlowElement/FlowElementParameter/ManagerMap) -> exposes element graph + flows (kind: sequence|conditional|default) + process-level params as structured JSON (NOT raw escaped metaData). New IProcessGraphExtractor (DI; no new/MediatR). Identity by code/UId/caption + environment-name. MCP tool ReadOnly=true/Destructive=false/Idempotent=true, ENV-SENSITIVE -> InternalExecute<DescribeProcessCommand>(options); prompt reuses process-modeling resource. Unit (graph extraction from clio.tests/Examples/ProcessSchema/*.json fixtures; ResolveDataId; arg mapping; BaseCommandTests<DescribeProcessOptions>) + clio.mcp.e2e live read (not in CI). Docs: help/en/describe-process.txt, docs/commands/describe-process.md, Commands.md, McpCapabilityMap; 'MCP reviewed, no update required' for generate-process-model/execute-esq. INDEPENDENT of Variant-A driver (1/6/7) — pure backend read, no browser. v1 LIMITATION: no deep filter/mapping (FilterGroup/ParameterExpression) interpretation. BindingsModule.cs/Program.cs changed -> full unit suite trigger."
+
+  # --- detect-external-schema-changes stories (ENG-91317), added 2026-06-12 ---
+  # Order: 1 -> 2 -> 3 -> 4 -> 5 (linear; no story depends on a later one)
+  # OQ-02/A-01 (designer saves bump SysSchema.Checksum) is verified by the FIRST E2E scenario in story 5;
+  # OQ-01 (SaveSchema response checksum) is resolved inside story 3.
+  - id: story-detect-external-schema-changes-1
+    title: "Foundation — UId-filtered SysSchema query + conflict/baseline models"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-1.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-04, FR-06]
+    depends_on: []
+    blocks:
+      - story-detect-external-schema-changes-2
+      - story-detect-external-schema-changes-3
+
+  - id: story-detect-external-schema-changes-2
+    title: "Baseline capture — get-page checksum fetch, typed meta.json, PageBaselineStore"
+    feature: "detect-external-schema-changes"
+    size: L
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-2.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-01, FR-07, FR-08, FR-10]
+    ac: [AC-09]
+    depends_on: [story-detect-external-schema-changes-1]
+    blocks:
+      - story-detect-external-schema-changes-3
+
+  - id: story-detect-external-schema-changes-3
+    title: "Conflict gate — PageUpdateCommand chokepoint + PageUpdateTool plumbing"
+    feature: "detect-external-schema-changes"
+    size: L
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-3.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-02, FR-04, FR-05, FR-06, FR-08, FR-09, FR-11, FR-12]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-08, AC-10, AC-ERR]
+    depends_on: [story-detect-external-schema-changes-1, story-detect-external-schema-changes-2]
+    blocks:
+      - story-detect-external-schema-changes-4
+      - story-detect-external-schema-changes-5
+
+  - id: story-detect-external-schema-changes-4
+    title: "sync-pages — per-page conflict surfacing, per-page force, meta.json refresh"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    file: spec/stories/story-detect-external-schema-changes-4.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-03, FR-05, FR-08, FR-09, FR-13]
+    ac: [AC-07]
+    depends_on: [story-detect-external-schema-changes-3]
+    blocks:
+      - story-detect-external-schema-changes-5
+
+  - id: story-detect-external-schema-changes-5
+    title: "Docs, MCP guidance artifacts, and E2E coverage"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: review
+    note: "clio.mcp.e2e is NOT in CI — manual run against a live stand; first E2E scenario verifies A-01/OQ-02 (designer saves bump SysSchema.Checksum)."
+    file: spec/stories/story-detect-external-schema-changes-5.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-14]
+    ac: [AC-01, AC-02, AC-07, AC-11]
+    depends_on: [story-detect-external-schema-changes-3, story-detect-external-schema-changes-4]
+    blocks: []
+
+  # --- read-column-default-values stories (ENG-91318, epic ENG-85256) — added 2026-06-12 ---
+  # Two-phase feature per ADR. Phase A (stories 1-5): documents-only investigation,
+  # SM-01 counter = empty code diff (spec/** only). Phase B (stories 6-8): CONDITIONAL
+  # implementation — `deferred` here means GATED, not descoped: story 4's keep/adopt/hybrid
+  # decision must confirm the gap (FR-03 predicate verdict = fail) before stories 6-8 may
+  # move to ready-for-dev; if story 4 closes FR-05/06/07 as "not needed", strike 6-8 with
+  # evidence. Recommended order: 1 ∥ 2 -> 3 -> 4 -> 5; then (if gated open) 6 ∥ 7 -> 8.
+  - id: story-read-column-default-values-1
+    title: "Document current read path (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: S
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-current-path.md. Verified read path = EntitySchemaDesignerService.svc/GetSchemaDesignItem (not OData); lookup-Const readback is GUID-only. Empty code diff."
+    file: spec/stories/story-read-column-default-values-1.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-01]
+    ac: [AC-01]
+    depends_on: []
+    blocks: []
+
+  - id: story-read-column-default-values-2
+    title: "OData $metadata probe across environment matrix (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-odata-probe.md. FINDING: CSDL $metadata carries ZERO DefaultValue facets (0 in 1.43MB) on studio0614 (.NET FW 8.x) — OData metadata unusable for defaults. AC-ERR: .NET Core row uncovered (no Core env reachable). Side finding: clio call-service broken on duplicate-URI appsettings (.Single() bug) — used authenticated curl fallback; zero production code touched."
+    file: spec/stories/story-read-column-default-values-2.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-02]
+    ac: [AC-02, AC-ERR]
+    depends_on: []
+    blocks: [story-read-column-default-values-4]
+
+  - id: story-read-column-default-values-3
+    title: "Ticket-case E2E scenario + supplementary OQ-03/OQ-05 evidence (Phase A, documents-only)"
+    feature: "read-column-default-values"
+    size: L
+    status: done
+    note: "DONE 2026-06-13 on studio0614: spec/read-column-default-values/read-column-default-values-e2e-scenario.md. All 6 steps clio/MCP only. Predicate FAIL (component d display-value absent); runtime application PASS (UsrColorId auto-set to default GUID on insert). OQ-03: persisted defValue.Value is a plain GUID (A-04=false). A-02 cleared."
+    file: spec/stories/story-read-column-default-values-3.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-03]
+    ac: [AC-03]
+    depends_on: []
+    blocks: [story-read-column-default-values-4]
+
+  - id: story-read-column-default-values-4
+    title: "Comparison matrix + keep/adopt/hybrid decision + gap→DRAFT-AC mapping + ADR update (Phase A)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-comparison.md. Decision = HYBRID (Option B): keep designer readback + enrich in clio. OData $metadata (A) rejected (0/4 on D1). D7 = OData data endpoint (SelectQuery fallback). OQ-04 = enrichment default-on/fail-soft. Gap CONFIRMED -> Phase B in scope. ADR Status -> Accepted."
+    file: spec/stories/story-read-column-default-values-4.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-04]
+    ac: [AC-04]
+    depends_on: [story-read-column-default-values-2, story-read-column-default-values-3]
+    blocks: [story-read-column-default-values-5, story-read-column-default-values-6, story-read-column-default-values-7]
+
+  - id: story-read-column-default-values-5
+    title: "Jira ENG-91318 closure + epic ENG-85256 surfacing (Phase A)"
+    feature: "read-column-default-values"
+    size: S
+    status: in-progress
+    note: "In progress 2026-06-13: posting decision summary to ENG-91318 + surfacing to epic ENG-85256."
+    file: spec/stories/story-read-column-default-values-5.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-08]
+    ac: []
+    depends_on: [story-read-column-default-values-4]
+    blocks: []
+
+  - id: story-read-column-default-values-6
+    title: "[CONDITIONAL] Readback enrichment: display-value + record-resolution (Phase B)"
+    feature: "read-column-default-values"
+    size: L
+    status: done
+    note: "DONE 2026-06-13. OQ-06 resolved (display column via IRuntimeEntitySchemaReader.PrimaryDisplayColumnName; value in session culture; imageLookup/no-display -> display-column-unavailable marker). New ILookupDefaultDisplayValueResolver (SelectQuery transport via IApplicationClient) + display-value/record-resolution on EntitySchemaDefaultValueConfig; enrichment wired into RemoteEntitySchemaColumnManager.GetColumnProperties (Const+lookup only, fail-soft). DI via convention auto-registration. Unit tests: LookupDefaultDisplayValueResolverTests (6) + manager enrichment tests (2). Validated: dotnet test --filter Category=Unit&(Module=Command|Module=McpServer) = 2584 pass."
+    file: spec/stories/story-read-column-default-values-6.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-05]
+    ac: [DRAFT-AC-05]
+    depends_on: [story-read-column-default-values-4]
+    blocks: [story-read-column-default-values-8]
+
+  - id: story-read-column-default-values-7
+    title: "[CONDITIONAL] Write-side Const-GUID validation + display-name resolution (Phase B)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13. EntitySchemaDefaultValueSourceResolver.Resolve extended with a Const branch + referenceSchemaName param: validates the referenced record exists (IRemoteEntitySchemaDesignerClient.CheckRecordExists via SelectQuery) before save; unknown GUID -> EntitySchemaDesignerException 'was not found in referenced schema'. Unknown/no-access -> pass through (TOCTOU caveat documented). Validation wired at apply sites (manager 926, creator 241). Unit tests: 4 resolver Const cases + 3 CheckRecordExists client cases."
+    file: spec/stories/story-read-column-default-values-7.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-06]
+    ac: [DRAFT-AC-06]
+    depends_on: [story-read-column-default-values-4]
+    blocks: [story-read-column-default-values-8]
+
+  - id: story-read-column-default-values-8
+    title: "[CONDITIONAL] Docs + MCP surface + E2E coverage + manual E2E run (Phase B)"
+    feature: "read-column-default-values"
+    size: M
+    status: done
+    note: "DONE 2026-06-13. MCP: EntitySchemaTool descriptions (get-entity-schema-column-properties enrichment + markers; modify-entity-schema-column Const-GUID validation), EntitySchemaPrompt lookup-default guidance, ToolContractGetTool field description + lookup-Const example + readback description. Docs: help/en/{get-entity-schema-column-properties,modify-entity-schema-column}.txt + docs/commands/{...}.md updated; Commands.md reviewed, no change needed. E2E: clio.mcp.e2e write-rejection test + reference-schema-name harness param. NOTE: MCP E2E NOT in CI — positive enrichment path was manually verified live on studio0614 (Story 3 evidence); the automated rejection E2E must be run manually before merge (SM-01 Phase B counter)."
+    file: spec/stories/story-read-column-default-values-8.md
+    prd: spec/prd/prd-read-column-default-values.md
+    adr: spec/adr/adr-read-column-default-values.md
+    fr: [FR-07]
+    ac: []
+    depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
+    blocks: []

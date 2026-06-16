@@ -1,0 +1,57 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-process-signature - Read the input/output parameter signature of a Creatio business process
+
+ALIASES
+    gps
+
+SYNOPSIS
+    clio get-process-signature <ProcessName> [OPTIONS]
+
+DESCRIPTION
+    Resolves a business process by its code (schema Name) OR its display caption
+    and returns its parameter signature: for each parameter the CODE (name),
+    caption, CLR type, dataValueTypeId, direction, and lookup reference schema.
+
+    Use it before authoring a run-process button (crt.RunBusinessProcessRequest):
+    the parameter CODE - not the caption - must be the key in processParameters /
+    parameterMappings / recordIdProcessParameterName, otherwise the platform
+    silently drops the value. The command echoes the resolved processCode; put
+    that code into the button's processName.
+
+    When a caption matches more than one process the command returns a failure
+    listing the candidate codes - re-run with the exact code.
+
+OPTIONS
+    ProcessName              (pos. 0)  Process code (schema Name) or display caption
+                                       as it appears in the process designer (required)
+
+    --culture                -x        Culture used to resolve localized parameter
+                                       captions (default: en-US)
+
+    --uri                    -u        Application uri
+
+    --Password               -p        User password
+
+    --Login                  -l        User login
+
+    --Environment            -e        Environment name
+
+EXAMPLES
+    clio get-process-signature UsrProcess_e629820 -e dev
+        Read a process signature by code from the dev environment
+
+    clio get-process-signature "Business process 1" -e dev
+        Read a process signature by display caption
+
+    clio gps UsrProcess_e629820 -e dev
+        Same as the first example using the alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    generate-process-model - Generate a typed model for a business process
+    update-page - Add a run-process button (crt.RunBusinessProcessRequest) to a page

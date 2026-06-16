@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 
@@ -35,7 +36,8 @@ public sealed class ApplicationCreateService(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
-	ILogger logger)
+	ILogger logger,
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
@@ -79,6 +81,14 @@ public sealed class ApplicationCreateService(
 			throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
+
+		// ENG-91044: the application name/description are localized server-side under the connected
+		// user's profile culture (create-app is scalar-only with no caption-culture knob), so reject
+		// text whose script does not match the profile culture (e.g. Cyrillic under an en-US profile).
+		string profileCultureForCaption = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, null);
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Name, "name");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);

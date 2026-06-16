@@ -6,14 +6,13 @@ using System.Linq;
 using System.Management.Automation;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
-using MediatR;
+using FluentValidation;
 
 namespace Clio.Requests;
 
@@ -31,8 +30,30 @@ public sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, Si
 
 /// <summary>Provides discovery of Creatio sites registered in IIS.</summary>
 public interface IIisScanner {
+
+	/// <summary>
+	///  Finds all Creatio sites in IIS, regardless of whether they are registered with clio.
+	/// </summary>
+	/// <returns>The Creatio sites discovered in IIS.</returns>
 	IEnumerable<UnregisteredSite> FindAllCreatioSites();
+
+	/// <summary>
+	///  Finds all registered Creatio sites in IIS.
+	/// </summary>
+	/// <returns>The registered Creatio sites discovered in IIS.</returns>
 	IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites();
+
+	/// <summary>
+	///  Stops the IIS site and its application pool by site name.
+	/// </summary>
+	/// <param name="siteName">The IIS site name to stop.</param>
+	void StopSiteByName(string siteName);
+
+	/// <summary>
+	///  Deletes the IIS site and its application pool by site name.
+	/// </summary>
+	/// <param name="siteName">The IIS site name to delete.</param>
+	void DeleteSiteByName(string siteName);
 }
 
 public class IISScannerRequest : IExternalLink {
@@ -40,45 +61,6 @@ public class IISScannerRequest : IExternalLink {
 	#region Properties: Public
 
 	public string Content { get; set; }
-
-	#endregion
-
-}
-
-internal class AllUnregisteredSitesRequest : IRequest {
-
-	#region Fields: Public
-
-	public Action<IEnumerable<UnregisteredSite>> Callback;
-
-	#endregion
-
-}
-internal class AllRegisteredSitesRequest : IRequest {
-
-	#region Fields: Public
-
-	public Action<IEnumerable<RegisteredSite>> Callback;
-
-	#endregion
-
-}
-
-internal class StopInstanceByNameRequest : IRequest {
-
-	#region Properties: Public
-
-	public string SiteName { get; set; }
-
-	#endregion
-
-}
-
-internal class DeleteInstanceByNameRequest : IRequest {
-
-	#region Properties: Public
-
-	public string SiteName { get; set; }
 
 	#endregion
 
@@ -95,9 +77,7 @@ internal class DeleteInstanceByNameRequest : IRequest {
 /// </remarks>
 /// <example>
 /// </example>
-internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IRequestHandler<IISScannerRequest>,
-	IRequestHandler<AllUnregisteredSitesRequest>, IRequestHandler<DeleteInstanceByNameRequest>,
-	IRequestHandler<StopInstanceByNameRequest>,IRequestHandler<AllRegisteredSitesRequest> {
+internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExternalLinkHandler {
 
 	#region Fields: Private
 
@@ -153,6 +133,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IReques
 	private readonly RegAppCommand _regCommand;
 	private readonly PowerShellFactory _powerShellFactory;
 	private readonly ILogger _logger;
+	private readonly IValidator<IISScannerRequest> _validator;
 
 	#endregion
 
@@ -207,13 +188,18 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IReques
 	#region Constructors: Public
 
 	public IisScannerHandler(ISettingsRepository settingsRepository, RegAppCommand regCommand,
-		PowerShellFactory powerShellFactory, ILogger logger, IProcessExecutor processExecutor) {
+		PowerShellFactory powerShellFactory, ILogger logger, IProcessExecutor processExecutor,
+		IValidator<IISScannerRequest> validator) {
 		_settingsRepository = settingsRepository;
 		_regCommand = regCommand;
 		_powerShellFactory = powerShellFactory;
 		_logger = logger;
 		_processExecutor = processExecutor;
+		_validator = validator;
 	}
+
+	/// <inheritdoc />
+	public Type RequestType => typeof(IISScannerRequest);
 
 	#endregion
 
@@ -326,29 +312,20 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IReques
 
 	#region Methods: Public
 
-	public async Task Handle(AllUnregisteredSitesRequest request, CancellationToken cancellationToken){
-		IEnumerable<UnregisteredSite> sites = FindAllCreatioSites();
-		request.Callback(sites);
+	/// <inheritdoc />
+	public void StopSiteByName(string siteName){
+		StopSite(siteName);
+		StopAppPool(siteName);
 	}
 
-	public async Task Handle(AllRegisteredSitesRequest request, CancellationToken cancellationToken){
-		IEnumerable<RegisteredSite> sites = FindAllRegisteredCreatioSites();
-		request.Callback(sites);
+	/// <inheritdoc />
+	public void DeleteSiteByName(string siteName){
+		RemoveSite(siteName);
+		RemoveAppPool(siteName);
 	}
 
-	public async Task Handle(StopInstanceByNameRequest request, CancellationToken cancellationToken){
-		string name = request.SiteName;
-		StopSite(name);
-		StopAppPool(name);
-	}
-
-	public async Task Handle(DeleteInstanceByNameRequest request, CancellationToken cancellationToken){
-		string name = request.SiteName;
-		RemoveSite(name);
-		RemoveAppPool(name);
-	}
-
-	public async Task Handle(IISScannerRequest request, CancellationToken cancellationToken){
+	public async Task Handle(IExternalLink request){
+		_validator.ValidateAndThrow((IISScannerRequest)request);
 		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 		IEnumerable<UnregisteredSite> unregSites = FindUnregisteredSites();
 

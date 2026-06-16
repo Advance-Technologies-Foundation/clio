@@ -1,4 +1,3 @@
-using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Requests;
@@ -24,7 +23,7 @@ public class UnregisterEnvironmentHandlerTests {
 		};
 
 		// Act
-		await sut.Handle(request, CancellationToken.None);
+		await sut.Handle(request);
 
 		// Assert
 		settingsRepository.Received(1).RemoveEnvironment("studio-dev");

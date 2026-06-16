@@ -41,8 +41,9 @@ hood, but `HttpClient` types are also mapped):
 ### Budget
 
 - Insert call: `client.ExecutePostRequest(url, body, requestTimeout: budget)`.
-- Budget default **300 000 ms**; env var `CLIO_CREATE_SECTION_TIMEOUT_SECONDS`
-  (int seconds, > 0) overrides. Read once per call, not cached.
+- Budget default **90 000 ms** (lowered from 300 000 ms — see ENG-91540 below);
+  env var `CLIO_CREATE_SECTION_TIMEOUT_SECONDS` (int seconds, > 0) overrides.
+  Read once per call, not cached.
 - Verification readback budget: fixed **30 000 ms**.
 
 ### Preparation-phase classification
