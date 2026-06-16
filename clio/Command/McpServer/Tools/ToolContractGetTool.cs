@@ -588,7 +588,8 @@ internal static class ToolContractCatalog {
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("skill_version", StringType, "Product skill version."),
 					Field("plugin_version", StringType, "Product plugin version."),
-					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied.")
+					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied."),
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
 				],
 				Validators: [
 					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
@@ -622,7 +623,7 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields.")
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
 			]);
 	}
 

@@ -165,9 +165,10 @@ public sealed class TelemetryService : ITelemetryService
 				WriteEvent(eventId, logEvent);
 				UpdateSessionState(sessionState, request.EventName, eventTimestamp);
 				return new TelemetryEventResult(true, StatusRecorded, eventId);
-			} catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) {
-				// Telemetry must never disturb the caller: a local I/O failure is reported as a soft
-				// result, never thrown into the MCP tool call. Mirrors the flusher's contract.
+			} catch (Exception ex) {
+				// Telemetry must never disturb the caller: any failure (I/O, serialization, etc.) is
+				// reported as a soft result, never thrown into the MCP tool call. Mirrors the flusher's
+				// broad catch and the ADR decision that the store never throws into the MCP call.
 				_logger.LogDebug(ex, "telemetry-record failed error={Error}", ex.Message);
 				return new TelemetryEventResult(false, "record-failed",
 					Error: new TelemetryError("record-unavailable",

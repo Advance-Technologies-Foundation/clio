@@ -60,6 +60,13 @@ snippet so a wire/schema regression that would silently zero out metrics is dete
 has age (30d) + size (500) caps; the `sessions/` directory and crash-orphaned `*.json.tmp` files
 are pruned on every flush.
 
+Delivery is best-effort and **at-least-once-leaning**, not exactly-once. A given event can reach
+the collector more than once: the single-flight guard is per-process, so two concurrent clio
+processes can flush the same spooled batch, and a retry after a lost ACK re-sends an
+already-delivered batch. Duplicates are acceptable by classification and are de-duplicated at query
+time on `event_id` (a fresh GUID emitted on every event); downstream SQL/Grafana consumers must
+group or dedup on `event_id`.
+
 ### 6. Telemetry must never disturb the caller
 Both the store (`Send`) and the flusher swallow I/O failures and degrade to a soft result / log,
 never throwing into the MCP tool call. Validation errors (caller-actionable) are still returned
