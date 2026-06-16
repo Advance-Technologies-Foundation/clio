@@ -24,7 +24,12 @@ public record CommandExecutionResult(
 
 	[property: JsonPropertyName("correlation-id")]
 	[property: Description("Unique identifier for tracing this tool execution across logs and diagnostics.")]
-	string CorrelationId = null
+	string CorrelationId = null,
+
+	[property: JsonPropertyName("note")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Optional deterministic post-operation hint, e.g. that compile-creatio is not required after this tool.")]
+	string Note = null
 ) {
 	/// <summary>
 	/// Creates a failed <see cref="CommandExecutionResult"/> with a single error message.

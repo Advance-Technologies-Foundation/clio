@@ -13,6 +13,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public class UpdateEntitySchemaToolTests {
 
 	[Test]
@@ -187,6 +188,31 @@ public class UpdateEntitySchemaToolTests {
 				hints.Contains("Contact")
 				&& hints.Contains("Department")
 				&& !hints.Contains("Account")));
+	}
+
+	[Test]
+	[Description("Emits the deterministic 'compile-creatio not required' note on a successful update so agents do not run a needless compile.")]
+	[Category("Unit")]
+	public async Task UpdateEntitySchema_Should_EmitCompileNotRequiredNote_WhenUpdateSucceeds() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(command);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
+			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
+				TitleLocalizations: Title("Status"))
+		});
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the fake command returns a successful exit code");
+		result.Note.Should().Be("compile-creatio not required",
+			because: "update-entity-schema applies DDL and refreshes the runtime schema itself, so the deterministic note must steer agents away from a needless compile-creatio");
 	}
 
 	private static UpdateEntitySchemaArgs BuildArgs(string schemaName, IEnumerable<UpdateEntitySchemaOperationArgs> operations) {

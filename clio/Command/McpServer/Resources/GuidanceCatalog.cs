@@ -120,7 +120,11 @@ internal static class GuidanceCatalog {
 				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
 				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
 				+ "view-model-attribute-binding / current-record variants.",
-				RunProcessButtonGuidanceResource.Guide)
+				RunProcessButtonGuidanceResource.Guide),
+				["analytics-widgets"] = Create(
+					"analytics-widgets",
+					"Canonical MCP guidance for placing, sizing, and styling Freedom UI analytical widgets; a pointer that defers to the dashboards and indicator-widget guides.",
+					AnalyticsWidgetsGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

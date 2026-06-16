@@ -37,7 +37,7 @@ public sealed class PageGetTool(
 		"if the task involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before touching any component type; " +
 		"if the task targets SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first — NOTE: restricting which records a lookup/ComboBox offers is NEVER handler business logic, regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter), so use create-entity-business-rule, not crt.InitRequest; " +
 		"if the task targets SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
-		"if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+		"if the task adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. If the page contains or you will add analytics widgets (metrics, charts, dashboards), FIRST call get-component-info for crt.IndicatorWidget (read resolvedFrom), then call get-guidance with name dashboards, indicator-widget, and analytics-widgets.")]
 	public PageGetResponse GetPage(
 		[Description("Parameters: schema-name (required); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageGetArgs args) {

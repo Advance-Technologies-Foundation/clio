@@ -1058,4 +1058,10 @@ public sealed class PageCreateResponse {
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	[DataMember(Name = "note")]
+	[JsonProperty("note", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("note")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; set; }
 }

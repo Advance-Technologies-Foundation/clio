@@ -464,6 +464,35 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the analytics-widgets guide that references its neighbors by name")]
+	[Description("Verifies get-guidance returns the new analytics-widgets pointer guide over the real stdio MCP path and that it references dashboards and indicator-widget by name (dedup), not by copied content.")]
+	public async Task GuidanceGet_Should_Return_Analytics_Widgets_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "analytics-widgets" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "analytics-widgets is a registered guidance name after Pt 4");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/analytics-widgets",
+			because: "the canonical resource URI for the analytics-widgets guide should be stable");
+		response.Article.Text.Should().Contain("name=dashboards",
+			because: "the analytics-widgets pointer must route to the dashboards guide by name rather than copying its layout math");
+		response.Article.Text.Should().Contain("name=indicator-widget",
+			because: "the analytics-widgets pointer must route to the indicator-widget guide by name rather than copying its content");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
