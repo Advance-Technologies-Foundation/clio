@@ -94,7 +94,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 		if (!isEnvUri) {
 			return Error.NotFound("003", $"Environment: {envName} has an invalid Uri.");
 		}
-		AllSites = _iisScanner.GetAllRegisteredSites();
+		AllSites = _iisScanner.FindAllRegisteredCreatioSites().ToList();
 		return GetFolderPathForEnvironmentName(envUri);
 	}
 

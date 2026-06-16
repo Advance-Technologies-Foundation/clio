@@ -166,7 +166,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, false);
-		_iisScanner.GetAllRegisteredSites().Returns(sites);
+		_iisScanner.FindAllRegisteredCreatioSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -200,7 +200,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		Dictionary<string, string> envs = new();
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_iisScanner.GetAllRegisteredSites().Returns(sites);
+		_iisScanner.FindAllRegisteredCreatioSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -236,7 +236,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_iisScanner.GetAllRegisteredSites().Returns(sites);
+		_iisScanner.FindAllRegisteredCreatioSites().Returns(sites);
 
 		//Act
 		int result = _sut.Execute(options);
@@ -272,7 +272,7 @@ internal class CustomizeDataProtectionCommandTests : BaseCommandTests<CustomizeD
 		};
 
 		List<RegisteredSite> sites = MockRegisteredSites(envs, true);
-		_iisScanner.GetAllRegisteredSites().Returns(sites);
+		_iisScanner.FindAllRegisteredCreatioSites().Returns(sites);
 
 		FileSystem.MockExamplesFolder("Sites/N8_Site", GetPlatformPath("T", envName));
 

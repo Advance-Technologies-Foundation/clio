@@ -44,18 +44,6 @@ public interface IIisScanner {
 	IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites();
 
 	/// <summary>
-	///  Gets all Creatio sites in IIS that are candidates for registration.
-	/// </summary>
-	/// <returns>The Creatio sites discovered in IIS.</returns>
-	IEnumerable<UnregisteredSite> GetAllUnregisteredSites();
-
-	/// <summary>
-	///  Gets all registered Creatio sites in IIS.
-	/// </summary>
-	/// <returns>The registered Creatio sites discovered in IIS.</returns>
-	IEnumerable<RegisteredSite> GetAllRegisteredSites();
-
-	/// <summary>
 	///  Stops the IIS site and its application pool by site name.
 	/// </summary>
 	/// <param name="siteName">The IIS site name to stop.</param>
@@ -323,12 +311,6 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	#endregion
 
 	#region Methods: Public
-
-	/// <inheritdoc />
-	public IEnumerable<UnregisteredSite> GetAllUnregisteredSites() => FindAllCreatioSites();
-
-	/// <inheritdoc />
-	public IEnumerable<RegisteredSite> GetAllRegisteredSites() => FindAllRegisteredCreatioSites();
 
 	/// <inheritdoc />
 	public void StopSiteByName(string siteName){

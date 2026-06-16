@@ -539,7 +539,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	}
 
 	private int HandleLinkingByEnvNameOnWindows(string envName, string repoPath, string packages){
-		AllSites = _iisScanner.GetAllRegisteredSites();
+		AllSites = _iisScanner.FindAllRegisteredCreatioSites().ToList();
 		EnvironmentSettings environment = _settingsRepository.GetEnvironment(envName);
 		if (environment is null) {
 			_logger.WriteError(

@@ -217,7 +217,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 	#region Methods: Public
 
 	public void UninstallByEnvironmentName(string environmentName){
-		AllSites = _iisScanner.GetAllUnregisteredSites();
+		AllSites = _iisScanner.FindAllCreatioSites().ToList();
 
 		EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
 		Uri envUri = new(settings.Uri);
@@ -241,7 +241,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private void StopIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllSites = _iisScanner.GetAllUnregisteredSites();
+			AllSites = _iisScanner.FindAllCreatioSites().ToList();
 		}
 		var site = AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
 		if(site is not null) {
@@ -254,7 +254,7 @@ public class CreatioUninstaller : ICreatioUninstaller
 
 	private void DeleteIISSite(string creatioDirectoryPath){
 		if(AllSites is null) {
-			AllSites = _iisScanner.GetAllUnregisteredSites();
+			AllSites = _iisScanner.FindAllCreatioSites().ToList();
 		}
 		var site = AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
 		if(site is not null) {

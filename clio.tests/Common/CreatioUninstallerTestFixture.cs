@@ -42,7 +42,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	private void MockNoSitesFound(){
 		IEnumerable<UnregisteredSite> allSitesMock = [];
-		_iisScannerMock.GetAllUnregisteredSites().Returns(allSitesMock);
+		_iisScannerMock.FindAllCreatioSites().Returns(allSitesMock);
 	}
 
 	private void MockStartedSite(string url = "", string siteName = EnvironmentName){
@@ -55,7 +55,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 				],
 				SiteType.NetFramework)
 		];
-		_iisScannerMock.GetAllUnregisteredSites().Returns(allSitesMock);
+		_iisScannerMock.FindAllCreatioSites().Returns(allSitesMock);
 	}
 
 	#endregion
