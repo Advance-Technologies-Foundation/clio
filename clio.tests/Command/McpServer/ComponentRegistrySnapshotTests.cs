@@ -213,6 +213,24 @@ public sealed class ComponentRegistrySnapshotTests {
 			because: "a restrictive applicability flag must ship with a human-readable reason so the agent can relay it to the user");
 	}
 
+	[Test]
+	[Description("An entityCouplingNote may only accompany a restrictive applicability flag — any entry in the live snapshot that carries a coupling note must also have appliesToCustomEntities == false, so producer data can never ship a note explaining a restriction the flag says does not exist (Solution A, ENG-91571).")]
+	public void Live_Snapshot_EntityCouplingNote_Should_Only_Accompany_Restrictive_Applicability_Flag() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Assert
+		foreach (ComponentRegistryEntry entry in state.Entries) {
+			if (string.IsNullOrWhiteSpace(entry.EntityCouplingNote)) {
+				continue;
+			}
+			entry.AppliesToCustomEntities.Should().BeFalse(
+				because: $"'{entry.ComponentType}' ships an entityCouplingNote, so appliesToCustomEntities must be the restrictive false — a coupling note without the restriction is contradictory producer data");
+		}
+	}
+
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
 		bucket is null ? System.Array.Empty<string>() : bucket.Keys;
 }

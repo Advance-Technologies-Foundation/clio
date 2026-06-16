@@ -57,15 +57,17 @@ public static class ComponentInfoGrouping {
 	}
 
 	// Selection-metadata fields (Solution A, ENG-91571) participate in the binary substring
-	// filter so synonyms/use-cases/when-to-use become searchable the moment the producer
-	// backfills them. Solution B (ENG-91572) replaces this binary Matches with a scored ranking
+	// filter so synonyms/use-cases/when-to-use/category become searchable the moment the producer
+	// backfills them. whenNotToUse is deliberately excluded: it is anti-guidance that names *other*
+	// components (e.g. crt.Gallery's "Not for a single image — use crt.ImageInput.") so matching it
+	// would surface a component on a query for the very type it steers away from. It still ships on
+	// the detail response. Solution B (ENG-91572) replaces this binary Matches with a scored ranking
 	// that weights synonyms/useCases above description; until then they are equal-weight hits.
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
 		return ContainsCi(entry.ComponentType, query)
 			|| ContainsCi(entry.Description, query)
 			|| ContainsCi(entry.Category, query)
 			|| ContainsCi(entry.WhenToUse, query)
-			|| ContainsCi(entry.WhenNotToUse, query)
 			|| entry.Synonyms.Any(synonym => ContainsCi(synonym, query))
 			|| entry.UseCases.Any(useCase => ContainsCi(useCase, query))
 			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))

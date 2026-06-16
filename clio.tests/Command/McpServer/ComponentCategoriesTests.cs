@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Reflection;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NUnit.Framework;
@@ -50,13 +52,34 @@ public sealed class ComponentCategoriesTests {
 	}
 
 	[TestCase("")]
+	[TestCase("   ")]
 	[TestCase(null)]
 	[TestCase("Media")]
 	[TestCase("not-a-category")]
-	[Description("IsKnown rejects free-form, empty, null, and wrong-case values so taxonomy drift fails fast (ENG-91571).")]
+	[Description("IsKnown rejects free-form, empty, whitespace-only, null, and wrong-case values so taxonomy drift fails fast (ENG-91571).")]
 	public void IsKnown_ShouldReturnFalse_WhenCategoryIsNotInVocabulary(string? categoryId) {
 		// Assert
 		ComponentCategories.IsKnown(categoryId).Should().BeFalse(
 			because: $"'{categoryId}' is not a member of the controlled, case-sensitive taxonomy");
+	}
+
+	[Test]
+	[Description("Every public taxonomy id constant must appear in All and every All row must have a backing constant, so a const added without an AllCategories row (or vice versa) fails fast instead of silently making IsKnown return false (ENG-91571).")]
+	public void All_ShouldStayInLockstepWithPublicConstants_WhenComparedByReflection() {
+		// Arrange
+		string[] constantIds = typeof(ComponentCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)
+			.ToArray();
+		string[] vocabularyIds = ComponentCategories.All.Select(category => category.Id).ToArray();
+
+		// Assert
+		constantIds.Should().NotBeEmpty(
+			because: "the taxonomy exposes its category ids as public constants for callers to reference");
+		constantIds.Should().OnlyContain(id => ComponentCategories.IsKnown(id),
+			because: "every public const taxonomy id must have a backing AllCategories row, else IsKnown(thatConst) silently returns false");
+		vocabularyIds.Should().BeEquivalentTo(constantIds,
+			because: "All and the public constants must stay 1:1 — an AllCategories row with no matching const (or a const with no row) is drift");
 	}
 }

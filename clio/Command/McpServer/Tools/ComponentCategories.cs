@@ -23,40 +23,45 @@ public static class ComponentCategories {
 	/// <param name="Description">One-line facet label shown to the agent in faceted discovery.</param>
 	public sealed record Category(string Id, string Description);
 
-	/// <summary>Structural containers and layout (tabs, groups, cards, flex/scroll containers).</summary>
+	// The canonical one-line facet description for every category lives once, in the AllCategories
+	// literal below (the runtime source Solution D renders). The per-const summaries deliberately do
+	// NOT restate it — they are short disambiguating hints pointing at All — so the two can never
+	// drift (ENG-91571 review: "field" vs "fields" had already diverged when both were maintained).
+
+	/// <summary>Taxonomy id for structural containers and layout; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string LayoutContainer = "layout-container";
 
-	/// <summary>Editable single-value field bound to a data source (text, number, date, lookup, checkbox).</summary>
+	/// <summary>Taxonomy id for editable single-value data-bound fields; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string DataInput = "data-input";
 
-	/// <summary>Renders a collection of records (grids, lists, timelines).</summary>
+	/// <summary>Taxonomy id for components rendering a collection of records; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string DataCollection = "data-collection";
 
-	/// <summary>Image, file, and visual media (image input, file list, image galleries).</summary>
+	/// <summary>Taxonomy id for image, file, and visual media; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string Media = "media";
 
-	/// <summary>Buttons and other action triggers.</summary>
+	/// <summary>Taxonomy id for buttons and action triggers; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string Action = "action";
 
-	/// <summary>Navigation and menus (menu, breadcrumbs, navigation panels).</summary>
+	/// <summary>Taxonomy id for navigation and menus; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string Navigation = "navigation";
 
-	/// <summary>Charts, dashboards, and analytics widgets.</summary>
+	/// <summary>Taxonomy id for charts, dashboards, and analytics; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string ChartAnalytics = "chart-analytics";
 
-	/// <summary>Filters and search (quick filter, filter builder, search).</summary>
+	/// <summary>Taxonomy id for filters and search; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string FilterSearch = "filter-search";
 
-	/// <summary>Progress, notifications, and status indicators.</summary>
+	/// <summary>Taxonomy id for progress, notifications, and status indicators; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string FeedbackStatus = "feedback-status";
 
-	/// <summary>Communication and social surfaces (communication options, feed, comments).</summary>
+	/// <summary>Taxonomy id for communication and social surfaces; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string Communication = "communication";
 
-	/// <summary>Static text, labels, and headings.</summary>
+	/// <summary>Taxonomy id for static text, labels, and headings; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string TextDisplay = "text-display";
 
-	/// <summary>Utility components that do not fit another category.</summary>
+	/// <summary>Taxonomy id for utility components that do not fit another category; see <see cref="All"/> for the canonical facet description.</summary>
 	public const string Utility = "utility";
 
 	private static readonly IReadOnlyList<Category> AllCategories = new[] {
