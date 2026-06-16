@@ -4,6 +4,12 @@ NAME
 DESCRIPTION
     Packs the current workspace and installs it into the target environment.
 
+PREREQUISITES
+    cliogate package version 2.0.0.0 or higher must be installed on the Creatio
+    instance. Install using:
+
+        clio install-gate -e <ENVIRONMENT_NAME>
+
 SYNOPSIS
     clio push-workspace [OPTIONS]
 

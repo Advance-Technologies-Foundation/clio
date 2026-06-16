@@ -11,6 +11,7 @@ namespace Clio.Command
 	#region Class: LockPackageOptions
 
 	[Verb("lock-package", Aliases = ["lp"], HelpText = "Lock package")]
+	[RequiresPackage("cliogate", "2.0.0.42", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public class LockPackageOptions : EnvironmentOptions
 	{
 
@@ -30,21 +31,17 @@ namespace Clio.Command
 	public class LockPackageCommand : Command<LockPackageOptions>
 	{
 
-		private const string ClioGateMinVersion = "2.0.0.42";
-
 		#region Fields: Private
 
 		private readonly IPackageLockManager _packageLockManager;
-		private readonly IClioGateway _clioGateway;
 		private readonly ILogger _logger;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public LockPackageCommand(IPackageLockManager packageLockManager, IClioGateway clioGateway, ILogger logger) {
+		public LockPackageCommand(IPackageLockManager packageLockManager, ILogger logger) {
 			_packageLockManager = packageLockManager;
-			_clioGateway = clioGateway;
 			_logger = logger;
 		}
 
@@ -63,7 +60,6 @@ namespace Clio.Command
 
 		public override int Execute(LockPackageOptions options) {
 			try {
-				_clioGateway.CheckCompatibleVersion(ClioGateMinVersion);
 				_packageLockManager.Lock(GetPackagesNames(options));
 				_logger.WriteInfo("Done");
 				return 0;

@@ -9,6 +9,7 @@ using System.Security.Policy;
 namespace Clio.Command
 {
 	[Verb("show-package-file-content", Aliases = new string[] { "show-files", "files" }, HelpText = "Show package file context")]
+	[RequiresPackage("cliogate", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public class ShowPackageFileContentOptions : RemoteCommandOptions
 	{
 		[Option("package", Required = true, HelpText = "Package name")]

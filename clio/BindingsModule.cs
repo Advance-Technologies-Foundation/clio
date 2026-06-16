@@ -607,6 +607,7 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();

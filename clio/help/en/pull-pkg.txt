@@ -8,6 +8,15 @@ DESCRIPTION
     pull-pkg command can be used in CI/CD pipeline or in development
     when you need download package from a web application (website).
 
+PREREQUISITES
+    The default download path uses the core PackageInstallerService and does
+    NOT require cliogate.
+
+    The --async option requires the cliogate package to be installed on the
+    target Creatio environment. If cliogate is not installed, an --async
+    download displays an error and exits. Install or update it with:
+        clio install-gate -e <ENVIRONMENT_NAME>
+
 SYNOPSIS
     clio pull-pkg <PACKAGE_NAME>
 
