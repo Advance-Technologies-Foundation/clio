@@ -39,6 +39,8 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 
 	private const string ResolvedDynamicallyAttributeName = "ResolvedDynamicallyAttribute";
 
+	private const string McpServerToolAttributeName = "McpServerToolAttribute";
+
 	// Attribute simple names that signal a registered type is consumed by reflection rather than
 	// by an explicit inject/resolve the analyzer can observe. ResolvedDynamicallyAttribute is a
 	// type-level opt-out; McpServerToolAttribute is placed on the tool method (declared on the
@@ -46,7 +48,7 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 	private static readonly ImmutableHashSet<string> ReflectionConsumedAttributeNames = ImmutableHashSet.Create(
 		StringComparer.Ordinal,
 		ResolvedDynamicallyAttributeName,
-		"McpServerToolAttribute");
+		McpServerToolAttributeName);
 
 	private static readonly ImmutableHashSet<string> EnumerableWrapperMetadataNames = ImmutableHashSet.Create(
 		StringComparer.Ordinal,
@@ -68,7 +70,67 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 
 	private static bool IsTestAssembly(Compilation compilation) {
 		string assemblyName = compilation.AssemblyName ?? string.Empty;
-		return assemblyName.IndexOf("test", StringComparison.OrdinalIgnoreCase) >= 0;
+
+		// Precise match: only assemblies literally named "Test"/"Tests" or ending in ".Test"/".Tests"
+		// self-disable the analyzer. The previous broad Contains("test") check misclassified names
+		// such as "LatestThing" or "Attestation". (Out of scope: the other CLIO analyzers still use
+		// the broad check; this fix is intentionally limited to CLIO005.)
+		return assemblyName.Equals("Test", StringComparison.OrdinalIgnoreCase)
+			|| assemblyName.Equals("Tests", StringComparison.OrdinalIgnoreCase)
+			|| assemblyName.EndsWith(".Test", StringComparison.OrdinalIgnoreCase)
+			|| assemblyName.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase);
+	}
+
+	// Collects the concrete type-argument symbols of a generic invocation/name. Symbol-first via the
+	// bound method's substituted TypeArguments; syntax fallback via the GenericNameSyntax + GetTypeInfo
+	// when the symbol could not be bound. Unbound type parameters (e.g. a method/class type parameter T)
+	// surface as non-INamedTypeSymbol and are skipped by both AddConsumed (consumption call sites) and
+	// the `as INamedTypeSymbol` null-checks in CollectRegistration (registration call site), so callers
+	// get faithful, ordered results and apply their own filtering. Order is preserved (service stays [0]).
+	private static ImmutableArray<ITypeSymbol> CollectGenericTypeArgumentSymbols(
+		SemanticModel semanticModel,
+		InvocationExpressionSyntax invocation,
+		IMethodSymbol? methodSymbol,
+		CancellationToken cancellationToken) {
+		if (methodSymbol is not null && methodSymbol.TypeArguments.Length > 0) {
+			return methodSymbol.TypeArguments;
+		}
+
+		GenericNameSyntax? genericName = invocation.Expression switch {
+			MemberAccessExpressionSyntax { Name: GenericNameSyntax memberGeneric } => memberGeneric,
+			GenericNameSyntax directGeneric => directGeneric,
+			_ => null
+		};
+
+		if (genericName is null) {
+			return ImmutableArray<ITypeSymbol>.Empty;
+		}
+
+		List<ITypeSymbol> syntaxTypes = [];
+		foreach (TypeSyntax arg in genericName.TypeArgumentList.Arguments) {
+			if (semanticModel.GetTypeInfo(arg, cancellationToken).Type is { } t) {
+				syntaxTypes.Add(t);
+			}
+		}
+
+		return syntaxTypes.Count > 0 ? [.. syntaxTypes] : ImmutableArray<ITypeSymbol>.Empty;
+	}
+
+	// Collects the type referenced by each typeof(...) argument of an invocation (e.g. the T in
+	// GetService(typeof(T)) or AddTransient(typeof(IFoo), typeof(Foo))). Order is preserved.
+	private static ImmutableArray<ITypeSymbol> CollectTypeOfArgumentTypes(
+		SemanticModel semanticModel,
+		InvocationExpressionSyntax invocation,
+		CancellationToken cancellationToken) {
+		List<ITypeSymbol> typeOfTypes = [];
+		foreach (ArgumentSyntax argument in invocation.ArgumentList.Arguments) {
+			if (argument.Expression is TypeOfExpressionSyntax typeOf
+				&& semanticModel.GetTypeInfo(typeOf.Type, cancellationToken).Type is { } typeOfSymbol) {
+				typeOfTypes.Add(typeOfSymbol);
+			}
+		}
+
+		return typeOfTypes.Count > 0 ? [.. typeOfTypes] : ImmutableArray<ITypeSymbol>.Empty;
 	}
 
 	private static void AnalyzeInvocation(
@@ -77,11 +139,22 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 		ConcurrentDictionary<INamedTypeSymbol, Registration> registrations,
 		ConcurrentDictionary<INamedTypeSymbol, byte> consumed,
 		CancellationToken cancellationToken) {
+		string invokedName = GetInvokedMethodName(invocation);
+
+		// Cheap syntactic pre-check: only bind the symbol when this invocation could possibly be a
+		// registration, a resolution, or a generic call carrying concrete type arguments to consume.
+		// Plain non-generic calls (e.g. foo.Bar()) can never contribute and skip the (expensive) bind.
+		bool isRegistrationOrResolutionName = RegistrationMethodNames.Contains(invokedName)
+			|| ResolutionMethodNames.Contains(invokedName);
+		bool isSyntacticallyGeneric = invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax }
+			or GenericNameSyntax;
+		if (!isRegistrationOrResolutionName && !isSyntacticallyGeneric) {
+			return;
+		}
+
 		SymbolInfo symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
 		IMethodSymbol? methodSymbol = symbolInfo.Symbol as IMethodSymbol
 			?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
-
-		string invokedName = GetInvokedMethodName(invocation);
 
 		if (RegistrationMethodNames.Contains(invokedName) && IsServiceCollectionRegistration(methodSymbol)) {
 			CollectRegistration(semanticModel, invocation, methodSymbol, registrations, cancellationToken);
@@ -106,24 +179,11 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 		IMethodSymbol? methodSymbol,
 		ConcurrentDictionary<INamedTypeSymbol, byte> consumed,
 		CancellationToken cancellationToken) {
-		// Bound symbol: use the substituted type arguments. Unbound type parameters
-		// (e.g. a method/class type parameter T) are not INamedTypeSymbol and are skipped
+		// Consume the concrete type arguments of the generic call. Unbound type parameters are skipped
 		// by AddConsumed, which is the desired behavior.
-		if (methodSymbol is not null && methodSymbol.TypeArguments.Length > 0) {
-			foreach (ITypeSymbol typeArgument in methodSymbol.TypeArguments) {
-				AddConsumed(consumed, typeArgument);
-			}
-			return;
-		}
-
-		// Syntax-level fallback when the symbol could not be bound.
-		if (invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax memberGeneric }) {
-			CollectTypeArgumentSyntaxes(semanticModel, memberGeneric, consumed, cancellationToken);
-			return;
-		}
-
-		if (invocation.Expression is GenericNameSyntax directGeneric) {
-			CollectTypeArgumentSyntaxes(semanticModel, directGeneric, consumed, cancellationToken);
+		foreach (ITypeSymbol typeArgument in CollectGenericTypeArgumentSymbols(
+			semanticModel, invocation, methodSymbol, cancellationToken)) {
+			AddConsumed(consumed, typeArgument);
 		}
 	}
 
@@ -179,8 +239,9 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 			return false;
 		}
 
-		IMethodSymbol? methodSymbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol
-			?? semanticModel.GetSymbolInfo(invocation).CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+		SymbolInfo symbolInfo = semanticModel.GetSymbolInfo(invocation);
+		IMethodSymbol? methodSymbol = symbolInfo.Symbol as IMethodSymbol
+			?? symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
 		return IsServiceCollectionRegistration(methodSymbol);
 	}
 
@@ -235,6 +296,12 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 
 		INamedTypeSymbol serviceKey = (INamedTypeSymbol)service.OriginalDefinition;
 		Registration registration = new(serviceKey, (INamedTypeSymbol)impl.OriginalDefinition, invocation.GetLocation());
+
+		// Accepted v1 under-reporting limitation (false-negative, intentional trade-off):
+		// registrations are keyed by service type, so a SECOND registration of the same service type
+		// (e.g. two different implementations of one interface, or the same closed generic registered
+		// twice) is not separately tracked — only the first registration's location is kept. A second,
+		// genuinely dead registration of the same service type is therefore missed.
 		registrations.TryAdd(serviceKey, registration);
 	}
 
@@ -243,34 +310,18 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 		InvocationExpressionSyntax invocation,
 		IMethodSymbol? methodSymbol,
 		CancellationToken cancellationToken) {
-		// Generic registration: Add*<TService>() or Add*<TService, TImpl>().
-		if (methodSymbol is not null && methodSymbol.TypeArguments.Length > 0) {
-			return methodSymbol.TypeArguments;
-		}
-
-		// Syntax-level fallback for generic args when the symbol could not be bound.
-		if (invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName }
-			&& genericName.TypeArgumentList.Arguments.Count > 0) {
-			List<ITypeSymbol> syntaxTypes = [];
-			foreach (TypeSyntax arg in genericName.TypeArgumentList.Arguments) {
-				if (semanticModel.GetTypeInfo(arg, cancellationToken).Type is { } t) {
-					syntaxTypes.Add(t);
-				}
-			}
-			if (syntaxTypes.Count > 0) {
-				return [.. syntaxTypes];
-			}
+		// Generic registration: Add*<TService>() or Add*<TService, TImpl>(). The shared helper returns
+		// the type arguments in order, so the [0]=service / [1]=impl indexing in CollectRegistration is
+		// preserved. Faithful, unfiltered results — CollectRegistration applies its own as-cast/null
+		// checks (so unbound type parameters there bail rather than shifting the service/impl indexes).
+		ImmutableArray<ITypeSymbol> genericTypeArguments = CollectGenericTypeArgumentSymbols(
+			semanticModel, invocation, methodSymbol, cancellationToken);
+		if (genericTypeArguments.Length > 0) {
+			return genericTypeArguments;
 		}
 
 		// Non-generic registration using typeof(...) arguments.
-		List<ITypeSymbol> typeOfTypes = [];
-		foreach (ArgumentSyntax argument in invocation.ArgumentList.Arguments) {
-			if (argument.Expression is TypeOfExpressionSyntax typeOf
-				&& semanticModel.GetTypeInfo(typeOf.Type, cancellationToken).Type is { } typeOfSymbol) {
-				typeOfTypes.Add(typeOfSymbol);
-			}
-		}
-		return typeOfTypes.Count > 0 ? [.. typeOfTypes] : ImmutableArray<ITypeSymbol>.Empty;
+		return CollectTypeOfArgumentTypes(semanticModel, invocation, cancellationToken);
 	}
 
 	private static void CollectResolution(
@@ -280,28 +331,18 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 		ConcurrentDictionary<INamedTypeSymbol, byte> consumed,
 		CancellationToken cancellationToken) {
 		// Generic resolution: GetService<T>() / GetRequiredService<T>() / GetServices<T>().
-		if (methodSymbol is not null && methodSymbol.TypeArguments.Length > 0) {
-			foreach (ITypeSymbol typeArgument in methodSymbol.TypeArguments) {
+		ImmutableArray<ITypeSymbol> genericTypeArguments = CollectGenericTypeArgumentSymbols(
+			semanticModel, invocation, methodSymbol, cancellationToken);
+		if (genericTypeArguments.Length > 0) {
+			foreach (ITypeSymbol typeArgument in genericTypeArguments) {
 				AddConsumed(consumed, typeArgument);
 			}
 			return;
 		}
 
-		if (invocation.Expression is MemberAccessExpressionSyntax { Name: GenericNameSyntax genericName }) {
-			foreach (TypeSyntax arg in genericName.TypeArgumentList.Arguments) {
-				if (semanticModel.GetTypeInfo(arg, cancellationToken).Type is { } t) {
-					AddConsumed(consumed, t);
-				}
-			}
-			return;
-		}
-
 		// Non-generic resolution: GetService(typeof(T)) / GetRequiredService(typeof(T)).
-		foreach (ArgumentSyntax argument in invocation.ArgumentList.Arguments) {
-			if (argument.Expression is TypeOfExpressionSyntax typeOf
-				&& semanticModel.GetTypeInfo(typeOf.Type, cancellationToken).Type is { } typeOfSymbol) {
-				AddConsumed(consumed, typeOfSymbol);
-			}
+		foreach (ITypeSymbol typeOfSymbol in CollectTypeOfArgumentTypes(semanticModel, invocation, cancellationToken)) {
+			AddConsumed(consumed, typeOfSymbol);
 		}
 	}
 
@@ -315,6 +356,13 @@ public sealed class UnusedDiServiceAnalyzer : DiagnosticAnalyzer{
 
 	private static void AddConsumed(ConcurrentDictionary<INamedTypeSymbol, byte> consumed, ITypeSymbol type) {
 		if (type is INamedTypeSymbol named) {
+			// Accepted v1 under-reporting limitation (false-negative, intentional trade-off):
+			// direct service/impl consumption is recorded at open-generic-definition granularity
+			// (OriginalDefinition). The direct-consumption check in CompilationEnd keys on this, so
+			// consuming any closed Foo<X> marks ALL Foo<…> registrations consumed — a dead Foo<Y>
+			// registration is missed when some Foo<X> is consumed. (Interface-liveness, in contrast,
+			// matches constructed-to-constructed via the entry added below; this note is specifically
+			// about the direct service/impl key.)
 			consumed.TryAdd((INamedTypeSymbol)named.OriginalDefinition, 0);
 
 			// Also record the constructed form (e.g. IValidator<ExternalLinkOptions>) so the
