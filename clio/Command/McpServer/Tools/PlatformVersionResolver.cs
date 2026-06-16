@@ -32,7 +32,17 @@ public interface IPlatformVersionResolver {
 /// the literal <c>"latest"</c> when the resolver fell back.
 /// </param>
 /// <param name="Source">Which tier produced the version.</param>
-public sealed record PlatformVersionResolution(string ResolvedVersion, VersionResolutionSource Source);
+public sealed record PlatformVersionResolution(string ResolvedVersion, VersionResolutionSource Source) {
+	/// <summary>
+	/// Classifies <em>why</em> a <see cref="VersionResolutionSource.LatestFallback"/> happened so the
+	/// caller can distinguish a genuinely undeterminable version (no active environment, missing or
+	/// unparseable core version) from a <see cref="VersionFallbackReason.ProbeError"/> transient failure
+	/// where a retry or a clearer signal (explicit version / reachable environment) would help. Always
+	/// <see cref="VersionFallbackReason.None"/> on the <see cref="VersionResolutionSource.Environment"/>
+	/// tier — the fallback never ran.
+	/// </summary>
+	public VersionFallbackReason Reason { get; init; } = VersionFallbackReason.None;
+}
 
 public enum VersionResolutionSource {
 	/// <summary>
@@ -43,6 +53,28 @@ public enum VersionResolutionSource {
 	Environment,
 	/// <summary>No usable version could be determined; the catalog is loaded against <c>latest.json</c>.</summary>
 	LatestFallback
+}
+
+/// <summary>
+/// Sub-classification of a <see cref="VersionResolutionSource.LatestFallback"/> outcome. The catalog
+/// still degrades to <c>latest</c> (a superset) in every case and the response is still a hard stop, but
+/// the reason tells the agent whether the failure is worth retrying. <see cref="ProbeError"/> is the only
+/// transient class; the rest are stable conditions that a retry alone will not change.
+/// </summary>
+public enum VersionFallbackReason {
+	/// <summary>Not a fallback — a version was resolved cleanly from the environment.</summary>
+	None,
+	/// <summary>No active environment URI was available, so there was nothing to probe (a clear input gap, not an error).</summary>
+	NoActiveEnvironment,
+	/// <summary>
+	/// A probe request threw (HTTP error, timeout, connection refused, cliogate unreachable). This is the
+	/// only <em>transient</em> class: a retry, or pointing at a reachable environment, may resolve the version.
+	/// </summary>
+	ProbeError,
+	/// <summary>Probes responded but no <c>CoreVersion</c> could be read (unexpected shape / older Creatio). Stable — retrying yields the same shape.</summary>
+	CoreVersionMissing,
+	/// <summary>A core version was read but is not a parseable SemVer (e.g. a custom <c>dev</c> build). Stable — the value itself is the blocker.</summary>
+	CoreVersionUnparseable
 }
 
 /// <summary>
@@ -63,6 +95,17 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	internal const string GetSysInfoServicePath = CreatioServicePaths.GetSysInfo;
 	internal const string LatestVersion = "latest";
 	internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+	/// <summary>
+	/// Short TTL applied only to the transient <see cref="VersionFallbackReason.ProbeError"/> outcome.
+	/// That class is the single fallback a retry can resolve (ENG-91583 AC#3), so it must not be pinned
+	/// for the full <see cref="CacheTtl"/>: a momentary network blip during the first probe would
+	/// otherwise force every subsequent <c>get-component-info</c> into the version-unknown hard stop for
+	/// five minutes, even after the environment recovers seconds later — and the retry the response
+	/// advertises as worthwhile could never succeed in-window. The stable outcomes keep the full TTL.
+	/// A short non-zero window (rather than skipping the cache outright) still shields a genuinely-down
+	/// environment from a probe storm while keeping the recovery latency low.
+	/// </summary>
+	internal static readonly TimeSpan TransientCacheTtl = TimeSpan.FromSeconds(30);
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly EnvironmentSettings _environmentSettings;
@@ -90,7 +133,9 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		string environmentKey = _environmentSettings.Uri;
 		if (string.IsNullOrWhiteSpace(environmentKey)) {
 			_logger.LogInformation("platform-version source=latest-fallback reason=no-active-environment");
-			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback);
+			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback) {
+				Reason = VersionFallbackReason.NoActiveEnvironment
+			};
 		}
 
 		DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -99,7 +144,12 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		}
 
 		PlatformVersionResolution resolution = await ProbeAsync(environmentKey, cancellationToken).ConfigureAwait(false);
-		_cache[environmentKey] = new CacheEntry(resolution, now + CacheTtl);
+		// Gate the cache lifetime on the fallback class: only the transient ProbeError gets the short TTL
+		// so a recovered environment is re-probed quickly; stable outcomes (success / no-active-environment
+		// / core-version-missing / core-version-unparseable) keep the full 5-min TTL — a retry alone would
+		// not change them, so re-probing sooner would be pure overhead (ENG-91583 AC#3).
+		TimeSpan ttl = resolution.Reason == VersionFallbackReason.ProbeError ? TransientCacheTtl : CacheTtl;
+		_cache[environmentKey] = new CacheEntry(resolution, now + ttl);
 		return resolution;
 	}
 
@@ -114,24 +164,40 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 		// installed. Fall back to the cliogate GetSysInfo probe only when this yields nothing
 		// (e.g. an older Creatio whose response shape differs). Both expose the same
 		// Major.Minor.Patch.Build core version, so the fallback is byte-equivalent when it runs.
-		string? coreVersion = await TryGetCoreVersionFromApplicationInfoAsync(serviceUrlBuilder, environmentKey, cancellationToken)
+		CoreVersionProbe appInfoProbe = await TryGetCoreVersionFromApplicationInfoAsync(serviceUrlBuilder, environmentKey, cancellationToken)
 			.ConfigureAwait(false);
+		string? coreVersion = appInfoProbe.Version;
+		// A probe that THREW (HTTP error, timeout, connection refused) is a transient class; a probe
+		// that responded with an unusable shape is not. Track it so the empty-result branch below can
+		// tell the two apart — only the transient case is worth a retry or a clearer signal to the user.
+		bool transientProbeError = appInfoProbe.TransientError;
 		if (string.IsNullOrWhiteSpace(coreVersion)) {
-			coreVersion = await TryGetCoreVersionFromCliogateAsync(serviceUrlBuilder, environmentKey, cancellationToken)
+			CoreVersionProbe cliogateProbe = await TryGetCoreVersionFromCliogateAsync(serviceUrlBuilder, environmentKey, cancellationToken)
 				.ConfigureAwait(false);
+			coreVersion = cliogateProbe.Version;
+			transientProbeError |= cliogateProbe.TransientError;
 		}
 
 		if (string.IsNullOrWhiteSpace(coreVersion)) {
+			// Genuinely undeterminable (CoreVersionMissing) vs a transient failure (ProbeError):
+			// both still degrade to latest, but only the latter hints that a retry would help.
+			VersionFallbackReason reason = transientProbeError
+				? VersionFallbackReason.ProbeError
+				: VersionFallbackReason.CoreVersionMissing;
 			_logger.LogInformation(
-				"platform-version source=latest-fallback reason=core-version-missing env={Env}", environmentKey);
-			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback);
+				"platform-version source=latest-fallback reason={Reason} env={Env}", reason, environmentKey);
+			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback) {
+				Reason = reason
+			};
 		}
 
 		if (!TryNormaliseToThreePartSemver(coreVersion, out string? threePart)) {
 			_logger.LogInformation(
 				"platform-version source=latest-fallback reason=core-version-unparseable coreVersion={CoreVersion} env={Env}",
 				coreVersion, environmentKey);
-			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback);
+			return new PlatformVersionResolution(LatestVersion, VersionResolutionSource.LatestFallback) {
+				Reason = VersionFallbackReason.CoreVersionUnparseable
+			};
 		}
 
 		_logger.LogInformation(
@@ -141,11 +207,19 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 	}
 
 	/// <summary>
-	/// Probes the standard ApplicationInfoService (no cliogate required). Returns the raw
-	/// 4-part core version string, or <c>null</c> on any failure class (request error, empty
-	/// body, unexpected shape) so the caller can fall through to the cliogate probe.
+	/// Outcome of a single core-version probe: the raw version string (or <c>null</c> when none could be
+	/// read) plus whether the probe failed with a <em>transient</em> error (an exception) rather than a
+	/// usable-but-empty response. The distinction lets <see cref="ProbeAsync"/> classify the fallback.
 	/// </summary>
-	private async Task<string?> TryGetCoreVersionFromApplicationInfoAsync(
+	private readonly record struct CoreVersionProbe(string? Version, bool TransientError);
+
+	/// <summary>
+	/// Probes the standard ApplicationInfoService (no cliogate required). Returns the raw
+	/// 4-part core version string when present. A thrown request (<see cref="CoreVersionProbe.TransientError"/>
+	/// <c>= true</c>) is reported distinctly from an empty body / unexpected shape (<c>= false</c>) so the
+	/// caller can fall through to the cliogate probe AND classify the eventual fallback reason.
+	/// </summary>
+	private async Task<CoreVersionProbe> TryGetCoreVersionFromApplicationInfoAsync(
 		IServiceUrlBuilder serviceUrlBuilder, string environmentKey, CancellationToken cancellationToken) {
 		string url = serviceUrlBuilder.Build(GetApplicationInfoServicePath);
 		try {
@@ -154,36 +228,37 @@ public sealed class PlatformVersionResolver : IPlatformVersionResolver {
 			string? rawResponse = await Task.Run(
 				() => _applicationClient.ExecutePostRequest(url, "{}"),
 				cancellationToken).ConfigureAwait(false);
-			return TryExtractApplicationInfoCoreVersion(rawResponse);
+			return new CoreVersionProbe(TryExtractApplicationInfoCoreVersion(rawResponse), TransientError: false);
 		} catch (OperationCanceledException) {
 			throw;
 		} catch (Exception ex) {
 			_logger.LogInformation(ex,
 				"platform-version application-info-probe-failed env={Env} error={Error}",
 				environmentKey, ex.Message);
-			return null;
+			return new CoreVersionProbe(Version: null, TransientError: true);
 		}
 	}
 
 	/// <summary>
-	/// Fallback probe via cliogate <c>GetSysInfo</c>. Returns the raw core version string, or
-	/// <c>null</c> when cliogate is absent/unreachable or the shape is unexpected.
+	/// Fallback probe via cliogate <c>GetSysInfo</c>. Returns the raw core version string when present;
+	/// a thrown request is reported as <see cref="CoreVersionProbe.TransientError"/> <c>= true</c> (cliogate
+	/// unreachable), an absent/unexpected shape as <c>= false</c>.
 	/// </summary>
-	private async Task<string?> TryGetCoreVersionFromCliogateAsync(
+	private async Task<CoreVersionProbe> TryGetCoreVersionFromCliogateAsync(
 		IServiceUrlBuilder serviceUrlBuilder, string environmentKey, CancellationToken cancellationToken) {
 		string url = serviceUrlBuilder.Build(GetSysInfoServicePath);
 		try {
 			string? rawResponse = await Task.Run(
 				() => _applicationClient.ExecuteGetRequest(url),
 				cancellationToken).ConfigureAwait(false);
-			return TryExtractSysInfoCoreVersion(rawResponse);
+			return new CoreVersionProbe(TryExtractSysInfoCoreVersion(rawResponse), TransientError: false);
 		} catch (OperationCanceledException) {
 			throw;
 		} catch (Exception ex) {
 			_logger.LogInformation(ex,
 				"platform-version cliogate-probe-failed env={Env} error={Error}",
 				environmentKey, ex.Message);
-			return null;
+			return new CoreVersionProbe(Version: null, TransientError: true);
 		}
 	}
 

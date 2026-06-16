@@ -222,6 +222,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
