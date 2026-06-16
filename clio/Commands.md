@@ -124,6 +124,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-package-dependency"></a>
+<a id="add-pkg-dependency"></a>
+<a id="add-pkg-dep"></a>
+- [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>
@@ -349,6 +353,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (omit `--package` for the merged all-packages view, including custom columns from other packages)
+<a id="get-process-signature"></a>
+<a id="gps"></a>
+- [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
 <a id="get-schema"></a>
 <a id="schema-get"></a>
 - [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
@@ -404,7 +411,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`

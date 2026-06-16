@@ -105,6 +105,12 @@ internal static class McpServerInstructions
 		- Before creating ANY entity (application, object, page, section, lookup, column), call
 		  `get-user-culture` ONCE per session to detect the connected user's profile language, and
 		  reuse that result for all generated names, labels, and captions for the rest of the session.
+		- The detected culture is the LANGUAGE OF THE CAPTION TEXT, not just the localization key:
+		  write every name, label, and caption IN that language. The conversation/task language does
+		  NOT override the profile language — an `en-US` profile means English captions. The mandatory
+		  `en-US` localization-map entry MUST hold ENGLISH text; put non-English text under its own
+		  culture key (e.g. `uk-UA`). clio REJECTS a caption whose script does not match a Latin-script
+		  culture key (e.g. Cyrillic under `en-US`).
 		- If `get-user-culture` returns `success:false`, ASK the user which language to use before
 		  proceeding. Do NOT silently fall back to the host machine locale or to `en-US`.
 		- Re-detect only when the active environment changes within the session (the result is keyed

@@ -1,10 +1,8 @@
-﻿using MediatR;
-using OneOf;
+﻿using OneOf;
 using System;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 
@@ -16,14 +14,35 @@ namespace Clio.Common.ScenarioHandlers {
 
     public class ConfigureConnectionStringResponse : BaseHandlerResponse {
     }
-    internal class ConfigureConnectionStringRequestHandler : IRequestHandler<ConfigureConnectionStringRequest, OneOf<BaseHandlerResponse, HandlerError>> {
 
-        
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request, CancellationToken cancellationToken) {
+    /// <summary>
+    /// Handles <see cref="ConfigureConnectionStringRequest"/> scenario steps by writing the
+    /// database and Redis connection strings into the deployed Creatio configuration files.
+    /// </summary>
+    public interface IConfigureConnectionStringHandler {
 
-            string folder = request.Arguments["folderPath"];
-            string dbString = request.Arguments["dbString"]; 
-            string redisString = request.Arguments["redis"];
+        /// <summary>
+        /// Writes the database and Redis connection strings described by the request
+        /// <c>Arguments</c> (<c>folderPath</c>, <c>dbString</c>, <c>redis</c>, <c>isNetFramework</c>)
+        /// into <c>ConnectionStrings.config</c> and, for .NET environments, updates
+        /// <c>Terrasoft.WebHost.dll.config</c>.
+        /// </summary>
+        /// <param name="request">The request carrying the connection string configuration arguments.</param>
+        /// <returns>
+        /// A <see cref="OneOf{T0, T1}"/> containing a <see cref="BaseHandlerResponse"/>
+        /// (a <see cref="ConfigureConnectionStringResponse"/>) on success or a <see cref="HandlerError"/> on failure.
+        /// </returns>
+        Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request);
+    }
+
+    internal class ConfigureConnectionStringRequestHandler : IConfigureConnectionStringHandler {
+
+        /// <inheritdoc />
+        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(ConfigureConnectionStringRequest request) {
+
+            string folder = request.GetRequired("folderPath");
+            string dbString = request.GetRequired("dbString");
+            string redisString = request.GetRequired("redis");
             
             string cnPath = Path.Combine(folder, "ConnectionStrings.config");
             
@@ -36,7 +55,7 @@ namespace Clio.Common.ScenarioHandlers {
             
             string result = ConfigureConnectionStrings(cnPath, dbString, redisString);
             
-            bool isNetFrameWork = bool.Parse(request.Arguments["isNetFramework"]);
+            bool isNetFrameWork = request.GetRequired<bool>("isNetFramework");
             if(!isNetFrameWork) {
                 string webConfigPath = Path.Combine(folder, "Terrasoft.WebHost.dll.config");
                 if (File.Exists(webConfigPath)) {

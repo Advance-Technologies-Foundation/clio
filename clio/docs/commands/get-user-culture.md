@@ -24,6 +24,13 @@ so the verb is the observable, testable way to confirm which language new
 entities will be generated in — independent of the host machine locale and of
 any third-party MCP server.
 
+This culture is the **language of the generated caption text**, not just the
+localization key: captions must be authored in that language, and the mandatory
+`en-US` localization value must be English. On the entity-schema and section
+write paths clio rejects a caption whose script does not match a Latin-script
+culture key (for example Cyrillic text under `en-US`), so a caption can never be
+stored in a language that does not match the connected user's profile.
+
 The culture is read from the standard Creatio service
 `ServiceModel/ApplicationInfoService.svc/GetApplicationInfo`
 (`applicationInfo.sysValues.userCulture.displayValue`). It requires only an

@@ -17,6 +17,11 @@ DESCRIPTION
     creates, so this verb is the observable, testable way to confirm which
     language new entities will be generated in.
 
+    The culture is the language of the caption TEXT, not just the localization
+    key: the mandatory en-US value must be English. On the entity-schema and
+    section write paths clio rejects a caption whose script does not match a
+    Latin-script culture key (e.g. Cyrillic text under en-US).
+
     The culture is read from the standard Creatio service
     ServiceModel/ApplicationInfoService.svc/GetApplicationInfo
     (field applicationInfo.sysValues.userCulture.displayValue). It requires

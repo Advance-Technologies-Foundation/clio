@@ -365,6 +365,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
+		services.AddTransient<GetProcessSignatureTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -379,6 +380,7 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
@@ -403,6 +405,10 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
+		services.AddTransient<ReferenceCommand>();
+		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
+		services.AddTransient<Command<ReferenceOptions>, ReferenceCommand>();
+		services.AddTransient<NewPkgCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
 		services.AddTransient<PushNuGetPackagesCommand>();
@@ -465,7 +471,13 @@ public class BindingsModule {
 		services.AddTransient<InfoCommand>();
 		services.AddTransient<QuizCommand>();
 		services.AddTransient<ExtractPackageCommand>();
-		services.AddTransient<ExternalLinkCommand>();
+		// ExternalLinkCommand has an internal constructor (its IExternalLinkHandler dependency is
+		// internal), so wire it via an explicit composition-root factory rather than container
+		// reflection, which only selects public constructors.
+		services.AddTransient(sp => new ExternalLinkCommand(
+			sp.GetServices<IExternalLinkHandler>(),
+			sp.GetRequiredService<IValidator<ExternalLinkOptions>>(),
+			sp.GetRequiredService<ILogger>()));
 		services.AddTransient<PowerShellFactory>();
 		services.AddTransient<IEnvironmentRuntimeDetectionService, EnvironmentRuntimeDetectionService>();
 		services.AddTransient<IIisEnvironmentDiscoveryService, IisEnvironmentDiscoveryService>();
@@ -531,12 +543,17 @@ public class BindingsModule {
 		services.AddTransient<LinkCoreSrcCommand>();
 		services.AddTransient<RfsEnvironment>();
 
-		services.AddMediatR(cfg => {
-			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
-			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
-		});
 		services.AddTransient<IisScannerHandler>();
 		services.AddTransient<IIisScanner, IisScannerHandler>();
+
+		// ExternalLink deep-link handlers.
+		services.AddTransient<IExternalLinkHandler, RegisterEnvironmentHandler>();
+		services.AddTransient<IExternalLinkHandler, UnregisterEnvironmentHandler>();
+		services.AddTransient<IExternalLinkHandler, RestartHandler>();
+		services.AddTransient<IExternalLinkHandler, OpenUrlHandler>();
+		services.AddTransient<IExternalLinkHandler, GetAppSettingsFilePathHandler>();
+		services.AddTransient<IExternalLinkHandler, RegisterOAuthCredentialsHandler>();
+		services.AddTransient<IExternalLinkHandler, IisScannerHandler>();
 
 		services.AddTransient<ExternalLinkOptionsValidator>();
 		services.AddTransient<SetFsmConfigOptionsValidator>();
@@ -547,13 +564,17 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
 		services.AddTransient<AddItemOptionsValidator>();
 		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
-		services.AddTransient<UnzipRequestValidator>();
+		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
+		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
+		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();
 		services.AddTransient<GitSyncCommand>();
 		services.AddTransient<DeactivatePackageCommand>();
 		services.AddTransient<PublishWorkspaceCommand>();
 		services.AddTransient<ActivatePackageCommand>();
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
+		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
 		services.AddTransient<CloneEnvironmentCommand>();
@@ -575,6 +596,7 @@ public class BindingsModule {
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<GetProcessSignatureCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
@@ -726,6 +748,7 @@ public class BindingsModule {
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
 					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
 					|| implementedInterface == typeof(IDbOperationLogSession)
+					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
 					|| implementedInterface == typeof(IReauthExecutor)) {

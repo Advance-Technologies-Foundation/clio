@@ -20,7 +20,8 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService)
+	IPageBodySamplingService samplingService,
+	System.IO.Abstractions.IFileSystem fileSystem)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -30,6 +31,8 @@ public sealed class PageUpdateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"On successful non-dry-run saves, update-page also attempts a best-effort live Designer Presence `save` notification so active Creatio designers can be warned about outdated pages. This live notification requires forms-auth browser-session cookies (login/password-backed flow); in OAuth-only or credential-less environments the page save still succeeds and the response carries a warning when the live notification is skipped or fails. " +
+		"CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, this tool blocks the save with `conflict: true` + `conflictDetails` if the schema was modified outside this session (e.g. the user edited the page in the Creatio designer). On a conflict: do NOT retry with the same body — re-run get-page, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set force=true ONLY after they explicitly confirm overwriting them. A small race window between the check and the save remains (last write wins). " +
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
 			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
@@ -41,52 +44,29 @@ public sealed class PageUpdateTool(
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
 		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so. " +
-		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
+		"if the body adds a button that runs a business process (a `clicked` bound to " +
+			"`crt.RunBusinessProcessRequest`), call get-guidance with name `run-process-button` and resolve " +
+			"the process with get-process-signature FIRST — parameter keys must be the process parameter " +
+			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
+			"unknown ones. " +
+			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		PageUpdateOptions options = BuildOptions(args);
-		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
-		if (!bodyLoaded)
-			return new PageUpdateResponse { Success = false, Error = bodyLoadError };
-		if (string.IsNullOrWhiteSpace(options.Body))
-			return new PageUpdateResponse {
-				Success = false,
-				Error = "Either 'body' or 'body-file' must provide page body content."
-			};
-		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
-		// JSON and are handled by their own validator below; for web bodies we
-		// parse the body with Acornima BEFORE invoking the regex-based content
-		// validators or the sampling service. A syntax error means the page
-		// would not load in the browser — failing fast surfaces the precise
-		// {line, column, message} to the operator without sinking time into
-		// model-side review or persisting a broken body. The parsed AST is
-		// then fed into PageBodyAstLinter further down (AFTER the regex
-		// validators ran) so the established regex error messages still win
-		// on overlapping detections; lint findings only ADD detections.
-		Script parsedAst = null;
-		if (PageSchemaTypeExtensions.FromBody(options.Body) != PageSchemaType.Mobile) {
-			PageBodySyntaxValidationResult syntaxResult =
-				PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
-			if (!syntaxResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = PageBodySyntaxValidator.FormatError(syntaxResult)
-				};
-			}
-		}
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
-		if (validationFailure != null)
-			return validationFailure;
-		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
-		if (lintFailure != null)
-			return lintFailure;
-		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
-			await TryRunSamplingAsync(options, args, server, cancellationToken);
-		if (samplingFailure != null)
-			return samplingFailure;
+		(PageUpdateResponse earlyFailure,
+			IReadOnlyList<string> validationWarnings,
+			IReadOnlyList<string> lintWarnings,
+			PageSamplingReview samplingReview) = await TryCreatePreExecutionFailureAsync(
+				options,
+				args,
+				server,
+				cancellationToken);
+		if (earlyFailure != null)
+			return earlyFailure;
+		(string metaFilePath, bool baselineArmed) = TryArmBaseline(options, args);
 		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -99,12 +79,74 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
+		if (baselineArmed && response.Success && !options.DryRun)
+			RefreshOrDropBaseline(metaFilePath, args, response);
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
 			MergeWarnings(validationWarnings, response.Warnings),
 			lintWarnings);
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
+	}
+
+	private async Task<(PageUpdateResponse Failure,
+		IReadOnlyList<string> ValidationWarnings,
+		IReadOnlyList<string> LintWarnings,
+		PageSamplingReview SamplingReview)> TryCreatePreExecutionFailureAsync(
+			PageUpdateOptions options,
+			PageUpdateArgs args,
+			McpServerLib.McpServer server,
+			CancellationToken cancellationToken) {
+		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+		if (!bodyLoaded)
+			return (new PageUpdateResponse { Success = false, Error = bodyLoadError }, null, null, null);
+		if (string.IsNullOrWhiteSpace(options.Body)) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Either 'body' or 'body-file' must provide page body content."
+			}, null, null, null);
+		}
+		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
+		if (syntaxFailure != null)
+			return (syntaxFailure, null, null, null);
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (validationFailure != null)
+			return (validationFailure, null, null, null);
+		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
+			ValidateRunProcessButtons(options);
+		if (runProcessFailure != null)
+			return (runProcessFailure, null, null, null);
+		validationWarnings = MergeWarnings(validationWarnings, runProcessWarnings);
+		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
+		if (lintFailure != null)
+			return (lintFailure, null, null, null);
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
+	}
+
+	private static PageUpdateResponse TryValidateBodySyntax(PageUpdateOptions options, out Script parsedAst) {
+		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
+		// JSON and are handled by their own validator below; for web bodies we
+		// parse the body with Acornima BEFORE invoking the regex-based content
+		// validators or the sampling service. A syntax error means the page
+		// would not load in the browser — failing fast surfaces the precise
+		// {line, column, message} to the operator without sinking time into
+		// model-side review or persisting a broken body. The parsed AST is
+		// then fed into PageBodyAstLinter further down (AFTER the regex
+		// validators ran) so the established regex error messages still win
+		// on overlapping detections; lint findings only ADD detections.
+		parsedAst = null;
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile)
+			return null;
+		PageBodySyntaxValidationResult syntaxResult =
+			PageBodySyntaxValidator.ValidateAndParse(options.Body, out parsedAst);
+		if (syntaxResult.IsValid)
+			return null;
+		return new PageUpdateResponse {
+			Success = false,
+			Error = PageBodySyntaxValidator.FormatError(syntaxResult)
+		};
 	}
 
 	// AST lint pass runs on the success path of the regex validators so the
@@ -162,6 +204,17 @@ public sealed class PageUpdateTool(
 					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
+			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
+			// run-process structural check (processName required) here too — the signature code check runs
+			// afterwards in ValidateRunProcessButtons for both surfaces.
+			SchemaValidationResult mobileRunProcess =
+				SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
+			if (!mobileRunProcess.IsValid) {
+				return (new PageUpdateResponse {
+					Success = false,
+					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+				}, null);
+			}
 			return (null, mobileResult.Warnings);
 		}
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
@@ -203,12 +256,198 @@ public sealed class PageUpdateTool(
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
-			Password = args.Password
+			Password = args.Password,
+			Force = args.Force ?? false,
+			NotifyDesignerPresence = true
 		};
+
+	/// <summary>
+	/// Validates that every <c>crt.RunBusinessProcessRequest</c> button in the body references real
+	/// process parameter CODES, by resolving the live process signature. A code that does
+	/// not exist on the process is rejected here because the platform silently drops such values.
+	/// When the environment cannot resolve the signature the call is downgraded to a warning rather
+	/// than blocking the write.
+	/// </summary>
+	// internal (not private) so the run-process orchestration — environment gating, signature
+	// caching, hard-fail vs. warning routing, and warning aggregation — is unit-testable without
+	// driving the full UpdatePage body-validation pipeline. See PageUpdateToolRunProcessTests.
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtons(
+		PageUpdateOptions options) {
+		IReadOnlyList<RunProcessButtonConfig> configs = RunProcessButtonConfigReader.Read(options.Body);
+		if (configs.Count == 0) {
+			return (null, null);
+		}
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment)
+			|| !string.IsNullOrWhiteSpace(options.Uri);
+		if (!hasEnvironment) {
+			return (null, [
+				"Run-process button parameter codes were not validated because no environment was provided. "
+				+ "Pass environment-name so update-page can verify codes against the process signature."
+			]);
+		}
+		// Resolve signatures WITHOUT holding the global MCP execution lock — the generator makes a
+		// retrying HTTP call (up to 3x10s) and must not block the single-lane MCP control plane.
+		// The generator writes log warnings to the shared logger; drain them afterwards under the
+		// lock (no network inside) so they do not leak into the next tool response.
+		(PageUpdateResponse Failure, IReadOnlyList<string> Warnings) result =
+			ValidateRunProcessButtonsAgainstSignatures(options, configs);
+		return ExecuteWithCleanLog(() => result);
+	}
+
+	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(
+		PageUpdateOptions options, IReadOnlyList<RunProcessButtonConfig> configs) {
+		var warnings = new List<string>();
+		var signatures = new Dictionary<string, GetProcessSignatureResponse>(StringComparer.OrdinalIgnoreCase);
+		foreach (RunProcessButtonConfig config in configs) {
+			(PageUpdateResponse failure, IReadOnlyList<string> buttonWarnings) =
+				EvaluateButtonSignature(options, config, signatures);
+			if (failure != null) {
+				return (failure, null);
+			}
+			warnings.AddRange(buttonWarnings);
+		}
+		return (null, warnings.Count > 0 ? warnings : null);
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) EvaluateButtonSignature(
+		PageUpdateOptions options, RunProcessButtonConfig config,
+		IDictionary<string, GetProcessSignatureResponse> signatures) {
+		if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+			return (null, []); // structural validation already reported the missing processName
+		}
+		if (!TryGetCachedSignature(options, config.ProcessName, signatures,
+				out GetProcessSignatureResponse signature, out string resolveWarning)) {
+			return (null, resolveWarning is null ? [] : [resolveWarning]);
+		}
+		if (!signature.Success) {
+			if (signature.ProcessResolutionFailed) {
+				return (ProcessNotResolvedFailure(config, signature), null);
+			}
+			// Transient/transport failure — do not block the write on a backend hiccup.
+			return (null, [TransientValidationWarning(config, signature)]);
+		}
+		RunProcessButtonSignatureValidator.Result validation =
+			RunProcessButtonSignatureValidator.Validate(config, signature.Parameters);
+		if (validation.Error != null) {
+			return (new PageUpdateResponse { Success = false, Error = validation.Error }, null);
+		}
+		return (null, validation.Warnings);
+	}
+
+	private bool TryGetCachedSignature(PageUpdateOptions options, string processName,
+		IDictionary<string, GetProcessSignatureResponse> signatures,
+		out GetProcessSignatureResponse signature, out string warning) {
+		warning = null;
+		if (signatures.TryGetValue(processName, out signature)) {
+			return signature is not null;
+		}
+		if (!TryResolveSignature(options, processName, out signature, out warning)) {
+			return false;
+		}
+		signatures[processName] = signature;
+		return signature is not null;
+	}
+
+	private static PageUpdateResponse ProcessNotResolvedFailure(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		new() {
+			Success = false,
+			Error = $"Run-process button references process '{config.ProcessName}' which could not be "
+				+ $"uniquely resolved on the environment: {signature.Error} "
+				+ "Resolve it with get-process-signature and use the returned processCode."
+		};
+
+	private static string TransientValidationWarning(
+		RunProcessButtonConfig config, GetProcessSignatureResponse signature) =>
+		$"Run-process button parameter codes for process '{config.ProcessName}' were not validated: "
+		+ signature.Error;
+
+	private bool TryResolveSignature(PageUpdateOptions options, string processName,
+		out GetProcessSignatureResponse signature, out string warning) {
+		signature = null;
+		warning = null;
+		GetProcessSignatureOptions signatureOptions = new() {
+			ProcessName = processName,
+			Environment = options.Environment,
+			Uri = options.Uri,
+			Login = options.Login,
+			Password = options.Password
+		};
+		GetProcessSignatureCommand signatureCommand;
+		try {
+			signatureCommand = _commandResolver.Resolve<GetProcessSignatureCommand>(signatureOptions);
+		} catch (Exception ex) {
+			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			return false;
+		}
+		try {
+			signatureCommand.TryGetSignature(signatureOptions, out signature);
+			return true;
+		} catch (Exception ex) {
+			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Discovers the on-disk conflict baseline written by <c>get-page</c> and, when it targets the
+	/// same environment as this call, arms the external-modification check on the options. Returns
+	/// the resolved meta.json path plus whether the baseline is in play (drives the post-save
+	/// refresh). Missing/legacy/foreign-environment baselines leave the check disarmed (FR-07/FR-08).
+	/// </summary>
+	private (string MetaFilePath, bool BaselineArmed) TryArmBaseline(PageUpdateOptions options, PageUpdateArgs args) {
+		string metaFilePath;
+		try {
+			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				args.OutputDirectory,
+				args.BodyFile,
+				args.SchemaName);
+		} catch {
+			return (null, false);
+		}
+		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
+		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, args.EnvironmentName, args.Uri)) {
+			return (metaFilePath, false);
+		}
+		options.ExpectedChecksum = baseline.Checksum;
+		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
+		return (metaFilePath, true);
+	}
+
+	/// <summary>
+	/// After a successful save with an armed baseline: persists the fresh post-save checksum into
+	/// the existing meta.json, or removes the baseline block when the command could not obtain
+	/// fresh metadata — so the next write never compares against a stale checksum (FR-09).
+	/// </summary>
+	private void RefreshOrDropBaseline(string metaFilePath, PageUpdateArgs args, PageUpdateResponse response) {
+		if (string.IsNullOrWhiteSpace(response.NewChecksum)) {
+			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
+			return;
+		}
+		PageBaselineStore.RefreshExistingBaseline(
+			fileSystem,
+			metaFilePath,
+			new PageBaselineInfo {
+				SchemaName = args.SchemaName,
+				EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
+				EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
+				EditableSchemaExists = true,
+				EditableSchemaUId = response.SavedSchemaUId,
+				Checksum = response.NewChecksum,
+				ModifiedOn = response.NewModifiedOn,
+				CapturedAt = DateTime.UtcNow.ToString("o")
+			});
+	}
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
+		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorParamResourceBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorControlBindings(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorBindingPlacement(body), errors);
@@ -219,6 +458,7 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateConverterDeclarations(body), errors);
 		Collect(SchemaValidationService.ValidateConverterFunctionShape(body), errors);
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
+		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
@@ -261,7 +501,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
@@ -301,5 +541,11 @@ public sealed record PageUpdateArgs(
 	string? TargetPackageUId = null,
 	[property: JsonPropertyName("target-schema-uid")]
 	[property: Description("Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely. Use when you already know the exact replacing schema you want to modify (obtained via list-pages filter by name) and want to skip the design-package inference.")]
-	string? TargetSchemaUId = null
+	string? TargetSchemaUId = null,
+	[property: JsonPropertyName("force")]
+	[property: Description("Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
+	bool? Force = null,
+	[property: JsonPropertyName("output-directory")]
+	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
+	string? OutputDirectory = null
 );

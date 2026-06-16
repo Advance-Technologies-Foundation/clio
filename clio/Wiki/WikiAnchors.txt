@@ -2,6 +2,7 @@ activate-pkg:activate-pkg,activate-package,apkg,enable-package
 add-data-binding-row:add-data-binding-row
 add-item:add-item,create
 add-package:add-package,ap
+add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
@@ -67,6 +68,7 @@ clear-browser-session:clear-browser-session,clear-session
 find-entity-schema:find-entity-schema
 find-app:find-app
 get-info:get-info,describe,describe-creatio,instance-info
+get-process-signature:get-process-signature,gps
 get-schema:get-schema,schema-get
 get-sql-schema:get-sql-schema,sql-schema-get
 list-packages:list-packages,get-pkg-list,packages

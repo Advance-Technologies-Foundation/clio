@@ -17,6 +17,13 @@ DESCRIPTION
     the parent-schema hierarchy to load the editable version. This ensures that
     raw.body is always read from the package where the schema can be modified.
 
+    The response also carries an "editable" block with the editable schema's
+    SysSchema checksum captured at fetch time (best-effort). Pass this value
+    as --expected-checksum to update-page to detect modifications made outside
+    your session before overwriting them. When the command runs through the
+    MCP get-page tool, the checksum is persisted automatically as a baseline
+    in .clio-pages/{schema-name}/meta.json.
+
 SYNOPSIS
     clio get-page [options]
 

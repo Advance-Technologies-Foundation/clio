@@ -504,6 +504,56 @@ public sealed class ApplicationSectionCreateServiceTests {
 				"ResolveLocalizedCaption must return the effective-culture value, not the en-US fallback");
 	}
 
+	[Test]
+	[Description("Rejects a Cyrillic section caption when the effective culture is the Latin-script en-US profile, before any remote call.")]
+	public void CreateSection_ShouldThrow_WhenCaptionScriptDoesNotMatchEnUsProfileCulture() {
+		// Arrange
+		// The default fixture resolver returns en-US; a Cyrillic caption would be stored under the
+		// English profile and render foreign-language labels (the ENG-91044 regression).
+		ApplicationSectionCreateRequest request = new(
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Заявки");
+
+		// Act
+		Action action = () => _sut.CreateSection("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Cyrillic caption must not be stored under the Latin-script en-US profile culture")
+			.Which.Message.Should().Contain("en-US",
+				because: "the error must name the effective culture so the caller can fix the language");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
+	[Test]
+	[Description("A caption-culture override does not bypass the section guard: the caption is validated against the profile culture because the stored caption is localized under the profile, not the readback override.")]
+	public void CreateSection_ShouldThrow_WhenCaptionCultureOverrideMasksNonProfileScript() {
+		// Arrange
+		// Profile is en-US (override = null resolves to the profile); the caller passes a uk-UA readback
+		// override. Because the stored section caption is localized under the en-US profile, a Cyrillic
+		// caption must still be rejected — the override must NOT smuggle it past the guard.
+		ICaptionCultureResolver resolver = Substitute.For<ICaptionCultureResolver>();
+		resolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		resolver.Resolve(Arg.Any<EnvironmentOptions>(), "uk-UA").Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(resolver);
+		ApplicationSectionCreateRequest request = new(
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Заявки",
+			CaptionCulture: "uk-UA");
+
+		// Act
+		Action action = () => sut.CreateSection("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "for sections the caption-culture override is readback-only; the caption is stored under the en-US profile, so a Cyrillic caption must still be rejected")
+			.Which.Message.Should().Contain("en-US",
+				because: "the guard must validate against the resolved profile culture, not the readback override");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+	}
+
 	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
@@ -711,7 +761,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Passes the default 300-second budget to the ApplicationSection insert when no override is configured.")]
+	[Description("Passes the default 90-second budget to the ApplicationSection insert when no override is configured.")]
 	public void CreateSection_Should_Pass_Default_Insert_Timeout_When_EnvVar_Not_Set() {
 		// Arrange
 		Environment.SetEnvironmentVariable(
@@ -722,8 +772,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
-			because: "the insert budget should default to 300 seconds when no env override is set");
+		_capturedInsertTimeout.Should().Be(90_000,
+			because: "the insert budget should default to 90 seconds (below the MCP client request ceiling) when no env override is set");
 	}
 
 	[Test]
@@ -756,7 +806,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		act.Should().Throw<ApplicationSectionCreateException>(
 			because: "the rejected insert should surface as a classified failure");
-		_capturedInsertTimeout.Should().Be(300_000,
+		_capturedInsertTimeout.Should().Be(90_000,
 			because: "invalid override values must not silently disable or corrupt the insert budget");
 	}
 
@@ -811,6 +861,18 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		result.Section.Code.Should().Be("UsrOrders",
 			because: "a timed-out insert whose section is already visible must be treated as a recovered success");
+	}
+
+	[Test]
+	[Description("Bounds the post-timeout verification readback with the 30-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
+	public void CreateSection_Should_Pass_Bounded_Readback_Timeout_When_Insert_Times_Out_But_Section_Is_Visible() {
+		// Arrange
+		SetUpTimedOutInsertWithReadbackMocks();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		_capturedReadbackTimeout.Should().Be(30_000,
+			because: "the recovery readback must run under the bounded 30-second verification budget so the full response stays below the MCP client request ceiling after the insert timed out");
 	}
 
 	[Test]
@@ -1084,6 +1146,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 	private string? _capturedInsertBody;
 
+	private int? _capturedReadbackTimeout;
+
 	private void SetUpInsertThrowingMocks(Exception insertException) {
 		SetUpCommonReadMocks();
 		_capturedInsertBody = null;
@@ -1130,8 +1194,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
 					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
 				Arg.Any<int>())
-			.Returns(_ =>
-				$$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+			.Returns(callInfo => {
+				_capturedReadbackTimeout = callInfo.ArgAt<int>(2);
+				return $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""";
+			});
 		// LoadCreatedSection re-reads the app info and persists the icon background after recovery;
 		// the recovery readback runs bounded, so the update stub must accept the explicit timeout.
 		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
@@ -1211,13 +1277,18 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Fails fast with an actionable error pointing at --code when the caption has no Latin characters and no explicit code is supplied, instead of sending an invalid non-ASCII section code that Creatio silently rejects.")]
 	public void CreateSection_Should_Throw_Actionable_Error_When_Caption_Has_No_Latin_Characters_And_No_Code() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic caption valid, so the code-generation guidance (not the
+		// caption-script guard) is what fails when no explicit Latin code can be derived.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		ApplicationInfoResult beforeInfo = new(
 			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
 		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
 			.Returns(beforeInfo);
 
 		// Act
-		Action action = () => _sut.CreateSection(
+		Action action = () => sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",
@@ -1237,10 +1308,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Uses the explicit code (with the environment prefix ensured) for the section code when the caption is non-Latin, so the section is created with a valid Latin code while the caption stays localized.")]
 	public void CreateSection_Should_Use_Explicit_Code_When_Caption_Is_Non_Latin() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic caption valid; this test covers the explicit-code path,
+		// not the caption-script guard.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		SetUpPrefixTestMocks("UsrContacts");
 
 		// Act
-		ApplicationSectionCreateResult result = _sut.CreateSection(
+		ApplicationSectionCreateResult result = sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",
@@ -1357,10 +1433,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	[Description("Salvages the ASCII digit fragment from a mixed caption (e.g. 'Контакти 2024') to produce a valid code, inserting an underscore after the prefix so the identifier does not start with a digit.")]
 	public void CreateSection_Should_Salvage_ASCII_Digit_Fragment_From_Mixed_Caption() {
 		// Arrange
+		// A uk-UA profile makes the Cyrillic part of the caption valid; this test covers the
+		// digit-salvage code-generation path, not the caption-script guard.
+		ICaptionCultureResolver ukResolver = Substitute.For<ICaptionCultureResolver>();
+		ukResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("uk-UA");
+		ApplicationSectionCreateService sut = CreateSutWithResolver(ukResolver);
 		SetUpPrefixTestMocks("Usr_2024");
 
 		// Act
-		ApplicationSectionCreateResult result = _sut.CreateSection(
+		ApplicationSectionCreateResult result = sut.CreateSection(
 			"sandbox",
 			new ApplicationSectionCreateRequest(
 				ApplicationCode: "UsrOrdersApp",

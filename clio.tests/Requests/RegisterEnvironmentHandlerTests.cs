@@ -1,4 +1,3 @@
-using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
@@ -27,7 +26,7 @@ public class RegisterEnvironmentHandlerTests {
 		};
 
 		// Act
-		await sut.Handle(request, CancellationToken.None);
+		await sut.Handle(request);
 
 		// Assert
 		regCommand.CapturedOptions.Should().NotBeNull(because: "the handler should invoke RegAppCommand with parsed options");
@@ -59,7 +58,7 @@ public class RegisterEnvironmentHandlerTests {
 		};
 
 		// Act
-		await sut.Handle(request, CancellationToken.None);
+		await sut.Handle(request);
 
 		// Assert
 		regCommand.CapturedOptions.Should().NotBeNull(because: "the handler should invoke RegAppCommand with parsed options");

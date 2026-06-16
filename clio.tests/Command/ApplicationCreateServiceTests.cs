@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -59,13 +60,38 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
+		ICaptionCultureResolver captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			_applicationInfoService,
 			_ => _sysSettingsManager,
-			_logger);
+			_logger,
+			captionCultureResolver);
+	}
+
+	[Test]
+	[Description("Rejects a Cyrillic application name when the profile culture is the Latin-script en-US, before the CreateApp call.")]
+	public void CreateApplication_Should_Throw_WhenNameScriptDoesNotMatchProfileCulture() {
+		// Arrange — the fixture resolver returns en-US for the profile; the application name is
+		// localized server-side under the profile, so Cyrillic text would render foreign-language labels.
+		ApplicationCreateRequest request = new(
+			Name: "Замовлення",
+			Code: "UsrCyrillicApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI");
+
+		// Act
+		Action action = () => _sut.CreateApplication("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Cyrillic application name must not be stored under the Latin-script en-US profile (ENG-91044)")
+			.Which.Message.Should().Contain("en-US",
+				because: "the error must name the profile culture so the caller can fix the language");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
 	[Test]

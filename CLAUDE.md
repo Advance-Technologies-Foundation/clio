@@ -12,7 +12,7 @@ context — read them before doing any work.
 
 - **Command pattern:** new CLI commands use `Command<TOptions>` + constructor-injected
   services, registered in `BindingsModule.cs` and wired in `Program.cs`.
-  **Do NOT use MediatR** — it is deprecated and being removed.
+  **Do NOT use MediatR** — it has been removed from the codebase.
 - **CLI options are kebab-case** (analyzer CLIO001). Treat all `CLIO*` diagnostics as errors.
 - **Change a command → update its MCP surface AND docs.** When you touch a command,
   command options, or handler, also review `clio/Command/McpServer/**`

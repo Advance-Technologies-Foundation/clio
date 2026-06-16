@@ -1,5 +1,6 @@
 using System;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -37,11 +38,35 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environmentSettings).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
+		ICaptionCultureResolver captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_sut = new ApplicationSectionUpdateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
-			_applicationInfoService);
+			_applicationInfoService,
+			captionCultureResolver);
+	}
+
+	[Test]
+	[Description("Rejects a Cyrillic section-update caption when the profile culture is the Latin-script en-US, before any remote call.")]
+	public void UpdateSection_Should_Throw_WhenCaptionScriptDoesNotMatchProfileCulture() {
+		// Arrange — the fixture resolver returns en-US for the profile; the section caption is
+		// localized server-side under the profile, so Cyrillic text would render foreign-language labels.
+		ApplicationSectionUpdateRequest request = new(
+			"UsrOrdersApp",
+			"UsrOrders",
+			Caption: "Замовлення");
+
+		// Act
+		Action action = () => _sut.UpdateSection("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Cyrillic caption must not be stored under the Latin-script en-US profile (ENG-91044)")
+			.Which.Message.Should().Contain("en-US",
+				because: "the error must name the profile culture so the caller can fix the language");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
 	[Test]

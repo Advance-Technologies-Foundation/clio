@@ -29,9 +29,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private IRemoteEntitySchemaDesignerClient _designerClient;
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
+	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
+	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private ILogger _logger;
-	private ICurrentUserCultureResolverFactory _cultureResolverFactory;
-	private Clio.UserEnvironment.ISettingsRepository _settingsRepository;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
 	private EntityDesignSchemaDto _savedSchema;
@@ -42,17 +42,19 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_defaultValueSourceResolver = Substitute.For<IEntitySchemaDefaultValueSourceResolver>();
 		_designerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_runtimeEntitySchemaReader = Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>();
+		_lookupDefaultDisplayValueResolver = Substitute.For<ILookupDefaultDisplayValueResolver>();
+		// Default: enrichment is a no-op (both fields null) so existing readbacks stay GUID-only;
+		// the dedicated lookup-Const enrichment test re-stubs this to assert display-value mapping.
+		_lookupDefaultDisplayValueResolver
+			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new LookupDefaultResolution(null, null));
 		_logger = Substitute.For<ILogger>();
-		_cultureResolverFactory = Substitute.For<ICurrentUserCultureResolverFactory>();
-		ICurrentUserCultureResolver cultureResolver = Substitute.For<ICurrentUserCultureResolver>();
-		// Default: profile culture unresolved -> effective culture degrades to en-US (parity with
-		// the previous host-locale behavior on CI). Individual tests can re-stub for uk-UA.
-		cultureResolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
-			.Returns(System.Threading.Tasks.Task.FromResult(
-				CultureResolution.Failed(CurrentUserCultureResolver.ReasonUserCultureMissing)));
-		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(cultureResolver);
-		_settingsRepository = Substitute.For<Clio.UserEnvironment.ISettingsRepository>();
-		_settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		_captionCultureResolver = Substitute.For<IEntitySchemaCaptionCultureResolver>();
+		// Default: effective culture is the en-US fallback (parity with the previous default behavior on
+		// CI). Tests that exercise the resolved-profile path re-stub this to return uk-UA.
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("en-US");
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -101,21 +103,22 @@ internal class RemoteEntitySchemaColumnManagerTests
 			});
 		_defaultValueSourceResolver
 			.Resolve(Arg.Any<EntitySchemaDefaultValueConfig>(), Arg.Any<int>(), Arg.Any<string>(),
-				Arg.Any<RemoteCommandOptions>())
+				Arg.Any<RemoteCommandOptions>(), Arg.Any<string?>())
 			.Returns(callInfo =>
 				new EntitySchemaDefaultValueSourceResolver(_designerClient).Resolve(
 					callInfo.ArgAt<EntitySchemaDefaultValueConfig>(0),
 					callInfo.ArgAt<int>(1),
 					callInfo.ArgAt<string>(2),
-					callInfo.ArgAt<RemoteCommandOptions>(3)));
+					callInfo.ArgAt<RemoteCommandOptions>(3),
+					callInfo.ArgAt<string?>(4)));
 		_manager = new RemoteEntitySchemaColumnManager(
 			_packageListProvider,
 			_defaultValueSourceResolver,
 			_designerClient,
 			_runtimeEntitySchemaReader,
-			_logger,
-			_cultureResolverFactory,
-			_settingsRepository);
+			_lookupDefaultDisplayValueResolver,
+			_captionCultureResolver,
+			_logger);
 	}
 
 	[Test]
@@ -355,10 +358,9 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[Description("Anchors a written column caption to the resolved profile culture (uk-UA) when the resolver succeeds (AC-02, WRITE path).")]
 	public void SetLocalizableValue_ShouldUseEffectiveCulture_WhenProfileResolved() {
 		// Arrange — the profile culture resolves to uk-UA for this run.
-		ICurrentUserCultureResolver resolver = Substitute.For<ICurrentUserCultureResolver>();
-		resolver.ResolveAsync(Arg.Any<System.Threading.CancellationToken>())
-			.Returns(System.Threading.Tasks.Task.FromResult(CultureResolution.Resolved("uk-UA")));
-		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("uk-UA");
 		EntitySchemaColumnDto statusColumn = CreateTextColumn("UsrVehicleStatus", NameColumnUId);
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), statusColumn]);
 		SetupLoadedSchema();
@@ -965,6 +967,120 @@ internal class RemoteEntitySchemaColumnManagerTests
 		result.DefaultValueConfig.Value.Should().Be("Vehicle",
 			because: "the structured default value config should preserve the constant payload");
 		result.MultilineText.Should().BeTrue(because: "text-specific flags should be projected");
+	}
+
+	[Test]
+	[Description("Enriches a lookup Const default readback with the referenced record display value resolved by the resolver.")]
+	public void GetColumnProperties_ShouldEnrichLookupConstDefault_WhenColumnIsLookupConst() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		EntitySchemaColumnDto colorColumn = CreateLookupColumn("UsrColor", NameColumnUId, "UsrEng91318Color");
+		colorColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = recordId.ToString("D")
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		SetupLoadedSchema();
+		_lookupDefaultDisplayValueResolver
+			.Resolve("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(new LookupDefaultResolution("Green", null));
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrColor"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.DisplayValue.Should().Be("Green",
+			because: "a lookup Const default must be enriched with the referenced record display value so an agent can verify it");
+		result.DefaultValueConfig.RecordResolution.Should().BeNull(
+			because: "no marker is emitted when the display value resolves successfully");
+		_lookupDefaultDisplayValueResolver.Received(1).Resolve("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Does not invoke the lookup-default resolver for a non-lookup Const default, leaving the readback GUID/value-only.")]
+	public void GetColumnProperties_ShouldNotEnrich_WhenConstDefaultIsNotLookup() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.DataValueType = 27;
+		nameColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = "Vehicle"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Name"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.DisplayValue.Should().BeNull(
+			because: "enrichment applies only to lookup columns, not to a text Const default");
+		_lookupDefaultDisplayValueResolver.DidNotReceive()
+			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Propagates the record-resolution marker to readback when a lookup Const default's display value cannot be resolved.")]
+	public void GetColumnProperties_ShouldPropagateRecordResolutionMarker_WhenDisplayValueUnavailable() {
+		// Arrange
+		Guid recordId = Guid.Parse("d1a6ea58-6a88-4cb7-bfea-7a41caa0ae50");
+		EntitySchemaColumnDto colorColumn = CreateLookupColumn("UsrColor", NameColumnUId, "UsrEng91318Color");
+		colorColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = recordId.ToString("D")
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		SetupLoadedSchema();
+		_lookupDefaultDisplayValueResolver
+			.Resolve("UsrEng91318Color", recordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(new LookupDefaultResolution(null, "no-access"));
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrColor"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.RecordResolution.Should().Be("no-access",
+			because: "an unresolved display value must surface its honest marker end to end through the readback");
+		result.DefaultValueConfig.DisplayValue.Should().BeNull(
+			because: "no display value is available when a marker is returned");
+	}
+
+	[Test]
+	[Description("Does not enrich a lookup Const default whose stored value is not a GUID.")]
+	public void GetColumnProperties_ShouldNotEnrich_WhenLookupConstValueIsNotGuid() {
+		// Arrange
+		EntitySchemaColumnDto colorColumn = CreateLookupColumn("UsrColor", NameColumnUId, "UsrEng91318Color");
+		colorColumn.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.Const,
+			Value = "not-a-guid"
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "UsrColor"
+		});
+
+		// Assert
+		result.DefaultValueConfig!.DisplayValue.Should().BeNull(
+			because: "a non-GUID Const value cannot identify a referenced record, so enrichment is skipped");
+		_lookupDefaultDisplayValueResolver.DidNotReceive()
+			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
 	}
 
 	[Test]

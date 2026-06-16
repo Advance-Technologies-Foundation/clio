@@ -117,6 +117,8 @@ public sealed class PageValidateTool(
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
+			LocalizableText: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateColumnBindings(body)),
 			ConverterDecl: RunContentValidation(contentResult,
@@ -140,7 +142,8 @@ public sealed class PageValidateTool(
 		ContentValidationResults content) {
 		List<string> errors = CollectErrors(
 			markerResult, contentResult,
-			content.Field, content.InsertSelfConsistency, content.ConverterDecl, content.ConverterFunctionShape,
+			content.Field, content.InsertSelfConsistency, content.LocalizableText,
+			content.ConverterDecl, content.ConverterFunctionShape,
 			content.HandlerStructure, content.ValidatorDecl, content.ValidatorFactoryShape);
 		var warnings = new List<string>();
 		warnings.AddRange(content.Field.Warnings);
@@ -150,6 +153,7 @@ public sealed class PageValidateTool(
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
+			content.LocalizableText.IsValid &&
 			content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
@@ -196,6 +200,7 @@ public sealed class PageValidateTool(
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
 		SchemaValidationResult InsertSelfConsistency,
+		SchemaValidationResult LocalizableText,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,
 		SchemaValidationResult ConverterFunctionShape,
@@ -213,7 +218,7 @@ public sealed record PageValidateArgs(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null
 );
 

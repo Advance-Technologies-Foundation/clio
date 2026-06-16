@@ -46,6 +46,9 @@ public sealed class GetUserCultureTool(
 		"read from ApplicationInfoService.svc/GetApplicationInfo (no cliogate required). " +
 		"Call this ONCE per session before creating applications, objects, pages, sections, lookups, or columns, " +
 		"and reuse the result for all generated names, labels, and captions. " +
+		"Use the returned culture as the LANGUAGE of the generated text, not only the localization key: author " +
+		"captions in that language (an en-US profile means English captions) and keep en-US localization values in " +
+		"English — clio rejects a caption whose script does not match a Latin-script culture key. " +
 		"On success returns { success:true, culture }. On failure returns { success:false, reason } — " +
 		"in that case ASK the user which language to use; do NOT fall back to the host locale or a silent en-US.")]
 	public async Task<GetUserCultureResponse> GetUserCulture(

@@ -101,11 +101,23 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <summary>
 	/// Environment variable that overrides the ApplicationSection insert budget, in whole seconds.
-	/// Non-numeric or non-positive values fall back to the 300-second default (ENG-90679).
+	/// Non-numeric or non-positive values fall back to the 90-second default (ENG-91540).
 	/// </summary>
 	internal const string InsertTimeoutEnvironmentVariable = "CLIO_CREATE_SECTION_TIMEOUT_SECONDS";
 
-	private const int DefaultInsertTimeoutMs = 300_000;
+	// The budget must fire BEFORE the MCP client's hard request ceiling so clio returns its
+	// structured creatio-timeout envelope (error-class / section-created / retry-guidance) instead
+	// of letting the client abandon the call with an opaque "-32001 Request timed out" (ENG-91540).
+	// The progress heartbeat (ENG-91274) does not rescue this: clients such as GitHub Copilot CLI
+	// enforce a fixed ~180 s per-request ceiling that progress notifications do not reset (and some
+	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
+	// call (90 s) and the post-timeout recovery readback (30 s) — the dominant slow span on the
+	// not-visible timeout path that is the actual repro — so clio answers well under the observed 180 s
+	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert,
+	// the success-path readback (Timeout.Infinite), and the 15-attempt poll loop have no cumulative
+	// deadline (residual ENG-91316). CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients /
+	// large stands extend the insert budget.
+	private const int DefaultInsertTimeoutMs = 90_000;
 	private const int VerificationTimeoutMs = 30_000;
 
 	private const string TransportRetryGuidance =
@@ -168,8 +180,16 @@ public sealed class ApplicationSectionCreateService(
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
-		string effectiveCultureName = captionCultureResolver.Resolve(
-			new EnvironmentOptions { Environment = environmentName }, request.CaptionCulture);
+		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		string effectiveCultureName = captionCultureResolver.Resolve(cultureOptions, request.CaptionCulture);
+		// ENG-91044: the stored section caption is localized server-side under the connected user's
+		// PROFILE culture — the caption-culture override only selects which value the readback surfaces,
+		// not the stored language. Validate the written text against the profile culture (override =
+		// null), so a non-matching --caption-culture cannot smuggle the wrong language past the guard
+		// (e.g. Cyrillic text stored under an 'en-US' profile).
+		string profileCultureForCaption = captionCultureResolver.Resolve(cultureOptions, null);
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
 		ApplicationInfoResult beforeInfo;
 		ResolvedApplicationSectionCreateRequest resolvedRequest;

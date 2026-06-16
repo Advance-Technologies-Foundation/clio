@@ -95,6 +95,7 @@ clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomU
 - --icon-background must be one of the Freedom UI palette colors when provided; a random palette color is assigned when omitted.
 - When --icon-id is omitted the command does not assign an icon automatically.
 - --with-mobile-pages defaults to `true`; existing calls without the flag keep generating the full five-page set. Pass `false` for a web-only app to skip the main entity `_MobileFormPage` and `_MobileListPage`. An explicit client type takes precedence over this flag.
+- --name and --description must be in the connected user's profile language. The application name is localized server-side under the profile, so a value whose script does not match a Latin-script profile (for example Cyrillic under an `en-US` profile) is rejected with an actionable error.
 
 ## Reporting Bugs
 
