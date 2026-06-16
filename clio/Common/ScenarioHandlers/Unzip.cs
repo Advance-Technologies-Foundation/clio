@@ -1,9 +1,9 @@
 ﻿using FluentValidation;
 using OneOf;
-using System;
 using System.IO;
 using System.IO.Compression;
 using System.Threading.Tasks;
+using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common.ScenarioHandlers {
 
@@ -68,57 +68,56 @@ namespace Clio.Common.ScenarioHandlers {
     internal class UnzipRequestHandler : IUnzipHandler {
 
         private readonly IValidator<UnzipRequest> _validator;
-        private readonly char[] _sequence;
-        private int _counter;
-        public UnzipRequestHandler(IValidator<UnzipRequest> validator)
+        private readonly IAbstractionsFileSystem _fileSystem;
+        private readonly ILogger _logger;
+        public UnzipRequestHandler(IValidator<UnzipRequest> validator, IAbstractionsFileSystem fileSystem, ILogger logger)
         {
             _validator = validator;
-            _sequence = new[] { '/', '-', '\\', '|' };
-            _counter = 0;
+            _fileSystem = fileSystem;
+            _logger = logger;
         }
 
         /// <inheritdoc />
-        public async Task<OneOf<UnzipResponse, HandlerError>> Handle(UnzipRequest request) {
+        public Task<OneOf<UnzipResponse, HandlerError>> Handle(UnzipRequest request) {
 
             _validator.ValidateAndThrow(request);
 
             string zipFileName = request.Arguments["from"];
             string destinationDirectory = request.Arguments["to"];
 
-            _ = !Directory.Exists(destinationDirectory) ? null : Directory.CreateDirectory(destinationDirectory);
-
-            using var archive = ZipFile.OpenRead(zipFileName);
-#pragma warning disable CLIO002
-            await Console.Out.WriteAsync("Extracting files: ");
-#pragma warning restore CLIO002
-            foreach (var entry in archive.Entries) {
-                // Skip directories (entries ending with '/')
-                if (!entry.FullName.EndsWith("/")) {
-                    entry.ExtractToFile(Path.Combine(destinationDirectory, entry.FullName), true);
-                    Turn();
-                }
-                else {
-                    var dir = Path.GetDirectoryName(Path.Combine(destinationDirectory, entry.FullName));
-                    Directory.CreateDirectory(dir);
-                }
+            // Ensure the destination directory exists (create it when it does NOT exist).
+            if (!_fileSystem.Directory.Exists(destinationDirectory)) {
+                _fileSystem.Directory.CreateDirectory(destinationDirectory);
             }
-            return new UnzipResponse() {
+
+            _logger.BeginSpinner("Extracting files");
+            bool success = false;
+            try {
+                // Open the archive through IFileSystem so the file-open is mockable; the per-entry
+                // ExtractToFile below writes bytes via concrete System.IO and is integration-tested.
+                using var stream = _fileSystem.File.OpenRead(zipFileName);
+                using var archive = new ZipArchive(stream);
+                foreach (var entry in archive.Entries) {
+                    // Skip directories (entries ending with '/')
+                    if (!entry.FullName.EndsWith("/")) {
+                        entry.ExtractToFile(_fileSystem.Path.Combine(destinationDirectory, entry.FullName), true);
+                    }
+                    else {
+                        var dir = _fileSystem.Path.GetDirectoryName(_fileSystem.Path.Combine(destinationDirectory, entry.FullName));
+                        _fileSystem.Directory.CreateDirectory(dir);
+                    }
+                }
+                success = true;
+            }
+            finally {
+                _logger.EndSpinner(success);
+            }
+
+            return Task.FromResult<OneOf<UnzipResponse, HandlerError>>(new UnzipResponse() {
                 Status = BaseHandlerResponse.CompletionStatus.Success,
                 Description = $"Finished extracting files to {destinationDirectory}"
-            };
+            });
 
-        }
-
-        private void Turn() {
-            _counter++;
-            if (_counter >= _sequence.Length) {
-                _counter = 0;
-            }
-            var position = Console.GetCursorPosition();
-#pragma warning disable CLIO002
-            Console.Write(_sequence[_counter]);
-#pragma warning restore CLIO002
-            Console.SetCursorPosition(position.Left, position.Top);
         }
     }
 }

@@ -3881,3 +3881,17 @@ Decision: (1) Deleted clio/Requests/ValidationBehaviour.cs (IPipelineBehavior �
 Discovery: BindingsModule had no `using MediatR;` import — `AddMediatR` resolved via MediatR's extension in the MS DI namespace, so removing the call + package was sufficient (no using to strip there). clio.tests had ZERO MediatR references after prior units — nothing to clean. OneOf is a SEPARATE package and stays (used elsewhere). Clean build with 0 warnings/0 errors WITHOUT the MediatR package is the compile-time proof that no reference remains.
 Files: clio/Requests/ValidationBehaviour.cs (deleted), clio/Common/ScenarioHandlers/BaseHandlerRequest.cs, clio/BindingsModule.cs, clio/Requests/IExternalLinkHandler.cs, clio/clio.csproj, Directory.Packages.props, CONTRIBUTING.md, CLAUDE.md, AGENTS.md, project-context.md
 Impact: MediatR is fully GONE from clio/ and clio.tests/ (package uninstalled). Docs/instructions updated from "deprecated/being removed" to "removed". Full unit suite: 4031 passed / 0 failed / 20 skipped. New commands: Command<TOptions> + DI services only.
+
+## 2026-06-16 – Modernization pilot: UnzipRequestHandler
+Context: Pilot for "modernize while we touch a file" playbook on clio/Common/ScenarioHandlers/Unzip.cs.
+Decision: Fixed inverted dir-creation (line 88 created dir only when it already existed); injected System.IO.Abstractions.IFileSystem into handler (aliased as IAbstractionsFileSystem to avoid clash with Clio.Common.IFileSystem in same namespace); routed Directory/Path ops + zip File.OpenRead through it; kept entry.ExtractToFile concrete (integration-tested); justified both CLIO002 pragmas with comments; kept ValidateAndThrow sync.
+Discovery: Unqualified IFileSystem in Clio.Common.* resolves to Clio.Common.IFileSystem, NOT System.IO.Abstractions — must alias (neighbors use IAbstractionsFileSystem). System.IO.Abstractions.IFileSystem already registered unconditionally (BindingsModule.cs:198). Validator still uses concrete System.IO.File.Exists, so handler tests need the source zip BOTH as a real temp touch (validator) AND seeded into MockFileSystem (handler). Bug-fix test must use an EMPTY zip so the extraction loop's else-branch CreateDirectory can't mask the inverted line-88 bug.
+Files: clio/Common/ScenarioHandlers/Unzip.cs, clio.tests/Requests/UnzipHandlerTests.cs
+Impact: Establishes the modernize-on-touch pattern; UnzipRequestValidator IFileSystem conversion left as follow-up.
+
+## 2026-06-16 – Unzip handler: replace hand-rolled spinner with ILogger spinner
+Context: Amends in-progress modernize-unzip pilot; replace custom Console spinner in UnzipRequestHandler.
+Decision: Inject Clio.Common.ILogger; wrap extraction in BeginSpinner/try-finally(EndSpinner(success))/EndSpinner. Dropped async -> Task.FromResult (no await left). Removed Turn(), _sequence, _counter, all Console.* and both CLIO002 pragmas; removed now-unused `using System;`.
+Discovery: ConsoleLogger spinner only no-ops when Console.IsOutputRedirected; tests must inject NullLogger via AdditionalRegistrations (applied after base ILogger reg at BindingsModule.cs:643, last-wins) to stay deterministic cross-OS.
+Files: clio/Common/ScenarioHandlers/Unzip.cs, clio.tests/Requests/UnzipHandlerTests.cs
+Impact: Reference for migrating other hand-rolled Console spinners to the ILogger spinner; shows DI-override pattern to neutralize spinner in command/handler tests.
