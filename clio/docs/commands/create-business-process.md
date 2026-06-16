@@ -9,9 +9,9 @@ create-business-process - Build a business process on a Creatio environment from
 Builds and saves a real, interpretable business process from a declarative JSON descriptor,
 delegating serialization to the `ProcessDesignService` package on the environment (the caller
 never produces process metadata). The descriptor declares the process name/caption/package, its
-elements (start/end events and user tasks), the sequence flows between them, process-level
-parameters, and value mappings that bind element parameters to process parameters, constants, or
-formulas. Provide the descriptor as a file (`--descriptor`) or inline (`--descriptor-json`).
+elements (start, signal-start, and end events plus user tasks), the sequence flows between them,
+process-level parameters, and value mappings that bind element parameters to process parameters,
+constants, or formulas. Provide the descriptor as a file (`--descriptor`) or inline (`--descriptor-json`).
 
 ## Synopsis
 
@@ -45,7 +45,7 @@ A JSON object with the following fields:
 | `name` | Unique schema code of the process to create. |
 | `caption` | Human-readable caption. |
 | `packageName` | Target package the process is created in. |
-| `elements` | Array of `{ id, type, caption, userTaskName? }`. `type` is `startEvent` \| `endEvent` \| `userTask` (aliases `readData`, `performTask`). |
+| `elements` | Array of `{ id, type, caption, userTaskName?, signal? }`. `type` is `startEvent` \| `signalStart` \| `endEvent` \| `userTask` (aliases `readData`, `performTask`). For a record trigger ("run on save"), use a `signalStart` element with `signal: { entity, on }` where `on` is one of `added` \| `modified` \| `deleted` (one event) — the platform-native alternative to a client-side page save handler. |
 | `flows` | Array of `{ source, target }` referencing element ids. |
 | `parameters` | Array of `{ name, type, direction, caption }` (process inputs / variables). |
 | `mappings` | Array of `{ elementId, elementParameter }` plus one of `processParameter` \| `value` \| `expression`. |
@@ -71,6 +71,25 @@ Example descriptor:
   ],
   "mappings": [
     { "elementId": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+  ]
+}
+```
+
+Record-triggered variant — a process that starts when a `UsrTestRunButton` record is saved:
+
+```json
+{
+  "name": "UsrOnSaveProcess",
+  "caption": "On Save",
+  "packageName": "Custom",
+  "elements": [
+    { "id": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "modified" } },
+    { "id": "task1", "type": "performTask", "caption": "Do task" },
+    { "id": "EndEvent1", "type": "endEvent" }
+  ],
+  "flows": [
+    { "source": "SignalStart1", "target": "task1" },
+    { "source": "task1", "target": "EndEvent1" }
   ]
 }
 ```

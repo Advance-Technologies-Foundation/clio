@@ -160,3 +160,26 @@ User opened the modified UsrClioBpPerform1 in the designer and reported 3 issues
 - Confluence research: TER/4702928908 (Approach 1 §3 = the decision + comparison table + package name).
 - Branches: `feature/ENG-90883-process-common-core` (base), `…-approach1-backend-designer` (this), `…-approach3-ui-designer`.
 - Jira umbrella ENG-90883; ENG-91447 (titled Approach 3, reused for Approach 1 work).
+
+## Code review follow-ups (2026-06-16 — recall review of the diff)
+
+### Applied in clio (this branch, tested green)
+- [#2] `modify-business-process` now enforces EXACTLY-ONE identity (`--name` XOR `--uid`) at both the CLI command and the MCP tool — both no longer reach the server together. Added both-identity rejection tests (command + tool); option HelpText/param descriptions/help.txt/docs aligned to "exactly one".
+- [#3] `create-business-process` MCP tool `[Description]` + CLI help + `docs/commands/create-business-process.md` now advertise `signalStart` and the `signal:{entity,on}` object (record trigger), with a record-triggered descriptor example. Closes the gap where the primary build tool hid the signal-start path.
+- [#9] modify service "Editing process '…'" log was `ProcessName ?? ProcessUid` (ProcessName never null → empty for uid-only edits); now selects the non-blank identity.
+- [#10] `DescribeProcessResult` no longer leaks `"success":true`/`errorMessage` into describe output — wire-control fields moved to a private `DescribeProcessWireResult : DescribeProcessResult` in `ServerProcessDescriber` (command serializes as the base type → derived fields dropped). `DescribeProcessResult` un-sealed for the subclass.
+
+### Server-side TODO (clioprocessbuilder — OTHER repo, separate build+deploy)
+- [#1] Signal `on` not aligned across write/read/doc: `ParseEntitySignal` is single-value (save/null→Updated) BY DESIGN (designer can't represent combined flags), but `ProcessSignalDescriptor.On` doc still says "save (= added or modified)" and `DecodeEntitySignal` emits `added|modified`/`none` that `ParseEntitySignal` then rejects → describe→modify of a designer-authored combined-flag signal throws. FIX: doc = single-value; `DecodeEntitySignal` emit one token.
+- [#4] `BuildGraph` does `elementsByLocalId[descriptor.Id] = element` with no duplicate/blank-id guard → 2nd same-id element silently wins, first orphaned (verify whether SaveSchema throws on dup Name first). Add up-front unique-id validation.
+- [#5] Element `id` semantics asymmetric: build keys flows/mappings on element Name (`ResolveNode`, name-only); describe emits `id`=UId → describe→edit→create round-trip breaks (modify works because `FindFlowNode` accepts UId-or-Name). Unify: emit Name as `id` on describe, or accept UId in `ResolveNode`.
+- [#6] Vocabulary fork: `validate-process-graph` (clio `ManagerMap` data-ids: startEventSignal/readDataUserTask/gateways) vs `CreateElement` (startevent/signalstart/endevent/userTask/readdata/performtask, no gateways). A graph that validates clean (any gateway) then throws NotSupportedException on build. Make validate aware of the buildable subset, or have build reject with a clear message.
+- [#7] `ModifyProcess` catch leaks the DesignSchema session on abort (no rollback like BuildProcess's RollbackCreatedSchema); self-heals only on a later DesignSchema of the same uid. Add try/finally cleanup.
+- [#11] `ResolveSchemaUId`/`DescribeProcess` use `Guid.Parse(uid)` → opaque FormatException; `FindFlowNode` already uses TryParse. Switch to TryParse + friendly "uid is not a valid GUID".
+- [#12] `GetPrimaryLane` always targets lane[0]; multi-lane processes mis-place added elements with no lane-targeting option.
+- [#14] `ApplyMappings`/`BuildSourceValue` don't validate a mapping naming a non-existent process/element parameter → plausible NRE / silently-empty reference; add an up-front "unknown parameter" check.
+
+### Declined / downgraded
+- [#8] Remove* "dangling Outgoings/Incomings corrupts the saved schema" — REFUTED during verification (metadata serializes FlowElements directly; nodes don't serialize Outgoings/Incomings; save-then-reload verified correct). Residual is only a hygiene divergence from canonical `ProcessSchema.RemoveElement`. Optional.
+- [#13] Cleanup: Create/Modify/ListUserTasks services triplicate the env→client→Build→POST→envelope skeleton + near-dup DTOs; extract one `PostWrapped<T>` helper when a refactor window opens.
+- [#15] MCP arg naming: the 3 new tools use camelCase params (matches the prevailing clio convention, e.g. ClearRedisTool); `describe-process` (kebab `JsonPropertyName`, from common-core) is the outlier. No change to the new tools; revisit describe-process for cross-tool consistency.

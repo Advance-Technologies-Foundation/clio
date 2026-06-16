@@ -31,8 +31,11 @@ DESCRIPTOR
       name          Unique schema code of the process to create.
       caption       Human-readable caption.
       packageName   Target package the process is created in.
-      elements      Array of { id, type, caption, userTaskName? }. type is
-                    startEvent | endEvent | userTask (aliases readData, performTask).
+      elements      Array of { id, type, caption, userTaskName?, signal? }. type is
+                    startEvent | signalStart | endEvent | userTask (aliases readData, performTask).
+                    For a record trigger ("run on save"), use a signalStart element with
+                    signal: { entity: <EntityName>, on: added | modified | deleted } (one event)
+                    instead of a client-side page save handler.
       flows         Array of { source, target } referencing element ids.
       parameters    Array of { name, type, direction, caption } (process inputs / variables).
       mappings      Array of { elementId, elementParameter } plus one of

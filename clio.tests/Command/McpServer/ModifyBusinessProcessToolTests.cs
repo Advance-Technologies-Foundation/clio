@@ -86,6 +86,27 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Returns a failed result without resolving any command when both a process name and uid are provided.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Fail_When_Both_Name_And_Uid_Provided() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeModifyBusinessProcessCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", SampleOperations);
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "an ambiguous identity (both name and uid) is a validation error that must not reach command resolution");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<ModifyBusinessProcessCommand>(default!);
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a failed result without resolving any command when the operations are empty.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Fail_When_Operations_Are_Empty() {

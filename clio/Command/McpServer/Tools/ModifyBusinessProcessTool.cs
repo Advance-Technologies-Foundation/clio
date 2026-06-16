@@ -33,8 +33,8 @@ public class ModifyBusinessProcessTool(
 		 + "Use describe-process to inspect the current elements/ids first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Process code (schema Name) to edit; provide this or processUid")] string processName,
-		[Description("Process schema UId to edit; provide this or processName")] string processUid,
+		[Description("Process code (schema Name) to edit; provide exactly one of processName or processUid")] string processName,
+		[Description("Process schema UId to edit; provide exactly one of processName or processUid")] string processUid,
 		[Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]")]
 		[Required] string operations
 	) {
@@ -42,8 +42,12 @@ public class ModifyBusinessProcessTool(
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
-		if (string.IsNullOrWhiteSpace(processName) && string.IsNullOrWhiteSpace(processUid)) {
-			return CommandExecutionResult.FromError("one of processName or processUid is required.");
+		bool hasName = !string.IsNullOrWhiteSpace(processName);
+		bool hasUid = !string.IsNullOrWhiteSpace(processUid);
+		if (hasName == hasUid) {
+			return CommandExecutionResult.FromError(hasName
+				? "Provide only one of processName or processUid, not both."
+				: "one of processName or processUid is required.");
 		}
 
 		if (string.IsNullOrWhiteSpace(operations)) {

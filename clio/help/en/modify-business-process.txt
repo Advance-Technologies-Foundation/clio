@@ -15,10 +15,10 @@ SYNOPSIS
 
 OPTIONS
     --name <CODE>
-        Process code (schema Name) to edit. Provide this or --uid.
+        Process code (schema Name) to edit. Provide exactly one of --name or --uid.
 
     --uid <GUID>
-        Process schema UId to edit. Provide this or --name.
+        Process schema UId to edit. Provide exactly one of --name or --uid.
 
     --operations <FILE>
         Path to a JSON file with the operations array. Provide this or --operations-json.

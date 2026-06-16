@@ -75,7 +75,7 @@ public sealed class ServerProcessDescriber(
 			return Error.Failure("DescribeProcess", $"could not parse server response: {e.Message}");
 		}
 
-		DescribeProcessResult result = envelope?.Result;
+		DescribeProcessWireResult result = envelope?.Result;
 		if (result is null) {
 			return Error.Failure("DescribeProcess", "unexpected server response shape");
 		}
@@ -106,24 +106,31 @@ public sealed class ServerProcessDescriber(
 		}
 		return Error.Failure("ResolveId", "no process identity provided (code, uid, or caption)");
 	}
+
+	/// <summary>WCF <c>BodyStyle=Wrapped</c> response envelope (wire-only).</summary>
+	private sealed class DescribeProcessResultEnvelope {
+		[JsonPropertyName("DescribeProcessResult")]
+		public DescribeProcessWireResult Result { get; set; }
+	}
+
+	/// <summary>
+	/// Wire shape: the public <see cref="DescribeProcessResult"/> graph plus the server-internal success/error
+	/// control fields. They are read here to detect failure and are never re-serialized into the command output
+	/// (the command serializes the value as <see cref="DescribeProcessResult"/>, so these are dropped).
+	/// </summary>
+	private sealed class DescribeProcessWireResult : DescribeProcessResult {
+		[JsonPropertyName("success")]
+		public bool Success { get; set; }
+
+		[JsonPropertyName("errorMessage")]
+		public string ErrorMessage { get; set; }
+	}
 }
 
-#region DTOs (server wire shape — re-serialized verbatim as the command output)
-
-/// <summary>Wrapper for the WCF <c>BodyStyle=Wrapped</c> response envelope.</summary>
-public sealed class DescribeProcessResultEnvelope {
-	/// <summary>The wrapped <c>DescribeProcess</c> result.</summary>
-	[JsonPropertyName("DescribeProcessResult")]
-	public DescribeProcessResult Result { get; set; }
-}
+#region DTOs (server wire shape — DescribeProcessResult is re-serialized verbatim as the command output)
 
 /// <summary>The structured process description returned by the server-side <c>DescribeProcess</c>.</summary>
-public sealed class DescribeProcessResult {
-	/// <summary>True when the process was read successfully (server-internal flag; omitted from output).</summary>
-	[JsonPropertyName("success")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-	public bool Success { get; set; }
-
+public class DescribeProcessResult {
 	/// <summary>Process schema name (code).</summary>
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
@@ -147,10 +154,6 @@ public sealed class DescribeProcessResult {
 	/// <summary>Process-level parameters (inputs / variables).</summary>
 	[JsonPropertyName("parameters")]
 	public List<DescribedParameter> Parameters { get; set; }
-
-	/// <summary>Server error message (server-internal; omitted from output on success).</summary>
-	[JsonPropertyName("errorMessage")]
-	public string ErrorMessage { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>

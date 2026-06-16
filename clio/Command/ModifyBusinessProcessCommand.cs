@@ -16,11 +16,11 @@ namespace Clio.Command;
 	HelpText = "Edit an existing business process on a Creatio environment by applying a list of operations")]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	[Option("name", Required = false,
-		HelpText = "Process code (schema Name) to edit. Provide this or --uid.")]
+		HelpText = "Process code (schema Name) to edit. Provide exactly one of --name or --uid.")]
 	public string ProcessName { get; set; } = string.Empty;
 
 	[Option("uid", Required = false,
-		HelpText = "Process schema UId to edit. Provide this or --name.")]
+		HelpText = "Process schema UId to edit. Provide exactly one of --name or --uid.")]
 	public string ProcessUid { get; set; } = string.Empty;
 
 	[Option("operations", Required = false,
@@ -92,7 +92,8 @@ public sealed class ModifyBusinessProcessService(
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
 		string requestBody = new JsonObject { ["request"] = requestObject }.ToJsonString();
-		logger.WriteInfo($"Editing process '{request.ProcessName ?? request.ProcessUid}' on '{environmentName}'...");
+		string processIdentity = string.IsNullOrWhiteSpace(request.ProcessName) ? request.ProcessUid : request.ProcessName;
+		logger.WriteInfo($"Editing process '{processIdentity}' on '{environmentName}'...");
 
 		string responseBody = client.ExecutePostRequest(url, requestBody);
 		ModifyProcessResponseEnvelope envelope =
@@ -162,8 +163,12 @@ public class ModifyBusinessProcessCommand(
 				throw new InvalidOperationException("Environment name is required.");
 			}
 
-			if (string.IsNullOrWhiteSpace(options.ProcessName) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
-				throw new InvalidOperationException("One of --name or --uid is required.");
+			bool hasName = !string.IsNullOrWhiteSpace(options.ProcessName);
+			bool hasUid = !string.IsNullOrWhiteSpace(options.ProcessUid);
+			if (hasName == hasUid) {
+				throw new InvalidOperationException(hasName
+					? "Provide only one of --name or --uid, not both."
+					: "One of --name or --uid is required.");
 			}
 
 			string operationsJson = ResolveOperationsJson(options);

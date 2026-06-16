@@ -26,10 +26,12 @@ public class CreateBusinessProcessTool(
 		 OpenWorld = false),
 	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. The "
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
-		 + "({id, type:startEvent|endEvent|userTask (aliases readData/performTask), caption, userTaskName?}), "
-		 + "flows[] ({source, target} of element ids), parameters[] ({name, type, direction, caption}), and "
-		 + "mappings[] ({elementId, elementParameter, and one of processParameter|expression|value}). "
-		 + "Use list-user-tasks to discover valid userTaskName values.")]
+		 + "({id, type:startEvent|signalStart|endEvent|userTask (aliases readData/performTask), caption, "
+		 + "userTaskName?, signal?}), flows[] ({source, target} of element ids), parameters[] "
+		 + "({name, type, direction, caption}), and mappings[] ({elementId, elementParameter, and one of "
+		 + "processParameter|expression|value}). To run the process when a record is saved/added/changed, use a "
+		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "
+		 + "of a page save handler. Use list-user-tasks to discover valid userTaskName values.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("Target Environment name")] [Required] string environmentName,
 		[Description("Inline JSON process descriptor (name, caption, packageName, elements[], flows[], "

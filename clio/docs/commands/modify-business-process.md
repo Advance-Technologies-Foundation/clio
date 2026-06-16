@@ -8,8 +8,8 @@ modify-business-process - Edit an existing business process on a Creatio environ
 
 Edits an existing business process via the `ProcessDesignService` package: loads the process as an
 editable schema, applies an ordered list of operations, and saves it. Operations apply in order; any
-failure aborts the whole edit (nothing is saved). Identify the process by `--name` or `--uid`, and
-provide the operations as a JSON array file (`--operations`) or inline (`--operations-json`). Requires
+failure aborts the whole edit (nothing is saved). Identify the process by exactly one of `--name` or
+`--uid`, and provide the operations as a JSON array file (`--operations`) or inline (`--operations-json`). Requires
 the `clioprocessbuilder` package on the target environment.
 
 Phase 1 operations: `addElement`, `removeElement`, `addFlow`, `removeFlow`.
@@ -25,10 +25,10 @@ clio modify-bp --uid <GUID> --operations-json <JSON> -e <ENVIRONMENT_NAME>
 
 ```bash
 --name <CODE>
-Process code (schema Name) to edit. Provide this or --uid.
+Process code (schema Name) to edit. Provide exactly one of --name or --uid.
 
 --uid <GUID>
-Process schema UId to edit. Provide this or --name.
+Process schema UId to edit. Provide exactly one of --name or --uid.
 
 --operations <FILE>
 Path to a JSON file with the operations array. Provide this or --operations-json.

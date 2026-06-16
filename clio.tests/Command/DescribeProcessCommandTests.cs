@@ -46,7 +46,6 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
 			.Returns(new DescribeProcessResult {
-				Success = true,
 				Name = "UsrProcess_493d4c9",
 				Caption = "AI PoC Read Contact",
 				SchemaUId = "uid",
@@ -73,7 +72,7 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 	public void Execute_ShouldForwardCulture_WhenProvided() {
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
-			.Returns(new DescribeProcessResult { Success = true, Name = "UsrProcess_493d4c9" });
+			.Returns(new DescribeProcessResult { Name = "UsrProcess_493d4c9" });
 		DescribeProcessOptions options = new() {
 			Environment = "dev", ProcessCode = "UsrProcess_493d4c9", Culture = "uk-UA"
 		};

@@ -117,6 +117,24 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	}
 
 	[Test]
+	[Description("Returns a failure exit code and rejects the edit when both --name and --uid are provided.")]
+	public void Execute_ShouldFail_WhenBothNameAndUidProvided() {
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			ProcessUid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
+			OperationsJson = SampleOperations
+		});
+
+		// Assert
+		result.Should().Be(1,
+			because: "the process identity must be unambiguous — exactly one of --name or --uid is allowed");
+		_modifyBusinessProcessService.DidNotReceiveWithAnyArgs().ModifyProcess(default!, default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("not both")));
+	}
+
+	[Test]
 	[Description("Returns a failure exit code and logs guidance when neither --operations nor --operations-json is provided.")]
 	public void Execute_ShouldFail_WhenNoOperationsProvided() {
 		// Act
