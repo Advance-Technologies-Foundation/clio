@@ -30,7 +30,7 @@ public sealed class GetTelemetryConsentTool
 	/// Reads locally persisted product telemetry consent without writing analytics.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Reads locally persisted product telemetry consent (granted, denied, or unknown) without storing any telemetry event. Call it before sending any telemetry event; until consent is granted, send-telemetry stores nothing, so events sent before consent is established are silently dropped.")]
+	[Description("Reads locally persisted product telemetry consent (granted, denied, or unknown) without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active (ad-hoc clio use, scripts, or CI), do not call this tool or prompt for consent. When a consuming skill is active, call it before sending any telemetry event; until consent is granted, send-telemetry stores nothing, so events sent before consent is established are silently dropped.")]
 	public TelemetryConsentResult GetTelemetryConsent()
 	{
 		return _telemetryService.GetConsentStatus();

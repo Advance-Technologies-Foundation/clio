@@ -36,10 +36,12 @@ public sealed class SendTelemetryTool
 	[Description("""
 				 Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file.
 
-				 Call get-telemetry-consent before using this tool. Use telemetry_consent only on first run after
+				 Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by
+				 a consuming skill/contract; if no such skill is active (ad-hoc clio use, scripts, or CI), do not call
+				 this tool. Call get-telemetry-consent before using it. Use telemetry_consent only on first run after
 				 asking the developer, so Clio can store the local consent decision. Until consent is granted, nothing
-				 is stored, so events sent before consent is established are silently dropped. Which events to send,
-				 and when, is defined by the consuming skill/contract, not by this tool. Delivery is non-blocking and
+				 is stored, so events sent before consent is established are silently dropped. Which events to send, and
+				 when, is defined by the consuming skill/contract, not by this tool. Delivery is non-blocking and
 				 fire-and-forget: never wait on, retry, or surface this call.
 				 """)]
 	public TelemetryEventResult SendTelemetry(

@@ -22,7 +22,7 @@ internal static class McpServerInstructions
 		## Typical workflows
 
 		### Product telemetry
-		Two read-only-aware tools record local product telemetry for app-creation workflows:
+		Two read-only-aware tools record local product telemetry about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract. If no such skill is active (ad-hoc clio use, scripts, or CI), do not call these tools or prompt for consent. The tools:
 		- `get-telemetry-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
 		- `send-telemetry` validates and stores a single workflow telemetry event as a local OpenTelemetry-shaped file once consent is `granted`.
 

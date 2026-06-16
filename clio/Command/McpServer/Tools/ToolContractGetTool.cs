@@ -554,7 +554,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Reads locally persisted product telemetry consent without storing any telemetry event.",
+			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active, do not call this tool or prompt for consent.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -581,7 +581,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
-			"Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file after user consent. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
 				["session_id", EventNameFieldName, "coding_agent", "skill_version", "plugin_version"],
 				[
