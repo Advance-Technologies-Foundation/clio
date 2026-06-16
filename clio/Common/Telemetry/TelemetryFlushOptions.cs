@@ -46,16 +46,20 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 	internal const string EnabledEnvironmentVariable = "CLIO_TELEMETRY_ENABLED";
 
 	/// <summary>
-	/// Production OTLP/HTTP logs endpoint shipped as the built-in default so any clio installation —
-	/// fresh or updated in place — uploads product telemetry once consent is granted, without
-	/// per-machine configuration. It is the lowest-precedence endpoint source:
-	/// <c>CLIO_TELEMETRY_ENDPOINT</c> and the settings <c>telemetry.endpoint</c> still override it,
-	/// and the opt-out (<c>CLIO_TELEMETRY_ENABLED=false</c> or <c>telemetry.enabled: false</c>)
-	/// suppresses uploading entirely. Shipping the endpoint in the binary — rather than seeding the
-	/// persisted settings file, which clio neither ships nor creates with a default — keeps it a
-	/// single source of truth that a normal clio release can relocate.
+	/// THROWAWAY TEST BUILD ONLY (branch throwaway/eng-89424-insecure-private-ip): the built-in default
+	/// is pointed at the stage collector NodePort so a tester can install this build and upload with
+	/// zero configuration (consent only). It relies on the private-IP relaxation in
+	/// <see cref="IsValidEndpoint"/> to be accepted, and every flush logs the insecure-cleartext
+	/// warning. The IP is the current collector node; NodePorts open on all nodes, so any node IP
+	/// works, but this hardcoded value breaks if that node is drained — fine for throwaway testing.
+	/// On master this default is the production HTTPS collector
+	/// (<c>https://caadt-telemetry.creatio.com/v1/logs</c>). DO NOT MERGE this value to master.
+	///
+	/// It is the lowest-precedence endpoint source: <c>CLIO_TELEMETRY_ENDPOINT</c> and the settings
+	/// <c>telemetry.endpoint</c> still override it, and the opt-out
+	/// (<c>CLIO_TELEMETRY_ENABLED=false</c> or <c>telemetry.enabled: false</c>) suppresses uploading.
 	/// </summary>
-	internal const string DefaultEndpoint = "https://caadt-telemetry.creatio.com/v1/logs";
+	internal const string DefaultEndpoint = "http://10.48.12.150:31419/v1/logs";
 
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger<TelemetryFlushOptionsProvider> _logger;
