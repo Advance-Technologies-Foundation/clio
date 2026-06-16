@@ -30,7 +30,7 @@ public sealed class GetTelemetryConsentTool
 	/// Reads locally persisted product telemetry consent without writing analytics.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Reads locally persisted product telemetry consent without storing any telemetry event.")]
+	[Description("Reads locally persisted product telemetry consent (granted, denied, or unknown) without storing any telemetry event. Call it before sending any telemetry event; until consent is granted, send-telemetry stores nothing, so events sent before consent is established are silently dropped.")]
 	public TelemetryConsentResult GetTelemetryConsent()
 	{
 		return _telemetryService.GetConsentStatus();

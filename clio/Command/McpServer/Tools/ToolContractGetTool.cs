@@ -543,12 +543,12 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractDefinition BuildSendTelemetry() {
-		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted product telemetry consent.");
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
 	}
 
 	private static ToolContractDefinition BuildGetTelemetryConsent() {
 		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
-			"Use before sending the first product telemetry event to check whether telemetry consent is already stored locally.");
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
 	}
 
 	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
@@ -574,7 +574,7 @@ internal static class ToolContractCatalog {
 			[],
 			[],
 			[
-				new ToolAntiPattern("Sending session_started to check consent", "Use this read-only consent tool before any telemetry event. Do not call send-telemetry until consent is granted or the first-run answer must be persisted.")
+				new ToolAntiPattern("Sending a telemetry event before consent is established", "Use this read-only consent tool before any telemetry event. Do not call send-telemetry until consent is granted or the first-run answer must be persisted.")
 			]);
 	}
 

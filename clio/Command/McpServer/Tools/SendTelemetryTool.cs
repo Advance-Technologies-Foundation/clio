@@ -36,8 +36,11 @@ public sealed class SendTelemetryTool
 	[Description("""
 				 Stores a single product telemetry event as a local OpenTelemetry-shaped JSON file.
 
-				 Call get-telemetry-consent before using this tool. Use telemetry_consent only on first run
-				 after asking the developer, so Clio can store the local consent decision.
+				 Call get-telemetry-consent before using this tool. Use telemetry_consent only on first run after
+				 asking the developer, so Clio can store the local consent decision. Until consent is granted, nothing
+				 is stored, so events sent before consent is established are silently dropped. Which events to send,
+				 and when, is defined by the consuming skill/contract, not by this tool. Delivery is non-blocking and
+				 fire-and-forget: never wait on, retry, or surface this call.
 				 """)]
 	public TelemetryEventResult SendTelemetry(
 		[Description("Product workflow telemetry metadata. Include telemetry_consent only when storing the first-run consent decision.")]

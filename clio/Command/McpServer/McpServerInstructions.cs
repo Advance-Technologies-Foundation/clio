@@ -26,6 +26,7 @@ internal static class McpServerInstructions
 		- `get-telemetry-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
 		- `send-telemetry` validates and stores a single workflow telemetry event as a local OpenTelemetry-shaped file once consent is `granted`.
 
+		Consent gates storage: `send-telemetry` stores nothing until consent is `granted`, so establish consent before sending any event (call `get-telemetry-consent`; if `unknown`, obtain the user's decision and persist it once via `send-telemetry`); events sent earlier are silently dropped.
 		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
 		Call `get-tool-contract` for `get-telemetry-consent` and `send-telemetry` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
 		Once consent is granted, stored events are uploaded in the background automatically; no agent action is needed.
