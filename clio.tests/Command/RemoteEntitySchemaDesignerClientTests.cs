@@ -120,18 +120,18 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
-	[Description("Publish uses the build-class timeout and retryCount=0 so a slow-but-successful legacy BuildWorkspace is not mistaken for a failure and not re-issued (ENG-90403).")]
-	public void PublishConfigurationChanges_UsesBuildClassTimeout_AndZeroRetries() {
+	[Description("Publish uses the build-class timeout and a single attempt (maxAttempts=1) so a slow-but-successful legacy BuildWorkspace is not mistaken for a failure and not re-issued (ENG-90403).")]
+	public void PublishConfigurationChanges_UsesBuildClassTimeout_AndSingleAttempt() {
 		// Arrange
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest)
 			.Returns("http://local/DataService/json/SyncReply/SchemaDesignerRequest");
 		int capturedTimeout = 0;
-		int capturedRetryCount = -1;
+		int capturedMaxAttempts = -1;
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 			Arg.Any<int>())
 			.Returns(callInfo => {
 				capturedTimeout = callInfo.ArgAt<int>(2);
-				capturedRetryCount = callInfo.ArgAt<int>(3);
+				capturedMaxAttempts = callInfo.ArgAt<int>(3);
 				return "{\"success\":true}";
 			});
 
@@ -141,8 +141,8 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		capturedTimeout.Should().Be(RemoteEntitySchemaDesignerClient.PublishConfigurationTimeoutMs,
 			because: "a full server-side BuildWorkspace on a legacy instance can exceed 100s; publish must use the build-class timeout");
-		capturedRetryCount.Should().Be(0,
-			because: "the build POST is non-idempotent — retrying a timed-out build may stack concurrent compiles");
+		capturedMaxAttempts.Should().Be(1,
+			because: "publish must issue exactly one attempt and no retry — the build POST is non-idempotent and retrying a timed-out build may stack concurrent compiles");
 	}
 
 	private static bool ContainsJsonFlag(string body, string flagName) {
