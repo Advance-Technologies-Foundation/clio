@@ -161,4 +161,26 @@ public sealed class PageFileWriterTests {
 		_fileSystem.Path.GetFullPath(written.Files.MetaFile).Should().Be(_fileSystem.Path.GetFullPath(SchemaFile("meta.json")),
 			because: "the meta file path must point at the written meta.json");
 	}
+
+	[Test]
+	[TestCase("../escape")]
+	[TestCase("a/b")]
+	[TestCase("a\\b")]
+	[TestCase("..")]
+	[TestCase("with space")]
+	[TestCase("")]
+	[Description("WritePageFiles must reject a schema name carrying path separators or out-of-charset characters before performing the recursive directory delete, so the destructive write cannot escape .clio-pages/.")]
+	public void WritePageFiles_ShouldReturnFailureAndNotWrite_WhenSchemaNameIsUnsafe(string unsafeName) {
+		// Arrange
+		PageGetResponse response = CreateResponse();
+
+		// Act
+		PageGetResponse written = _writer.WritePageFiles(response, unsafeName, "dev", null, OutputDirectory);
+
+		// Assert
+		written.Success.Should().BeFalse(because: "an unsafe schema name must be refused before any filesystem mutation");
+		written.Error.Should().Contain("schema name",
+			because: "the error must explain that the schema name was rejected");
+		_fileSystem.AllFiles.Should().BeEmpty(because: "a refused write must not create any page files on disk");
+	}
 }
