@@ -37,6 +37,17 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 	internal const int CdnFetchAttempts = ComponentRegistryClient.CdnFetchAttempts;
 	internal static readonly TimeSpan CdnFetchTimeout = ComponentRegistryClient.CdnFetchTimeout;
 
+	/// <summary>
+	/// Upper bound on the synchronous CDN revalidation that runs when a <em>stale</em>
+	/// doc is found in the cache. Component documentation drives how the AI agent
+	/// writes page schemas, so freshness is preferred over latency (ENG-91135): the
+	/// caller waits up to this budget for the current doc, then falls back to the
+	/// stale copy only if the CDN cannot serve a fresh one in time. Kept short so a
+	/// slow/unreachable CDN adds at most "a few seconds" rather than the full
+	/// retry-with-backoff ceiling.
+	/// </summary>
+	internal static readonly TimeSpan StaleRevalidateBudget = TimeSpan.FromSeconds(5);
+
 	private readonly IHttpClientFactory _httpClientFactory;
 	private readonly IComponentRegistryDocsCacheStore _cacheStore;
 	private readonly ILogger<ComponentRegistryDocsClient> _logger;
@@ -69,8 +80,12 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 			return null;
 		}
 
-		// Tier 1: fresh cache → return immediately. Stale cache → still return, but
-		// schedule the network refresh after the call (no per-request blocking).
+		// Tier 1: fresh cache → return immediately. Stale cache → revalidate
+		// synchronously within a bounded budget (stale-if-error): the agent gets the
+		// CURRENT doc whenever the CDN can serve it in time, and only falls back to the
+		// stale bytes when the CDN is unreachable/too slow. This deliberately trades a
+		// few seconds of latency for documentation correctness — an outdated guide
+		// silently steers the agent into wrong page schemas (ENG-91135).
 		ComponentRegistryDocsCacheReadResult? cached =
 			await _cacheStore.TryReadAsync(version, normalisedPath, cancellationToken).ConfigureAwait(false);
 		if (cached is not null) {
@@ -81,10 +96,19 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				return Encoding.UTF8.GetString(cached.Content);
 			}
 
-			// Stale-while-revalidate: serve the stale bytes now, refresh in the background.
-			ScheduleBackgroundRefresh(version, normalisedPath);
+			// Stale: try a time-boxed synchronous CDN refresh first.
+			byte[]? revalidated = await TryRevalidateWithinBudgetAsync(version, normalisedPath, cancellationToken)
+				.ConfigureAwait(false);
+			if (revalidated is not null) {
+				_logger.LogInformation(
+					"component-registry-docs source=cdn-revalidate version={Version} path={Path} stale=true refreshed=true bytes={Bytes}",
+					version, normalisedPath, revalidated.Length);
+				return Encoding.UTF8.GetString(revalidated);
+			}
+
+			// CDN unreachable, too slow, or no longer serving the file: serve the stale copy.
 			_logger.LogInformation(
-				"component-registry-docs source=cache version={Version} path={Path} stale=true bgRefresh=scheduled",
+				"component-registry-docs source=cache version={Version} path={Path} stale=true refreshed=false reason=cdn-unavailable",
 				version, normalisedPath);
 			return Encoding.UTF8.GetString(cached.Content);
 		}
@@ -191,31 +215,26 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 		public static FetchAttemptResult TransientFailure { get; } = new(Payload: null, ShouldRetry: true);
 	}
 
-	// Per-(version, docPath) dedup of in-flight background refreshes. A single
-	// `get-component-info` call fans out into N stale doc reads; without this
-	// guard, two MCP sessions hitting the same component within seconds could
-	// schedule overlapping refreshes that race on the same cache file — review
-	// #3 on PR #599. The Lazy<Task> ensures the work runs exactly once per key
-	// while it is in flight; the entry is removed when the task completes so a
-	// future stale read after the next TTL boundary can schedule again.
-	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task>> _inFlightRefreshes
-		= new(StringComparer.Ordinal);
-
-	private void ScheduleBackgroundRefresh(string version, string normalisedDocPath) {
-		string key = $"{version}|{normalisedDocPath}";
-		Lazy<Task> lazy = _inFlightRefreshes.GetOrAdd(key, k => new Lazy<Task>(() => Task.Run(async () => {
-			try {
-				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
-				await TryFetchFromCdnAsync(version, normalisedDocPath, cts.Token).ConfigureAwait(false);
-			} catch (Exception ex) {
-				_logger.LogInformation(ex,
-					"component-registry-docs background-refresh-failed version={Version} path={Path}",
-					version, normalisedDocPath);
-			} finally {
-				_inFlightRefreshes.TryRemove(k, out Lazy<Task>? _);
-			}
-		})));
-		_ = lazy.Value;
+	/// <summary>
+	/// Runs a synchronous CDN fetch capped by <see cref="StaleRevalidateBudget"/> via a
+	/// linked <see cref="CancellationTokenSource"/>. Returns the fresh payload on success,
+	/// or <see langword="null"/> when the budget elapses, the CDN is unreachable, or the
+	/// file is no longer served — the caller then hands back the stale copy. A genuine
+	/// caller-initiated cancellation (distinguished from the internal budget timeout)
+	/// propagates instead of being swallowed.
+	/// </summary>
+	private async Task<byte[]?> TryRevalidateWithinBudgetAsync(string version, string normalisedDocPath, CancellationToken cancellationToken) {
+		using CancellationTokenSource budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		budgetCts.CancelAfter(StaleRevalidateBudget);
+		try {
+			return await TryFetchFromCdnAsync(version, normalisedDocPath, budgetCts.Token).ConfigureAwait(false);
+		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+			// The budget elapsed (not a caller cancellation) before the CDN responded.
+			_logger.LogInformation(
+				"component-registry-docs revalidate-timeout version={Version} path={Path} budgetMs={BudgetMs}",
+				version, normalisedDocPath, (int)StaleRevalidateBudget.TotalMilliseconds);
+			return null;
+		}
 	}
 
 	private static string ResolveCdnBaseUrl() {
