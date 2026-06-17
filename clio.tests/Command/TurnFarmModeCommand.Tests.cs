@@ -38,8 +38,8 @@ namespace Clio.Tests.Command
             _iisScanner = Substitute.For<IIisScanner>();
             _command = new TurnFarmModeCommand(_validator, _settingsRepository, _logger, _iisScanner);
 
-            // Set up test paths
-            _testSitePath = Path.Combine(Path.GetTempPath(), "TestSite");
+            // Unique per-test dir to avoid collisions across concurrent target frameworks
+            _testSitePath = Path.Combine(Path.GetTempPath(), "TestSite-" + Guid.NewGuid().ToString("N"));
             _testWebConfigPath = Path.Combine(_testSitePath, "Web.config");
             _testInternalWebConfigPath = Path.Combine(_testSitePath, "Terrasoft.WebApp", "Web.config");
 
