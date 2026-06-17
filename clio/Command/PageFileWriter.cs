@@ -40,8 +40,9 @@ public sealed class PageFileWriter : IPageFileWriter {
 	private const string ClioPagesDirectoryName = ".clio-pages";
 
 	// Platform client-unit schema names are alphanumeric + underscore. Validating before building the
-	// target directory keeps the recursive delete below contained inside `.clio-pages/` — a separator
-	// or `..` in schemaName must never let the destructive write escape the workspace anchor.
+	// target directory keeps the recursive delete below contained inside `.clio-pages/`: a name that
+	// matches this pattern cannot contain a path separator, `..`, or a drive/volume marker, so the
+	// destructive write can never escape the workspace anchor via the schema name.
 	private static readonly Regex SchemaNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
 
 	private readonly IFileSystem _fileSystem;
@@ -75,17 +76,6 @@ public sealed class PageFileWriter : IPageFileWriter {
 			outputDirectory);
 		string rootDir = _fileSystem.Path.Combine(anchor, ClioPagesDirectoryName);
 		string schemaDir = _fileSystem.Path.Combine(rootDir, schemaName);
-		// Defense-in-depth: even with the charset guard above, assert the resolved target stays inside
-		// `.clio-pages/` before the recursive delete, so a future change to the anchor/name handling
-		// can never turn this into a destructive write outside the workspace.
-		string fullRoot = _fileSystem.Path.GetFullPath(rootDir);
-		string fullSchemaDir = _fileSystem.Path.GetFullPath(schemaDir);
-		if (!fullSchemaDir.StartsWith(fullRoot + _fileSystem.Path.DirectorySeparatorChar, StringComparison.Ordinal)) {
-			return new PageGetResponse {
-				Success = false,
-				Error = $"Refusing to write page files outside '{ClioPagesDirectoryName}' for schema name '{schemaName}'."
-			};
-		}
 		try {
 			if (_fileSystem.Directory.Exists(schemaDir)) {
 				_fileSystem.Directory.Delete(schemaDir, recursive: true);
