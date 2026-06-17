@@ -215,10 +215,19 @@ public class PageGetCommand : Command<PageGetOptions> {
 		bool success = TryGetPage(options, out PageGetResponse response);
 		// Persist body.js/bundle.json/meta.json so a later CLI update-page can discover the
 		// conflict-detection baseline — the same workspace layout the MCP get-page tool produces.
+		// The fetched page is the primary deliverable; persisting the baseline is best-effort, so a
+		// write failure (locked body.js, read-only dir, permissions) must NOT discard a page that was
+		// successfully read from the server. Keep the fetched payload and exit 0, warning about the
+		// baseline that could not be written.
 		if (success && _pageFileWriter is not null) {
-			response = _pageFileWriter.WritePageFiles(
+			PageGetResponse written = _pageFileWriter.WritePageFiles(
 				response, options.SchemaName, options.Environment, options.Uri, options.OutputDirectory);
-			success = response.Success;
+			if (written.Success) {
+				response = written;
+			} else {
+				_logger.WriteWarning(
+					$"Page fetched, but writing the .clio-pages baseline failed: {written.Error}");
+			}
 		}
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;

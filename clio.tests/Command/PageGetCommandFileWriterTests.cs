@@ -73,6 +73,35 @@ public sealed class PageGetCommandFileWriterTests {
 	}
 
 	[Test]
+	[Description("Execute must keep the fetched page and exit 0 when get-page succeeds but the baseline write fails — the page is the primary deliverable, persisting the baseline is best-effort.")]
+	public void Execute_ShouldKeepFetchedPageAndExitZero_WhenBaselineWriteFails() {
+		// Arrange — get-page succeeds, but the file writer reports a write failure (e.g. locked body.js).
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"rows":[{"Name":"{{SchemaName}}","UId":"uid-1","PackageName":"UsrPkg","PackageUId":"pkg-1","ParentSchemaName":"BasePage"}]}""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1").Returns([
+			new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = SchemaName, PackageUId = "pkg-1", PackageName = "UsrPkg", SchemaVersion = 1, Body = Body
+			}
+		]);
+		_writer.WritePageFiles(Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new PageGetResponse { Success = false, Error = "body.js is locked" });
+		PageGetCommand command = CreateCommand(hierarchyClient);
+		PageGetOptions options = new() { SchemaName = SchemaName, Environment = "dev", OutputDirectory = "/proj" };
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a page successfully read from the server must not be discarded because its baseline could not be persisted");
+		_logger.Received(1).WriteWarning(
+			Arg.Is<string>(message => message.Contains("body.js is locked")));
+	}
+
+	[Test]
 	[Description("Execute must not write page files when get-page itself fails, and must report a non-zero exit code.")]
 	public void Execute_ShouldNotWritePageFiles_WhenGetPageFails() {
 		// Arrange — empty metadata makes TryGetPage fail before any files would be written.

@@ -103,6 +103,12 @@ explicitly. After a successful save the on-disk baseline is refreshed automatica
 consecutive updates in the same session do not false-conflict. A small race window
 between the check and the save remains (last write wins).
 
+If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
+value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
+can report a conflict against a page that has not actually changed. This edge fails safe
+(it blocks the save rather than overwriting), but if you mix the two, keep
+`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
+
 ## Synopsis
 
 ```bash
