@@ -14,6 +14,7 @@ namespace Clio.Command;
 /// </summary>
 [Verb("modify-business-process", Aliases = ["modify-bp"],
 	HelpText = "Edit an existing business process on a Creatio environment by applying a list of operations")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	[Option("name", Required = false,
 		HelpText = "Process code (schema Name) to edit. Provide exactly one of --name or --uid.")]

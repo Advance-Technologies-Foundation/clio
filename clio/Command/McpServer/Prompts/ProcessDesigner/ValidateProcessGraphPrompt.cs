@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Prompts;
+namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 
 /// <summary>
 /// Prompt that orients the agent to design a Creatio business process safely: learn the notation,
@@ -9,6 +9,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// </summary>
 [McpServerPromptType]
 [Description("Guides the agent to read the process-modeling guidance, validate a planned process graph with validate-process-graph, and only then drive the designer.")]
+[FeatureToggle("process-designer")]
 public static class ValidateProcessGraphPrompt {
 
 	/// <summary>

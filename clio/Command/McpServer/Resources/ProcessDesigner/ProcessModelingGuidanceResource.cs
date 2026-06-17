@@ -2,7 +2,7 @@ using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Resources;
+namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 
 /// <summary>
 /// Provides canonical AI-facing guidance for designing Creatio business processes (BPMN) through clio MCP:
@@ -10,6 +10,7 @@ namespace Clio.Command.McpServer.Resources;
 /// (create-business-process / modify-business-process / describe-process / list-user-tasks).
 /// </summary>
 [McpServerResourceType]
+[FeatureToggle("process-designer")]
 public sealed class ProcessModelingGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/process-modeling";

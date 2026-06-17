@@ -3,11 +3,12 @@ using System.ComponentModel.DataAnnotations;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
 /// MCP tool that edits an existing business process on a Creatio environment by applying a list of operations.
 /// </summary>
+[FeatureToggle("process-designer")]
 public class ModifyBusinessProcessTool(
 	ModifyBusinessProcessCommand command,
 	ILogger logger,

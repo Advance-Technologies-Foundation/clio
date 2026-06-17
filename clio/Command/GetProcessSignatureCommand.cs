@@ -14,6 +14,7 @@ using Newtonsoft.Json;
 /// </summary>
 [Verb("get-process-signature", Aliases = ["gps"],
 	HelpText = "Read the parameter signature (codes, types, direction) of a Creatio business process")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public class GetProcessSignatureOptions : EnvironmentOptions {
 
 	/// <summary>

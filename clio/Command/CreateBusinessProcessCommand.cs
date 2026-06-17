@@ -14,6 +14,7 @@ namespace Clio.Command;
 /// </summary>
 [Verb("create-business-process", Aliases = ["create-bp"],
 	HelpText = "Build a business process on a Creatio environment from a declarative JSON descriptor")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	[Option("descriptor", Required = false,
 		HelpText = "Path to a JSON file with the process descriptor "

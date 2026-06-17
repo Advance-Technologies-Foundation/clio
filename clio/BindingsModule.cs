@@ -44,6 +44,7 @@ using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Workspace;
 using Clio.Workspaces;
 using Clio.UserEnvironment;

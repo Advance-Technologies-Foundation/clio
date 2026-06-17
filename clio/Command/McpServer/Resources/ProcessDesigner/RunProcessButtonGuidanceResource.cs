@@ -2,13 +2,14 @@ using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Resources;
+namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 
 /// <summary>
 /// Canonical AI-facing guidance for adding a Freedom UI button that runs a business process
 /// (<c>crt.RunBusinessProcessRequest</c>) into a page schema via <c>update-page</c>.
 /// </summary>
 [McpServerResourceType]
+[FeatureToggle("process-designer")]
 public sealed class RunProcessButtonGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/run-process-button";

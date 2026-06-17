@@ -2,12 +2,13 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Prompts;
+namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 
 /// <summary>
 /// Prompt helpers for building a business process on a Creatio environment through MCP.
 /// </summary>
 [McpServerPromptType, Description("Prompts to build a business process from a declarative descriptor")]
+[FeatureToggle("process-designer")]
 public static class CreateBusinessProcessPrompt {
 
 	/// <summary>

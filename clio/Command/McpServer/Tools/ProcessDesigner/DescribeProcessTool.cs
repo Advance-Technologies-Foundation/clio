@@ -5,13 +5,14 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
 /// MCP tool surface for the <c>describe-process</c> command — reads an existing process into a
 /// structured graph the agent can narrate (the inverse of generation). Read-only, environment-sensitive.
 /// </summary>
 [McpServerToolType]
+[FeatureToggle("process-designer")]
 public sealed class DescribeProcessTool(
 	DescribeProcessCommand command,
 	ILogger logger,

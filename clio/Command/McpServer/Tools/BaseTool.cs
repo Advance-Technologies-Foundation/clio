@@ -48,48 +48,59 @@ public abstract class BaseTool<T>(
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
 		TCommand resolvedCommand;
 		try {
+			// ResolveCommand resolves the env-scoped command AND enforces this options type's
+			// [RequiresPackage] declarations against the per-call target environment. An unmet
+			// requirement surfaces as a PackageRequirementException; any other verification failure
+			// (HTTP/auth/unknown-environment) surfaces as its own exception. Both are converted to a
+			// failed result below, so the command never runs when its requirements are not satisfied.
 			resolvedCommand = ResolveCommand<TCommand>(options);
+		} catch (PackageRequirementException ex) {
+			// Surface the actionable install hint verbatim, without the exception-chain decoration.
+			return CommandExecutionResult.FromError(ex.Message);
 		} catch (Exception e) {
 			return CommandExecutionResult.FromException(e);
-		}
-
-		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path
-		// only, because [RequiresPackage] is verified against the per-call target environment. The checker
-		// is resolved from the SAME environment-scoped container the command came from (see
-		// ResolveFromCallContainer), so it queries the correct Creatio instance. Run before the execution
-		// lock so a refusal does not hold it.
-		CommandExecutionResult requirementFailure = EnforcePackageRequirements(options);
-		if (requirementFailure is not null) {
-			return requirementFailure;
 		}
 
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
 	}
 
-	// Returns a failed result when the per-call environment does not satisfy this options type's
-	// [RequiresPackage] declarations, or null when there is nothing to enforce / the requirements are met.
-	// Cheap static pre-check first: options types without [RequiresPackage] skip resolution entirely,
-	// so non-gated tools stay zero-cost and never force an environment. Nothing escapes this method.
-	private CommandExecutionResult EnforcePackageRequirements(T options) {
-		if (!RequiresPackageAttribute.IsDefinedOn(typeof(T))) {
-			return null;
-		}
-		try {
-			IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
-			checker.EnsureRequirements(options);
-			return null;
-		}
-		catch (PackageRequirementException ex) {
-			return CommandExecutionResult.FromError(ex.Message);
-		}
-		catch (Exception ex) {
-			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
-		}
+	/// <summary>
+	/// Resolves an environment-scoped command instance for the current MCP call and enforces the
+	/// options type's package requirements before returning it.
+	/// </summary>
+	/// <remarks>
+	/// Both BaseTool execution paths funnel through here — the <see cref="InternalExecute{TCommand}"/>
+	/// path and the typed-response path that calls this method directly from inside
+	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package-gated uniformly,
+	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment
+	/// failure from <see cref="ResolveFromCallContainer"/> still surfaces exactly as before), THEN the
+	/// requirement is enforced. A <see cref="PackageRequirementException"/> (unmet requirement) and any
+	/// other verification failure both propagate to the caller.
+	/// </remarks>
+	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
+		EnforcePackageRequirements(options);
+		return resolvedCommand;
 	}
 
-	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
-		ResolveFromCallContainer<TCommand>(options);
+	// Enforces this options type's [RequiresPackage] declarations against the per-call target
+	// environment. This runs for BOTH BaseTool execution paths because it lives in ResolveCommand,
+	// which both the env-SENSITIVE InternalExecute<TCommand> path and the typed-response/
+	// ExecuteWithCleanLog path call. [RequiresPackage] is verified against the per-call target
+	// environment; the checker is resolved from the SAME environment-scoped container the command
+	// came from (see ResolveFromCallContainer), so it queries the correct Creatio instance.
+	// A cheap static pre-check runs first: options types without [RequiresPackage] skip resolution
+	// entirely, so non-gated tools stay zero-cost and never force an environment. On an unmet
+	// requirement this throws PackageRequirementException; any other verification failure
+	// (e.g. GetPackages/HTTP/auth failure, unknown environment) propagates as-is.
+	private void EnforcePackageRequirements(T options) {
+		if (!RequiresPackageAttribute.IsDefinedOn(typeof(T))) {
+			return;
+		}
+		IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
+		checker.EnsureRequirements(options);
+	}
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME
 	// switch logic the command itself is resolved with. Sharing this with ResolveCommand guarantees the
@@ -130,10 +141,10 @@ public abstract class BaseTool<T>(
 
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		// Package requirements are NOT enforced here. [RequiresPackage] is verified against the per-call
-		// target environment, which only the env-SENSITIVE generic InternalExecute<TCommand> path knows
-		// about; that path runs the gate (EnforcePackageRequirements) before reaching this method. The
-		// env-INsensitive injected-command path does not carry a target environment, so a package
-		// requirement would be meaningless there.
+		// target environment, which is only known where the env-scoped command is resolved
+		// (ResolveCommand). The env-SENSITIVE paths run the gate inside ResolveCommand before reaching
+		// this method; the env-INsensitive injected-command path (InternalExecute(T) → this overload)
+		// does not carry a target environment, so a package requirement would be meaningless there.
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
 		CommandExecutionResult executionResult;
 		IReadOnlyList<LogMessage> messagesToForward;

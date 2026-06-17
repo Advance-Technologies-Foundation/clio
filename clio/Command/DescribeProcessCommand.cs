@@ -15,6 +15,7 @@ namespace Clio.Command;
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
 /// </summary>
 [Verb("describe-process", Aliases = ["dp"], HelpText = "Read an existing Creatio process and return its structured graph (elements, flows, parameters).")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public class DescribeProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) as it appears in the process designer.</summary>
