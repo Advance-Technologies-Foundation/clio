@@ -117,6 +117,32 @@ public sealed class WorkspaceSyncToolE2ETests {
 	}
 
 	[Test]
+	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
+		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
+	[AllureTag(RestoreToolName)]
+	[AllureName("Restore workspace package-requirement gate does not false-positive when cliogate is installed")]
+	[AllureDescription("Uses the real clio MCP server to restore a previously pushed package into a sandbox where cliogate is installed, proving the environment-scoped [RequiresPackage] gate lets the command through rather than refusing. The 'package absent' refusal branch is documented as a residual harness gap and covered by unit tests.")]
+	public async Task RestoreWorkspace_PackageRequirementGate_Should_Not_Refuse_When_Cliogate_Is_Installed() {
+		// Arrange
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
+		string descriptorPath = FindPackageDescriptorPath(arrangeContext.WorkspacePath, arrangeContext.PackageName);
+		string packageDirectoryPath = Directory.GetParent(descriptorPath)!.FullName;
+
+		// Act
+		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
+		DeletePackageDirectory(packageDirectoryPath);
+		WorkspaceCommandActResult restoreResult = await ActWorkspaceCommandAsync(arrangeContext, RestoreToolName, arrangeContext.WorkspacePath);
+
+		// Assert
+		AssertToolCallSucceeded(pushResult);
+		AssertCommandExitCode(pushResult, 0, "gate-pass coverage depends on push-workspace completing successfully first");
+		AssertToolCallSucceeded(restoreResult);
+		AssertCommandExitCode(restoreResult, 0,
+			"with cliogate installed the [RequiresPackage] gate must let restore-workspace through instead of refusing");
+		AssertGateDidNotRefuse(restoreResult, "cliogate");
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, lists tools, and verifies that both workspace-sync MCP endpoints are advertised as destructive.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(RestoreToolName)]
@@ -324,6 +350,19 @@ public sealed class WorkspaceSyncToolE2ETests {
 	private static void AssertWorkspaceWasNotMutated(string workspacePath) {
 		Directory.EnumerateFileSystemEntries(workspacePath).Should().BeEmpty(
 			because: "invalid environment requests must not create or modify files in the target workspace directory");
+	}
+
+	[AllureStep("Assert the package-requirement gate did not refuse the call")]
+	private static void AssertGateDidNotRefuse(WorkspaceCommandActResult actResult, string packageName) {
+		string combinedOutput = string.Join(
+			Environment.NewLine,
+			(actResult.Execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
+
+		combinedOutput.Should().NotMatchRegex(
+			$"(?is)to use this command, you need to install the {Regex.Escape(packageName)} package",
+			because: "with the required package installed the [RequiresPackage] gate must not emit its refusal message");
+		combinedOutput.Should().NotContain("Could not verify package requirements",
+			because: "with a reachable environment the gate must verify requirements cleanly rather than surfacing a verification failure");
 	}
 
 	[AllureStep("Assert discovered MCP tool is marked as destructive")]

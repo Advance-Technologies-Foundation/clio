@@ -3,6 +3,13 @@ NAME
 
 DESCRIPTION
     Opens a websocket subscription and streams messages from the selected source.
+    Log broadcasting is provided by the cliogate ATFLogService.
+
+PREREQUISITES
+    This command requires the cliogate package to be installed on the target
+    Creatio environment. If cliogate is not installed, the command displays an
+    error and exits. Install or update it with:
+        clio install-gate -e <ENVIRONMENT_NAME>
 
 SYNOPSIS
     clio listen [OPTIONS]
