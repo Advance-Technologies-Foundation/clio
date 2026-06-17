@@ -814,6 +814,191 @@ public sealed class ComponentInfoToolTests {
 			because: "the error must point operators at the documented offline override");
 	}
 
+	/// <summary>
+	/// Wrapped registry with a composite-only component (<c>crt.NextSteps</c>), a normal
+	/// component (<c>crt.ExpansionPanel</c>), and a top-level <c>composites</c> array.
+	/// Backs the composites/compositeOnly tool-surface tests.
+	/// </summary>
+	private const string CompositeRegistryJson = """
+	{
+	  "components": [
+	    {
+	      "componentType": "crt.ExpansionPanel",
+	      "category": "containers",
+	      "description": "Collapsible panel.",
+	      "container": true,
+	      "properties": {}
+	    },
+	    {
+	      "componentType": "crt.NextSteps",
+	      "category": "interactive",
+	      "description": "Next steps widget.",
+	      "compositeOnly": true,
+	      "container": false,
+	      "properties": {}
+	    }
+	  ],
+	  "composites": [
+	    {
+	      "caption": "Next steps",
+	      "description": "Expansion panel wrapping a crt.NextSteps list.",
+	      "docs": ["docs/expansion-panel-next-steps.component.md"]
+	    },
+	    {
+	      "caption": "Expanded list",
+	      "description": "Expansion panel pre-filled with a crt.DataGrid and a toolbar.",
+	      "docs": ["docs/expansion-panel-expanded-list.component.md"]
+	    }
+	  ]
+	}
+	""";
+
+	[Test]
+	[Description("List mode surfaces the top-level composites (sorted by caption) alongside components, and flags composite-only components with compositeOnly on their list item.")]
+	public async Task ComponentInfoTool_List_Should_Surface_Composites_And_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		response.Success.Should().BeTrue();
+		response.Composites.Should().NotBeNull(because: "the registry declares a top-level composites array");
+		// Composites are surfaced sorted by caption.
+		response.Composites!.Select(c => c.Caption).Should().Equal("Expanded list", "Next steps");
+		ComponentInfoListItem nextSteps = response.Items!.Single(i => i.ComponentType == "crt.NextSteps");
+		nextSteps.CompositeOnly.Should().BeTrue(because: "crt.NextSteps has no standalone toolbar presence");
+		response.Items!.Single(i => i.ComponentType == "crt.ExpansionPanel").CompositeOnly.Should().BeNull(
+			because: "a normal standalone component must not carry the flag");
+	}
+
+	[Test]
+	[Description("composite='<caption>' returns a mode:composite detail with the composite's concatenated assembly docs.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Return_Docs() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\n\nAssemble the panel.");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("composite");
+		response.Caption.Should().Be("Next steps");
+		response.Description.Should().Be("Expansion panel wrapping a crt.NextSteps list.");
+		response.Documentation.Should().Be("# Next steps\n\nAssemble the panel.");
+	}
+
+	[Test]
+	[Description("composite lookup is case-insensitive against the caption.")]
+	public async Task ComponentInfoTool_Composite_Detail_Lookup_Should_Be_Case_Insensitive() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-expanded-list.component.md", "# Expanded list");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "expanded LIST"));
+
+		response.Success.Should().BeTrue();
+		response.Caption.Should().Be("Expanded list");
+	}
+
+	[Test]
+	[Description("An unknown composite caption returns a failure that lists the known captions and points back to list mode.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Fail_With_Known_Captions_When_Unknown() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Does Not Exist"));
+
+		response.Success.Should().BeFalse();
+		response.Mode.Should().Be("composite");
+		response.Error.Should().Contain("Next steps").And.Contain("Expanded list",
+			because: "the not-found error must list the known composite captions");
+	}
+
+	[Test]
+	[Description("Detail of a composite-only component surfaces compositeOnly:true plus the actionable hint steering to the composite. Calls CreateDetailResponse directly (like the snapshot test) so the assertion targets the projection, not the version-resolution pipeline.")]
+	public void ComponentInfoTool_Detail_Should_Surface_CompositeOnly_And_Hint() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.NextSteps",
+			Description = "Next steps widget.",
+			CompositeOnly = true
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeTrue();
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty(
+			because: "a composite-only component must tell the agent not to insert it standalone");
+		response.CompositeOnlyHint.Should().Contain("composite=");
+	}
+
+	[Test]
+	[Description("CreateDetailResponse omits compositeOnly/compositeOnlyHint for a normal standalone component.")]
+	public void ComponentInfoTool_Detail_Should_Omit_CompositeOnly_For_Standalone_Component() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.ExpansionPanel",
+			Description = "Collapsible panel."
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeNull();
+		response.CompositeOnlyHint.Should().BeNull();
+	}
+
+	[Test]
+	[Description("Passing both composite and component-type is rejected as mutually exclusive.")]
+	public async Task ComponentInfoTool_Should_Reject_Both_Composite_And_ComponentType() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			new ComponentInfoArgs("crt.NextSteps", Composite: "Next steps"));
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("mutually exclusive");
+	}
+
+	[Test]
+	[Description("The registry envelope deserialises composites and compositeOnly without leaving any field on an UnmappedExtensions bucket (snapshot-safety for the new producer fields).")]
+	public void ComponentRegistry_Should_Map_Composites_And_CompositeOnly_With_No_Unmapped_Fields() {
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(CompositeRegistryJson));
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		state.Composites.Should().NotBeNull();
+		state.Composites!.Select(c => c.Caption).Should().Equal("Expanded list", "Next steps");
+		state.Composites!.Single(c => c.Caption == "Next steps").Docs.Should()
+			.ContainSingle().Which.Should().Be("docs/expansion-panel-next-steps.component.md");
+		state.Lookup["crt.NextSteps"].CompositeOnly.Should().BeTrue();
+		state.Lookup["crt.ExpansionPanel"].CompositeOnly.Should().BeNull();
+		foreach (ComponentRegistryEntry entry in state.Entries) {
+			(entry.UnmappedExtensions is null || entry.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"entry '{entry.ComponentType}' must not leave fields unmapped");
+		}
+		foreach (CompositeDefinition composite in state.Composites!) {
+			(composite.UnmappedExtensions is null || composite.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"composite '{composite.Caption}' must not leave fields unmapped");
+		}
+	}
+
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);

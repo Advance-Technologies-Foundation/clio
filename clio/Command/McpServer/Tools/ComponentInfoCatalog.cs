@@ -99,9 +99,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences) =
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences, CompositeDefinition[] composites) =
 			DeserializeEnvelope(stream, "Component registry stream");
-		return BuildState(rawEntries, globalReferences, "Component registry stream", resolvedVersion, source);
+		return BuildState(rawEntries, globalReferences, composites, "Component registry stream", resolvedVersion, source);
 	}
 
 	/// <summary>
@@ -111,11 +111,12 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
 	/// <c>null</c> global content — there is no envelope to carry it.
 	/// </summary>
-	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences) DeserializeEnvelope(
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences, CompositeDefinition[] Composites) DeserializeEnvelope(
 		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
 		ComponentRegistryEntry[] entries;
 		RegistryGlobalReferences? globalReferences = null;
+		CompositeDefinition[] composites = [];
 
 		if (document.RootElement.ValueKind == JsonValueKind.Array) {
 			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
@@ -133,6 +134,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 				?? throw new InvalidOperationException($"{sourceDescription} envelope was empty or invalid.");
 			entries = envelope.Components;
 			globalReferences = envelope.References;
+			composites = envelope.Composites ?? [];
 		} else {
 			throw new InvalidOperationException(
 				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
@@ -141,7 +143,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return (entries, globalReferences);
+		return (entries, globalReferences, composites);
 	}
 
 	/// <summary>
@@ -149,7 +151,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// entries (mobile registry has no global <c>content</c> block).
 	/// </summary>
 	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
-		(ComponentRegistryEntry[] entries, _) = DeserializeEnvelope(stream, sourceDescription);
+		(ComponentRegistryEntry[] entries, _, _) = DeserializeEnvelope(stream, sourceDescription);
 		return entries;
 	}
 
@@ -169,6 +171,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	internal static ComponentCatalogState BuildState(
 		ComponentRegistryEntry[] rawEntries,
 		RegistryGlobalReferences? globalReferences,
+		CompositeDefinition[] composites,
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) {
@@ -194,7 +197,12 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalReferences);
+		CompositeDefinition[] orderedComposites = composites
+			.Where(composite => !string.IsNullOrWhiteSpace(composite.Caption))
+			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		return new ComponentCatalogState(
+			orderedEntries, lookup, resolvedVersion, source, globalReferences, orderedComposites);
 	}
 
 	/// <summary>
@@ -208,7 +216,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) =>
-		BuildState(rawEntries, globalReferences: null, sourceDescription, resolvedVersion, source);
+		BuildState(rawEntries, globalReferences: null, composites: [], sourceDescription, resolvedVersion, source);
 }
 
 /// <summary>
@@ -304,4 +312,5 @@ public sealed record ComponentCatalogState(
 	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
 	string ResolvedVersion,
 	ComponentRegistrySource Source,
-	RegistryGlobalReferences? GlobalReferences = null);
+	RegistryGlobalReferences? GlobalReferences = null,
+	IReadOnlyList<CompositeDefinition>? Composites = null);
