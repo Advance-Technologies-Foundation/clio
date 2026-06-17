@@ -144,6 +144,9 @@ public static class SchemaValidationService
 		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
 		if (!dsAttrTypeResult.IsValid) errors.AddRange(dsAttrTypeResult.Errors);
 
+		SchemaValidationResult insertedLabelResult = ValidateMobileInsertedFieldLabels(body);
+		if (!insertedLabelResult.IsValid) errors.AddRange(insertedLabelResult.Errors);
+
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
 		warnings.AddRange(labelBindingResult.Warnings);
@@ -542,6 +545,76 @@ public static class SchemaValidationService
 				"or other valid related-column type). The binding may resolve to nothing in Mobile Designer " +
 				"(\"Item with the path … not found\").");
 		}
+	}
+
+	/// <summary>
+	/// Validates that every standard FIELD component INSERTED into a mobile page (a top-level
+	/// <c>viewConfigDiff</c> entry with <c>operation: "insert"</c> whose type is in
+	/// <see cref="StandardFieldComponentTypes"/>) declares a non-empty <c>label</c>. A mobile field renders
+	/// its caption ONLY via <c>label</c>; an inserted field without one renders blank. Only top-level inserts
+	/// are checked, so fields nested inside a list's <c>itemLayout.body</c> (which legitimately omit labels)
+	/// are not flagged, and <c>merge</c> entries (partial updates) are skipped. A field that explicitly hides
+	/// its label (<c>labelPosition: "hidden"</c>) is allowed.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when an inserted field has no label.</returns>
+	public static SchemaValidationResult ValidateMobileInsertedFieldLabels(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind != JsonValueKind.Object ||
+				!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff) ||
+				viewConfigDiff.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (!TryGetStringProperty(entry, "operation", out string operation) ||
+					!string.Equals(operation, "insert", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				string? type = GetMobileEntryType(entry);
+				if (type is null || !StandardFieldComponentTypes.Contains(type)) {
+					continue;
+				}
+				JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v) && v.ValueKind == JsonValueKind.Object
+					? v
+					: entry;
+				if (TryGetStringProperty(values, "label", out _)) {
+					continue; // label present
+				}
+				if (TryGetStringProperty(values, "labelPosition", out string labelPosition) &&
+					string.Equals(labelPosition, "hidden", StringComparison.OrdinalIgnoreCase)) {
+					continue; // label intentionally hidden
+				}
+				string fieldName = GetMobileEntryName(entry, values);
+				result.Errors.Add(
+					$"Field '{fieldName}' (type {type}) is inserted without a 'label'. Mobile fields render their " +
+					$"caption only via 'label' — set values.label (e.g. \"$Resources.Strings.{fieldName}\").");
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static string GetMobileEntryName(JsonElement entry, JsonElement values) {
+		if (TryGetStringProperty(entry, "name", out string name)) {
+			return name;
+		}
+		return TryGetStringProperty(values, "name", out string valuesName) ? valuesName : "(unnamed)";
 	}
 
 	/// <summary>

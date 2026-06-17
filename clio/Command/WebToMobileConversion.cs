@@ -89,11 +89,12 @@ public static class WebToMobileAnalysisService {
 
 		// 5. Instance-level element map (per named element: merge / insert / drop / relocate-children).
 		Dictionary<string, string> attrToDs = BuildAttrToDs(bundle);
+		Dictionary<string, string> attrToColumn = BuildAttrToColumn(bundle);
 		HashSet<string> dataSourceSet = new(dataSources, StringComparer.OrdinalIgnoreCase);
 		string primaryDs = ResolvePrimaryDs(attrToDs, dataSources);
 		JObject resources = ParseResources(bundle);
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, mobileTypes, mobileByType, rules, attrToDs, dataSourceSet, primaryDs, resources);
+			tree, map, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -518,7 +519,8 @@ public static class WebToMobileAnalysisService {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
-			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed)."
+			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
+			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is a single root merge carrying the full config). Do NOT rebuild them by hand and never copy the data-source section from an existing body — keep every attribute's type and path.");
@@ -541,6 +543,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> MobileByType,
 		WebToMobilePageConversionRules Rules,
 		IReadOnlyDictionary<string, string> AttrToDs,
+		IReadOnlyDictionary<string, string> AttrToColumn,
 		IReadOnlySet<string> DataSources,
 		string PrimaryDs,
 		JObject Resources,
@@ -558,11 +561,12 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		WebToMobilePageConversionRules rules,
 		IReadOnlyDictionary<string, string> attrToDs,
+		IReadOnlyDictionary<string, string> attrToColumn,
 		IReadOnlySet<string> dataSources,
 		string primaryDs,
 		JObject resources) {
 		var ctx = new ElementMapContext(map, mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
-			rules, attrToDs, dataSources, primaryDs, resources, RelocateTargetFor(map), []);
+			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), []);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
 		return ctx.Out;
 	}
@@ -630,10 +634,12 @@ public static class WebToMobileAnalysisService {
 
 				// 2. insert — mobile-supported container; always emitted (even if it ends up empty —
 				//    unsupported children simply drop and the user can remove an empty container).
+				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
 					ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
-					CaptionResource = ResolveCaptionResource(ctx, node, name),
+					CaptionResource = containerCaption,
+					MobileValues = BuildMobileValues(ctx, node, name, type, containerCaption),
 					Reason = "container; mobile-supported"
 				});
 				if (items is not null) {
@@ -653,10 +659,12 @@ public static class WebToMobileAnalysisService {
 				ctx.Out.Add(Drop(name, type, $"type '{type}' not in mobile registry"));
 				continue;
 			}
+			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
-				CaptionResource = ResolveCaptionResource(ctx, node, name),
+				CaptionResource = leafCaption,
+				MobileValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption),
 				Reason = "field/leaf; mobile-supported"
 			});
 		}
@@ -703,6 +711,83 @@ public static class WebToMobileAnalysisService {
 			sourceValue = ResolveResourceString(ctx.Resources, key) ?? key;
 		}
 		return new CaptionResource { Key = mobileName + "_caption", SourceValue = sourceValue };
+	}
+
+	/// <summary>
+	/// The ready-to-use mobile <c>label</c> binding for an inserted FIELD component (a mobile field renders
+	/// its caption only via <c>label</c>). Null for non-field types. Prefers the source field's caption
+	/// (<c>$Resources.Strings.&lt;name&gt;_caption</c>, registered via <paramref name="caption"/>); otherwise
+	/// falls back to the platform auto-provided column-code resource (<c>$Resources.Strings.&lt;column&gt;</c>),
+	/// or the element name when the bound column cannot be resolved.
+	/// </summary>
+	private static string ResolveFieldLabel(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
+		if (string.IsNullOrEmpty(mobileType) || !SchemaValidationService.StandardFieldComponentTypes.Contains(mobileType)) {
+			return null;
+		}
+		if (caption is not null) {
+			return "$Resources.Strings." + caption.Key;
+		}
+		string column = ResolveBoundColumn(ctx, node);
+		return "$Resources.Strings." + (column ?? mobileName);
+	}
+
+	/// <summary>
+	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: structural keys
+	/// (<c>items</c>/<c>name</c>/<c>type</c>), the web-only data-source router (<c>dataSourceName</c>), and the
+	/// value binding (<c>control</c>/<c>value</c>) — the binding is a type-specific rename (e.g. a mobile
+	/// ComboBox must bind via <c>value</c>; <c>control</c> needs <c>items</c> or it crashes) and is left to the
+	/// caller to add. Everything else the mobile component supports is carried verbatim.
+	/// </summary>
+	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
+		"items", "name", "type", "dataSourceName", "control", "value"
+	};
+
+	/// <summary>
+	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component (universal rule:
+	/// never drop a property the mobile component supports). Copy-and-prune: start from the source node,
+	/// keep every property whose name is a valid mobile property/input (per the mobile registry), drop the
+	/// rest; set <c>type</c>; for field components synthesize <c>label</c> from the caption / column. The
+	/// value binding is intentionally omitted (see <see cref="ExcludedSourceProps"/>). Returns null for an
+	/// unknown mobile type.
+	/// </summary>
+	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
+		if (string.IsNullOrEmpty(mobileType)) {
+			return null;
+		}
+		var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry)) {
+			foreach (string prop in BuildAllowedPropertyNames(entry)) {
+				allowed.Add(prop);
+			}
+		}
+		var values = new JObject { ["type"] = mobileType };
+		foreach (JProperty prop in node.Properties()) {
+			if (ExcludedSourceProps.Contains(prop.Name)) {
+				continue;
+			}
+			if (allowed.Contains(prop.Name)) {
+				values[prop.Name] = prop.Value.DeepClone();
+			}
+		}
+		string label = ResolveFieldLabel(ctx, node, mobileName, mobileType, caption);
+		if (!string.IsNullOrEmpty(label)) {
+			values["label"] = label;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch {
+			return null;
+		}
+	}
+
+	/// <summary>The bound column code of a field node: the first <c>$ref</c> that maps to a declared attribute's column.</summary>
+	private static string ResolveBoundColumn(ElementMapContext ctx, JObject node) {
+		foreach (string token in ExtractDollarRefs(node)) {
+			if (ctx.AttrToColumn.TryGetValue(token, out string column) && !string.IsNullOrEmpty(column)) {
+				return column;
+			}
+		}
+		return null;
 	}
 
 	private static string ResolveResourceString(JObject resources, string key) {
@@ -756,6 +841,30 @@ public static class WebToMobileAnalysisService {
 				if (!string.IsNullOrEmpty(path)) {
 					int dot = path.IndexOf('.');
 					map[attr.Name] = dot > 0 ? path[..dot] : path;
+				}
+			}
+		}
+		return map;
+	}
+
+	/// <summary>Maps each attribute name to its column code (the segment after the last dot of <c>modelConfig.path</c>).</summary>
+	private static Dictionary<string, string> BuildAttrToColumn(PageBundleInfo bundle) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		if (bundle.ViewModelConfig is null) {
+			return map;
+		}
+		JObject vmc;
+		try {
+			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
+		} catch {
+			return map;
+		}
+		if (vmc["attributes"] is JObject attributes) {
+			foreach (JProperty attr in attributes.Properties()) {
+				string path = (attr.Value as JObject)?["modelConfig"]?["path"]?.ToString();
+				if (!string.IsNullOrEmpty(path)) {
+					int dot = path.LastIndexOf('.');
+					map[attr.Name] = dot >= 0 ? path[(dot + 1)..] : path;
 				}
 			}
 		}

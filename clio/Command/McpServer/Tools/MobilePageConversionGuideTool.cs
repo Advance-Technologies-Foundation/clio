@@ -60,7 +60,9 @@ public sealed class MobilePageConversionGuideTool {
 		"viewModelConfigDiff (READY-TO-PASTE diffs — paste them verbatim as the page's diffs; never source the " +
 		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
-		"filtered to drop attributes of unsupported components), plus constraints and ordered nextSteps. " +
+		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
+		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding), " +
+		"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(

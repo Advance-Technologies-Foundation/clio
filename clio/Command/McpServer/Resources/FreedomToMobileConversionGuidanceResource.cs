@@ -78,11 +78,17 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     FeedTabContainer→FeedContainer). REUSE the existing mobileName; do NOT insert it. (Insert
 			     vs merge is the #1 mistake — the template already contains these elements.)
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
+			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
+			     carries the type and EVERY source property the mobile component supports — never drop any of
+			     them. Then add ONLY what mobileValues deliberately leaves out:
+			       • the value binding (control, or value for lookups) — type-specific, so it is not prebuilt;
+			       • for a structural mapping (grid -> crt.List), itemLayout.body — build it from the
+			         mobileContracts example.
 			     If captionResource is present, register key = sourceValue with update-page `resources`
-			     (the key follows "<MobileElementName>_caption"). Build values from the matching
-			     mobileContracts entry (allowedProperties / designerDefaults / example); call
-			     get-component-info (schema-type "mobile") only when you need more than the inline contract.
-			     For structural mappings (grid -> crt.List), build itemLayout.body from the contract example.
+			     (the key follows "<MobileElementName>_caption"). Consult mobileContracts / get-component-info
+			     (schema-type "mobile") only for those not-prebuilt parts. validate-page is the backstop — it
+			     rejects an insert that drops a required property (e.g. a field caption, or a lookup-path
+			     attribute's type) and update-page refuses to save.
 			   - relocate-children — do NOT recreate this container; its children are placed in parentName
 			     instead (each child has its own entry whose parentName already points there).
 			   - drop — skip the element entirely (reason explains why: unsupported type or multi-data-source).
@@ -130,8 +136,10 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  is forthcoming — flag any custom converter for manual review.
 			- guide.modelConfig / guide.viewModelConfig are the same data in full-object form, for reference.
 
-			CHECKLIST before validate-page: verify every data-source attribute whose "path" contains a "."
-			still has its "type". (validate-page now also flags this as an error and update-page blocks the save.)
+			CHECKLIST before validate-page: confirm no insert dropped a property the mobile component supports
+			(you pasted mobileValues verbatim). validate-page enforces the critical ones — a data-source
+			attribute whose "path" contains a "." must keep its "type", and an inserted field must keep its
+			caption ("label"); both are errors that block update-page.
 
 			─────────────────────────────────────────────────────────────
 			HARD MOBILE RULES (see also get-guidance `mobile-page-modification`)
@@ -143,6 +151,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  review and recreate the supported ones manually.
 			- One data source per page. If the web page used several (see guide.dataSources), keep only
 			  the primary one.
+			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
+			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
+			  registry) — paste it verbatim and add only the value binding. validate-page is the backstop and
+			  rejects an insert that drops a required property (e.g. a field's caption, or a lookup-path
+			  attribute's type), and update-page blocks the save.
 			- Mobile layout is a simplified vertical flow; complex multi-column desktop layout will likely
 			  need manual adaptation in the designer.
 

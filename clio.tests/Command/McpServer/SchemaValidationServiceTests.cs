@@ -6092,4 +6092,115 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	#endregion
+
+	#region ValidateMobileInsertedFieldLabels
+
+	[Test]
+	[Description("A field component inserted without a 'label' is flagged (mobile renders the caption only via label).")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasNoLabel_ReturnsError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().ContainSingle(e => e.Contains("LeadName") && e.Contains("label"));
+	}
+
+	[Test]
+	[Description("A field inserted with a non-empty 'label' passes.")]
+	public void ValidateMobileInsertedFieldLabels_WhenInsertedFieldHasLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "label": "$Resources.Strings.LeadName" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue();
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A 'merge' (partial update) of a field without a label is allowed — only inserts must carry a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenMergeFieldHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "merge", "name": "LeadName",
+		                    "values": { "type": "crt.Input", "visible": false } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "merges are partial updates and may legitimately omit label");
+	}
+
+	[Test]
+	[Description("A non-field component inserted without a label is not flagged.")]
+	public void ValidateMobileInsertedFieldLabels_WhenNonFieldInsertHasNoLabel_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "Tabs", "parentName": "MainContainer",
+		                    "values": { "type": "crt.TabContainer" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "only standard field components require a label");
+	}
+
+	[Test]
+	[Description("A field that explicitly hides its label (labelPosition: hidden) is allowed without a label.")]
+	public void ValidateMobileInsertedFieldLabels_WhenLabelHidden_ReturnsValid() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName", "labelPosition": "hidden" } }
+		                ]
+		              }
+		              """;
+
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileInsertedFieldLabels(body);
+
+		result.IsValid.Should().BeTrue(because: "labelPosition 'hidden' intentionally suppresses the label");
+	}
+
+	[Test]
+	[Description("Wiring: a labelless inserted field lands in ValidateMobilePage's blocking errors list.")]
+	public void ValidateMobilePage_WhenInsertedFieldHasNoLabel_AddsBlockingError() {
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  { "operation": "insert", "name": "LeadName", "parentName": "MainContainer",
+		                    "values": { "type": "crt.Input", "control": "$LeadName" } }
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		errors.Should().Contain(e => e.Contains("LeadName") && e.Contains("label"));
+	}
+
+	#endregion
 }

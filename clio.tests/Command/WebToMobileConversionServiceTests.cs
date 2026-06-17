@@ -500,4 +500,50 @@ public sealed class WebToMobileConversionServiceTests {
 		vop["operation"]!.GetValue<string>().Should().Be("merge");
 		vop["values"]!["attributes"]!["QualifiedContactJobTitle"].Should().NotBeNull();
 	}
+
+	[Test]
+	[Description("insert mobileValues carries the type, the field label, and every source property the mobile component supports; web-only props and the value binding are not carried.")]
+	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "LeadName", "type": "crt.Input", "caption": "$Resources.Strings.LeadName_caption",
+				  "control": "$LeadName", "readonly": "$IsReadonly", "placeholder": "Enter name", "usrWebOnly": "x" },
+				{ "name": "JobTitle", "type": "crt.Input", "value": "$QualifiedContactJobTitle" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "QualifiedContactJobTitle": { "modelConfig": { "path": "PDS.JobTitle" } } } }
+			""",
+			resourcesJson: """
+			{ "LeadName_caption": { "en-US": "Lead name" } }
+			""");
+		var crtInput = new ComponentRegistryEntry {
+			ComponentType = "crt.Input",
+			Inputs = new Dictionary<string, JsonElement> {
+				["label"] = JsonSerializer.SerializeToElement(new { }),
+				["readonly"] = JsonSerializer.SerializeToElement(new { }),
+				["placeholder"] = JsonSerializer.SerializeToElement(new { }),
+				["control"] = JsonSerializer.SerializeToElement(new { })
+			}
+		};
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.Input"] = crtInput
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)), mobileByType: mobileByType);
+
+		JsonObject leadVals = Element(guide, "LeadName").MobileValues!.AsObject();
+		leadVals["type"]!.GetValue<string>().Should().Be("crt.Input");
+		// Caption present → label references the registered <name>_caption resource.
+		leadVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.LeadName_caption");
+		// Every source property the mobile component supports is carried verbatim …
+		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is a supported mobile input");
+		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is a supported mobile input");
+		// … web-only props are pruned, and the value binding is intentionally left out.
+		leadVals.ContainsKey("usrWebOnly").Should().BeFalse(because: "not a mobile property");
+		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
+
+		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
+		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
+	}
 }

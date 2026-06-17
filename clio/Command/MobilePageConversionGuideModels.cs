@@ -136,6 +136,18 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public CaptionResource CaptionResource { get; init; }
 
+	/// <summary>
+	/// For an <c>insert</c>: the prebuilt, ready-to-paste mobile component <c>values</c>. It carries the
+	/// component <c>type</c> and EVERY source property the mobile component supports (per the mobile
+	/// registry) — copied verbatim, with only mobile-unsupported properties pruned. Paste it as the inserted
+	/// component's <c>values</c> WITHOUT dropping anything; then add ONLY the value binding (e.g.
+	/// <c>control</c>, or <c>value</c> for lookups), which is type-specific and intentionally left out. Null
+	/// for non-insert operations.
+	/// </summary>
+	[JsonPropertyName("mobileValues")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode MobileValues { get; init; }
+
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Reason { get; init; }
