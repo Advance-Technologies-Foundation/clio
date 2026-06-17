@@ -26,9 +26,8 @@ public sealed class AnalyticsWidgetsGuidanceResource {
 		       clio MCP analytics-widgets guide
 
 		       Add and arrange Creatio Freedom UI analytical widgets (metrics/indicators and charts) so they look
-		       native — matching Creatio's own dashboards (Agent 360 View, Case intelligence, Service command
-		       center). It LEADS when the task is about placing widgets; for surrounding page structure follow
-		       get-guidance name=page-modification.
+		       native and consistent with Creatio's standard analytics dashboards. This guide LEADS when the task
+		       is about placing widgets; for surrounding page structure follow get-guidance name=page-modification.
 
 		       This guide is a POINTER. The authoritative detail lives in two existing guides — read them, do not
 		       expect their content copied here:

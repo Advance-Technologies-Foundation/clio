@@ -43,7 +43,7 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. If any page adds, edits, or filters analytics widgets (metrics, charts, dashboards), FIRST call get-component-info for crt.IndicatorWidget (read resolvedFrom), then call get-guidance with name dashboards, indicator-widget, and analytics-widgets.")]
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,

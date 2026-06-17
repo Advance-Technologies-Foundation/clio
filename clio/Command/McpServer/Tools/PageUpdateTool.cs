@@ -49,8 +49,7 @@ public sealed class PageUpdateTool(
 			"the process with get-process-signature FIRST — parameter keys must be the process parameter " +
 			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
 			"unknown ones. " +
-			"If the page adds, edits, or filters analytics widgets (metrics, charts, dashboards), FIRST call get-component-info for crt.IndicatorWidget (read resolvedFrom), then call get-guidance with name dashboards, indicator-widget, and analytics-widgets. " +
-				"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
+			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageUpdateArgs args,

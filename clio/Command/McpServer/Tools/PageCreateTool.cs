@@ -18,8 +18,7 @@ public sealed class PageCreateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more. " +
-		"If the page adds, edits, or filters analytics widgets (metrics, charts, dashboards), FIRST call get-component-info for crt.IndicatorWidget (read resolvedFrom), then call get-guidance with name dashboards, indicator-widget, and analytics-widgets.")]
+		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
 		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageCreateArgs args) {

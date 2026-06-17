@@ -198,29 +198,42 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Confirms the page tools trigger analytics guidance (get-component-info + dashboards + indicator-widget + analytics-widgets) on the description channel.")]
-	public void PageTools_ShouldTriggerAnalyticsGuidance_WhenDescriptionInspected() {
+	[Description("Analytics routing is centralized in the page-modification GATE (scalable), not hardcoded into the general page tool descriptions; page write/read tools delegate to that checklist.")]
+	public async Task AnalyticsRouting_ShouldLiveInPageModificationGate_NotInGeneralToolDescriptions() {
 		// Arrange
-		string[] descriptions = [
+		string[] allPageTools = [
 			ToolDescription<PageCreateTool>(),
 			ToolDescription<PageUpdateTool>(),
 			ToolDescription<PageSyncTool>(),
 			ToolDescription<PageGetTool>()
 		];
+		string[] dispatcherTools = [
+			ToolDescription<PageUpdateTool>(),
+			ToolDescription<PageSyncTool>(),
+			ToolDescription<PageGetTool>()
+		];
 
-		// Assert
-		foreach (string description in descriptions) {
-			description.Should().Contain("get-component-info",
-				because: "the analytics clause must close the version-check chain on the guaranteed description channel");
-			description.Should().Contain("crt.IndicatorWidget",
-				because: "the analytics clause names the component whose contract must be resolved before authoring");
-			description.Should().Contain("dashboards",
-				because: "page tools must route dashboard layout work to the dashboards guide");
-			description.Should().Contain("indicator-widget",
-				because: "page tools must route metric authoring to the indicator-widget guide");
-			description.Should().Contain("analytics-widgets",
-				because: "page tools must route widget placement to the analytics-widgets guide");
+		// Assert: general tools must NOT bake in specific component types or widget-guide lists
+		foreach (string description in allPageTools) {
+			description.Should().NotContain("crt.IndicatorWidget",
+				because: "a specific component type must not live in a general page tool description (not scalable, truncation-prone)");
+			description.Should().NotContain("analytics-widgets",
+				because: "analytics routing belongs in the page-modification GATE, not duplicated across every general tool description");
 		}
+
+		// Assert: page write/read tools delegate to the stable page-modification pre-edit checklist
+		foreach (string description in dispatcherTools) {
+			description.Should().Contain("page-modification",
+				because: "page write/read tools must route body work through the page-modification pre-edit checklist (the dispatcher)");
+		}
+
+		// Assert: the page-modification GATE is what routes dashboard/analytics work to the widget guides
+		GuidanceGetTool tool = new();
+		GuidanceGetResponse pageMod = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+		pageMod.Article!.Text.Should().Contain("dashboards",
+			because: "the page-modification GATE must dispatch dashboard work to the dashboards guide");
+		pageMod.Article.Text.Should().Contain("analytics-widgets",
+			because: "the page-modification GATE must make the analytics-widgets guide reachable from page work");
 	}
 
 	[Test]

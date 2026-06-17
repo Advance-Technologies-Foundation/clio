@@ -13,7 +13,7 @@ internal static class McpServerInstructions
 		clio is the CLI + MCP server for the Creatio low-code platform (environments, packages, schemas, apps).
 		Most tools need a registered environment-name (list-environments / reg-web-app). Read docs://help/command/{name} for any command.
 
-		## Non-negotiable rules (apply even if the rest is truncated)
+		## Core rules (best-effort orientation; each is ALSO enforced on a guaranteed channel: the tool-result note, server-side validation, or the Destructive flag. They hold even if a client truncates or drops this text)
 		- compile-creatio is NOT needed after create-page/update-page/create-entity-schema/update-entity-schema/create-lookup/create-data-binding. It IS needed only for C# schemas (Source code, SqlScript, process code) and after push-workspace carrying those. Never compile or restart "just in case".
 		- Long-running tools (create-app, create-app-section, update-app-section, get-app-info) stream progress; a progress notification is NOT a timeout. Do not cancel or retry; read state with get-app-info / list-app-sections first.
 		- Captions use the connected user's profile culture: call get-user-culture once per session (re-detect when the environment changes) and reuse it. The en-US entry must hold English text; a non-Latin caption under en-US is rejected. If it fails, ASK the user; never assume the host locale.
