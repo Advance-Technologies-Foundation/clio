@@ -4056,3 +4056,10 @@ Decision: (1) RelatedListGuidanceResource — dropped the now-inaccurate "NO ext
 Discovery: Reviewer threads are HUMAN-authored, so replied but did NOT resolve (skill: leave human threads for the human). Re-request review / merge / Jira deferred — autonomous run, needs Alex's confirmation.
 Files: clio/Command/McpServer/Resources/RelatedListGuidanceResource.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Inline-add guidance now states the FK-column requirement so agents stop emitting "+ New" grids whose rows can't save; the page-schema-handlers note is now e2e-asserted.
+
+## 2026-06-17 17:35 – PR #729 (ENG-91135) driven to green
+Context: make-pr-green close-out for #ENG-91135 sync-revalidate stale component-doc cache.
+Decision: merged master (append-only .codex/workspace-diary.md conflict kept both sides); fixed sole new Sonar issue S6667 in ComponentRegistryDocsClient.cs revalidate-timeout catch (pass ex to logger).
+Discovery: post-merge CI red was TurnFarmModeCommandTests flaky (shared Path.GetTempPath()/TestSite Windows-runner race, ENG-91317-documented); passed clean on rerun.
+Files: clio/Command/McpServer/Tools/ComponentRegistryDocsClient.cs, .codex/workspace-diary.md
+Impact: PR MERGEABLE/CLEAN, Sonar 0, CI green. Confirms rerun is the right move for TurnFarmMode flakes, not a code fix.
