@@ -130,7 +130,8 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 
 	public BaseResponse PublishConfigurationChanges(RemoteCommandOptions options) {
 		// Build POST is non-idempotent: retrying a timed-out build may stack concurrent full compiles.
-		// Use the build-class timeout and retryCount=0 regardless of the command-level defaults.
+		// One attempt, no retries (maxAttempts: 1), regardless of the command-level defaults. The value is
+		// the total attempt count (minimum 1), so 1 issues exactly one request with no retry.
 		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
 			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
 			new SchemaDesignerRequestDto {
@@ -138,7 +139,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 				BuildChangedConfiguration = true
 			},
 			PublishConfigurationTimeoutMs,
-			retryCount: 0,
+			maxAttempts: 1,
 			options.RetryDelay,
 			"PublishConfigurationChanges");
 	}
@@ -232,16 +233,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string methodName)
 		where TRequest : class
 		where TResponse : BaseResponse {
-		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.RetryCount, options.RetryDelay,
+		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.MaxAttempts, options.RetryDelay,
 			methodName);
 	}
 
-	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int retryCount,
+	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int maxAttempts,
 		int retryDelay, string methodName)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, retryCount, retryDelay);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, maxAttempts, retryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
@@ -251,7 +252,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay);
 		if (IsHtmlResponse(rawResponse)) {
 			return null;

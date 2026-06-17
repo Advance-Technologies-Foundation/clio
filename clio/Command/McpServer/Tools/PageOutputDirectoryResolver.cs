@@ -1,7 +1,7 @@
 using System;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command;
 
 /// <summary>
 /// Resolves the anchor directory under which <c>get-page</c> / <c>sync-pages</c> write their

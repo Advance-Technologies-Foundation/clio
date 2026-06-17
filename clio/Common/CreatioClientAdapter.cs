@@ -115,33 +115,33 @@ public class CreatioClientAdapter : IApplicationClient{
 	}
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1) {
+		int maxAttempts = 1, int delaySec = 1) {
 		return _reauthExecutor.Execute(
-			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
-	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int retryCount = 1,
+	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1,
 		int delaySec = 1) {
 		return _reauthExecutor.Execute(
-			() => Client.ExecuteGetRequest(url, requestTimeout, retryCount, delaySec),
+			() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1) {
+		int maxAttempts = 1, int delaySec = 1) {
 		return _reauthExecutor.Execute(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1)
+		int maxAttempts = 1, int delaySec = 1)
 		where T : BaseResponse, new() {
 		// Re-auth detection runs against the raw body so an expired session cannot reach
 		// the JSON deserializer (which would throw on the HTML login page).
 		string response = _reauthExecutor.Execute(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
 		// If the retry also returned the session-expired HTML page, the JSON deserializer
 		// below would surface the same opaque "Invalid response format" symptom that
@@ -156,9 +156,9 @@ public class CreatioClientAdapter : IApplicationClient{
 	}
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
-		int retryCount = 1, int delaySec = 1) {
+		int maxAttempts = 1, int delaySec = 1) {
 		return _reauthExecutor.Execute(
-			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, retryCount, delaySec),
+			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
 			ReauthExecutor.IsSessionExpiredResponse);
 	}
 

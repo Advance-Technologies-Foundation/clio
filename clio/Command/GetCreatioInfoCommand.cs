@@ -97,7 +97,7 @@ namespace Clio.Command
 			try {
 				string url = RootPath + CreatioServicePaths.GetApplicationInfo;
 				string response = ApplicationClient.ExecutePostRequest(
-					url, "{}", options.TimeOut, options.RetryCount, options.RetryDelay);
+					url, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
 				JToken sysValues = JObject.Parse(response)["applicationInfo"]?["sysValues"];
 				if (sysValues is null){
 					Logger.WriteError(

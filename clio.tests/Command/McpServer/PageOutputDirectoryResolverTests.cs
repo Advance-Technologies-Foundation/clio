@@ -1,5 +1,5 @@
 using System.IO.Abstractions.TestingHelpers;
-using Clio.Command.McpServer.Tools;
+using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
 
