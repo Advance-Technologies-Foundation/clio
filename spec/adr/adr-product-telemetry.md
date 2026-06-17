@@ -5,8 +5,7 @@
 - **Feature:** `product-telemetry`
 - **Jira:** [ENG-89424](https://creatio.atlassian.net/browse/ENG-89424) — Product Metrics for AI-Driven App Creation Agent
 - **Related:** [ISEC-9898](https://creatio.atlassian.net/browse/ISEC-9898) (security review); CAADT-side
-  contract + ingestion ADR in `creatio-ai-app-development-toolkit`
-  (`context/product-telemetry.md`, `.architecture/adrs/ADR-caadt-product-telemetry-ingestion.md`).
+  contract in `creatio-ai-app-development-toolkit` (`context/product-telemetry.md`).
 
 ---
 
@@ -100,7 +99,7 @@ misread as confirmed delivery.
 ### 7. Privacy / value-level guards
 Only an allow-listed set of scalar attributes is stored (`schema_version`, `session_id`,
 `event_name`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random
-`installation_id`, `skill_version`, `plugin_version`, `event_id`, optional `duration_ms` and
+`installation_id`, `plugin_version`, `event_id`, optional `duration_ms` and
 `duration_since_session_start_ms`). Unknown fields are rejected; agent-supplied free strings are
 length-bounded and `session_id` is shape-checked, as defense in depth against oversized or
 PII-shaped values. No prompts, secrets, tokens, customer data, or generated content are collected.

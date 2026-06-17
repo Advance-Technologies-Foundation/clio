@@ -331,7 +331,7 @@ public sealed class TelemetryFlushServiceTests
 		// Arrange: write through the real store so the on-disk shape is authoritative, not hand-built.
 		TelemetryService store = new(new System.IO.Abstractions.FileSystem(), _telemetryHome,
 			new MutableTimeProvider(BaseTime));
-		store.Send(new TelemetryEventRequest("sess-roundtrip", "business_plan_generated", "Codex", "0.1.0", "0.2.0")
+		store.Send(new TelemetryEventRequest("sess-roundtrip", "business_plan_generated", "Codex", "0.2.0")
 			with { TelemetryConsent = "granted" });
 		FakeHttpHandler handler = new();
 		TelemetryFlushService service = CreateService(handler);

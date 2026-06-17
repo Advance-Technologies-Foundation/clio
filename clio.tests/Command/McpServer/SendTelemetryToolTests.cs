@@ -559,7 +559,6 @@ public sealed class SendTelemetryToolTests
 			SessionId: "018f6e4a-0000-7000-9000-000000000001",
 			EventName: eventName,
 			CodingAgent: "Codex",
-			SkillVersion: "0.1.0",
 			PluginVersion: "0.1.0");
 
 	private static TelemetryEventRequest CreateRequestWithUnsupportedPrompt() =>

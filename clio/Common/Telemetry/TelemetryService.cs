@@ -229,7 +229,6 @@ public sealed class TelemetryService : ITelemetryService
 	private static IReadOnlyList<(string name, string value)> BoundedFields(TelemetryEventRequest request) =>
 	[
 		("coding_agent", request.CodingAgent),
-		("skill_version", request.SkillVersion),
 		("plugin_version", request.PluginVersion)
 	];
 
@@ -244,7 +243,6 @@ public sealed class TelemetryService : ITelemetryService
 		("session_id", request.SessionId),
 		("event_name", request.EventName),
 		("coding_agent", request.CodingAgent),
-		("skill_version", request.SkillVersion),
 		("plugin_version", request.PluginVersion)
 	];
 
@@ -288,7 +286,6 @@ public sealed class TelemetryService : ITelemetryService
 			StringAttribute("clio_version", GetClioVersion()),
 			StringAttribute("coding_agent", request.CodingAgent),
 			StringAttribute("installation_id", GetOrCreateInstallationId()),
-			StringAttribute("skill_version", request.SkillVersion),
 			StringAttribute("plugin_version", request.PluginVersion),
 			StringAttribute("event_id", eventId)
 		];

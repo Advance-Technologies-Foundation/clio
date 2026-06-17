@@ -11,7 +11,6 @@ public sealed record TelemetryEventRequest(
 	[property: JsonPropertyName("session_id")] string SessionId,
 	[property: JsonPropertyName("event_name")] string EventName,
 	[property: JsonPropertyName("coding_agent")] string CodingAgent,
-	[property: JsonPropertyName("skill_version")] string SkillVersion,
 	[property: JsonPropertyName("plugin_version")] string PluginVersion,
 	[property: JsonPropertyName("duration_ms")] long? DurationMs = null,
 	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent = null

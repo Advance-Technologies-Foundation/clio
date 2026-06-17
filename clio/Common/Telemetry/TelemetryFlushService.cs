@@ -283,8 +283,9 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		new(value?.StringValue, value?.IntValue?.ToString(CultureInfo.InvariantCulture));
 
 	// Surface the event name on the OTLP LogRecord's dedicated event-name field so the
-	// ClickHouse EventName column is populated. Canonical source is the "event_name" attribute;
-	// fall back to the body, which the telemetry service always sets to the event name.
+	// ClickHouse EventName column is populated. The canonical source is the "event_name"
+	// attribute, with a fallback to the body (the telemetry service always sets the body
+	// to the event name).
 	private static string EventNameFor(OpenTelemetryLogEvent logEvent) =>
 		logEvent.Attributes?.FirstOrDefault(attribute => attribute.Key == "event_name")?.Value?.StringValue
 		?? logEvent.Body?.StringValue;

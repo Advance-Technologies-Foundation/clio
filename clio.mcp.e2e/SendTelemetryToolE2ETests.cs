@@ -52,7 +52,6 @@ public sealed class SendTelemetryToolE2ETests
 						session_id = sessionId,
 						event_name = "session_started",
 						coding_agent = "Codex",
-						skill_version = "0.1.0",
 						plugin_version = "0.1.0",
 						telemetry_consent = "granted"
 					}
