@@ -228,9 +228,9 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 		budgetCts.CancelAfter(StaleRevalidateBudget);
 		try {
 			return await TryFetchFromCdnAsync(version, normalisedDocPath, budgetCts.Token).ConfigureAwait(false);
-		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+		} catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested) {
 			// The budget elapsed (not a caller cancellation) before the CDN responded.
-			_logger.LogInformation(
+			_logger.LogInformation(ex,
 				"component-registry-docs revalidate-timeout version={Version} path={Path} budgetMs={BudgetMs}",
 				version, normalisedDocPath, (int)StaleRevalidateBudget.TotalMilliseconds);
 			return null;
