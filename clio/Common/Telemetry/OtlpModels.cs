@@ -36,7 +36,11 @@ internal sealed record OtlpLogRecord(
 	[property: JsonPropertyName("severityNumber")] int? SeverityNumber,
 	[property: JsonPropertyName("severityText")] string SeverityText,
 	[property: JsonPropertyName("body")] OtlpAnyValue Body,
-	[property: JsonPropertyName("attributes")] IReadOnlyList<OtlpKeyValue> Attributes
+	[property: JsonPropertyName("attributes")] IReadOnlyList<OtlpKeyValue> Attributes,
+	// OTLP LogRecord.event_name (proto field 12). Set so the collector's ClickHouse exporter
+	// populates the EventName column from the dedicated field; the name also stays in
+	// attributes["event_name"] (the edge collector's filter keys on that attribute).
+	[property: JsonPropertyName("eventName")] string EventName = null
 );
 
 internal sealed record OtlpKeyValue(

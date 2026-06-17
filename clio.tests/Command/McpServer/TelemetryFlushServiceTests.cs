@@ -112,6 +112,8 @@ public sealed class TelemetryFlushServiceTests
 			because: "severityNumber (9 = INFO) must accompany severityText so backends can classify severity numerically");
 		logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
 			because: "the stored snake_case body must map onto the camelCase OTLP body");
+		logRecord.GetProperty("eventName").GetString().Should().Be("session_started",
+			because: "the OTLP LogRecord event-name field must be set so the ClickHouse EventName column is populated; otherwise the name lives only in attributes['event_name']/body and a consumer keying on EventName gets empty results");
 		JsonElement durationAttribute = logRecord.GetProperty("attributes").EnumerateArray()
 			.Single(attribute => attribute.GetProperty("key").GetString() == "duration_ms");
 		durationAttribute.GetProperty("value").GetProperty("intValue").ValueKind.Should().Be(JsonValueKind.String,

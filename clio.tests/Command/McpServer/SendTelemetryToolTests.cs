@@ -472,6 +472,25 @@ public sealed class SendTelemetryToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a negative client-supplied duration_ms before persisting any event.")]
+	public void TelemetryService_Should_Reject_Negative_Duration()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryEventResult result = service.Send(
+			CreateRequest() with { DurationMs = -1, TelemetryConsent = "granted" });
+
+		// Assert
+		result.Error!.Code.Should().Be("invalid-duration",
+			because: "a client-supplied duration_ms must be non-negative, matching the inferred path's Math.Max(0, ...) clamp");
+		EventFiles().Should().BeEmpty(
+			because: "an invalid duration must be rejected before persistence");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stores distinct session-state files for session ids a lossy sanitizer would have collapsed together.")]
 	public void TelemetryService_Should_Not_Collide_Session_State_For_Similar_Session_Ids()
 	{

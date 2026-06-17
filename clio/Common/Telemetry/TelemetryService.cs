@@ -198,6 +198,13 @@ public sealed class TelemetryService : ITelemetryService
 		if (!string.IsNullOrWhiteSpace(request.TelemetryConsent) && !AllowedConsents.Contains(request.TelemetryConsent)) {
 			return Invalid("unknown-consent", $"Unsupported telemetry_consent '{request.TelemetryConsent}'.");
 		}
+		// A client-supplied duration must be non-negative, matching the non-negative clamp the
+		// inferred path applies (InferDurationMs uses Math.Max(0, ...)). Without this guard a
+		// negative value supplied by a buggy/hostile client would be stored verbatim, since the
+		// inference clamp is skipped whenever DurationMs is provided.
+		if (request.DurationMs.HasValue && request.DurationMs.Value < 0) {
+			return Invalid("invalid-duration", "duration_ms must be a non-negative value when supplied.");
+		}
 		return new TelemetryEventResult(true, "valid");
 	}
 
