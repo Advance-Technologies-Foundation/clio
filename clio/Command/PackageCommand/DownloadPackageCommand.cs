@@ -1,5 +1,6 @@
 ﻿namespace Clio.Command.PackageCommand
 {
+	using Clio.Common;
 	using CommandLine;
 
 	[Verb("pull-pkg", Aliases = new string[] { "download" }, HelpText = "Download package from a web application")]
@@ -36,6 +37,7 @@
 
 		[Option('a', "async", Required = false,
 			HelpText = "Async download file.", Default = false)]
+		[RequiresPackage("cliogate", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 		public bool Async {
 			get; set;
 		}

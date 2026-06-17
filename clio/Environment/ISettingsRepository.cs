@@ -186,5 +186,39 @@ namespace Clio.UserEnvironment
 		/// Persists the AutoUpdate setting.
 		/// </summary>
 		void SetAutoupdate(bool value);
+
+		/// <summary>
+		/// Determines whether the named feature flag is enabled.
+		/// </summary>
+		/// <param name="featureName">
+		/// The feature key. A <c>null</c> or whitespace value is treated as disabled. Feature keys are
+		/// matched case-insensitively (<see cref="System.StringComparer.OrdinalIgnoreCase"/>), so
+		/// <c>AiAssist</c>, <c>aiassist</c>, and <c>AIASSIST</c> all resolve to the same flag.
+		/// </param>
+		/// <returns>
+		/// <c>true</c> when the flag exists and is set to <c>true</c>; otherwise <c>false</c>
+		/// (absent key, <c>false</c> value, or an empty/whitespace name).
+		/// </returns>
+		bool IsFeatureEnabled(string featureName);
+
+		/// <summary>
+		/// Creates or updates the named feature flag and persists the change.
+		/// </summary>
+		/// <param name="featureName">
+		/// The feature key. Keys are matched case-insensitively, so re-setting an existing flag with
+		/// a different casing updates the same entry rather than creating a duplicate. The key is
+		/// stored as supplied on first write.
+		/// </param>
+		/// <param name="enabled">Whether the feature should be enabled.</param>
+		/// <exception cref="System.ArgumentException">
+		/// Thrown when <paramref name="featureName"/> is <c>null</c>, empty, or whitespace.
+		/// </exception>
+		void SetFeature(string featureName, bool enabled);
+
+		/// <summary>
+		/// Gets a snapshot of all configured feature flags keyed by feature name.
+		/// </summary>
+		/// <returns>A copy of the current feature flags; mutating it does not affect stored settings.</returns>
+		IReadOnlyDictionary<string, bool> GetFeatures();
 	}
 }

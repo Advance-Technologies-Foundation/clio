@@ -63,6 +63,20 @@
 - MCP tool names follow the same kebab-case convention
 - MCP capability map: `docs/McpCapabilityMap.md`
 
+### Feature toggles (experimental / not-for-public commands)
+- **WHAT:** mark a command's **options class** (the one carrying `[Verb]`) with `[FeatureToggle("feature-key")]` to hide it behind a runtime flag. While the flag is off the command is fully invisible and unreachable on every surface — it behaves exactly like a non-existent verb. A command with **no** `[FeatureToggle]` is always available (default, unchanged).
+- **Key, not verb:** the string is a stable *feature key*, decoupled from the verb. One key can gate several commands, and the verb can be renamed without touching the flag. Keys are compared **case-insensitively**.
+- **Opt-in / fail-closed:** an absent, false, or malformed flag ⇒ disabled. Never rely on a default-on flag for something experimental.
+- **Where flags live:** the `features` object in clio's `appsettings.json`. There is **no** environment-variable override — manage flags with `clio experimental` (lists all known keys + state), `clio experimental --name <key> --enable`, and `... --disable`. Enable a feature locally before testing a gated command.
+- **The single rule** is `Clio.Command.IFeatureToggleService.IsEnabled(Type)`. It is enforced at four enumeration surfaces, all sharing that one predicate — never re-implement the check:
+  1. CLI argument parsing (`Program.CommandOption` is filtered before `Parser.ParseArguments`).
+  2. CLI help **and** generated public docs (`CommandHelpRenderer`; docs use a deterministic export baseline so committed docs never depend on local flags — gated commands are omitted from `Commands.md` / help / wiki until the feature ships).
+  3. The dispatch chokepoint `Program.ExecuteCommandWithOption` (this also blocks the scenario runner, which dispatches around the parser).
+  4. MCP tool/resource/prompt registration.
+- **MCP requires its own attribute — this is the easy thing to get wrong.** MCP tool/resource/prompt classes are discovered by attribute scan **separately** from CLI options classes. Marking only the options class hides the command from the CLI but leaves its MCP tool exposed. To gate the MCP surface too, put the **same** `[FeatureToggle("feature-key")]` on the corresponding `[McpServerToolType]` / `[McpServerResourceType]` / `[McpServerPromptType]` class.
+- **MCP registration caveat (do not regress):** gated MCP types are registered via `McpFeatureToggleFilter.RegisterEnabledPrimitives`, which passes `IEnumerable<Type>` to the SDK's `WithTools` / `WithResources` / `WithPrompts`. Never pass a `Type[]` to those methods and never revert to `*FromAssembly`: a `Type[]` binds to the SDK's generic `WithX<T>(T)` overload and silently registers **nothing**. Do not add an abstract/open-generic type exclusion — the SDK enumerates such types and `BaseTool<T>` is inert by design.
+- **Do not** put `[FeatureToggle]` on the management command (`experimental`) itself, and do not gate a shipping command unless you intend it to be hidden by default.
+
 ---
 
 ## Testing Rules (critical)

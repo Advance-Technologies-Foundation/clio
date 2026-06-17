@@ -25,8 +25,14 @@ internal sealed class HelpArtifactExporter {
 		string commandsPath = _fileSystem.Path.Combine(repositoryRoot, "clio", "Commands.md");
 		Parser.Default.Settings.HelpDirectory = helpDirectory;
 		WriteFile(_fileSystem.Path.Combine(helpDirectory, "help.txt"), _renderer.RenderRootHelp(RootHelpRenderMode.Export));
-		HashSet<string> commandNames = _catalog.Commands.Select(command => command.CanonicalName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-		foreach (HelpCommandMetadata command in _catalog.GetVisibleCommands()) {
+		// Only advertise commands whose feature gate is on. Gated-off commands are omitted from the
+		// per-command .md files AND from the preserved-name set so CleanLegacyMarkdownDocs removes any
+		// stale doc for a now-gated command, keeping artifacts consistent with the aggregate indexes.
+		HashSet<string> commandNames = _catalog.Commands
+			.Where(_renderer.IsCommandAdvertised)
+			.Select(command => command.CanonicalName)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (HelpCommandMetadata command in _catalog.GetVisibleCommands().Where(_renderer.IsCommandAdvertised)) {
 			EnsureCanonicalMarkdownDoc(docsDirectory, command);
 		}
 		CleanLegacyMarkdownDocs(docsDirectory, commandNames);
