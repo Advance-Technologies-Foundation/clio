@@ -58,6 +58,15 @@ public sealed class ComponentRegistrySnapshotTests {
 					because: $"any new key under '{entry.ComponentType}'.references.* must be mapped");
 			}
 		}
+
+		// Assert — composites (top-level `composites[]`). The guard is symmetric with the
+		// per-component check so a producer adding a key under a composite cannot drop it
+		// silently. No-op until the live fixture is refreshed to a payload that ships
+		// composites, but it locks the contract the moment one appears.
+		foreach (CompositeDefinition composite in state.Composites ?? System.Array.Empty<CompositeDefinition>()) {
+			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
+				because: $"any new key on composite '{composite.Caption}' must be mapped");
+		}
 	}
 
 	[Test]

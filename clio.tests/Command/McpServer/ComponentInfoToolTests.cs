@@ -999,6 +999,73 @@ public sealed class ComponentInfoToolTests {
 		}
 	}
 
+	[Test]
+	[Description("List-mode search filters composites: a non-matching composite is excluded while matching components are still returned.")]
+	public async Task ComponentInfoTool_List_Search_Should_Exclude_NonMatching_Composites() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "next steps"));
+
+		response.Success.Should().BeTrue();
+		response.Composites.Should().NotBeNull();
+		response.Composites!.Select(c => c.Caption).Should().Contain("Next steps")
+			.And.NotContain("Expanded list", because: "the search term matches only the 'Next steps' composite");
+		response.Items!.Select(i => i.ComponentType).Should().Contain("crt.NextSteps",
+			because: "matching components must still surface alongside the filtered composites");
+	}
+
+	[Test]
+	[Description("A composite that declares docs which all fail to load yields documentationUnavailable:true — a fetch failure must be distinguishable from a genuine no-docs composite.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Flag_DocumentationUnavailable_When_Docs_Fail() {
+		// The FakeDocsClient is left unseeded, so every doc fetch returns null (all-failed).
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("composite");
+		response.Documentation.Should().BeNull();
+		response.DocumentationUnavailable.Should().BeTrue(
+			because: "the composite declares docs but none loaded — the agent must see a fetch failure, not a no-docs composite");
+	}
+
+	[Test]
+	[Description("Two composites with the same caption fail the catalog build loudly, mirroring the duplicate-componentType guard, instead of silently shadowing one via the caption lookup.")]
+	public void ComponentRegistry_Should_Reject_Duplicate_Composite_Captions() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Dup", "docs": ["docs/a.md"] },
+		    { "caption": "Dup", "docs": ["docs/b.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(json));
+		Action act = () => ComponentInfoCatalog.LoadFromStream(stream);
+		act.Should().Throw<InvalidOperationException>().WithMessage("*duplicate composite captions*Dup*");
+	}
+
+	[Test]
+	[Description("compositeOnly and compositeOnlyHint are reachable through the PUBLIC GetComponentInfo detail path, not only via a direct CreateDetailResponse call.")]
+	public async Task ComponentInfoTool_GetComponentInfo_Detail_Should_Surface_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.NextSteps"));
+
+		response.Success.Should().BeTrue();
+		response.Mode.Should().Be("detail");
+		response.CompositeOnly.Should().BeTrue();
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty();
+	}
+
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
 		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
 		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);

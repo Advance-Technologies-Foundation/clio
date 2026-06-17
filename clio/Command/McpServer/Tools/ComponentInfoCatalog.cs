@@ -197,6 +197,20 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
+		// Composites are looked up by caption (FirstOrDefault, case-insensitive), so a
+		// duplicate caption would silently shadow one composite. Fail loudly, mirroring the
+		// duplicate-componentType guard above, instead of serving an ambiguous catalog.
+		string[] duplicateCaptions = composites
+			.Where(composite => !string.IsNullOrWhiteSpace(composite.Caption))
+			.GroupBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.OrderBy(caption => caption, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (duplicateCaptions.Length > 0) {
+			throw new InvalidOperationException(
+				$"{sourceDescription} contains duplicate composite captions: {string.Join(", ", duplicateCaptions)}.");
+		}
 		CompositeDefinition[] orderedComposites = composites
 			.Where(composite => !string.IsNullOrWhiteSpace(composite.Caption))
 			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
