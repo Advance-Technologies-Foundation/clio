@@ -71,8 +71,8 @@ public sealed class SendTelemetryToolE2ETests
 			using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile!));
 			document.RootElement.GetProperty("severity_text").GetString().Should().Be("INFO",
 				because: "product telemetry is represented as an OpenTelemetry info log");
-			document.RootElement.GetProperty("body").GetProperty("string_value").GetString().Should().Be("session_started",
-				because: "the OTel body should carry the event name");
+			document.RootElement.GetProperty("event_name").GetString().Should().Be("session_started",
+				because: "the event name is stored once, in the dedicated OTel event_name field");
 		} finally {
 			Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, previousTelemetryHome);
 			Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, previousTelemetryEnabled);

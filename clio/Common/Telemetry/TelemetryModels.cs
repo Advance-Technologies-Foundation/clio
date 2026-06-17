@@ -56,11 +56,17 @@ internal sealed record TelemetrySessionState(
 	[property: JsonPropertyName("events")] Dictionary<string, DateTimeOffset> Events
 );
 
+/// <summary>
+/// Locally spooled product telemetry event in the compact OTel-log JSON shape. The event name is
+/// the single source of truth carried in the dedicated <see cref="EventName"/> field (mapped to the
+/// OTLP LogRecord <c>event_name</c> on the wire); the remaining metadata travels in
+/// <see cref="Attributes"/>. These events are identified by their name, so there is no log body.
+/// </summary>
 internal sealed record OpenTelemetryLogEvent(
 	[property: JsonPropertyName("time_unix_nano")] long TimeUnixNano,
 	[property: JsonPropertyName("severity_text")] string SeverityText,
-	[property: JsonPropertyName("body")] OpenTelemetryValue Body,
-	[property: JsonPropertyName("attributes")] IReadOnlyList<OpenTelemetryAttribute> Attributes
+	[property: JsonPropertyName("attributes")] IReadOnlyList<OpenTelemetryAttribute> Attributes,
+	[property: JsonPropertyName("event_name")] string EventName
 );
 
 internal sealed record OpenTelemetryAttribute(

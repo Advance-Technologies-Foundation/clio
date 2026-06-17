@@ -110,10 +110,10 @@ public sealed class TelemetryFlushServiceTests
 			because: "the OTLP JSON encoding maps int64 fields to JSON strings");
 		logRecord.GetProperty("severityNumber").GetInt32().Should().Be(9,
 			because: "severityNumber (9 = INFO) must accompany severityText so backends can classify severity numerically");
-		logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
-			because: "the stored snake_case body must map onto the camelCase OTLP body");
+		logRecord.TryGetProperty("body", out _).Should().BeFalse(
+			because: "the single-source design emits no body; the event name rides the dedicated eventName field only");
 		logRecord.GetProperty("eventName").GetString().Should().Be("session_started",
-			because: "the OTLP LogRecord event-name field must be set so the ClickHouse EventName column is populated; otherwise the name lives only in attributes['event_name']/body and a consumer keying on EventName gets empty results");
+			because: "the OTLP LogRecord event_name field is the single source of the event name, and the ClickHouse EventName column is populated from it");
 		JsonElement durationAttribute = logRecord.GetProperty("attributes").EnumerateArray()
 			.Single(attribute => attribute.GetProperty("key").GetString() == "duration_ms");
 		durationAttribute.GetProperty("value").GetProperty("intValue").ValueKind.Should().Be(JsonValueKind.String,
@@ -141,11 +141,11 @@ public sealed class TelemetryFlushServiceTests
 		// Assert
 		handler.Requests.Should().HaveCount(3,
 			because: "120 events should upload as batches of 50, 50, and 20");
-		handler.Requests.Select(request => LogRecordBodies(request.Body!).Count)
+		handler.Requests.Select(request => LogRecordEventNames(request.Body!).Count)
 			.Should().Equal([50, 50, 20], because: "each batch is capped at the maximum batch size");
-		LogRecordBodies(handler.Requests[0].Body!)[0].Should().Be("evt_000",
+		LogRecordEventNames(handler.Requests[0].Body!)[0].Should().Be("evt_000",
 			because: "the flusher must upload the oldest spooled events first");
-		LogRecordBodies(handler.Requests[2].Body!)[^1].Should().Be("evt_119",
+		LogRecordEventNames(handler.Requests[2].Body!)[^1].Should().Be("evt_119",
 			because: "the newest event should be in the final batch");
 		EventFiles().Should().BeEmpty(
 			because: "all delivered batches must be removed from the spool");
@@ -266,7 +266,7 @@ public sealed class TelemetryFlushServiceTests
 		// Assert
 		CapturedRequest request = handler.Requests.Should().ContainSingle(
 			because: "only the valid event should be uploaded").Subject;
-		LogRecordBodies(request.Body!).Should().Equal(["session_started"],
+		LogRecordEventNames(request.Body!).Should().Equal(["session_started"],
 			because: "tmp partials and corrupt files must never reach the collector");
 		File.Exists(tmpPath).Should().BeTrue(
 			because: "an in-progress .json.tmp file belongs to the writer and must be left alone");
@@ -434,7 +434,7 @@ public sealed class TelemetryFlushServiceTests
 		{
 			"time_unix_nano": 1767225600000000000,
 			"severity_text": "INFO",
-			"body": { "string_value": "{{eventName}}" },
+			"event_name": "{{eventName}}",
 			"attributes": [
 				{ "key": "event_id", "value": { "string_value": "{{eventId}}" } },
 				{ "key": "duration_ms", "value": { "int_value": 12345 } }
@@ -447,14 +447,14 @@ public sealed class TelemetryFlushServiceTests
 			? Directory.GetFiles(EventsDirectory, "*.json")
 			: [];
 
-	private static List<string> LogRecordBodies(string requestBody)
+	private static List<string> LogRecordEventNames(string requestBody)
 	{
 		using JsonDocument document = JsonDocument.Parse(requestBody);
 		return document.RootElement.GetProperty("resourceLogs")[0]
 			.GetProperty("scopeLogs")[0]
 			.GetProperty("logRecords")
 			.EnumerateArray()
-			.Select(record => record.GetProperty("body").GetProperty("stringValue").GetString())
+			.Select(record => record.GetProperty("eventName").GetString())
 			.ToList();
 	}
 

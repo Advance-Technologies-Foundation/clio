@@ -35,12 +35,12 @@ internal sealed record OtlpLogRecord(
 	[property: JsonPropertyName("timeUnixNano")] string TimeUnixNano,
 	[property: JsonPropertyName("severityNumber")] int? SeverityNumber,
 	[property: JsonPropertyName("severityText")] string SeverityText,
-	[property: JsonPropertyName("body")] OtlpAnyValue Body,
 	[property: JsonPropertyName("attributes")] IReadOnlyList<OtlpKeyValue> Attributes,
-	// OTLP LogRecord.event_name (proto field 12). Set so the collector's ClickHouse exporter
-	// populates the EventName column from the dedicated field; the name also stays in
-	// attributes["event_name"] (the edge collector's filter keys on that attribute).
-	[property: JsonPropertyName("eventName")] string EventName = null
+	// OTLP LogRecord.event_name (proto field 12) — the single source of the event name on the wire.
+	// clio sends it ONLY here (never as an attribute, and clio emits no log body): the edge collector
+	// validates it via the dedicated field (OTTL log.event_name) and the ClickHouse exporter maps it
+	// to the EventName column. See ADR adr-product-telemetry (single-source-of-truth decision).
+	[property: JsonPropertyName("eventName")] string EventName
 );
 
 internal sealed record OtlpKeyValue(

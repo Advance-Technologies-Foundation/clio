@@ -280,8 +280,10 @@ public sealed class SendTelemetryToolTests
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile));
 		document.RootElement.GetProperty("severity_text").GetString().Should().Be("INFO",
 			because: "product telemetry events are telemetry info logs");
-		document.RootElement.GetProperty("body").GetProperty("string_value").GetString().Should().Be("session_started",
-			because: "the OTel body should carry the event name");
+		document.RootElement.GetProperty("event_name").GetString().Should().Be("session_started",
+			because: "the event name is stored once, in the dedicated OTel event_name field");
+		document.RootElement.TryGetProperty("body", out _).Should().BeFalse(
+			because: "single-source events carry no body; the event name lives only in event_name");
 		JsonElement attributes = document.RootElement.GetProperty("attributes");
 		AttributeValue(attributes, "schema_version").Should().Be("1",
 			because: "every event must carry a schema_version so consumers can parse evolving payloads");
@@ -614,6 +616,6 @@ public sealed class SendTelemetryToolTests
 	private static string EventName(string eventPath)
 	{
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventPath));
-		return document.RootElement.GetProperty("body").GetProperty("string_value").GetString();
+		return document.RootElement.GetProperty("event_name").GetString();
 	}
 }

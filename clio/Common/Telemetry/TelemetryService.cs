@@ -280,7 +280,6 @@ public sealed class TelemetryService : ITelemetryService
 		List<OpenTelemetryAttribute> attributes = [
 			StringAttribute("schema_version", SchemaVersion),
 			StringAttribute("session_id", request.SessionId),
-			StringAttribute("event_name", request.EventName),
 			StringAttribute("event_timestamp", timestamp.ToString("O")),
 			StringAttribute("platform", GetPlatform()),
 			StringAttribute("clio_version", GetClioVersion()),
@@ -297,10 +296,10 @@ public sealed class TelemetryService : ITelemetryService
 				new OpenTelemetryValue(IntValue: durationSinceSessionStartMs.Value)));
 		}
 		return new OpenTelemetryLogEvent(
-			timestamp.ToUnixTimeMilliseconds() * 1_000_000,
-			"INFO",
-			new OpenTelemetryValue(StringValue: request.EventName),
-			attributes);
+			TimeUnixNano: timestamp.ToUnixTimeMilliseconds() * 1_000_000,
+			SeverityText: "INFO",
+			Attributes: attributes,
+			EventName: request.EventName);
 	}
 
 	private TelemetrySessionState ReadSessionState(string sessionId)
