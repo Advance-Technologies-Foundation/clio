@@ -43,7 +43,8 @@ public sealed class PageFileWriter : IPageFileWriter {
 	// target directory keeps the recursive delete below contained inside `.clio-pages/`: a name that
 	// matches this pattern cannot contain a path separator, `..`, or a drive/volume marker, so the
 	// destructive write can never escape the workspace anchor via the schema name.
-	private static readonly Regex SchemaNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
+	private static readonly Regex SchemaNamePattern =
+		new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	private readonly IFileSystem _fileSystem;
 
