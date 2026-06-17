@@ -156,9 +156,16 @@ public sealed class RelatedListGuidanceResource {
 		         (`features.editable.enable: false`), so set `features.editable.enable: true` and
 		         `features.editable.itemsCreation: true`. The grid renders a "+ New" row; the new record inherits
 		         the master foreign key from the `dependencies` relationship, so it is scoped to the open record
-		         with NO extra wiring, NO separate page, and NO navigation. This works for ANY child entity —
+		         with NO separate page and NO navigation. This works for ANY child entity —
 		         INCLUDING a standalone detail entity that has no section. Prefer this whenever the requirement is
 		         "add a related item" / "an Add button"; the "+ New" row IS the add affordance the user asked for.
+		       - REQUIRED wiring for inline add to SAVE: the child FK column (the `attributePath` reference column,
+		         here `UsrContact.UsrClient`) MUST be one of the grid's columns / collection attributes. The
+		         `dependencies` relationship populates the FK on the new row only when that column is present in the
+		         grid; omit it and the "+ New" row's parent FK stays empty, so the save fails with the runtime error
+		         "<FK caption> field must be filled in" (a detail FK is normally required). Add the FK column to the
+		         grid — it may be hidden in the UI, but it must be in the collection so inline create inherits the
+		         open master (confirm via OData that the child's `...Id` equals the master Id after save).
 		       - FOOTGUN — do NOT, by default, satisfy "Add button" with a header `tools` button wired to
 		         `crt.CreateRecordRequest`. That request opens the child entity's navigation/edit page, which the
 		         runtime resolves from the entity's REGISTERED page. A standalone detail entity (created with

@@ -61,6 +61,8 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 		response.Article.Text.Should().Contain("clio MCP page-schema handlers guide",
 			because: "the guidance tool should return the canonical handler guide text");
+		response.Article.Text.Should().Contain("There is no page for new or existing record",
+			because: "the page-schema-handlers guide must carry the crt.CreateRecordRequest page-resolution note warning that the request throws this runtime error on a section-less detail entity with no registered page");
 	}
 
 	[Test]
