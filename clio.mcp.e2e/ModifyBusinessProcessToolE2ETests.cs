@@ -75,6 +75,34 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package)");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, builds a process then adds process parameters via addParameter, including a Lookup referenceSchema; identifies the process by name only (exercises the optional processUid path).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process adds parameters including a lookup referenceSchema")]
+	public async Task ModifyBusinessProcess_Should_AddParametersIncludingLookup() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpAddParamE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environmentName"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act — processName only (processUid omitted) also exercises the optional-identity path
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environmentName"] = context.EnvironmentName,
+			["processName"] = processName,
+			["operations"] = BuildAddParameterOperations()
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "addParameter (including a Lookup referenceSchema) must succeed over the real MCP path");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package and a 'City' object)");
+	}
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{
@@ -99,6 +127,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  { "op": "removeElement", "elementId": "StartEvent1" },
 		  { "op": "addElement", "element": { "id": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
 		  { "op": "addFlow", "source": "SignalStart1", "target": "task1" }
+		]
+		""";
+
+	private static string BuildAddParameterOperations() =>
+		"""
+		[
+		  { "op": "addParameter", "parameter": { "name": "RecordId", "type": "Guid", "direction": "In", "caption": "Record Id" } },
+		  { "op": "addParameter", "parameter": { "name": "City", "referenceSchema": "City", "direction": "In" } }
 		]
 		""";
 
