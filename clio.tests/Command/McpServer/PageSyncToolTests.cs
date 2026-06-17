@@ -596,7 +596,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("resource-page-uid"));
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("resource-page-uid"));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
@@ -828,7 +828,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -884,7 +884,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithFailureForSchema(string failSchemaName) {
@@ -916,7 +916,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageGetCommand CreateSuccessfulPageGetCommand() {
@@ -959,7 +959,8 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
 	}
 
 	private static PageGetCommand CreateFailingPageGetCommand() {
@@ -977,7 +978,16 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
+	}
+
+	private static IPageFileWriter CreatePassthroughPageFileWriter() {
+		IPageFileWriter writer = Substitute.For<IPageFileWriter>();
+		writer.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		return writer;
 	}
 
 	[Test]

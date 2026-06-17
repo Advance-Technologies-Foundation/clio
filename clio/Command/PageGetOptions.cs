@@ -49,9 +49,11 @@ public class PageGetCommand : Command<PageGetOptions> {
 	/// <param name="hierarchyClient">Hierarchy client for designer schemas.</param>
 	/// <param name="bodyParser">Parser for schema body markers.</param>
 	/// <param name="bundleBuilder">Bundle builder that mirrors frontend merge logic.</param>
-	/// <param name="pageFileWriter">Shared writer that persists body.js/bundle.json/meta.json (incl. the
-	/// conflict-detection baseline) into <c>.clio-pages/{schema}/</c>. When present, the CLI verb writes
-	/// the same workspace layout as the MCP tool so a later <c>update-page</c> can find the baseline.</param>
+	/// <param name="pageFileWriter">Required shared writer that persists body.js/bundle.json/meta.json
+	/// (incl. the conflict-detection baseline) into <c>.clio-pages/{schema}/</c>, so the CLI verb writes
+	/// the same workspace layout as the MCP tool and a later <c>update-page</c> can find the baseline.
+	/// Injected as a required dependency so a broken DI registration fails loudly at resolve time
+	/// instead of silently disabling the baseline write.</param>
 	public PageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -59,7 +61,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 		IPageDesignerHierarchyClient hierarchyClient,
 		IPageSchemaBodyParser bodyParser,
 		IPageBundleBuilder bundleBuilder,
-		IPageFileWriter pageFileWriter = null) {
+		IPageFileWriter pageFileWriter) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
@@ -219,7 +221,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 		// write failure (locked body.js, read-only dir, permissions) must NOT discard a page that was
 		// successfully read from the server. Keep the fetched payload and exit 0, warning about the
 		// baseline that could not be written.
-		if (success && _pageFileWriter is not null) {
+		if (success) {
 			PageGetResponse written = _pageFileWriter.WritePageFiles(
 				response, options.SchemaName, options.Environment, options.Uri, options.OutputDirectory);
 			if (written.Success) {
