@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using Clio.Command;
 using CommandLine;
 using CommandLine.Text;
 
@@ -42,19 +43,42 @@ internal sealed class CommandHelpRenderer {
 	private readonly IFileSystem _fileSystem;
 	private readonly CommandHelpCatalog _catalog;
 	private readonly Func<bool> _supportsAnsi;
+	private readonly IFeatureToggleService _featureToggleService;
 
-	public CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog)
-		: this(fileSystem, catalog, SupportsAnsiEscapeCodes) {
+	public CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog, IFeatureToggleService featureToggleService)
+		: this(fileSystem, catalog, featureToggleService, SupportsAnsiEscapeCodes) {
 	}
 
-	internal CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog, Func<bool> supportsAnsi) {
+	internal CommandHelpRenderer(IFileSystem fileSystem, CommandHelpCatalog catalog, IFeatureToggleService featureToggleService, Func<bool> supportsAnsi) {
 		_fileSystem = fileSystem;
 		_catalog = catalog;
+		_featureToggleService = featureToggleService;
 		_supportsAnsi = supportsAnsi;
 	}
 
+	// Help filter: a command is shown/renderable only when its [FeatureToggle] flag is enabled.
+	// Mirrors the parser gate in Program.ExecuteCommands so the two surfaces use the same
+	// IFeatureToggleService.IsEnabled predicate and cannot drift. A null service (legacy/test
+	// construction) means no filtering. Both runtime help AND the export/doc-generation artifacts
+	// apply this filter, so a gated-off command is never advertised in committed public docs.
+	// Determinism of committed docs is the responsibility of the doc-generation entry point, which
+	// injects a baseline service that reports every gate as off (see HelpArtifactExporter).
+	private bool IsCommandEnabled(HelpCommandMetadata command) =>
+		_featureToggleService is null || _featureToggleService.IsEnabled(command.OptionsType);
+
+	// Exposed for the export pipeline so the per-command .md loop uses the SAME gate as the
+	// aggregate artifacts (Commands.md / WikiAnchors / help.txt), avoiding orphaned docs.
+	internal bool IsCommandAdvertised(HelpCommandMetadata command) => IsCommandEnabled(command);
+
 	public string RenderRootHelp(RootHelpRenderMode mode) {
-		int leftWidth = Math.Max(32, _catalog.GetVisibleCommands().Max(command => command.CanonicalName.Length) + 2);
+		// Both runtime and export hide commands whose feature flag is off (a gated-off command must
+		// not be advertised anywhere). A null service leaves every command visible.
+		IReadOnlyList<HelpCommandMetadata> visibleCommands =
+			_catalog.GetVisibleCommands().Where(IsCommandEnabled).ToArray();
+		// Guard against an empty command set (every command gated off) so Max does not throw.
+		int leftWidth = visibleCommands.Count == 0
+			? 32
+			: Math.Max(32, visibleCommands.Max(command => command.CanonicalName.Length) + 2);
 		StringBuilder builder = new();
 		builder.AppendLine("clio - Creatio CLI");
 		builder.AppendLine();
@@ -62,7 +86,7 @@ internal sealed class CommandHelpRenderer {
 		builder.AppendLine("  clio <command> [arguments] [options]");
 		builder.AppendLine();
 		builder.AppendLine("Commands:");
-		foreach (HelpCommandMetadata command in _catalog.GetVisibleCommands().OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)) {
+		foreach (HelpCommandMetadata command in visibleCommands.OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)) {
 			AppendRootHelpEntry(builder, command, leftWidth, mode, mode == RootHelpRenderMode.Runtime && _supportsAnsi());
 		}
 		builder.AppendLine();
@@ -73,6 +97,11 @@ internal sealed class CommandHelpRenderer {
 
 	public string TryRenderCommandHelp(string commandName) {
 		if (!_catalog.TryGetCommand(commandName, out HelpCommandMetadata command)) {
+			return null;
+		}
+		// A gated-off command must be indistinguishable from a typo: return null so the caller
+		// falls through to the root help (the same path as an unknown verb).
+		if (!IsCommandEnabled(command)) {
 			return null;
 		}
 		HelpDocument source = LoadHelpDocument(command);
@@ -175,7 +204,9 @@ internal sealed class CommandHelpRenderer {
 		builder.AppendLine();
 		builder.AppendLine("Use `clio help` for the terminal overview and `clio <command> --help` for command details.");
 		foreach (HelpGroupMetadata group in CommandHelpCatalog.Groups) {
-			IReadOnlyList<HelpCommandMetadata> commands = _catalog.GetCommandsForGroup(group.Id);
+			IReadOnlyList<HelpCommandMetadata> commands = _catalog.GetCommandsForGroup(group.Id)
+				.Where(IsCommandEnabled)
+				.ToArray();
 			if (commands.Count == 0) {
 				continue;
 			}
@@ -198,7 +229,7 @@ internal sealed class CommandHelpRenderer {
 
 	public string RenderWikiAnchors() {
 		StringBuilder builder = new();
-		foreach (HelpCommandMetadata command in _catalog.GetVisibleCommands().OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)) {
+		foreach (HelpCommandMetadata command in _catalog.GetVisibleCommands().Where(IsCommandEnabled).OrderBy(command => command.CanonicalName, StringComparer.OrdinalIgnoreCase)) {
 			IReadOnlyList<string> names = [
 				command.CanonicalName,
 				..command.Aliases.Where(IsArtifactName),

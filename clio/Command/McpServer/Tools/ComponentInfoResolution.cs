@@ -75,6 +75,41 @@ public static class ComponentInfoResolution {
 	}
 
 	/// <summary>
+	/// Machine-readable counterpart to the prose <see cref="LatestFallbackWarning"/>: <c>true</c> only on the
+	/// <c>latest-fallback</c> tier (version unknown — the hard stop). The agent must communicate the unknown
+	/// version to the user and request explicit confirmation before generating an implementation plan; it must
+	/// not rely on the agent reading the free-text caveat. <c>environment</c> and <c>environment-superset</c>
+	/// return <c>false</c> — the version is known on both, so no confirmation gate applies.
+	/// </summary>
+	public static bool RequiresVersionConfirmation(string? resolvedFrom) =>
+		string.Equals(resolvedFrom, ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Surfaces the <see cref="VersionFallbackReason"/> as a stable kebab-case wire token, but only on the
+	/// <c>latest-fallback</c> tier — on every other tier (and for <see cref="VersionFallbackReason.None"/>)
+	/// it returns <c>null</c> so the marker is omitted from the response. Lets the agent tell a transient
+	/// <c>probe-error</c> (worth a retry / a reachable environment) apart from a genuinely undeterminable
+	/// version (<c>no-active-environment</c> / <c>core-version-missing</c> / <c>core-version-unparseable</c>).
+	/// </summary>
+	public static string? GetFallbackReason(string? resolvedFrom, VersionFallbackReason reason) {
+		if (!string.Equals(resolvedFrom, ResolvedFromLatestFallback, StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		return reason switch {
+			VersionFallbackReason.None => null,
+			VersionFallbackReason.NoActiveEnvironment => "no-active-environment",
+			VersionFallbackReason.ProbeError => "probe-error",
+			VersionFallbackReason.CoreVersionMissing => "core-version-missing",
+			VersionFallbackReason.CoreVersionUnparseable => "core-version-unparseable",
+			// Explicit arms for every declared reason (None included) so a reason added later does NOT fold
+			// silently into a null token that mis-signals a stable outcome — it falls through to this guard
+			// and surfaces as a test/runtime failure that forces a wire-token decision (ENG-91583 AC#3).
+			_ => throw new ArgumentOutOfRangeException(nameof(reason), reason,
+				"Unhandled VersionFallbackReason; add a wire-token mapping when introducing a new reason.")
+		};
+	}
+
+	/// <summary>
 	/// Maps the resolution state to one of three tiers:
 	/// <list type="bullet">
 	/// <item><c>"environment"</c> — version was known (probe-success or explicit <c>--version</c>)
@@ -99,4 +134,17 @@ public static class ComponentInfoResolution {
 			? ResolvedFromEnvironment
 			: ResolvedFromEnvironmentSuperset;
 	}
+
+	/// <summary>
+	/// Builds the "nothing to probe" resolution shared by the MCP tool and the CLI verb when neither an
+	/// explicit version nor an environment was supplied: <c>latest</c> on the
+	/// <see cref="VersionResolutionSource.LatestFallback"/> tier with a
+	/// <see cref="VersionFallbackReason.NoActiveEnvironment"/> reason (a clear input gap, not a probe error).
+	/// Centralised so a future tier/reason change to this outcome touches one place and
+	/// <c>resolvedFromReason</c> never drifts between the CLI and MCP surfaces.
+	/// </summary>
+	public static PlatformVersionResolution CreateNoActiveEnvironmentFallback() =>
+		new(PlatformVersionResolver.LatestVersion, VersionResolutionSource.LatestFallback) {
+			Reason = VersionFallbackReason.NoActiveEnvironment
+		};
 }
