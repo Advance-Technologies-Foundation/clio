@@ -266,10 +266,9 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 				logEvent.TimeUnixNano.ToString(CultureInfo.InvariantCulture),
 				SeverityNumberFor(logEvent.SeverityText),
 				logEvent.SeverityText,
-				ToOtlpValue(logEvent.Body),
 				logEvent.Attributes?.Select(attribute => new OtlpKeyValue(attribute.Key, ToOtlpValue(attribute.Value))).ToList()
 				?? [],
-				EventNameFor(logEvent)))
+				logEvent.EventName))
 			.ToList();
 		OtlpExportLogsServiceRequest request = new([
 			new OtlpResourceLogs(
@@ -281,13 +280,6 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 
 	private static OtlpAnyValue ToOtlpValue(OpenTelemetryValue value) =>
 		new(value?.StringValue, value?.IntValue?.ToString(CultureInfo.InvariantCulture));
-
-	// Surface the event name on the OTLP LogRecord's dedicated event-name field so the
-	// ClickHouse EventName column is populated. Canonical source is the "event_name" attribute;
-	// fall back to the body, which the telemetry service always sets to the event name.
-	private static string EventNameFor(OpenTelemetryLogEvent logEvent) =>
-		logEvent.Attributes?.FirstOrDefault(attribute => attribute.Key == "event_name")?.Value?.StringValue
-		?? logEvent.Body?.StringValue;
 
 	private const int SeverityNumberInfo = 9;
 

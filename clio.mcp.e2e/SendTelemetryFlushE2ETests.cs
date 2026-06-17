@@ -60,7 +60,6 @@ public sealed class SendTelemetryFlushE2ETests
 						session_id = sessionId,
 						event_name = "session_started",
 						coding_agent = "Codex",
-						skill_version = "0.1.0",
 						plugin_version = "0.1.0",
 						telemetry_consent = "granted"
 					}
@@ -84,8 +83,8 @@ public sealed class SendTelemetryFlushE2ETests
 			JsonElement logRecord = logRecords[0];
 			logRecord.GetProperty("timeUnixNano").ValueKind.Should().Be(JsonValueKind.String,
 				because: "OTLP/HTTP JSON encodes the int64 timeUnixNano as a string");
-			logRecord.GetProperty("body").GetProperty("stringValue").GetString().Should().Be("session_started",
-				because: "the uploaded record must use the camelCase OTLP body shape, not the snake_case local store shape");
+			logRecord.GetProperty("eventName").GetString().Should().Be("session_started",
+				because: "the event name rides the dedicated OTLP eventName field (single source) that populates the ClickHouse EventName column");
 			request.Body.Should().NotContain("time_unix_nano",
 				because: "a wire/schema regression to the snake_case storage shape would be silently rejected and dropped by a strict collector");
 			request.Body.Should().Contain(sessionId,
@@ -163,7 +162,7 @@ public sealed class SendTelemetryFlushE2ETests
 			{
 				"time_unix_nano": 1767225600000000000,
 				"severity_text": "INFO",
-				"body": { "string_value": "session_started" },
+				"event_name": "session_started",
 				"attributes": [
 					{ "key": "session_id", "value": { "string_value": "{{sessionId}}" } },
 					{ "key": "event_id", "value": { "string_value": "{{eventId}}" } }

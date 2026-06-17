@@ -5,8 +5,7 @@
 - **Feature:** `product-telemetry`
 - **Jira:** [ENG-89424](https://creatio.atlassian.net/browse/ENG-89424) — Product Metrics for AI-Driven App Creation Agent
 - **Related:** [ISEC-9898](https://creatio.atlassian.net/browse/ISEC-9898) (security review); CAADT-side
-  contract + ingestion ADR in `creatio-ai-app-development-toolkit`
-  (`context/product-telemetry.md`, `.architecture/adrs/ADR-caadt-product-telemetry-ingestion.md`).
+  contract in `creatio-ai-app-development-toolkit` (`context/product-telemetry.md`).
 
 ---
 
@@ -98,9 +97,10 @@ say `stored`/`spooled`/`sent`, none of which would survive a change of strategy 
 misread as confirmed delivery.
 
 ### 7. Privacy / value-level guards
-Only an allow-listed set of scalar attributes is stored (`schema_version`, `session_id`,
-`event_name`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random
-`installation_id`, `skill_version`, `plugin_version`, `event_id`, optional `duration_ms` and
+The event name is carried in the dedicated OTLP `event_name` field (decision 9), not as an
+attribute. Beyond it, only an allow-listed set of scalar attributes is stored (`schema_version`,
+`session_id`, `event_timestamp`, `platform`, `clio_version`, `coding_agent`, anonymous random
+`installation_id`, `plugin_version`, `event_id`, optional `duration_ms` and
 `duration_since_session_start_ms`). Unknown fields are rejected; agent-supplied free strings are
 length-bounded and `session_id` is shape-checked, as defense in depth against oversized or
 PII-shaped values. No prompts, secrets, tokens, customer data, or generated content are collected.
@@ -112,10 +112,25 @@ fields. v1 **descopes** these on both clio and CAADT: event outcome is encoded b
 `model_reasoning` are deferred until there is a confirmed product question that needs them. The
 required identity/timing/agent/version fields and the anonymized installation id are collected.
 
+### 9. Event name is a single source of truth on the dedicated OTLP field
+The event name is carried exactly once end-to-end. clio stores it in the dedicated `event_name`
+field of the local OTel-log JSON (`OpenTelemetryLogEvent.EventName`) and emits
+it only on the OTLP LogRecord `event_name` field (proto field 12) — never duplicated into the log
+body or an `event_name` attribute. This replaces the earlier shape that sent the name in three
+places (body, attribute, and dedicated field). The edge collector validates it via OTTL
+`log.event_name`, clears the client-controlled body (`set(log.body, "")`, preserving the
+threat-I-01 body cap), and the ClickHouse exporter maps the dedicated field to the typed
+`EventName` column; queries read `EventName`, not `Body` or `LogAttributes['event_name']`. This is
+a deliberate producer-and-collector change owned jointly with the CAADT ingestion stack
+(`metrics-installation/helm/caadt-telemetry`): the two ends must move together because the collector
+filter keys on the dedicated field.
+
 ## Consequences
 
 - Adding or renaming an event requires editing `AllowedEventNames` (clio enforces + announces) and
   the CAADT contract; the clio sync test guards the clio half.
-- The edge-collector attribute allow-list must accept the stored attribute set in decision 7.
+- The edge-collector attribute allow-list must accept the stored attribute set in decision 7, and
+  its event-name filter must key on the dedicated OTLP `event_name` field (decision 9), not an
+  attribute.
 - The two-model split (decision 2) means a new typed field must be carried in both shapes; the
   generic forwarder + round-trip test mitigate silent drops.

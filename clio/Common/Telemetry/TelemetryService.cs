@@ -229,7 +229,6 @@ public sealed class TelemetryService : ITelemetryService
 	private static IReadOnlyList<(string name, string value)> BoundedFields(TelemetryEventRequest request) =>
 	[
 		("coding_agent", request.CodingAgent),
-		("skill_version", request.SkillVersion),
 		("plugin_version", request.PluginVersion)
 	];
 
@@ -244,7 +243,6 @@ public sealed class TelemetryService : ITelemetryService
 		("session_id", request.SessionId),
 		("event_name", request.EventName),
 		("coding_agent", request.CodingAgent),
-		("skill_version", request.SkillVersion),
 		("plugin_version", request.PluginVersion)
 	];
 
@@ -282,13 +280,11 @@ public sealed class TelemetryService : ITelemetryService
 		List<OpenTelemetryAttribute> attributes = [
 			StringAttribute("schema_version", SchemaVersion),
 			StringAttribute("session_id", request.SessionId),
-			StringAttribute("event_name", request.EventName),
 			StringAttribute("event_timestamp", timestamp.ToString("O")),
 			StringAttribute("platform", GetPlatform()),
 			StringAttribute("clio_version", GetClioVersion()),
 			StringAttribute("coding_agent", request.CodingAgent),
 			StringAttribute("installation_id", GetOrCreateInstallationId()),
-			StringAttribute("skill_version", request.SkillVersion),
 			StringAttribute("plugin_version", request.PluginVersion),
 			StringAttribute("event_id", eventId)
 		];
@@ -300,10 +296,10 @@ public sealed class TelemetryService : ITelemetryService
 				new OpenTelemetryValue(IntValue: durationSinceSessionStartMs.Value)));
 		}
 		return new OpenTelemetryLogEvent(
-			timestamp.ToUnixTimeMilliseconds() * 1_000_000,
-			"INFO",
-			new OpenTelemetryValue(StringValue: request.EventName),
-			attributes);
+			TimeUnixNano: timestamp.ToUnixTimeMilliseconds() * 1_000_000,
+			SeverityText: "INFO",
+			Attributes: attributes,
+			EventName: request.EventName);
 	}
 
 	private TelemetrySessionState ReadSessionState(string sessionId)

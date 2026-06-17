@@ -583,13 +583,12 @@ internal static class ToolContractCatalog {
 			toolName,
 			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
 			new ToolInputSchemaContract(
-				["session_id", EventNameFieldName, "coding_agent", "skill_version", "plugin_version"],
+				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
 				[
 					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
 					Field(EventNameFieldName, StringType,
 						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
-					Field("skill_version", StringType, "Product skill version."),
 					Field("plugin_version", StringType, "Product plugin version."),
 					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied."),
 					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
@@ -618,7 +617,6 @@ internal static class ToolContractCatalog {
 					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
 					[EventNameFieldName] = "business_plan_generated",
 					["coding_agent"] = "Codex",
-					["skill_version"] = "0.1.0",
 					["plugin_version"] = "0.1.0"
 				})
 			],
