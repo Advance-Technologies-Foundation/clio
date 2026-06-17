@@ -8,6 +8,15 @@ show-package-file-content - Show package file content
 
 Displays the content of a file stored within a package.
 
+## Requirements
+
+This command requires the cliogate package to be installed on the target Creatio environment.
+If cliogate is not installed, the command displays an error and exits. Install or update it with:
+
+```bash
+clio install-gate -e <ENVIRONMENT_NAME>
+```
+
 ## Synopsis
 
 ```bash
@@ -30,6 +39,7 @@ Display canonical options and usage examples
 ## See Also
 
 pull-pkg - Download package files locally
+install-gate - Install or update the cliogate package (required)
 
 ## Reporting Bugs
 

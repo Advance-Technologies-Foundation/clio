@@ -1,4 +1,5 @@
 using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Resources.ProcessDesigner;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;

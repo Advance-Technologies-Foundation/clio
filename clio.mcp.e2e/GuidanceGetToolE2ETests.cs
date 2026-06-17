@@ -464,6 +464,47 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance hides process-designer guides while the process-designer feature is off")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling and run-process-button as unknown guides and omits them from availableGuides, closing the experimental-suite gating leak (ENG-90883).")]
+	public async Task GuidanceGet_Should_Hide_ProcessDesigner_Guides_When_Feature_Disabled() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse processModeling = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "process-modeling"
+			});
+		GuidanceGetResponse runProcessButton = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "run-process-button"
+			});
+
+		// Assert
+		processModeling.Success.Should().BeFalse(
+			because: "process-modeling is gated behind the disabled process-designer feature and must resolve as unknown");
+		processModeling.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		processModeling.AvailableGuides.Should().NotContain("process-modeling",
+			because: "the disabled process-modeling guide must not be advertised in availableGuides");
+		processModeling.AvailableGuides.Should().Contain("page-schema-handlers",
+			because: "ungated guides must stay advertised while the process-designer feature is off");
+		runProcessButton.Success.Should().BeFalse(
+			because: "run-process-button is gated behind the disabled process-designer feature and must resolve as unknown");
+		runProcessButton.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		runProcessButton.AvailableGuides.Should().NotContain("run-process-button",
+			because: "the disabled run-process-button guide must not be advertised in availableGuides");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

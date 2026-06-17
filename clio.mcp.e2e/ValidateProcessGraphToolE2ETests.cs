@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -17,7 +19,10 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// Story 5 (ai-business-process-generation) end-to-end coverage for <c>validate-process-graph</c>.
-/// NOT in CI — run manually. Hermetic: the tool is pure in-memory, so no Creatio environment is required.
+/// NOT in CI — run manually. The tool is feature-toggled (<c>process-designer</c>) and, since
+/// the env-scoping fix, requires the <c>clioprocessbuilder</c> package on the named environment, so
+/// it is no longer hermetic: the advertisement and refusal cases run without a Creatio instance, but
+/// the happy-path graph validation requires a reachable sandbox environment with the package.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -26,9 +31,10 @@ namespace Clio.Mcp.E2E;
 public sealed class ValidateProcessGraphToolE2ETests {
 
 	private const string ToolName = ValidateProcessGraphTool.ToolName;
+	private const string FeatureKey = "process-designer";
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies validate-process-graph is advertised (hermetic).")]
+	[Description("Starts the real clio MCP server and verifies validate-process-graph is advertised (requires the feature toggle to be enabled).")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph is advertised by the clio MCP server")]
 	public async Task ValidateProcessGraph_Should_Be_Advertised_By_Mcp_Server() {
@@ -39,18 +45,49 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
+		if (!tools.Select(tool => tool.Name).Contains(ToolName)) {
+			Assert.Ignore($"{ToolName} is feature-toggled off. Enable it (clio experimental --name {FeatureKey} --enable) to run this E2E.");
+		}
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the validate-process-graph tool must be discoverable on the real clio MCP server");
+			because: "the validate-process-graph tool must be discoverable on the real clio MCP server when the feature is enabled");
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a valid Start -> Read data -> End graph validates with zero error findings.")]
+	[Description("Over the real MCP path, an unknown environment name makes validate-process-graph refuse with success=false (env-scoping is enforced end to end).")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph refuses an unknown environment")]
+	public async Task ValidateProcessGraph_Should_Refuse_WhenEnvironmentIsUnknown() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string unknownEnvironment = $"missing-process-graph-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = unknownEnvironment,
+			["nodes"] = new[] { Node("s", "startEvent"), Node("e", "endEvent") },
+			["edges"] = new[] { Edge("s", "e", "sequence") }
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown environment cannot be resolved, so the graph must not be validated");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(unknownEnvironment)}|environment.*not.*found|not found|bootstrap)",
+			because: "the refusal must explain that the requested environment could not be resolved");
+	}
+
+	[Test]
+	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a valid Start -> Read data -> End graph validates with zero error findings.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph reports a valid graph as having no errors")]
 	public async Task ValidateProcessGraph_Should_ReportNoErrors_WhenGraphIsValid() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = ResolveEnvironmentOrIgnore();
 		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
 			["nodes"] = new[] {
 				Node("s", "startEvent"), Node("r", "readDataUserTask"), Node("e", "endEvent")
 			},
@@ -64,19 +101,21 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(because: "a hermetic validation call should return a structured payload");
-		response.Success.Should().BeTrue(because: "validating a well-formed graph succeeds");
+		callResult.IsError.Should().NotBeTrue(because: "a validation call against a valid graph should return a structured payload");
+		response.Success.Should().BeTrue(because: "validating a well-formed graph on an environment with clioprocessbuilder succeeds");
 		response.HasErrors.Should().BeFalse(because: "Start -> Read data -> End violates no connection rule");
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a start event with an incoming flow surfaces an R1 error finding.")]
+	[Description("Over the real MCP path against a reachable environment with clioprocessbuilder, a start event with an incoming flow surfaces an R1 error finding.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph surfaces an R1 error for a start with an incoming flow")]
 	public async Task ValidateProcessGraph_Should_SurfaceR1Error_WhenStartHasIncomingFlow() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = ResolveEnvironmentOrIgnore();
 		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
 			["nodes"] = new[] {
 				Node("s", "startEvent"), Node("a", "activityUserTask"), Node("e", "endEvent")
 			},
@@ -90,9 +129,19 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
 
 		// Assert
+		response.Success.Should().BeTrue(because: "the package is present, so the graph is validated and findings are returned");
 		response.HasErrors.Should().BeTrue(because: "a start event with an incoming flow violates R1");
 		response.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == "error",
 			because: "the R1 violation must be reported in the response findings");
+	}
+
+	private static string ResolveEnvironmentOrIgnore() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore($"Configure McpE2E:Sandbox:EnvironmentName (with clioprocessbuilder installed) to run {ToolName} graph-validation E2E tests.");
+		}
+		return environmentName!;
 	}
 
 	private static Dictionary<string, object?> Node(string id, string type) =>
@@ -103,8 +152,9 @@ public sealed class ValidateProcessGraphToolE2ETests {
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the validate-process-graph tool must be advertised before the end-to-end call can be executed");
+		if (!tools.Select(tool => tool.Name).Contains(ToolName)) {
+			Assert.Ignore($"{ToolName} is feature-toggled off. Enable it (clio experimental --name {FeatureKey} --enable) to run this E2E.");
+		}
 		return await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> { ["args"] = graphArgs },

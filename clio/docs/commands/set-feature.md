@@ -14,6 +14,15 @@ set-feature command set feature state.
 set-feature command can be used in CI/CD pipeline or in development
 when you need create or update feature state on web application (website).
 
+## Prerequisites
+
+The default path uses ATF.Repository together with the core FeatureService and does **not** require cliogate.
+
+The `--use-feature-web-service` option (deprecated) sets the feature state through the cliogate feature
+web service and requires the cliogate package to be installed on the target Creatio environment.
+If cliogate is not installed, this option displays an error and exits.
+Install or update cliogate with `clio install-gate -e <ENVIRONMENT_NAME>`.
+
 ## Options
 
 ```bash

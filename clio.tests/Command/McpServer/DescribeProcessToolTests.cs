@@ -1,7 +1,9 @@
 using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
+using Clio.Command.McpServer.Prompts.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;

@@ -2,12 +2,13 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Prompts;
+namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 
 /// <summary>
 /// Prompt helpers for editing an existing business process on a Creatio environment through MCP.
 /// </summary>
 [McpServerPromptType, Description("Prompts to edit an existing business process by applying operations")]
+[FeatureToggle("process-designer")]
 public static class ModifyBusinessProcessPrompt {
 
 	/// <summary>

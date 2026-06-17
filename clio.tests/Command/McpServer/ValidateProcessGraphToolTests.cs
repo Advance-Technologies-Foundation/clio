@@ -1,29 +1,48 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Clio;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Unit tests for the <c>validate-process-graph</c> MCP tool: arg→graph mapping, finding shape,
-/// safety flags, and that the validator's R-rule findings surface in the response (Story 5).
+/// safety flags, the validator's R-rule findings surfacing in the response (Story 5), and that the
+/// required-package check is resolved per-call against the request environment.
 /// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ValidateProcessGraphToolTests {
-	private readonly ValidateProcessGraphTool _tool = new(new ProcessGraphValidator());
+	private const string EnvName = "dev";
+
+	private IToolCommandResolver _commandResolver;
+	private IRequiredPackageChecker _checker;
+	private ValidateProcessGraphTool _tool;
+
+	[SetUp]
+	public void SetUp() {
+		_checker = Substitute.For<IRequiredPackageChecker>();
+		_commandResolver = Substitute.For<IToolCommandResolver>();
+		_commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(_checker);
+		_tool = new ValidateProcessGraphTool(new ProcessGraphValidator(), _commandResolver);
+	}
 
 	private static ProcessGraphNodeArg N(string id, string type) => new(id, type);
 
 	private static ProcessGraphEdgeArg E(string source, string target, string flowKind = "sequence") => new(source, target, flowKind);
 
 	private ValidateProcessGraphResponse Validate(List<ProcessGraphNodeArg> nodes, List<ProcessGraphEdgeArg> edges)
-		=> _tool.Validate(new ValidateProcessGraphArgs(nodes, edges));
+		=> _tool.Validate(new ValidateProcessGraphArgs(EnvName, nodes, edges));
 
 	[Test]
 	[Category("Unit")]
@@ -140,5 +159,63 @@ public sealed class ValidateProcessGraphToolTests {
 		attribute.Destructive.Should().BeFalse(because: "validation never changes state");
 		attribute.Idempotent.Should().BeTrue(because: "validating the same graph always yields the same result");
 		attribute.OpenWorld.Should().BeFalse(because: "validation is a closed, in-memory operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The required-package checker is resolved per-call against the environment named in the request args, not from the startup container.")]
+	public void Validate_ShouldResolveCheckerForRequestEnvironment_WhenInvoked() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "e")];
+
+		// Act
+		Validate(nodes, edges);
+
+		// Assert
+		_commandResolver.Received(1).Resolve<IRequiredPackageChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == EnvName));
+		_checker.Received(1).EnsureRequirements(Arg.Any<object>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the required package is absent the checker throws PackageRequirementException; the tool returns success=false with that message and does not validate the graph.")]
+	public void Validate_ShouldReturnFailureAndSkipValidation_WhenRequiredPackageIsMissing() {
+		// Arrange
+		IProcessGraphValidator validator = Substitute.For<IProcessGraphValidator>();
+		ValidateProcessGraphTool tool = new(validator, _commandResolver);
+		const string message = "Package 'clioprocessbuilder' is required. Run 'clio install-clioprocessbuilder -e dev'";
+		_checker.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException(message));
+
+		// Act
+		ValidateProcessGraphResponse response = tool.Validate(new ValidateProcessGraphArgs(EnvName, [N("s", "startEvent")], []));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a missing required package must fail the call cleanly");
+		response.Error.Should().Be(message, because: "the install hint from the package check must surface verbatim");
+		validator.DidNotReceive().Validate(Arg.Any<ProcessGraph>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the requested environment is unknown the resolver throws InvalidOperationException; the tool surfaces that message as success=false and does not validate the graph.")]
+	public void Validate_ShouldReturnFailureAndSkipValidation_WhenEnvironmentIsUnknown() {
+		// Arrange
+		IProcessGraphValidator validator = Substitute.For<IProcessGraphValidator>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		const string message = "Environment 'ghost' was not found.";
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException(message));
+		ValidateProcessGraphTool tool = new(validator, resolver);
+
+		// Act
+		ValidateProcessGraphResponse response = tool.Validate(new ValidateProcessGraphArgs("ghost", [N("s", "startEvent")], []));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown environment must fail the call cleanly");
+		response.Error.Should().Be(message, because: "the resolver's friendly environment-not-found message must surface verbatim");
+		validator.DidNotReceive().Validate(Arg.Any<ProcessGraph>());
 	}
 }

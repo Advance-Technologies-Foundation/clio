@@ -283,7 +283,6 @@ public sealed class WorkspaceSyncToolTests {
 				new UnlockPackageCommand(
 					Substitute.For<IPackageLockManager>(),
 					Substitute.For<ISysSettingsManager>(),
-					Substitute.For<IClioGateway>(),
 					Substitute.For<ILogger>()),
 				Substitute.For<IApplicationClientFactory>(),
 				new EnvironmentSettings(),
@@ -327,8 +326,7 @@ public sealed class WorkspaceSyncToolTests {
 					Substitute.For<IFileSystem>(),
 					Substitute.For<ISettingsRepository>(),
 					Substitute.For<IWorkspacePathBuilder>(),
-					Substitute.For<IWorkingDirectoriesProvider>()),
-				Substitute.For<IClioGateway>()) {
+					Substitute.For<IWorkingDirectoriesProvider>())) {
 		}
 
 		public override int Execute(RestoreWorkspaceOptions options) {

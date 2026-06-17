@@ -11,111 +11,206 @@ namespace Clio.Tests
     [TestFixture]
     [Category("Unit")]
     [Property("Module", "Core")]
-    [Description("Unit tests for cliogate presence and version check logic in RemoteCommand.")]
+    [Description("Unit tests confirming RemoteCommand no longer self-gates on cliogate; package requirements are now declarative ([RequiresPackage]) and enforced at the dispatch chokepoints, not inside RemoteCommand.Execute.")]
     public class RemoteCommandCliogateTests
     {
         private class TestOptions : RemoteCommandOptions { }
 
         private class TestRemoteCommand : RemoteCommand<TestOptions>
         {
-            public bool VersionChecked { get; private set; }
-            public string LastError { get; private set; }
-            
-            public TestRemoteCommand(string servicePath, string clioGateMinVersion, IClioGateway clioGateway)
+            public bool RemoteCommandExecuted { get; private set; }
+
+            public TestRemoteCommand(string servicePath, IClioGateway clioGateway)
             {
                 ServicePath = servicePath;
-                ClioGateMinVersion = clioGateMinVersion;
                 ClioGateWay = clioGateway;
                 Logger = Substitute.For<ILogger>();
-                Logger
-                    .When(x => x.WriteError(Arg.Any<string>()))
-                    .Do(call => LastError = call.Arg<string>());
             }
-            
-            public TestRemoteCommand(EnvironmentSettings environmentSettings, string servicePath)
-            {
-                EnvironmentSettings = environmentSettings;
-                ServicePath = servicePath;
-                Logger = Substitute.For<ILogger>();
-            }
-            
-            // Expose ServiceUri for testing
-            public string GetServiceUri() => ServiceUri;
-            
-            protected override void ExecuteRemoteCommand(TestOptions options) { }
+
+            protected override void ExecuteRemoteCommand(TestOptions options) => RemoteCommandExecuted = true;
             protected override void ProceedResponse(string response, TestOptions options) { }
-            protected override string ClioGateMinVersion { get; } = "0.0.0.0";
             protected override string ServicePath { get; set; }
         }
 
         [Test]
-        [Description("Should return error if cliogate is required by ServicePath and not installed.")]
-        public void Execute_ShouldReturnError_WhenCliogateRequiredByServicePathAndNotInstalled()
+        [Description("RemoteCommand.Execute must run the remote command even for a cliogate ServicePath when no gateway is present, because the cliogate requirement is now enforced declaratively by [RequiresPackage] at the dispatch chokepoint, not inside RemoteCommand.")]
+        public void Execute_ShouldRunRemoteCommand_WhenCliogateServicePathAndNoGateway()
         {
-            var cmd = new TestRemoteCommand("/rest/CreatioApiGateway/GetSysInfo", "0.0.0.0", null);
+            // Arrange
+            var cmd = new TestRemoteCommand("/rest/CreatioApiGateway/GetSysInfo", clioGateway: null);
+
+            // Act
             var result = cmd.Execute(new TestOptions());
-            result.Should().Be(1, "cliogate is required but not installed");
-            cmd.LastError.Should().Contain("cliogate is not installed", "error message should be correct");
+
+            // Assert
+            result.Should().Be(0,
+                because: "RemoteCommand no longer self-gates on cliogate; it must proceed regardless of gateway presence");
+            cmd.RemoteCommandExecuted.Should().BeTrue(
+                because: "the remote command must be dispatched without an inline cliogate pre-check");
         }
 
         [Test]
-        [Description("Should return error if cliogate is required by ClioGateMinVersion and not installed.")]
-        public void Execute_ShouldReturnError_WhenCliogateRequiredByMinVersionAndNotInstalled()
+        [Description("RemoteCommand.Execute must never call IClioGateway.CheckCompatibleVersion, because the legacy inline version gate has been removed in favour of [RequiresPackage].")]
+        public void Execute_ShouldNotCallCheckCompatibleVersion_WhenGatewayPresent()
         {
-            var cmd = new TestRemoteCommand("", "2.0.0.32", null);
-            var result = cmd.Execute(new TestOptions());
-            result.Should().Be(1, "cliogate is required by version but not installed");
-            cmd.LastError.Should().Contain("cliogate is not installed", "error message should be correct");
-        }
-
-        [Test]
-        [Description("Should check version if cliogate is installed and ClioGateMinVersion is set.")]
-        public void Execute_ShouldCheckVersion_WhenCliogateInstalledAndMinVersionSet()
-        {
+            // Arrange
             var gateway = Substitute.For<IClioGateway>();
-            var cmd = new TestRemoteCommand("", "2.0.0.32", gateway);
-            cmd.Execute(new TestOptions());
-            gateway.Received(1).CheckCompatibleVersion("2.0.0.32");
-        }
+            var cmd = new TestRemoteCommand("/rest/CreatioApiGateway/GetSysInfo", gateway);
 
-        [Test]
-        [Description("Should not check version if ClioGateMinVersion is default.")]
-        public void Execute_ShouldNotCheckVersion_WhenMinVersionIsDefault()
-        {
-            var gateway = Substitute.For<IClioGateway>();
-            var cmd = new TestRemoteCommand("", "0.0.0.0", gateway);
+            // Act
             cmd.Execute(new TestOptions());
+
+            // Assert
             gateway.DidNotReceive().CheckCompatibleVersion(Arg.Any<string>());
         }
 
         [Test]
-        [Description("Should execute command if cliogate is present and requirements are met.")]
-        public void Execute_ShouldRunCommand_WhenCliogatePresentAndRequirementsMet()
+        [Description("RemoteCommand.Execute must run a non-cliogate ServicePath command as before, confirming the removed gate did not change the happy path.")]
+        public void Execute_ShouldRunRemoteCommand_WhenServicePathDoesNotRequireCliogate()
         {
-            var gateway = Substitute.For<IClioGateway>();
-            var cmd = new TestRemoteCommand("/rest/CreatioApiGateway/GetSysInfo", "2.0.0.32", gateway);
+            // Arrange
+            var cmd = new TestRemoteCommand("/api/SomeOtherService", clioGateway: null);
+
+            // Act
             var result = cmd.Execute(new TestOptions());
-            result.Should().Be(0, "cliogate is present and requirements are met");
+
+            // Assert
+            result.Should().Be(0,
+                because: "a non-cliogate ServicePath was never gated and must still execute");
+            cmd.RemoteCommandExecuted.Should().BeTrue(
+                because: "the remote command must be dispatched normally");
+        }
+    }
+
+    [TestFixture]
+    [Category("Unit")]
+    [Property("Module", "Command")]
+    [Description("Reflection tests asserting the cliogate package requirement migrated from the legacy RemoteCommand gate onto the command options classes via [RequiresPackage].")]
+    public class CliogateRequiresPackageAttributeTests
+    {
+        private const string ExpectedCliogateHint =
+            "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.";
+
+        private static RequiresPackageAttribute GetCliogateRequirement(Type optionsType)
+            => (RequiresPackageAttribute[])optionsType.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: false)
+                is { Length: > 0 } attrs
+                ? System.Array.Find(attrs, a => string.Equals(a.Name, "cliogate", System.StringComparison.OrdinalIgnoreCase))
+                : null;
+
+        [TestCase(typeof(LockPackageOptions), "2.0.0.42")]
+        [TestCase(typeof(UnlockPackageOptions), "2.0.0.42")]
+        [TestCase(typeof(RestoreWorkspaceOptions), "2.0.0.0")]
+        [TestCase(typeof(Clio.Command.SqlScriptCommand.ExecuteSqlScriptOptions), "2.0.0.41")]
+        [Test]
+        [Description("Each migrated versioned command options class must declare [RequiresPackage(\"cliogate\", <version>)] so the requirement is enforced at the dispatch chokepoint.")]
+        public void OptionsType_ShouldDeclareVersionedCliogateRequirement_WhenCommandWasMigrated(
+            Type optionsType, string expectedVersion)
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(optionsType);
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"{optionsType.Name} must carry the declarative cliogate requirement after migration");
+            requirement!.Version.Should().Be(expectedVersion,
+                because: "the migrated version must match the legacy ClioGateMinVersion value");
+            requirement.Hint.Should().Be(ExpectedCliogateHint,
+                because: "the cliogate install hint must be restored so the unmet-requirement error tells the user to run install-gate");
         }
 
         [Test]
-        [Description("Should execute command if ServicePath is not empty and does not require cliogate.")]
-        public void Execute_ShouldRunCommand_WhenServicePathIsNotEmptyAndDoesNotRequireCliogate()
+        [Description("show-package-file-content relied on the implicit ServicePath trigger that never enforced a version, so its migrated requirement must be presence-only (no version).")]
+        public void ShowPackageFileContentOptions_ShouldDeclarePresenceOnlyCliogateRequirement_WhenMigrated()
         {
-            var cmd = new TestRemoteCommand("/api/SomeOtherService", "0.0.0.0", null);
-            var result = cmd.Execute(new TestOptions());
-            result.Should().Be(0, "cliogate is not required for this ServicePath");
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(ShowPackageFileContentOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "show-package-file-content requires cliogate to be installed");
+            requirement!.Version.Should().BeNullOrEmpty(
+                because: "the legacy implicit ServicePath trigger never enforced a version, so the requirement is presence-only");
+            requirement.Hint.Should().Be(ExpectedCliogateHint,
+                because: "the cliogate install hint must be restored even for the presence-only requirement");
         }
 
         [Test]
-        [Description("Should execute command if ServicePath is not empty and does not require cliogate, even if gateway is present.")]
-        public void Execute_ShouldRunCommand_WhenServicePathIsNotEmptyAndDoesNotRequireCliogateWithGateway()
+        [Description("get-info must NOT carry [RequiresPackage] because it degrades gracefully to ApplicationInfoService when cliogate is absent or old, instead of hard-failing.")]
+        public void GetCreatioInfoCommandOptions_ShouldNotDeclareCliogateRequirement_BecauseItDegradesGracefully()
         {
-            var gateway = Substitute.For<IClioGateway>();
-            var cmd = new TestRemoteCommand("/api/SomeOtherService", "0.0.0.0", gateway);
-            var result = cmd.Execute(new TestOptions());
-            result.Should().Be(0, "cliogate is not required for this ServicePath, gateway present");
-            gateway.DidNotReceive().CheckCompatibleVersion(Arg.Any<string>());
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(GetCreatioInfoCommandOptions));
+
+            // Assert
+            requirement.Should().BeNull(
+                because: "get-info must stay reachable without cliogate and fall back to ApplicationInfoService");
+        }
+    }
+
+    [TestFixture]
+    [Category("Unit")]
+    [Property("Module", "Command")]
+    [Description("Reflection lock-in tests asserting the four process-designer command options classes are gated on the clioprocessbuilder package (presence-only), and that the MCP args record no longer carries a stray requirement.")]
+    public class ProcessDesignerRequiresPackageAttributeTests
+    {
+        private const string ExpectedProcessBuilderHint =
+            "This experimental feature requires the clioprocessbuilder package on the target environment.";
+
+        private static RequiresPackageAttribute GetProcessBuilderRequirement(Type type)
+            => (RequiresPackageAttribute[])type.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: false)
+                is { Length: > 0 } attrs
+                ? System.Array.Find(attrs, a => string.Equals(a.Name, "clioprocessbuilder", System.StringComparison.OrdinalIgnoreCase))
+                : null;
+
+        [TestCase(typeof(CreateBusinessProcessOptions))]
+        [TestCase(typeof(ModifyBusinessProcessOptions))]
+        [TestCase(typeof(DescribeProcessOptions))]
+        [TestCase(typeof(GetProcessSignatureOptions))]
+        [Test]
+        [Description("Each process-designer command options class must declare [RequiresPackage(\"clioprocessbuilder\")] with no version (presence-only) so the centralized BaseTool.ResolveCommand gate enforces the requirement uniformly.")]
+        public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
+            Type optionsType)
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"{optionsType.Name} must carry the declarative clioprocessbuilder requirement so the MCP gate fires");
+            requirement!.Version.Should().BeNullOrEmpty(
+                because: "the process-designer requirement is presence-only (any installed version satisfies it)");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
+        [Description("The validate-process-graph args record must carry the presence-only clioprocessbuilder requirement, because the standalone tool manually calls EnsureRequirements(args) which reads the attribute off the args type.")]
+        public void ValidateProcessGraphArgs_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenStandaloneTool()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(
+                typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "the standalone validator reads [RequiresPackage] off the args record to gate on clioprocessbuilder");
+            requirement!.Version.Should().BeNullOrEmpty(
+                because: "the validator requirement is presence-only, consistent with the BaseTool process tools");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the validator hint must match the other process-designer gates");
+        }
+
+        [Test]
+        [Description("The describe-process MCP args record must NOT carry [RequiresPackage]: the requirement belongs on the command OPTIONS type (DescribeProcessOptions), which the centralized BaseTool gate reads, not on the MCP args record.")]
+        public void DescribeProcessArgs_ShouldNotDeclareAnyPackageRequirement_BecauseGateReadsOptionsType()
+        {
+            // Arrange & Act
+            bool hasRequirement = typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessArgs)
+                .IsDefined(typeof(RequiresPackageAttribute), inherit: false);
+
+            // Assert
+            hasRequirement.Should().BeFalse(
+                because: "the gate reads [RequiresPackage] off the command options type (T in BaseTool<T>), so the stray attribute on the args record was incorrect and must be removed");
         }
     }
 

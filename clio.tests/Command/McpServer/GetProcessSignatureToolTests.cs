@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
@@ -191,6 +192,40 @@ public class GetProcessSignatureToolTests {
 		ok.Should().BeFalse(because: "a blank process name is invalid input");
 		response.Success.Should().BeFalse(because: "no lookup is attempted for blank input");
 		response.Error.Should().Contain("process-name", because: "the error should name the missing argument");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns Success=false with the requirement message when clioprocessbuilder is missing, proving the typed-response tool now goes through the centralized BaseTool.ResolveCommand package gate.")]
+	public void GetProcessSignature_Should_Return_RequirementFailure_When_ProcessBuilderPackageMissing() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeGetProcessSignatureCommand defaultCommand = new();
+		FakeGetProcessSignatureCommand resolvedCommand = new();
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException(
+				"Package 'clioprocessbuilder' is required. This experimental feature requires the clioprocessbuilder package on the target environment."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetProcessSignatureCommand>(Arg.Any<GetProcessSignatureOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(checker);
+		GetProcessSignatureTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		GetProcessSignatureResponse response = tool.GetProcessSignature(
+			new GetProcessSignatureArgs("UsrProcess_e629820", null, "docker_fix2", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the centralized gate fires inside ResolveCommand before the command runs when the package is missing");
+		response.Error.Should().Contain("clioprocessbuilder",
+			because: "the PackageRequirementException message must surface verbatim through the tool's own catch");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the command must not run when its package requirement is unmet");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeGetProcessSignatureCommand : GetProcessSignatureCommand {

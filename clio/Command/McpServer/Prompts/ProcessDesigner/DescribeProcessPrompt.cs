@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Prompts;
+namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 
 /// <summary>
 /// Prompt that orients the agent to read an existing process and explain it in plain language using the
@@ -9,6 +9,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// </summary>
 [McpServerPromptType]
 [Description("Guides the agent to read an existing Creatio process with describe-process, then narrate what it does using the process-modeling guidance.")]
+[FeatureToggle("process-designer")]
 public static class DescribeProcessPrompt {
 
 	/// <summary>
