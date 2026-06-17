@@ -66,9 +66,10 @@ public sealed class ComponentInfoTool(
 	/// composites section of list mode (and the <c>composite="&lt;caption&gt;"</c> detail).
 	/// </summary>
 	internal const string CompositeOnlyHintText =
-		"This component has no standalone Designer toolbar presence and is used ONLY as part of a composite. "
-		+ "Do not insert it on its own. List composites with get-component-info (list mode), pick the matching one, "
-		+ "then fetch its assembly recipe with get-component-info composite=\"<caption>\".";
+		"This component has no standalone Designer toolbar presence — do not insert it on its own. "
+		+ "List composites with get-component-info (list mode); if one matches this component, fetch its assembly "
+		+ "recipe with get-component-info composite=\"<caption>\" and build that instead. If no composite matches, "
+		+ "this component is not meant to be authored directly.";
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
