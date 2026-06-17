@@ -69,7 +69,7 @@ public sealed class PageSyncToolBaselineTests
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"success": true}""");
 		return new PageUpdateCommand(
-			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClient());
+			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClient());
 	}
 
 	private static string ChecksumRow(string checksum) =>
@@ -86,7 +86,8 @@ public sealed class PageSyncToolBaselineTests
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			Substitute.For<IPageBodySamplingService>());
+			Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(fileSystem));
 	}
 
 	private static MockFileSystem CreateFileSystemWithBaseline(string checksum, string environmentName = "dev") {
@@ -288,6 +289,15 @@ public sealed class PageSyncToolBaselineTests
 			Substitute.For<ILogger>(),
 			hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
+	}
+
+	private static IPageFileWriter CreatePassthroughPageFileWriter() {
+		IPageFileWriter writer = Substitute.For<IPageFileWriter>();
+		writer.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		return writer;
 	}
 }

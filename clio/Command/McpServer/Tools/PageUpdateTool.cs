@@ -21,7 +21,7 @@ public sealed class PageUpdateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	System.IO.Abstractions.IFileSystem fileSystem)
+	IPageBaselineGuard pageBaselineGuard)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -66,7 +66,7 @@ public sealed class PageUpdateTool(
 				cancellationToken);
 		if (earlyFailure != null)
 			return earlyFailure;
-		(string metaFilePath, bool baselineArmed) = TryArmBaseline(options, args);
+		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(() => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -80,7 +80,7 @@ public sealed class PageUpdateTool(
 			return inner;
 		});
 		if (baselineArmed && response.Success && !options.DryRun)
-			RefreshOrDropBaseline(metaFilePath, args, response);
+			pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
 			MergeWarnings(validationWarnings, response.Warnings),
@@ -387,61 +387,6 @@ public sealed class PageUpdateTool(
 			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
 			return false;
 		}
-	}
-
-	/// <summary>
-	/// Discovers the on-disk conflict baseline written by <c>get-page</c> and, when it targets the
-	/// same environment as this call, arms the external-modification check on the options. Returns
-	/// the resolved meta.json path plus whether the baseline is in play (drives the post-save
-	/// refresh). Missing/legacy/foreign-environment baselines leave the check disarmed (FR-07/FR-08).
-	/// </summary>
-	private (string MetaFilePath, bool BaselineArmed) TryArmBaseline(PageUpdateOptions options, PageUpdateArgs args) {
-		string metaFilePath;
-		try {
-			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
-				fileSystem,
-				fileSystem.Directory.GetCurrentDirectory(),
-				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-				ClioRuntimePaths.Home,
-				args.OutputDirectory,
-				args.BodyFile,
-				args.SchemaName);
-		} catch {
-			return (null, false);
-		}
-		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
-		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, args.EnvironmentName, args.Uri)) {
-			return (metaFilePath, false);
-		}
-		options.ExpectedChecksum = baseline.Checksum;
-		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
-		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
-		return (metaFilePath, true);
-	}
-
-	/// <summary>
-	/// After a successful save with an armed baseline: persists the fresh post-save checksum into
-	/// the existing meta.json, or removes the baseline block when the command could not obtain
-	/// fresh metadata — so the next write never compares against a stale checksum (FR-09).
-	/// </summary>
-	private void RefreshOrDropBaseline(string metaFilePath, PageUpdateArgs args, PageUpdateResponse response) {
-		if (string.IsNullOrWhiteSpace(response.NewChecksum)) {
-			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
-			return;
-		}
-		PageBaselineStore.RefreshExistingBaseline(
-			fileSystem,
-			metaFilePath,
-			new PageBaselineInfo {
-				SchemaName = args.SchemaName,
-				EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
-				EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
-				EditableSchemaExists = true,
-				EditableSchemaUId = response.SavedSchemaUId,
-				Checksum = response.NewChecksum,
-				ModifiedOn = response.NewModifiedOn,
-				CapturedAt = DateTime.UtcNow.ToString("o")
-			});
 	}
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {

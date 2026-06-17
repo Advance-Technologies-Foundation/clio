@@ -24,7 +24,8 @@ public sealed class PageSyncTool(
 	IFileSystem fileSystem,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService) {
+	IPageBodySamplingService samplingService,
+	IPageBaselineGuard pageBaselineGuard) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -468,7 +469,7 @@ public sealed class PageSyncTool(
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
 			if (baselineArmed) {
-				RefreshOrDropBaseline(metaFilePath, page.SchemaName, opOptions.EnvironmentName, updateResponse);
+				pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
 			}
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
@@ -484,21 +485,6 @@ public sealed class PageSyncTool(
 				Success = false,
 				Error = ex.Message
 			};
-		}
-	}
-
-	private string ResolveBaselineMetaPath(string schemaName, string? outputDirectory) {
-		try {
-			return PageBaselineStore.ResolveMetaFilePath(
-				fileSystem,
-				fileSystem.Directory.GetCurrentDirectory(),
-				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-				ClioRuntimePaths.Home,
-				outputDirectory,
-				bodyFile: null,
-				schemaName);
-		} catch {
-			return null;
 		}
 	}
 
@@ -522,24 +508,21 @@ public sealed class PageSyncTool(
 	private (string MetaFilePath, bool BaselineArmed, PageUpdateOptions UpdateOptions) BuildUpdateRequest(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions) {
-		string metaFilePath = ResolveBaselineMetaPath(page.SchemaName, opOptions.OutputDirectory);
-		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
-		bool baselineArmed = baseline != null
-			&& PageBaselineStore.MatchesEnvironment(baseline, opOptions.EnvironmentName, null);
+		// sync-pages only ever knows the environment name (no per-page URI); set it on the options so
+		// the shared guard's environment-identity check compares against EnvironmentName, matching the
+		// prior MatchesEnvironment(baseline, opOptions.EnvironmentName, null) call.
 		PageUpdateOptions updateOptions = new() {
 			SchemaName = page.SchemaName,
 			Body = page.Body,
 			DryRun = false,
 			Resources = page.Resources,
 			OptionalProperties = page.OptionalProperties,
+			Environment = opOptions.EnvironmentName,
 			Force = page.Force ?? false,
 			NotifyDesignerPresence = false
 		};
-		if (baselineArmed) {
-			updateOptions.ExpectedChecksum = baseline.Checksum;
-			updateOptions.ExpectedSchemaUId = baseline.EditableSchemaUId;
-			updateOptions.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
-		}
+		(string metaFilePath, bool baselineArmed) =
+			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
 		return (metaFilePath, baselineArmed, updateOptions);
 	}
 
@@ -618,28 +601,6 @@ public sealed class PageSyncTool(
 		} catch {
 			// best-effort — meta refresh must never fail a verified save.
 		}
-	}
-
-	// FR-09: non-verify path — persist the post-save checksum into the existing baseline, or drop
-	// the baseline when fresh metadata could not be obtained (fail toward no-check).
-	private void RefreshOrDropBaseline(
-		string metaFilePath, string schemaName, string? environmentName, PageUpdateResponse updateResponse) {
-		if (string.IsNullOrWhiteSpace(updateResponse.NewChecksum)) {
-			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
-			return;
-		}
-		PageBaselineStore.RefreshExistingBaseline(
-			fileSystem,
-			metaFilePath,
-			new PageBaselineInfo {
-				SchemaName = schemaName,
-				EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
-				EditableSchemaExists = true,
-				EditableSchemaUId = updateResponse.SavedSchemaUId,
-				Checksum = updateResponse.NewChecksum,
-				ModifiedOn = updateResponse.NewModifiedOn,
-				CapturedAt = DateTime.UtcNow.ToString("o")
-			});
 	}
 
 	private static PageBaselineInfo BuildBaseline(

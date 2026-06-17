@@ -233,3 +233,17 @@ All new tests: `[Category("Unit")]`, AAA structure, `because` on every assertion
 - [ ] Docs updated: `help/en/*.txt`, `docs/commands/*.md`, `Commands.md`
 - [ ] OQ-01 resolved during implementation (SaveSchema response checksum availability); OQ-02 (A-01 checksum semantics) verified by the first E2E scenario
 - [ ] `meta.json` keeps exact legacy property names `fetchedAt`/`page` via explicit `[JsonPropertyName]`
+
+---
+
+## Addendum 2026-06-16 — CLI parity (ENG-91317 reopened)
+
+**Trigger**: ENG-91317 was reopened. Reporter note: *"Claude works correct, Codex continue rewrite changes."* Codex reads a page through the **MCP** `get-page` tool (which writes the `.clio-pages/{schema}/meta.json` baseline) but saves through the **CLI** `clio update-page --body-file …\.clio-pages\{schema}\body.js` — without `--expected-checksum`. The conflict gate in `PageUpdateCommand.TryUpdatePage` therefore short-circuited (`if (!hasChecksum && !ExpectedSchemaAbsent) return true;`) and the external edit was silently overwritten.
+
+**Decision reversed**: Option B assumed *"the command stays filesystem-free (CLI users pass `--expected-checksum` explicitly)"*. That assumption fails for AI-agent CLI flows, which never pass the flag. The CLI is no longer filesystem-free for page writes:
+
+- Baseline orchestration (`TryArm` before save, `RefreshOrDrop` after) is extracted from `PageUpdateTool`/`PageSyncTool` into a shared DI service **`IPageBaselineGuard`** (`clio/Command/PageBaselineGuard.cs`), consumed by `PageUpdateCommand.Execute` (CLI) **and** all three MCP tools. An explicit `--expected-checksum` still wins over the on-disk baseline.
+- `get-page` file output (`body.js`/`bundle.json`/`meta.json` + baseline) is extracted from `PageGetTool` into a shared DI service **`IPageFileWriter`** (`clio/Command/PageFileWriter.cs`), consumed by `PageGetCommand.Execute` (CLI, new kebab-case `--output-directory` option) **and** the MCP `get-page` tool. The CLI verb now persists the same `.clio-pages` layout the MCP tool does, so a pure-CLI `get-page → update-page` flow is protected too.
+- `PageBaselineStore` and `PageOutputDirectoryResolver` moved from namespace `Clio.Command.McpServer.Tools` to `Clio.Command` (shared, no longer MCP-specific). Both new services are registered in `BindingsModule`.
+
+**Scope notes**: `sync-pages` has no CLI verb (MCP-only) — unaffected beyond the shared-service refactor. The MCP external contract is unchanged (behavior-preserving refactor), so existing `clio.mcp.e2e` page coverage still applies; CLI-path coverage is added as unit tests (`PageBaselineGuardTests`, `PageFileWriterTests`, `PageUpdateCommandBaselineTests`, `PageGetCommandFileWriterTests`). Tracked as `story-detect-external-schema-changes-6`.

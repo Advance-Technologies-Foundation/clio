@@ -58,7 +58,7 @@ public sealed class PageUpdateToolBaselineTests
 		hierarchyClient.GetParentSchemas(SchemaUId, "test-pkg-uid").Returns([
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
-		PageUpdateCommand command = new(_applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageUpdateCommand command = new(_applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_fileSystem = new MockFileSystem();
@@ -67,7 +67,7 @@ public sealed class PageUpdateToolBaselineTests
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			Substitute.For<IPageBodySamplingService>(),
-			_fileSystem);
+			new PageBaselineGuard(_fileSystem));
 	}
 
 	private void StubChecksumByUId(params string[] responses) {
