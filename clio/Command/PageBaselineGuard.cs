@@ -26,8 +26,10 @@ public interface IPageBaselineGuard {
 	/// <returns>
 	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed) and whether
 	/// the check is armed. When a caller already pinned <see cref="PageUpdateOptions.ExpectedChecksum"/>
-	/// explicitly (CLI <c>--expected-checksum</c>), that manual baseline wins and this method reports
-	/// not-armed so the post-save refresh leaves the on-disk baseline untouched.
+	/// explicitly (CLI <c>--expected-checksum</c>), that manual checksum wins the comparison and is left
+	/// untouched — but if a matching on-disk baseline exists, the method still reports armed so the
+	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
+	/// the overwritten value (which would raise a false conflict on the next unpinned save).
 	/// </returns>
 	(string MetaFilePath, bool Armed) TryArm(PageUpdateOptions options, string outputDirectory);
 
@@ -57,12 +59,10 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 
 	/// <inheritdoc />
 	public (string MetaFilePath, bool Armed) TryArm(PageUpdateOptions options, string outputDirectory) {
-		// A caller-pinned --expected-checksum (CLI) is honored verbatim: do not overwrite it from disk
-		// and do not arm the on-disk refresh. For MCP callers ExpectedChecksum is always null here, so
-		// this guard is a no-op and the on-disk baseline drives the check exactly as before.
-		if (!string.IsNullOrWhiteSpace(options.ExpectedChecksum)) {
-			return (null, false);
-		}
+		// A caller-pinned --expected-checksum (CLI) is honored verbatim: it wins the comparison and is
+		// never overwritten from disk. For MCP callers ExpectedChecksum is always null here, so the
+		// on-disk baseline drives the check exactly as before.
+		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		string metaFilePath;
 		try {
 			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
@@ -80,6 +80,13 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(_fileSystem, metaFilePath);
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
 			return (metaFilePath, false);
+		}
+		if (callerPinnedChecksum) {
+			// Explicit checksum wins the comparison, so we do NOT arm the check from disk. But the matching
+			// on-disk baseline must still move forward after the save: report armed (without touching
+			// options.ExpectedChecksum) so RefreshOrDrop persists the post-save checksum. Otherwise the next
+			// unpinned save auto-arms from a now-superseded checksum and raises a false conflict.
+			return (metaFilePath, true);
 		}
 		options.ExpectedChecksum = baseline.Checksum;
 		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
