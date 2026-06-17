@@ -121,6 +121,40 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes each parameter's data value type and a lookup's referenceSchema into the graph JSON (regression: the clio DescribedParameter DTO previously dropped these server fields on re-serialization).")]
+	public void Execute_ShouldWriteParameterTypeAndReferenceSchema_WhenPresent() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrTaskProcess",
+				SchemaUId = "uid",
+				Elements = [],
+				Flows = [],
+				Parameters = [
+					new DescribedParameter {
+						Name = "PCity", UId = "u1", Type = "Lookup", ReferenceSchema = "City", Source = "None"
+					}
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "UsrTaskProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("Lookup",
+			because: "the parameter's resolved data value type must survive the clio DTO re-serialization");
+		written.Should().Contain("\"referenceSchema\"",
+			because: "the lookup parameter's referenceSchema field must not be dropped by the clio DTO");
+		written.Should().Contain("City",
+			because: "the lookup's referenced object name must be carried through to the command output");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Requires exactly one identity: with more than one provided it errors before contacting the server.")]
 	public void Execute_ShouldErrorWithoutReading_WhenMultipleIdentitiesProvided() {
 		// Arrange

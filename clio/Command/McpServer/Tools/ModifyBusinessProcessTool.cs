@@ -29,14 +29,19 @@ public class ModifyBusinessProcessTool(
 		 + "operations. Identify the process by name (schema code) or uid. Each operation is an object with an "
 		 + "'op': addElement (with an 'element' descriptor: id, type, caption, userTaskName?, signal?), "
 		 + "removeElement (with 'elementId' = the element's local id or UId), addFlow / removeFlow (with 'source' "
-		 + "and 'target' element ids). Operations apply in order; any failure aborts the edit (nothing is saved). "
+		 + "and 'target' element ids), addParameter (with a 'parameter': name, type e.g. Text/Integer/Guid, "
+		 + "direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), addMapping (with a "
+		 + "'mapping': elementId, elementParameter, and exactly one of processParameter | value | expression). "
+		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
 		 + "Use describe-process to inspect the current elements/ids first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Process code (schema Name) to edit; provide exactly one of processName or processUid")] string processName,
-		[Description("Process schema UId to edit; provide exactly one of processName or processUid")] string processUid,
 		[Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]")]
-		[Required] string operations
+		[Required] string operations,
+		[Description("Process code (schema Name) to edit; provide exactly one of processName or processUid")]
+		string? processName = null,
+		[Description("Process schema UId to edit; provide exactly one of processName or processUid")]
+		string? processUid = null
 	) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");

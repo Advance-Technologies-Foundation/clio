@@ -47,7 +47,7 @@ A JSON object with the following fields:
 | `packageName` | Target package the process is created in. |
 | `elements` | Array of `{ id, type, caption, userTaskName?, signal? }`. `type` is `startEvent` \| `signalStart` \| `endEvent` \| `userTask` (aliases `readData`, `performTask`). For a record trigger ("run on save"), use a `signalStart` element with `signal: { entity, on }` where `on` is one of `added` \| `modified` \| `deleted` (one event) — the platform-native alternative to a client-side page save handler. |
 | `flows` | Array of `{ source, target }` referencing element ids. |
-| `parameters` | Array of `{ name, type, direction, caption }` (process inputs / variables). |
+| `parameters` | Array of `{ name, type, direction, caption, referenceSchema? }` (process inputs / variables). `referenceSchema` (an object name, e.g. `City`) makes the parameter a Lookup to that object. |
 | `mappings` | Array of `{ elementId, elementParameter }` plus one of `processParameter` \| `value` \| `expression`. |
 
 Example descriptor:

@@ -37,7 +37,8 @@ DESCRIPTOR
                     signal: { entity: <EntityName>, on: added | modified | deleted } (one event)
                     instead of a client-side page save handler.
       flows         Array of { source, target } referencing element ids.
-      parameters    Array of { name, type, direction, caption } (process inputs / variables).
+      parameters    Array of { name, type, direction, caption, referenceSchema? } (process inputs /
+                    variables). referenceSchema (an object name, e.g. "City") makes it a Lookup to that object.
       mappings      Array of { elementId, elementParameter } plus one of
                     processParameter | value | expression.
 

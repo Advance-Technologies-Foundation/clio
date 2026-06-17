@@ -12,7 +12,7 @@ failure aborts the whole edit (nothing is saved). Identify the process by exactl
 `--uid`, and provide the operations as a JSON array file (`--operations`) or inline (`--operations-json`). Requires
 the `clioprocessbuilder` package on the target environment.
 
-Phase 1 operations: `addElement`, `removeElement`, `addFlow`, `removeFlow`.
+Operations: `addElement`, `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`.
 
 ## Synopsis
 
@@ -50,6 +50,8 @@ A JSON array; each item is an object with an `op`:
 | `removeElement` | `elementId` (local id or UId) | Removes the element plus its sequence flows. |
 | `addFlow` | `source`, `target` (element ids) | Adds a sequence flow. |
 | `removeFlow` | `source`, `target` (element ids) | Removes the matching sequence flow. |
+| `addParameter` | `parameter` (name, type, direction?, caption?, referenceSchema?) | Adds a process-level parameter (same shape as a build `parameters[]` entry). `referenceSchema` (an object name) makes it a Lookup to that object. |
+| `addMapping` | `mapping` (elementId, elementParameter, + one of processParameter/value/expression) | Binds an element input parameter to a value (same shape as a build `mappings[]` entry). |
 
 Example — switch a process to start on record save (the proper alternative to a client save handler):
 
@@ -58,6 +60,23 @@ Example — switch a process to start on record save (the proper alternative to 
   { "op": "removeElement", "elementId": "StartEvent1" },
   { "op": "addElement", "element": { "id": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
   { "op": "addFlow", "source": "SignalStart1", "target": "task1" }
+]
+```
+
+Example — add a process parameter and bind it to a task's input parameter:
+
+```json
+[
+  { "op": "addParameter", "parameter": { "name": "AccountId", "type": "Guid", "direction": "In", "caption": "Account" } },
+  { "op": "addMapping", "mapping": { "elementId": "task1", "elementParameter": "RecordId", "processParameter": "AccountId" } }
+]
+```
+
+Example — add a lookup parameter referencing an object (a Lookup to `City`):
+
+```json
+[
+  { "op": "addParameter", "parameter": { "name": "City", "referenceSchema": "City", "direction": "In" } }
 ]
 ```
 

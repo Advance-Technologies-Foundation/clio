@@ -7,7 +7,7 @@ DESCRIPTION
     any failure aborts the whole edit (nothing is saved). Identify the process by --name or --uid, and
     provide the operations as a JSON array file (--operations) or inline (--operations-json).
 
-    Phase 1 operations: addElement, removeElement, addFlow, removeFlow.
+    Operations: addElement, removeElement, addFlow, removeFlow, addParameter, addMapping.
 
 SYNOPSIS
     clio modify-business-process --name <CODE> --operations <FILE> -e <ENVIRONMENT_NAME>
@@ -35,6 +35,11 @@ OPERATIONS
       removeElement   { "op":"removeElement", "elementId": "<local id or UId>" }
       addFlow         { "op":"addFlow", "source": "<id>", "target": "<id>" }
       removeFlow      { "op":"removeFlow", "source": "<id>", "target": "<id>" }
+      addParameter    { "op":"addParameter", "parameter": { name, type, direction?, caption?, referenceSchema? } }
+      addMapping      { "op":"addMapping", "mapping": { elementId, elementParameter, processParameter|value|expression } }
+
+    referenceSchema on a parameter = an object (entity schema) name, e.g. "City", which creates a
+    Lookup parameter referencing that object (type is ignored when referenceSchema is set).
 
 EXAMPLES
     clio modify-business-process --name UsrSampleProcess --operations ops.json -e production

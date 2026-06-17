@@ -241,6 +241,14 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
 
+	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
+	[JsonPropertyName("referenceSchema")]
+	public string ReferenceSchema { get; set; }
+
 	/// <summary>Value source: <c>None</c>, <c>ConstValue</c>, <c>Mapping</c>, <c>Script</c>, <c>SystemValue</c>, etc.</summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }

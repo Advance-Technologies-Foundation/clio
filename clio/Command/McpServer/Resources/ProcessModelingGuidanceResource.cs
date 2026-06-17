@@ -89,7 +89,8 @@ public sealed class ProcessModelingGuidanceResource {
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
 			5. Verify: `describe-process` (element types, user-task names, parameter sources, the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
-			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow).
+			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
+			   addParameter / addMapping — same parameter/mapping shapes as a build).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.
@@ -122,7 +123,9 @@ public sealed class ProcessModelingGuidanceResource {
 
 			== Parameters / mapping / formulas ==
 			- Process parameters (`parameters[]`): { name, type (Text/Integer/Boolean/DateTime/Float/Lookup/...),
-			  direction (In/Out/Variable/Internal), caption }. A user-task element's own parameters come from the task.
+			  direction (In/Out/Variable/Internal), caption, or referenceSchema = an object name (e.g. City) to make
+			  it a Lookup to that object }. A user-task element's own parameters come from the task. The same shape is
+			  used by modify-business-process `addParameter`.
 			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
 			  { elementId, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
 			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the

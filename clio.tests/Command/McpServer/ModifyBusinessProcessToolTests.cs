@@ -27,7 +27,7 @@ public class ModifyBusinessProcessToolTests {
 		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", "UsrSampleProcess", null, SampleOperations);
+		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", SampleOperations, "UsrSampleProcess", null);
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -56,7 +56,7 @@ public class ModifyBusinessProcessToolTests {
 		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyBusinessProcess("   ", "UsrSampleProcess", null, SampleOperations);
+		CommandExecutionResult result = tool.ModifyBusinessProcess("   ", SampleOperations, "UsrSampleProcess", null);
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -76,7 +76,7 @@ public class ModifyBusinessProcessToolTests {
 		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", null, null, SampleOperations);
+		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", SampleOperations, null, null);
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -97,7 +97,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyBusinessProcess(
-			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", SampleOperations);
+			"docker_fix2", SampleOperations, "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55");
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -117,7 +117,7 @@ public class ModifyBusinessProcessToolTests {
 		ModifyBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", "UsrSampleProcess", null, "   ");
+		CommandExecutionResult result = tool.ModifyBusinessProcess("docker_fix2", "   ", "UsrSampleProcess", null);
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
