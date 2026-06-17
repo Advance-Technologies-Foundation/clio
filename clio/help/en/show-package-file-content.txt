@@ -4,6 +4,12 @@ NAME
 DESCRIPTION
     Displays the content of a file stored within a package.
 
+REQUIREMENTS
+    This command requires the cliogate package to be installed on the target
+    Creatio environment. If cliogate is not installed, the command displays an
+    error and exits. Install or update it with:
+        clio install-gate -e <ENVIRONMENT_NAME>
+
 SYNOPSIS
     clio show-package-file-content [OPTIONS]
 
@@ -16,6 +22,7 @@ EXAMPLES
 
 SEE ALSO
     pull-pkg - Download package files locally
+    install-gate - Install or update the cliogate package (required)
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
