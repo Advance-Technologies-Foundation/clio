@@ -62,6 +62,8 @@ public sealed class MobilePageConversionGuideTool {
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
 		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding), " +
+		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
+		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
 		"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]
@@ -148,6 +150,12 @@ public sealed class MobilePageConversionGuideTool {
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			pageResponse.Page?.SchemaUId, isFormPage);
 
+		// Read-only probe: the source page's PAGE-level business rules (stored as add-on metadata,
+		// not in the page body). Best-effort — never blocks the guide.
+		PageBusinessRuleProbeResult pageBusinessRules = PageBusinessRuleProbe.Probe(
+			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+			args.SchemaName, pageResponse.Page?.PackageUId);
+
 		MobilePageConversionGuide guide;
 		try {
 			guide = WebToMobileAnalysisService.Analyze(
@@ -157,7 +165,8 @@ public sealed class MobilePageConversionGuideTool {
 				sourceTemplate: pageResponse.Page?.ParentSchemaName,
 				suggestedTarget: targetName,
 				containerNameMap: containerNameMap,
-				sectionRegistration: sectionRegistration);
+				sectionRegistration: sectionRegistration,
+				pageBusinessRulesProbe: pageBusinessRules);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

@@ -546,4 +546,100 @@ public sealed class WebToMobileConversionServiceTests {
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
 		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
 	}
+
+	#region ConvertPageBusinessRules
+
+	private static ElementMapEntry El(string web, string operation, string mobile = null) =>
+		new() { WebName = web, Operation = operation, MobileName = mobile };
+
+	private static SourcePageRuleAction ElementAction(string actionType, params string[] items) =>
+		new() { ActionType = actionType, ElementItems = items.ToList() };
+
+	private static SourcePageBusinessRule SourceRule(string caption, params SourcePageRuleAction[] actions) =>
+		new() {
+			Caption = caption,
+			Condition = JsonNode.Parse("""{"logicalOperation":"AND","conditions":[]}"""),
+			Actions = actions.ToList()
+		};
+
+	private static PageBusinessRuleProbeResult ProbeOf(params SourcePageBusinessRule[] rules) =>
+		new() { ProbeOk = true, Rules = rules };
+
+	[Test]
+	[Description("An action on a surviving element converts; its item is remapped web→mobile and the condition is carried verbatim.")]
+	public void ConvertPageBusinessRules_SurvivingElement_RemapsAndKeepsCondition() {
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Lock title", ElementAction("make-read-only", "UsrName")));
+		var elementMap = new List<ElementMapEntry> { El("UsrName", "merge", "AreaName") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.DroppedRules.Should().BeEmpty();
+		result.ConvertedRules.Should().HaveCount(1);
+		ConvertedPageBusinessRule converted = result.ConvertedRules[0];
+		JsonArray actions = converted.Rule!["actions"]!.AsArray();
+		actions.Should().HaveCount(1);
+		actions[0]!["type"]!.GetValue<string>().Should().Be("make-read-only");
+		actions[0]!["items"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal("AreaName");
+		converted.Rule!["condition"].Should().NotBeNull();
+	}
+
+	[Test]
+	[Description("Both visibility actions (hide-element / show-element) convert for surviving elements.")]
+	public void ConvertPageBusinessRules_HideAndShowElement_Convert() {
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Toggle warning", ElementAction("hide-element", "Warn"), ElementAction("show-element", "Hint")));
+		var elementMap = new List<ElementMapEntry> { El("Warn", "insert", "Warn"), El("Hint", "insert", "Hint") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.ConvertedRules.Should().HaveCount(1);
+		JsonArray actions = result.ConvertedRules[0].Rule!["actions"]!.AsArray();
+		actions.Select(a => a!["type"]!.GetValue<string>()).Should().Equal("hide-element", "show-element");
+	}
+
+	[Test]
+	[Description("An action whose only referenced element drops on mobile makes the whole rule drop (with its condition).")]
+	public void ConvertPageBusinessRules_DroppedElement_DropsRule() {
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Lock ghost", ElementAction("make-read-only", "GhostField")));
+		var elementMap = new List<ElementMapEntry> { El("GhostField", "drop") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.ConvertedRules.Should().BeEmpty();
+		result.DroppedRules.Should().HaveCount(1);
+		result.DroppedRules[0].Caption.Should().Be("Lock ghost");
+	}
+
+	[Test]
+	[Description("A multi-element action keeps only the surviving elements (web→mobile) and drops the rest.")]
+	public void ConvertPageBusinessRules_MultiElementAction_KeepsSurvivingOnly() {
+		PageBusinessRuleProbeResult probe = ProbeOf(
+			SourceRule("Require pair", ElementAction("make-required", "Kept", "Gone")));
+		var elementMap = new List<ElementMapEntry> {
+			El("Kept", "insert", "Kept"),
+			El("Gone", "drop")
+		};
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.ConvertedRules.Should().HaveCount(1);
+		JsonArray items = result.ConvertedRules[0].Rule!["actions"]!.AsArray()[0]!["items"]!.AsArray();
+		items.Select(n => n!.GetValue<string>()).Should().Equal("Kept");
+	}
+
+	[Test]
+	[Description("A failed probe yields a not-OK conversion info carrying the note; a null probe yields null.")]
+	public void ConvertPageBusinessRules_ProbeFailedOrNull_DegradesGracefully() {
+		PageBusinessRuleConversionInfo failed = WebToMobileAnalysisService.ConvertPageBusinessRules(
+			new PageBusinessRuleProbeResult { ProbeOk = false, Note = "boom" }, new List<ElementMapEntry>());
+		failed.ProbeOk.Should().BeFalse();
+		failed.Note.Should().Be("boom");
+		failed.ConvertedRules.Should().BeEmpty();
+
+		WebToMobileAnalysisService.ConvertPageBusinessRules(null, new List<ElementMapEntry>()).Should().BeNull();
+	}
+
+	#endregion
 }

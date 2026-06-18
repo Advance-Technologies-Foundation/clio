@@ -379,6 +379,18 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SectionRegistrationInfo SectionRegistration { get; init; }
 
+	// ── Page-level business rules (advisory conversion) ───────────────
+	/// <summary>
+	/// Page-level business rules of the source page, deterministically converted for the mobile page.
+	/// Object-/entity-level rules are shared across web and mobile and are intentionally NOT touched.
+	/// Each converted rule keeps its condition verbatim and only the actions that survive on mobile
+	/// (a hide/show/make-* action survives only for the referenced elements that convert); a rule whose
+	/// every action drops is reported under <c>droppedRules</c> instead. Null when no environment probe ran.
+	/// </summary>
+	[JsonPropertyName("pageBusinessRules")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageBusinessRuleConversionInfo PageBusinessRules { get; init; }
+
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];
@@ -417,4 +429,86 @@ public sealed class MobilePageConversionGuideResponse {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
+}
+
+/// <summary>
+/// Result of converting the source page's PAGE-level business rules for the mobile page.
+/// Advisory only: the model recreates the supported rules on the mobile page schema with
+/// <c>create-page-business-rule</c> after approval; the tool writes nothing.
+/// </summary>
+public sealed class PageBusinessRuleConversionInfo {
+	/// <summary>Whether the source page's business-rule add-on metadata could be read from the environment.</summary>
+	[JsonPropertyName("probeOk")]
+	public bool ProbeOk { get; init; }
+
+	/// <summary>Human-readable status (e.g. "no page-level business rules found", or why the probe failed).</summary>
+	[JsonPropertyName("note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; init; }
+
+	/// <summary>Rules where at least one action converts. Recreate on the mobile page (see each entry).</summary>
+	[JsonPropertyName("convertedRules")]
+	public IReadOnlyList<ConvertedPageBusinessRule> ConvertedRules { get; init; } = [];
+
+	/// <summary>Rules dropped because no action converts (every referenced element drops, no data action).</summary>
+	[JsonPropertyName("droppedRules")]
+	public IReadOnlyList<DroppedPageBusinessRule> DroppedRules { get; init; } = [];
+}
+
+/// <summary>
+/// A source page-level rule whose condition and surviving actions were carried to the mobile page.
+/// </summary>
+public sealed class ConvertedPageBusinessRule {
+	[JsonPropertyName("caption")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; init; }
+
+	/// <summary>
+	/// Ready-to-paste <c>rule</c> argument for <c>create-page-business-rule</c> on the mobile page —
+	/// the condition verbatim plus the actions that survive (element names remapped web→mobile). Pass
+	/// it to <c>create-page-business-rule</c> verbatim.
+	/// </summary>
+	[JsonPropertyName("rule")]
+	public JsonNode Rule { get; init; }
+}
+
+/// <summary>A source page-level rule that does not convert (no surviving action).</summary>
+public sealed class DroppedPageBusinessRule {
+	[JsonPropertyName("caption")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Caption { get; init; }
+
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
+}
+
+// ── Intermediate read-model (not serialized) ──────────────────────────
+// Produced by PageBusinessRuleProbe from persisted add-on metadata, consumed by
+// WebToMobileAnalysisService.ConvertPageBusinessRules. Conditions/expressions are already
+// reverse-mapped into the create-page-business-rule INPUT contract shape so conversion stays pure.
+
+/// <summary>One source page-level business rule (single case) parsed from add-on metadata.</summary>
+internal sealed class SourcePageBusinessRule {
+	public string Caption { get; init; }
+
+	/// <summary>Condition group in create-page-business-rule input shape ({logicalOperation, conditions}); may be null.</summary>
+	public JsonNode Condition { get; init; }
+
+	public List<SourcePageRuleAction> Actions { get; init; } = [];
+}
+
+/// <summary>One action of a source page-level business rule. Page rules support only element actions.</summary>
+internal sealed class SourcePageRuleAction {
+	/// <summary>Short action type: hide-element / show-element / make-editable / make-read-only / make-required / make-optional.</summary>
+	public string ActionType { get; init; }
+
+	/// <summary>Referenced page element names.</summary>
+	public List<string> ElementItems { get; init; } = [];
+}
+
+/// <summary>Outcome of reading a source page's page-level business rules.</summary>
+public sealed class PageBusinessRuleProbeResult {
+	public bool ProbeOk { get; init; }
+	public string Note { get; init; }
+	internal IReadOnlyList<SourcePageBusinessRule> Rules { get; init; } = [];
 }

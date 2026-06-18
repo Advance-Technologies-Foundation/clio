@@ -101,8 +101,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   by hand, and NEVER copy the data-source section from a pre-existing / reference body.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
-			7. Persist with update-page. Then tell the user to open the result in Freedom UI Mobile
-			   Designer for final layout review.
+			7. Persist with update-page. Recreate the page-level business rules: for each
+			   guide.pageBusinessRules.convertedRules entry, pass its `rule` VERBATIM to
+			   create-page-business-rule on the MOBILE page (after the user approves). Surface any
+			   droppedRules to the user (they did not convert). Then tell the user to open the result in
+			   Freedom UI Mobile Designer for final layout review.
 
 			─────────────────────────────────────────────────────────────
 			COMPONENT CLASSIFICATION (5 categories — in componentSuggestions.category)
@@ -145,10 +148,15 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			HARD MOBILE RULES (see also get-guidance `mobile-page-modification`)
 			─────────────────────────────────────────────────────────────
 			- Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff.
-			- NO handlers, NO validators, NO custom converters. Re-implement conditional visibility /
-			  required / read-only / set-value logic as ENTITY-LEVEL business rules
-			  (create-entity-business-rule). Page-level business rules are NOT transferred automatically —
-			  review and recreate the supported ones manually.
+			- NO handlers, NO validators, NO custom converters in the mobile body.
+			- PAGE-level business rules ARE converted for you in guide.pageBusinessRules: each rule keeps
+			  its condition and only the actions that survive on mobile. Page rules carry ONLY element
+			  actions — hide / show / make-editable / read-only / required / optional — and an action
+			  survives only for the referenced elements whose component converts (set-values / apply-filter /
+			  apply-static-filter do not exist at page level). Recreate each convertedRules[] entry by
+			  passing its `rule` VERBATIM to create-page-business-rule on the MOBILE page (after approval).
+			  droppedRules[] did not convert (every referenced element drops) — report them.
+			  OBJECT-/entity-level business rules are shared across web and mobile — do NOT re-create or touch them.
 			- One data source per page. If the web page used several (see guide.dataSources), keep only
 			  the primary one.
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's

@@ -60,7 +60,8 @@ public static class WebToMobileAnalysisService {
 		string sourceTemplate,
 		string suggestedTarget,
 		IReadOnlyDictionary<string, string> containerNameMap,
-		SectionRegistrationInfo sectionRegistration = null) {
+		SectionRegistrationInfo sectionRegistration = null,
+		PageBusinessRuleProbeResult pageBusinessRulesProbe = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -106,6 +107,10 @@ public static class WebToMobileAnalysisService {
 		JsonNode modelConfigDiff = BuildRootMergeDiff(modelConfig);
 		JsonNode viewModelConfigDiff = BuildRootMergeDiff(viewModelConfig);
 
+		// 7. Page-level business rules: keep each rule's condition verbatim and only the actions that
+		//    survive on mobile; drop a rule whose every action drops (object-level rules are untouched).
+		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap);
+
 		return new MobilePageConversionGuide {
 			SourcePage = sourcePage,
 			SourceType = SourceTypeFreedomWeb,
@@ -124,10 +129,87 @@ public static class WebToMobileAnalysisService {
 			ElementMap = elementMap,
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			PageBusinessRules = pageBusinessRules,
 			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
+		};
+	}
+
+	/// <summary>
+	/// Converts the source page's PAGE-level business rules for the mobile page (advisory).
+	/// Page rules carry only element actions (hide / show / make-editable / read-only / required /
+	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
+	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
+	/// with no surviving action is dropped together with its condition; otherwise the condition is carried
+	/// verbatim and the rule is ready for create-page-business-rule. Returns null when no probe ran.
+	/// </summary>
+	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
+		PageBusinessRuleProbeResult probe,
+		IReadOnlyList<ElementMapEntry> elementMap) {
+		if (probe is null) {
+			return null;
+		}
+		if (!probe.ProbeOk) {
+			return new PageBusinessRuleConversionInfo { ProbeOk = false, Note = probe.Note };
+		}
+
+		// Elements that survive on mobile: merge (template twin) or insert. Map web name -> mobile name.
+		var survivors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap ?? []) {
+			if (string.IsNullOrWhiteSpace(entry?.WebName)) {
+				continue;
+			}
+			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)) {
+				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName;
+			}
+		}
+
+		var converted = new List<ConvertedPageBusinessRule>();
+		var dropped = new List<DroppedPageBusinessRule>();
+
+		foreach (SourcePageBusinessRule rule in probe.Rules ?? []) {
+			var actions = new JsonArray();
+			foreach (SourcePageRuleAction action in rule.Actions ?? []) {
+				List<string> mobileItems = (action.ElementItems ?? [])
+					.Where(survivors.ContainsKey)
+					.Select(name => survivors[name])
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToList();
+				if (mobileItems.Count > 0) {
+					actions.Add(new JsonObject {
+						["type"] = action.ActionType,
+						["items"] = new JsonArray(mobileItems.Select(i => (JsonNode)i).ToArray())
+					});
+				}
+				// else: every referenced element drops → this action does not convert.
+			}
+
+			if (actions.Count == 0) {
+				dropped.Add(new DroppedPageBusinessRule {
+					Caption = rule.Caption,
+					Reason = "No action converts to mobile: every referenced element is dropped or unsupported on mobile."
+				});
+				continue;
+			}
+
+			converted.Add(new ConvertedPageBusinessRule {
+				Caption = rule.Caption,
+				Rule = new JsonObject {
+					["caption"] = rule.Caption,
+					["condition"] = rule.Condition?.DeepClone(),
+					["actions"] = actions
+				}
+			});
+		}
+
+		return new PageBusinessRuleConversionInfo {
+			ProbeOk = true,
+			Note = probe.Note,
+			ConvertedRules = converted,
+			DroppedRules = dropped
 		};
 	}
 
