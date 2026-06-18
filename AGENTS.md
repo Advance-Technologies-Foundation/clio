@@ -168,7 +168,7 @@ For every touched command, verify and update all relevant files:
 - Treat unit tests in `clio.tests` as necessary but insufficient for MCP tool changes; mapping-only coverage does not complete the task.
 - If no MCP artifact exists for a touched command, explicitly check whether one should be added and mention the result in the change summary.
 - If MCP artifacts are still accurate after review, explicitly state "MCP reviewed, no update required" in the change summary/PR description.
-- If you changed a command's rule or behavior, review the matching guidance article in `GuidanceCatalog` AND its trigger line in the relevant tool `[Description]`. The router in `McpServerInstructions.cs` carries guide **names** only — never duplicate guide content there; detailed rules live once in the guide (`Resources\*GuidanceResource.cs`).
+- If you changed a command's rule or behavior, review the matching guidance article in `GuidanceCatalog` AND its trigger line in the relevant tool `[Description]`. The router in `McpServerInstructions.cs` is a thin always-on surface: it carries hard invariants plus a names-only routing table to **domain-index** guides — never duplicate guide content there, and never add leaf guide names (e.g. `dashboards`, `indicator-widget`, `analytics-widgets`) to it. Leaf names live once in the domain index (e.g. the `page-modification` pre-edit checklist); a leaf name appearing in more than one routing surface (router + multiple tool `[Description]`s) is a fan-out regression — collapse it into the index. Detailed rules live once in the guide (`Resources\*GuidanceResource.cs`).
 
 ## Skill to use
 
