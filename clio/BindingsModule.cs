@@ -360,6 +360,7 @@ public class BindingsModule {
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushScheduler>>()));
 		services.AddTransient<GetTelemetryConsentTool>();
 		services.AddTransient<SendTelemetryTool>();
+		services.AddTransient<WithdrawTelemetryConsentTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();

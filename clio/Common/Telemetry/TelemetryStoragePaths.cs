@@ -4,7 +4,7 @@ using System.IO;
 namespace Clio.Common.Telemetry;
 
 /// <summary>
-/// Resolves the local telemetry storage layout shared by the measurement store and the flusher.
+/// Resolves the local telemetry storage layout shared by TelemetryService and the flusher.
 /// </summary>
 internal static class TelemetryStoragePaths
 {

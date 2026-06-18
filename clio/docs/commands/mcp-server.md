@@ -29,6 +29,7 @@ Available MCP tool categories:
 - telemetry       Record local product telemetry for app-creation workflows:
   - get-telemetry-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
   - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
+  - withdraw-telemetry-consent  Withdraw consent: set the stored decision to denied and delete not-yet-uploaded local events; stops all collection and upload
 
 A production OTLP/HTTP collector endpoint ships as the built-in default, so once consent is
 granted, stored events are uploaded in the background (on server start and after each stored

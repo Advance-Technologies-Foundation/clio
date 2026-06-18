@@ -24,6 +24,7 @@ DESCRIPTION
     - telemetry       Record local product telemetry for app-creation workflows:
       - get-telemetry-consent  Read locally stored telemetry consent (granted/denied/unknown); never writes
       - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
+      - withdraw-telemetry-consent  Withdraw consent: set the stored decision to denied and delete not-yet-uploaded local events; stops all collection and upload
 
     Available MCP guidance resources:
     - docs://mcp/guides/app-modeling

@@ -82,6 +82,66 @@ public sealed class SendTelemetryToolE2ETests
 		}
 	}
 
+	[Test]
+	[Description("Starts the real clio MCP server, grants consent and stores an event, then withdraws consent and verifies the local outbox is purged.")]
+	[AllureTag("withdraw-telemetry-consent")]
+	[AllureName("Withdraw Telemetry Consent purges the local outbox")]
+	[AllureDescription("Uses the real clio MCP server to grant consent, store an event, then call withdraw-telemetry-consent and verify the spooled event is deleted.")]
+	public async Task WithdrawTelemetryConsent_Should_Purge_Spooled_Events()
+	{
+		// Arrange
+		string sessionId = Guid.NewGuid().ToString();
+		string telemetryHome = Path.Combine(Path.GetTempPath(), "clio-telemetry-e2e", Guid.NewGuid().ToString("N"));
+		string? previousTelemetryHome = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
+		string? previousTelemetryEnabled = Environment.GetEnvironmentVariable(TelemetryEnabledEnvironmentVariable);
+		Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, telemetryHome);
+		// Keep uploads disabled so the granted-consent event is never sent to the real collector from a test run.
+		Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, "false");
+		await using RawMcpSession session = RawMcpSession.Start();
+
+		try {
+			// Act — grant consent and store one event, then withdraw consent.
+			await session.SendRequestAsync("tools/call", new {
+				name = SendTelemetryTool.ToolName,
+				arguments = new {
+					args = new {
+						session_id = sessionId,
+						event_name = "session_started",
+						coding_agent = "Codex",
+						plugin_version = "0.1.0",
+						telemetry_consent = "granted"
+					}
+				}
+			});
+			FindEventFile(telemetryHome, sessionId).Should().NotBeNull(
+				because: "the granted-consent event should be spooled before withdrawal");
+
+			JsonDocument tools = await session.SendRequestAsync("tools/list", new { });
+			JsonDocument withdrawResult = await session.SendRequestAsync("tools/call", new {
+				name = WithdrawTelemetryConsentTool.ToolName,
+				arguments = new { }
+			});
+
+			// Assert
+			tools.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
+				.Select(tool => tool.GetProperty("name").GetString())
+				.Should().Contain(WithdrawTelemetryConsentTool.ToolName,
+					because: "the real MCP server should advertise the withdraw-telemetry-consent tool");
+			withdrawResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+				because: "withdraw-telemetry-consent should return a normal MCP response");
+			FindEventFile(telemetryHome, sessionId).Should().BeNull(
+				because: "withdrawal must purge the not-yet-uploaded local outbox");
+			File.Exists(Path.Combine(telemetryHome, "consent.json")).Should().BeTrue(
+				because: "the denied decision is persisted locally so later sessions stay opted out");
+		} finally {
+			Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, previousTelemetryHome);
+			Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, previousTelemetryEnabled);
+			if (Directory.Exists(telemetryHome)) {
+				Directory.Delete(telemetryHome, recursive: true);
+			}
+		}
+	}
+
 	/// <summary>
 	/// Environment variable understood by <c>TelemetryService</c> to redirect its local storage root.
 	/// </summary>

@@ -28,6 +28,13 @@ public interface ITelemetryService
 	/// Reads the locally persisted telemetry consent decision without writing analytics.
 	/// </summary>
 	TelemetryConsentResult GetConsentStatus();
+
+	/// <summary>
+	/// Withdraws telemetry consent: persists a denied decision and purges any not-yet-uploaded local
+	/// events, so collection and upload both stop. Forward-looking (does not delete already-uploaded
+	/// events) and safe to call from any prior state (granted, denied, or unknown).
+	/// </summary>
+	TelemetryConsentWithdrawalResult WithdrawConsent();
 }
 
 /// <inheritdoc />
@@ -131,6 +138,29 @@ public sealed class TelemetryService : ITelemetryService
 			ConsentDenied => new TelemetryConsentResult(true, "known", ConsentDenied),
 			_ => new TelemetryConsentResult(true, Unknown, Unknown)
 		};
+	}
+
+	/// <inheritdoc />
+	public TelemetryConsentWithdrawalResult WithdrawConsent()
+	{
+		lock (SyncRoot) {
+			try {
+				// Record the opt-out first. The flusher re-checks consent on every run, so once this is
+				// denied no spooled event can ever upload — even if the purge below is interrupted.
+				WriteJson(ConsentPath, new ConsentState(ConsentDenied, _timeProvider.GetUtcNow()));
+			} catch (Exception ex) {
+				// The consent flip is the load-bearing step: if it fails, telemetry is NOT withdrawn, so
+				// report a soft failure (never thrown into the MCP call) instead of a false success.
+				_logger.LogDebug(ex, "telemetry-withdraw failed error={Error}", ex.Message);
+				return new TelemetryConsentWithdrawalResult(false, "withdraw-failed", ReadConsent().TelemetryConsent, 0);
+			}
+			// Best-effort cleanup of the not-yet-uploaded outbox and per-session timers, so opting out also
+			// discards locally buffered events instead of leaving them to age out over the spool's lifetime.
+			// The installation id is intentionally kept (anonymous, and reused if consent is ever re-granted).
+			int eventsPurged = PurgeEvents();
+			PurgeFiles(SessionsDirectory);
+			return new TelemetryConsentWithdrawalResult(true, "withdrawn", ConsentDenied, eventsPurged);
+		}
 	}
 
 	/// <inheritdoc />
@@ -268,7 +298,7 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		try {
 			return JsonSerializer.Deserialize<ConsentState>(_fileSystem.File.ReadAllText(ConsentPath, Encoding.UTF8), JsonOptions)
-				?? new ConsentState("unknown", DateTimeOffset.MinValue);
+				?? new ConsentState(Unknown, DateTimeOffset.MinValue);
 		} catch {
 			return new ConsentState(Unknown, DateTimeOffset.MinValue);
 		}
@@ -412,12 +442,44 @@ public sealed class TelemetryService : ITelemetryService
 			? _fileSystem.File.ReadAllText(InstallationIdPath, Encoding.UTF8).Trim()
 			: string.Empty;
 
-	private void TryDeleteFile(string path)
+	// Deletes every spooled file, returning the number of removed event files (".json", excluding any
+	// crash-orphaned ".json.tmp"). Used by withdrawal to clear the not-yet-uploaded outbox.
+	private int PurgeEvents()
+	{
+		string eventsDirectory = EventsDirectory;
+		if (!_fileSystem.Directory.Exists(eventsDirectory)) {
+			return 0;
+		}
+		int purged = 0;
+		foreach (string path in _fileSystem.Directory.GetFiles(eventsDirectory)) {
+			bool removed = TryDeleteFile(path);
+			if (removed && path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) {
+				purged++;
+			}
+		}
+		return purged;
+	}
+
+	// Best-effort delete of every file directly under a telemetry subdirectory (e.g. sessions/),
+	// tolerating a momentarily locked file so withdrawal cleanup never fails the opt-out.
+	private void PurgeFiles(string directory)
+	{
+		if (!_fileSystem.Directory.Exists(directory)) {
+			return;
+		}
+		foreach (string path in _fileSystem.Directory.GetFiles(directory)) {
+			TryDeleteFile(path);
+		}
+	}
+
+	private bool TryDeleteFile(string path)
 	{
 		try {
 			_fileSystem.File.Delete(path);
+			return true;
 		} catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
-			_logger.LogDebug(ex, "telemetry-store temp cleanup failed file={File}", Path.GetFileName(path));
+			_logger.LogDebug(ex, "telemetry file delete failed file={File}", Path.GetFileName(path));
+			return false;
 		}
 	}
 

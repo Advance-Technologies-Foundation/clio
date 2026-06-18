@@ -39,6 +39,17 @@ public sealed record TelemetryConsentResult(
 );
 
 /// <summary>
+/// Result of withdrawing product telemetry consent: the local decision is set to denied and any
+/// not-yet-uploaded local events are purged. Forward-looking — already-uploaded events are not affected.
+/// </summary>
+public sealed record TelemetryConsentWithdrawalResult(
+	[property: JsonPropertyName("success")] bool Success,
+	[property: JsonPropertyName("status")] string Status,
+	[property: JsonPropertyName("telemetry_consent")] string TelemetryConsent,
+	[property: JsonPropertyName("events_purged")] int EventsPurged
+);
+
+/// <summary>
 /// Structured telemetry validation or persistence error.
 /// </summary>
 public sealed record TelemetryError(
