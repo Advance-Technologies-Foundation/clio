@@ -120,7 +120,23 @@ internal static class GuidanceCatalog {
 				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
 				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
 				+ "view-model-attribute-binding / current-record variants.",
-				RunProcessButtonGuidanceResource.Guide)
+				RunProcessButtonGuidanceResource.Guide),
+			["ui-guidelines"] = Create(
+				"ui-guidelines",
+				"Canonical MCP guidance index for designing and reviewing Creatio Freedom UI pages so they look native, are understandable, and meet accessibility expectations; routes to the ui-page-layout, ui-accessibility, and ui-review-checklists leaf guides.",
+				UiGuidelinesGuidanceResource.Guide),
+			["ui-page-layout"] = Create(
+				"ui-page-layout",
+				"Canonical MCP guidance for Creatio Freedom UI page layout and controls: the concept-to-component map, grid/column math, container nesting and gap avoidance, grouping, fields, buttons, captions, and list-page container slots.",
+				UiGuidelinesGuidanceResource.PageLayout),
+			["ui-accessibility"] = Create(
+				"ui-accessibility",
+				"Canonical MCP guidance for Creatio Freedom UI accessibility and color: WCAG 2.2 AA page criteria, contrast rules, accessible chart/tab/progress-bar palettes, and image/icon text alternatives.",
+				UiGuidelinesGuidanceResource.Accessibility),
+			["ui-review-checklists"] = Create(
+				"ui-review-checklists",
+				"Canonical MCP guidance for Creatio Freedom UI audits: the quick audit checklist, audit/design output templates, severity model, and common recommendation snippets.",
+				UiGuidelinesGuidanceResource.ReviewChecklists)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

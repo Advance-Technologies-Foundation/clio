@@ -25,6 +25,8 @@ public sealed class PageCreationGuidanceResource {
 			Text = """
 			       clio MCP page-creation guide
 
+			       Design quality: before composing the body, read get-guidance name=ui-guidelines (the Freedom UI design, layout, accessibility, and review rules). Keep the new page consistent with the base Creatio look, and when extending an existing analogous page read its style first so new inputs share the same label position and spacing.
+
 			       Canonical flow
 			       - Prefer `list-page-templates -> create-page -> get-page` when adding a brand-new Freedom UI page.
 			       - Use `list-page-templates` to discover valid `template` values in the target environment. The catalog is sourced from `/rest/schema.template.api/templates` and may differ per environment because of platform feature flags (`ShowSidebarTemplate`, `UseListPageV3Template`, `UseMobilePageDesigner`).

@@ -475,6 +475,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/ui-guidelines` (+ `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`)
+  Freedom UI design and review guidance: a thin index routed from the `page-modification` pre-edit GATE that points to the layout/controls, accessibility/color, and audit-checklist leaf guides so generated pages look native, are understandable, and meet WCAG expectations
 
 How an external AI should interpret resources:
 

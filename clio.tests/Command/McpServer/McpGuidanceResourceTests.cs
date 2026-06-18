@@ -1672,4 +1672,132 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
 			because: "the article URI in the catalog must match the resource URI");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the thin ui-guidelines index that routes to its three leaf guides without duplicating their detail (ENG-91403).")]
+	public void UiGuidelinesGuidanceResource_Should_Return_Thin_Index_Guide() {
+		// Arrange
+		UiGuidelinesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the ui-guidelines index should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/ui-guidelines",
+			because: "the index should expose its canonical docs:// URI");
+		article.MimeType.Should().Be("text/plain",
+			because: "the index should be discoverable as plain text");
+		article.Text.Should().Contain("name=ui-page-layout",
+			because: "the index must route to the layout leaf by name");
+		article.Text.Should().Contain("name=ui-accessibility",
+			because: "the index must route to the accessibility leaf by name");
+		article.Text.Should().Contain("name=ui-review-checklists",
+			because: "the index must route to the review-checklists leaf by name");
+		article.Text.Should().Contain("Judge the rendered page, not the schema",
+			because: "the index must carry the rendered-over-schema review principle");
+		article.Text.Should().Contain("read the current page (`get-page`)",
+			because: "the index must carry the ENG-91403 rule to read the existing page style before editing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page layout and control leaf guide with the concept-to-component map and ENG-91403 copy rules.")]
+	public void UiGuidelinesGuidanceResource_Should_Return_Page_Layout_Leaf() {
+		// Arrange
+		UiGuidelinesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetPageLayout();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the page-layout leaf should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/ui-page-layout",
+			because: "the leaf should expose its canonical docs:// URI");
+		article.MimeType.Should().Be("text/plain",
+			because: "the page-layout leaf should be discoverable as plain text");
+		article.Text.Should().Contain("Concept -> Freedom UI component map",
+			because: "the layout leaf must carry the concept-to-component map agents rely on");
+		article.Text.Should().Contain("simple-lookup",
+			because: "the layout leaf must keep the few-value-lookup-as-dropdown rule");
+		article.Text.Should().Contain("do not append a trailing",
+			because: "the layout leaf must carry the ENG-91403 rule against over-punctuating short descriptions");
+		article.Text.Should().NotContain("SKILL.md",
+			because: "file-path cross-references must be rewritten to get-guidance routing for the MCP surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the accessibility and color leaf guide with WCAG criteria and contrast rules (ENG-91403).")]
+	public void UiGuidelinesGuidanceResource_Should_Return_Accessibility_Leaf() {
+		// Arrange
+		UiGuidelinesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetAccessibility();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the accessibility leaf should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/ui-accessibility",
+			because: "the leaf should expose its canonical docs:// URI");
+		article.MimeType.Should().Be("text/plain",
+			because: "the accessibility leaf should be discoverable as plain text");
+		article.Text.Should().Contain("4.5:1",
+			because: "the accessibility leaf must keep the standard-text contrast minimum");
+		article.Text.Should().Contain("WCAG 2.2 AA",
+			because: "the accessibility leaf must keep the WCAG version it targets");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the review checklists leaf guide with the audit template, severity model, and accessibility routing (ENG-91403).")]
+	public void UiGuidelinesGuidanceResource_Should_Return_Review_Checklists_Leaf() {
+		// Arrange
+		UiGuidelinesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetReviewChecklists();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the review-checklists leaf should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/ui-review-checklists",
+			because: "the leaf should expose its canonical docs:// URI");
+		article.MimeType.Should().Be("text/plain",
+			because: "the review-checklists leaf should be discoverable as plain text");
+		article.Text.Should().Contain("Severity model",
+			because: "the review leaf must keep the severity model");
+		article.Text.Should().Contain("Audit the rendered page, not the schema",
+			because: "the review leaf must keep the render-first audit discipline");
+		article.Text.Should().Contain("name=ui-accessibility",
+			because: "the accessibility checklist item must route to the ui-accessibility leaf instead of a file path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes the ui-guidelines index and its three leaves so get-guidance can return each by name (ENG-91403).")]
+	public void GuidanceCatalog_Should_Include_Ui_Guidelines_Entries() {
+		// Arrange
+		(string Name, string Uri)[] expected = [
+			("ui-guidelines", "docs://mcp/guides/ui-guidelines"),
+			("ui-page-layout", "docs://mcp/guides/ui-page-layout"),
+			("ui-accessibility", "docs://mcp/guides/ui-accessibility"),
+			("ui-review-checklists", "docs://mcp/guides/ui-review-checklists")
+		];
+
+		// Act / Assert
+		foreach ((string name, string uri) in expected) {
+			bool found = GuidanceCatalog.TryGet(name, out GuidanceCatalogEntry entry);
+			found.Should().BeTrue(
+				because: $"the catalog must expose {name} so get-guidance can return it by name");
+			entry.Name.Should().Be(name,
+				because: "the catalog entry name must match the lookup key exactly");
+			entry.Article.Uri.Should().Be(uri,
+				because: "the article URI in the catalog must match the resource URI");
+		}
+	}
 }
