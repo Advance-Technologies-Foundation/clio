@@ -3900,11 +3900,11 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private const string SiteNameFieldName = "site-name";
-	private const string ZipFileFieldName = "zip-file";
-	private const string SitePortFieldName = "site-port";
-	private const string DbServerNameFieldName = "db-server-name";
-	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SiteNameFieldName = "siteName";
+	private const string ZipFileFieldName = "zipFile";
+	private const string SitePortFieldName = "sitePort";
+	private const string DbServerNameFieldName = "dbServerName";
+	private const string RedisServerNameFieldName = "redisServerName";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -3991,7 +3991,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
 			[],
 			[]);
 	}
@@ -4034,8 +4034,8 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
-				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
 			]);
 	}
 
