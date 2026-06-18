@@ -73,8 +73,8 @@ Transient failures (5xx/408/429) retry with bounded exponential backoff + jitter
 spool for the next trigger. Non-transient 4xx are treated as permanent and the batch is dropped
 (telemetry is loss-tolerant by classification) — but logged at **Warning** with a response-body
 snippet so a wire/schema regression that would silently zero out metrics is detectable. The spool
-has age (30d) + size (500) caps; the `sessions/` directory and crash-orphaned `*.json.tmp` files
-are pruned on every flush.
+has age (30d) + size (500) caps; the `sessions/` directory and crash-orphaned `events/*.json.tmp`
+files are pruned on every flush.
 
 Delivery is best-effort and **at-least-once-leaning**, not exactly-once. A given event can reach
 the collector more than once: the single-flight guard is per-process, so two concurrent clio
@@ -124,6 +124,20 @@ threat-I-01 body cap), and the ClickHouse exporter maps the dedicated field to t
 a deliberate producer-and-collector change owned jointly with the CAADT ingestion stack
 (`metrics-installation/helm/caadt-telemetry`): the two ends must move together because the collector
 filter keys on the dedicated field.
+
+### 10. Consent withdrawal (`withdraw-telemetry-consent`)
+`withdraw-telemetry-consent` is the user-facing opt-out that satisfies the data-subject right to
+withdraw consent as easily as it was given (GDPR Art. 7(3)), flagged as an open item in the CAADT
+threat analysis. It sets the locally stored decision to `denied` and purges the not-yet-uploaded
+outbox (`events/` + `sessions/`), keeping the anonymous `installation_id`. Withdrawal is
+forward-looking, not retroactive: it stops further collection and upload but does **not** delete
+events already uploaded to Creatio (those expire on the server-side 1-year TTL — erasure, GDPR
+Art. 17, is a separate server-side concern, out of scope here). The consent flip is written first so
+the flusher's per-run consent re-check (decision 6) blocks any upload even if the purge is
+interrupted; the purge is best-effort (a momentarily locked file is skipped, not fatal). A withdrawn
+(`denied`) decision is terminal through the MCP tools, exactly like a first-run denial — re-granting
+is not offered. `send-telemetry`'s first-decision-wins guard is unchanged; `WithdrawConsent` is the
+one path that transitions an existing `granted` decision to `denied`.
 
 ## Consequences
 

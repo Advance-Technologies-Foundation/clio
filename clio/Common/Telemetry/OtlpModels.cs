@@ -36,10 +36,10 @@ internal sealed record OtlpLogRecord(
 	[property: JsonPropertyName("severityNumber")] int? SeverityNumber,
 	[property: JsonPropertyName("severityText")] string SeverityText,
 	[property: JsonPropertyName("attributes")] IReadOnlyList<OtlpKeyValue> Attributes,
-	// OTLP LogRecord.event_name (proto field 12) — the single source of the event name on the wire.
-	// clio sends it ONLY here (never as an attribute, and clio emits no log body): the edge collector
-	// validates it via the dedicated field (OTTL log.event_name) and the ClickHouse exporter maps it
-	// to the EventName column. See ADR adr-product-telemetry (single-source-of-truth decision).
+	// OTLP LogRecord.event_name (proto field 12) — the single source of the event name on the wire:
+	// clio carries it here only. The edge collector validates it via the dedicated field
+	// (OTTL log.event_name) and the ClickHouse exporter maps it to the EventName column.
+	// See ADR adr-product-telemetry (single-source-of-truth decision).
 	[property: JsonPropertyName("eventName")] string EventName
 );
 

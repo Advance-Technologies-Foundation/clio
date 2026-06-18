@@ -43,6 +43,7 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 	internal const string IngestKeyHeaderName = "X-Ingest-Key";
 
 	internal const int MaxBatchSize = 50;
+
 	internal const int MaxSpoolFiles = 500;
 	internal const int MaxSpoolAgeDays = 30;
 	internal const int PostAttempts = 3;
@@ -83,6 +84,13 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<TelemetryFlushService> _logger;
 	private readonly string _telemetryRoot;
+
+	/// <summary>
+	/// Seam for the inter-attempt backoff delay. Defaults to the real <see cref="Task.Delay(TimeSpan, CancellationToken)"/>;
+	/// tests substitute a no-op so retry paths run deterministically without real wall-clock sleeps. Not a behavior
+	/// change in production — the system clock provider has no virtual timer, so the delay cannot ride on it.
+	/// </summary>
+	internal Func<TimeSpan, CancellationToken, Task> DelayFactory = Task.Delay;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="TelemetryFlushService"/> class.
@@ -415,12 +423,12 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		(int)statusCode >= 500
 		|| statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests;
 
-	private static async Task<bool> DelayBackoffAsync(int attempt, CancellationToken cancellationToken)
+	private async Task<bool> DelayBackoffAsync(int attempt, CancellationToken cancellationToken)
 	{
 		TimeSpan backoff = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1))
 			+ TimeSpan.FromMilliseconds(Random.Shared.Next(0, 500));
 		try {
-			await Task.Delay(backoff, cancellationToken).ConfigureAwait(false);
+			await DelayFactory(backoff, cancellationToken).ConfigureAwait(false);
 			return true;
 		} catch (TaskCanceledException) {
 			return false;

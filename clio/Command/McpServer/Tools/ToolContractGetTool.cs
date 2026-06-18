@@ -267,6 +267,7 @@ internal static class ToolContractCatalog {
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EventNameFieldName = "event_name";
+	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -298,6 +299,7 @@ internal static class ToolContractCatalog {
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
 			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
+			[WithdrawTelemetryConsentTool.ToolName] = BuildWithdrawTelemetryConsent(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
@@ -363,6 +365,7 @@ internal static class ToolContractCatalog {
 		SettingsHealthTool.ToolName,
 		GetTelemetryConsentTool.ToolName,
 		SendTelemetryTool.ToolName,
+		WithdrawTelemetryConsentTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -551,6 +554,31 @@ internal static class ToolContractCatalog {
 			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
 	}
 
+	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
+		return new ToolContractDefinition(
+			WithdrawTelemetryConsentTool.ToolName,
+			"Withdraws product telemetry consent: sets the locally stored decision to denied and deletes any not-yet-uploaded local telemetry events, so collection and upload both stop. Forward-looking — it does not delete events already uploaded to Creatio (those expire on the server-side retention timer). Idempotent and safe to call from any prior state.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Withdrawal status: withdrawn (consent set to denied) or withdraw-failed (a local I/O fault left consent unchanged)."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value after the call: denied on success."),
+				Field("events_purged", NumberType, "Count of not-yet-uploaded local telemetry event files deleted by the withdrawal.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Withdraw telemetry consent when the developer opts out", new Dictionary<string, object?>())
+			],
+			Flow([WithdrawTelemetryConsentTool.ToolName], "Call when the developer asks to stop, turn off, opt out of, or withdraw product telemetry. Idempotent and safe from any state; after success get-telemetry-consent returns denied and the workflow continues without telemetry."),
+			[],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
 		return new ToolContractDefinition(
 			toolName,
@@ -563,7 +591,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(StatusFieldName, StringType, "Consent lookup status: known or unknown."),
-				Field("telemetry_consent", StringType, "Local consent value: granted, denied, or unknown.")),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value: granted, denied, or unknown.")),
 			CommonErrorContract,
 			[],
 			[],
@@ -590,7 +618,7 @@ internal static class ToolContractCatalog {
 						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("plugin_version", StringType, "Product plugin version."),
-					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied."),
+					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
 					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
 				],
 				Validators: [
@@ -607,10 +635,30 @@ internal static class ToolContractCatalog {
 				Field(StatusFieldName, StringType, "Telemetry status: recorded (clio accepted the event; any upload to a collector happens separately and is not confirmed by this call), consent-denied, record-failed, or rejected."),
 				Field("event_id", StringType, "Generated event identifier when an event is recorded."),
 				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
-			CommonErrorContract,
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("telemetry-consent-required",
+					"Telemetry consent is not yet established. Ask the user and retry with telemetry_consent set to granted or denied."),
+				new ToolErrorCodeContract("record-unavailable",
+					"clio could not record the event because of a local I/O fault; it was not retained."),
+				new ToolErrorCodeContract("unsupported-fields",
+					"The payload contains fields outside the documented product telemetry fields."),
+				new ToolErrorCodeContract("missing-required-field",
+					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+				new ToolErrorCodeContract("unknown-event-name",
+					"event_name is not one of the documented product event names."),
+				new ToolErrorCodeContract("unknown-consent",
+					"telemetry_consent is set to a value other than granted or denied."),
+				new ToolErrorCodeContract("invalid-duration",
+					"duration_ms must be a non-negative value when supplied."),
+				new ToolErrorCodeContract("invalid-session-id",
+					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
+				new ToolErrorCodeContract("field-too-long",
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+			]),
 			[],
 			[
-				new ToolContractDefaultValue("telemetry_consent", "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
+				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
 			],
 			[
 				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {

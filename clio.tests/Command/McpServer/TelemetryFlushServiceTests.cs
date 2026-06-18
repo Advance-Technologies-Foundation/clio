@@ -153,6 +153,30 @@ public sealed class TelemetryFlushServiceTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Stops the multi-batch flush early when the cancellation token is signalled, leaving undelivered files spooled.")]
+	public async Task FlushAsync_Should_Stop_Early_When_Cancellation_Requested()
+	{
+		// Arrange
+		for (int index = 0; index < TelemetryFlushService.MaxBatchSize + 10; index++) {
+			WriteEventFile(BaseTime.AddSeconds(index), $"evt_{index:D3}");
+		}
+		using CancellationTokenSource cts = new();
+		FakeHttpHandler handler = new() { CancelAfterFirstRequest = cts };
+		TelemetryFlushService service = CreateService(
+			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+
+		// Act
+		await service.FlushAsync(cts.Token);
+
+		// Assert
+		handler.Requests.Should().ContainSingle(
+			because: "cancellation after the first request must stop the run before the next batch is attempted");
+		EventFiles().Length.Should().BeGreaterThanOrEqualTo(10,
+			because: "the un-attempted second batch must stay spooled for the next trigger once the run is cancelled");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Retries transient server failures, then stops the run and keeps the spool intact.")]
 	public async Task FlushAsync_Should_Stop_And_Keep_Files_When_Transient_Failures_Exhaust_Attempts()
 	{
@@ -165,6 +189,8 @@ public sealed class TelemetryFlushServiceTests
 			HttpStatusCode.ServiceUnavailable);
 		TelemetryFlushService service = CreateService(
 			handler, timeProvider: new MutableTimeProvider(BaseTime.AddHours(1)));
+		// Skip the real backoff sleep so the retry path runs deterministically in milliseconds.
+		service.DelayFactory = (_, _) => Task.CompletedTask;
 
 		// Act
 		await service.FlushAsync();
@@ -186,6 +212,8 @@ public sealed class TelemetryFlushServiceTests
 		FakeHttpHandler handler = new();
 		handler.Enqueue(HttpStatusCode.TooManyRequests, HttpStatusCode.OK);
 		TelemetryFlushService service = CreateService(handler);
+		// Skip the real backoff sleep so the retry path runs deterministically in milliseconds.
+		service.DelayFactory = (_, _) => Task.CompletedTask;
 
 		// Act
 		await service.FlushAsync();
@@ -231,8 +259,12 @@ public sealed class TelemetryFlushServiceTests
 		for (int index = 0; index < 5; index++) {
 			WriteEventFile(BaseTime.AddDays(-(TelemetryFlushService.MaxSpoolAgeDays + 5)).AddSeconds(index));
 		}
+		string oldestKeptCandidate = null;
+		string newestKeptCandidate = null;
 		for (int index = 0; index < TelemetryFlushService.MaxSpoolFiles + 10; index++) {
-			WriteEventFile(BaseTime.AddHours(-1).AddSeconds(index));
+			string path = WriteEventFile(BaseTime.AddHours(-1).AddSeconds(index));
+			oldestKeptCandidate ??= path;
+			newestKeptCandidate = path;
 		}
 		FakeHttpHandler handler = new();
 		TelemetryFlushService service = CreateService(handler, endpoint: null, timeProvider: time);
@@ -245,6 +277,10 @@ public sealed class TelemetryFlushServiceTests
 			because: "pruning must not depend on a configured endpoint");
 		EventFiles().Should().HaveCount(TelemetryFlushService.MaxSpoolFiles,
 			because: "expired files and the oldest files above the size cap must be deleted locally");
+		File.Exists(oldestKeptCandidate).Should().BeFalse(
+			because: "the size cap must drop the oldest files first, so the oldest non-expired file is gone");
+		File.Exists(newestKeptCandidate).Should().BeTrue(
+			because: "the newest files within the size cap must survive pruning");
 	}
 
 	[Test]
@@ -474,6 +510,12 @@ public sealed class TelemetryFlushServiceTests
 
 		public List<CapturedRequest> Requests { get; } = [];
 
+		/// <summary>
+		/// When set, the source is cancelled after the first request is captured (but the response is
+		/// still returned), so a caller passing this token stops before attempting the next batch.
+		/// </summary>
+		public CancellationTokenSource CancelAfterFirstRequest { get; set; }
+
 		public void Enqueue(params HttpStatusCode[] statuses)
 		{
 			foreach (HttpStatusCode status in statuses) {
@@ -490,6 +532,7 @@ public sealed class TelemetryFlushServiceTests
 			request.Headers.TryGetValues(TelemetryFlushService.IngestKeyHeaderName, out IEnumerable<string> values);
 			Requests.Add(new CapturedRequest(request.RequestUri, body, values?.FirstOrDefault()));
 			HttpStatusCode status = _statuses.Count > 0 ? _statuses.Dequeue() : HttpStatusCode.OK;
+			CancelAfterFirstRequest?.Cancel();
 			return new HttpResponseMessage(status);
 		}
 	}

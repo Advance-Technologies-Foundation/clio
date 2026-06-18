@@ -86,6 +86,8 @@ public sealed class SendTelemetryToolTests
 			because: "the chat model needs to know which MCP tool stores product telemetry");
 		instructions.Should().Contain("get-telemetry-consent",
 			because: "agents should inspect local consent with a read-only tool before sending analytics");
+		instructions.Should().Contain("withdraw-telemetry-consent",
+			because: "agents need a tool to honor a developer's request to stop or withdraw telemetry");
 		instructions.Should().Contain("get-tool-contract",
 			because: "the authoritative payload shape and emission order live in the tool contract, not the server instructions");
 		instructions.Should().NotContain("event_name=session_started",
@@ -254,6 +256,146 @@ public sealed class SendTelemetryToolTests
 			because: "a stale granted payload must not override the persisted denied decision");
 		EventFiles().Should().BeEmpty(
 			because: "no event should be stored after denied consent even when a later payload includes granted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes the stable withdraw-telemetry-consent MCP tool name and marks it a mutating tool.")]
+	public void WithdrawTelemetryConsentTool_Should_Expose_Stable_Tool_Name()
+	{
+		// Arrange / Act
+		McpServerToolAttribute toolAttribute = (McpServerToolAttribute)typeof(WithdrawTelemetryConsentTool)
+			.GetMethod(nameof(WithdrawTelemetryConsentTool.WithdrawTelemetryConsent))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		WithdrawTelemetryConsentTool.ToolName.Should().Be("withdraw-telemetry-consent",
+			because: "the product telemetry contract calls this stable MCP tool name to withdraw consent");
+		toolAttribute.Name.Should().Be(WithdrawTelemetryConsentTool.ToolName,
+			because: "MCP discovery should advertise the same stable tool name agents use to opt out");
+		toolAttribute.ReadOnly.Should().BeFalse(
+			because: "withdrawal mutates the stored consent decision and purges local events");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Delegates the withdraw MCP request to the telemetry service without wrapping the result.")]
+	public void WithdrawTelemetryConsent_Should_Delegate_To_Telemetry_Service()
+	{
+		// Arrange
+		ITelemetryService service = Substitute.For<ITelemetryService>();
+		TelemetryConsentWithdrawalResult expected = new(true, "withdrawn", "denied", 3);
+		service.WithdrawConsent().Returns(expected);
+		WithdrawTelemetryConsentTool tool = new(service);
+
+		// Act
+		TelemetryConsentWithdrawalResult actual = tool.WithdrawTelemetryConsent();
+
+		// Assert
+		actual.Should().BeSameAs(expected,
+			because: "the MCP tool should return the service result directly for clients");
+		service.Received(1).WithdrawConsent();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Withdraws granted consent: persists denied, and purges the not-yet-uploaded local outbox.")]
+	public void TelemetryService_Should_Withdraw_Consent_And_Purge_Spooled_Events()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
+		service.Send(CreateRequest("business_plan_generated"));
+		EventFiles().Should().HaveCount(2,
+			because: "two granted-consent events are spooled before withdrawal");
+
+		// Act
+		TelemetryConsentWithdrawalResult result = service.WithdrawConsent();
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "withdrawal should succeed without blocking the workflow");
+		result.Status.Should().Be("withdrawn",
+			because: "a successful withdrawal reports the withdrawn status");
+		result.TelemetryConsent.Should().Be("denied",
+			because: "withdrawal sets the stored decision to denied");
+		result.EventsPurged.Should().Be(2,
+			because: "both not-yet-uploaded local events should be purged on withdrawal");
+		service.GetConsentStatus().TelemetryConsent.Should().Be("denied",
+			because: "the withdrawn decision must be persisted and read back as denied");
+		EventFiles().Should().BeEmpty(
+			because: "the local outbox is cleared so opted-out events never upload");
+		File.Exists(Path.Combine(_telemetryHome, "installation-id.txt")).Should().BeTrue(
+			because: "the anonymous installation id is preserved across a withdrawal");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Stops persisting telemetry events after consent is withdrawn.")]
+	public void TelemetryService_Should_Not_Collect_After_Withdrawal()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
+		service.WithdrawConsent();
+
+		// Act
+		TelemetryEventResult afterWithdrawal = service.Send(CreateRequest("business_plan_generated"));
+
+		// Assert
+		afterWithdrawal.Status.Should().Be("consent-denied",
+			because: "telemetry events must no-op after the user withdraws consent");
+		EventFiles().Should().BeEmpty(
+			because: "no event may be stored after withdrawal");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Withdraws from an unknown (never-decided) state and is idempotent on repeat calls.")]
+	public void TelemetryService_Should_Withdraw_From_Unknown_State_And_Be_Idempotent()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryConsentWithdrawalResult first = service.WithdrawConsent();
+		TelemetryConsentWithdrawalResult second = service.WithdrawConsent();
+
+		// Assert
+		first.Success.Should().BeTrue(
+			because: "opting out before ever granting consent is valid");
+		first.TelemetryConsent.Should().Be("denied",
+			because: "withdrawal always lands on denied");
+		first.EventsPurged.Should().Be(0,
+			because: "there is nothing spooled to purge from an unknown state");
+		second.Success.Should().BeTrue(
+			because: "withdrawal is idempotent");
+		second.TelemetryConsent.Should().Be("denied",
+			because: "a repeat withdrawal keeps the denied decision");
+		service.GetConsentStatus().TelemetryConsent.Should().Be("denied",
+			because: "the denied decision persists across calls");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract resolves the withdraw-telemetry-consent contract with its consent and purge-count outputs.")]
+	public void GetToolContract_Should_Announce_Withdraw_Telemetry_Consent()
+	{
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs([WithdrawTelemetryConsentTool.ToolName]));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the withdraw-telemetry-consent contract must resolve");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.Name.Should().Be(WithdrawTelemetryConsentTool.ToolName);
+		contract.OutputContract.Fields.Select(field => field.Name)
+			.Should().Contain(["telemetry_consent", "events_purged"],
+				because: "the contract must announce the consent result and the purged-event count");
 	}
 
 	[Test]
@@ -493,6 +635,69 @@ public sealed class SendTelemetryToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Reuses the same anonymous installation_id across every event stored in one session.")]
+	public void TelemetryService_Should_Reuse_InstallationId_Across_Events()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		service.Send(CreateRequest() with { TelemetryConsent = "granted" });
+		service.Send(CreateRequest("business_plan_generated"));
+
+		// Assert
+		string[] eventFiles = EventFiles();
+		eventFiles.Should().HaveCount(2,
+			because: "both events in the session should be persisted");
+		string[] installationIds = eventFiles
+			.Select(path => InstallationId(path))
+			.ToArray();
+		installationIds.Should().OnlyContain(id => !string.IsNullOrWhiteSpace(id),
+			because: "every event must carry the anonymous installation identifier");
+		installationIds.Distinct().Should().ContainSingle(
+			because: "the anonymous installation id is created once and reused for every later event");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a blank required field before persisting any event.")]
+	public void TelemetryService_Should_Reject_Blank_Required_Field()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryEventResult result = service.Send(
+			CreateRequest() with { SessionId = "", TelemetryConsent = "granted" });
+
+		// Assert
+		result.Error!.Code.Should().Be("missing-required-field",
+			because: "a blank required field must be rejected with a deterministic missing-required-field signal");
+		EventFiles().Should().BeEmpty(
+			because: "a payload with a blank required field must be rejected before persistence");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an unsupported telemetry_consent value before persisting any event.")]
+	public void TelemetryService_Should_Reject_Unknown_Consent_Value()
+	{
+		// Arrange
+		TelemetryService service = CreateService();
+
+		// Act
+		TelemetryEventResult result = service.Send(
+			CreateRequest() with { TelemetryConsent = "maybe" });
+
+		// Assert
+		result.Error!.Code.Should().Be("unknown-consent",
+			because: "telemetry_consent must be one of the documented granted/denied values");
+		EventFiles().Should().BeEmpty(
+			because: "a payload with an unsupported consent value must be rejected before persistence");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stores distinct session-state files for session ids a lossy sanitizer would have collapsed together.")]
 	public void TelemetryService_Should_Not_Collide_Session_State_For_Similar_Session_Ids()
 	{
@@ -617,5 +822,11 @@ public sealed class SendTelemetryToolTests
 	{
 		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventPath));
 		return document.RootElement.GetProperty("event_name").GetString();
+	}
+
+	private static string InstallationId(string eventPath)
+	{
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventPath));
+		return AttributeValue(document.RootElement.GetProperty("attributes"), "installation_id");
 	}
 }
