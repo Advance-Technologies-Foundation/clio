@@ -341,7 +341,7 @@ public static class SchemaValidationService
 				$"Attribute '{attr.Name}' binds a 'validators' property. " +
 				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
 				"Remove the validators binding and implement field-level validation via " +
-				"entity-level business rules (create-entity-business-rule).");
+				"entity-level business rules (create-entity-business-rules).");
 		}
 	}
 

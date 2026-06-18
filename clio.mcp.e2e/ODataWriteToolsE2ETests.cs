@@ -67,7 +67,7 @@ public sealed class ODataWriteToolsE2ETests {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = invalidEnvironmentName,
 					["entity"] = "Contact",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" } }
 				}
 			},
 			arrange.CancellationTokenSource.Token);
@@ -92,7 +92,7 @@ public sealed class ODataWriteToolsE2ETests {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",
 					["entity"] = "Contact",
 					["id"] = "all",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" } }
 				}
 			},
 			arrange.CancellationTokenSource.Token);

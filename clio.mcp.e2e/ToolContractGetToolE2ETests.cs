@@ -518,7 +518,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "the new business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rules"],
 			because: "entity-business-rule creation requires environment package entity and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 
@@ -599,14 +599,14 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should not advertise package identifiers that are absent from the real tool response");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
 			because: "the contract should not advertise entity identifiers that are absent from the real tool response");
-		contract.OutputContract.Kind.Should().Be("command-execution-result",
-			because: "create-entity-business-rule returns the standard command execution result payload");
+		contract.OutputContract.Kind.Should().Be("business-rule-batch-result",
+			because: "create-entity-business-rules returns the batch result payload");
 		contract.OutputContract.SuccessField.Should().BeNull(
-			because: "command execution result payloads do not include a success field");
-		contract.OutputContract.FailureSignals.Should().Contain("exit-code != 0",
-			because: "contract-driven clients should detect command failures from the exit code");
+			because: "batch result payloads do not include a single success field");
+		contract.OutputContract.FailureSignals.Should().Contain("failed > 0",
+			because: "contract-driven clients should detect batch failures from the failed count");
 		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
-			because: "create-entity-business-rule does not emit a success field");
+			because: "create-entity-business-rules does not emit a single success field");
 		contract.PreferredFlow.Tools.Should().Equal(
 			[
 				ApplicationGetListTool.ApplicationGetListToolName,
@@ -664,7 +664,7 @@ public sealed class ToolContractGetToolE2ETests {
 		response.Success.Should().BeTrue(
 			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rule"],
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
 			because: "page-business-rule creation requires environment package page and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
@@ -695,8 +695,8 @@ public sealed class ToolContractGetToolE2ETests {
 				CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 			],
 			because: "page business-rule creation should inspect the page and read guidance plus the exact contract before mutation");
-		contract.OutputContract.Kind.Should().Be("command-execution-result",
-			because: "create-page-business-rule returns the standard command execution result payload");
+		contract.OutputContract.Kind.Should().Be("business-rule-batch-result",
+			because: "create-page-business-rules returns the batch result payload");
 	}
 
 	[Test]

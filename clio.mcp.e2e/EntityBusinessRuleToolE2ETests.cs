@@ -43,7 +43,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			.GetProperty("properties")
 			.GetProperty("args")
 			.GetProperty("properties")
-			.GetProperty("rule")
+			.GetProperty("rules").GetProperty("items")
 			.GetProperty("properties")
 			.GetProperty("actions")
 			.GetProperty("items");
@@ -109,7 +109,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateSetValuesRule()
+					["rules"] = new object[] { CreateSetValuesRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -142,7 +142,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				["environmentName"] = invalidEnvironmentName,
 				["packageName"] = "UsrPkg",
 				["entitySchemaName"] = "UsrOrder",
-				["rule"] = CreateApplyFilterRule()
+				["rules"] = new object[] { CreateApplyFilterRule() }
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -175,7 +175,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateSysValueConditionRule()
+					["rules"] = new object[] { CreateSysValueConditionRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -209,7 +209,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateRoleGateRule("Require status for administrators")
+					["rules"] = new object[] { CreateRoleGateRule("Require status for administrators") }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -242,7 +242,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = "missing-business-rule-env",
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateInvalidActionRule()
+					["rules"] = new object[] { CreateInvalidActionRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -285,7 +285,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactEntityRule(caption)
+					["rules"] = new object[] { CreateContactEntityRule(caption) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -337,7 +337,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactSysValueRule(caption)
+					["rules"] = new object[] { CreateContactSysValueRule(caption) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -388,7 +388,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateRoleGateRule(caption)
+					["rules"] = new object[] { CreateRoleGateRule(caption) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -439,7 +439,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactApplyFilterRule(caption)
+					["rules"] = new object[] { CreateContactApplyFilterRule(caption) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

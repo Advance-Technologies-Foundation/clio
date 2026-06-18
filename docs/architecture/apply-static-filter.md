@@ -5,7 +5,7 @@ field to the set of records matching a static ESQ filter. The filter is supplied
 language-neutral contract; clio validates it, builds the platform ESQ envelope **locally** (no runtime
 dependency on CrtCopilot / CrtComponentCopilot), and writes it as add-on metadata on the entity schema.
 
-- **Tool:** `create-entity-business-rule` (MCP), action `type: "apply-static-filter"`.
+- **Tool:** `create-entity-business-rules` (MCP), action `type: "apply-static-filter"`.
 - **Scope:** entity-level — applies everywhere the lookup is used, not page-scoped.
 - **Not** a page `filterConfig` / `staticFilters` edit, **not** field visibility, **not** a data query.
 
@@ -24,7 +24,7 @@ System_Ext(creatio, "Creatio platform", "DataService, EntitySchemaDesignerServic
 System_Ext(copilot, "CrtCopilot / CrtComponentCopilot", "Porting source (design-time). NO runtime dependency")
 
 Rel(dev, host, "NL prompt")
-Rel(host, clio, "MCP: create-entity-business-rule, get-guidance, get-entity-schema-properties, odata-read")
+Rel(host, clio, "MCP: create-entity-business-rules, get-guidance, get-entity-schema-properties, odata-read")
 Rel(clio, creatio, "Schema/lookup reads, add-on metadata write", "HTTPS")
 Rel(clio, copilot, "Ported conversion logic + prompt patterns", "design-time only")
 ```
@@ -39,7 +39,7 @@ title apply-static-filter — Containers (clio)
 
 Person(dev, "No-code dev / AI agent")
 System_Boundary(clio, "clio") {
-  Container(mcp, "MCP Server / Tools", ".NET", "create-entity-business-rule, get-tool-contract, get-guidance, get-entity-schema-properties, odata-read, update-page")
+  Container(mcp, "MCP Server / Tools", ".NET", "create-entity-business-rules, get-tool-contract, get-guidance, get-entity-schema-properties, odata-read, update-page")
   Container(guide, "Guidance Resources", "text", "BusinessRulesGuidanceResource, PageModificationGuidanceResource — routing + disambiguation")
   Container(svc, "BusinessRule Domain/Service", ".NET", "EntityBusinessRuleService, BusinessRuleMetadataConverter")
   Container(filter, "Static-filter pipeline", ".NET", "Deserializer -> Structural -> SchemaAware -> LocalEsqFilterBuilder")
@@ -49,7 +49,7 @@ System_Ext(creatio, "Creatio web services", "EntitySchemaDesignerService.svc, Da
 
 Rel(dev, mcp, "MCP calls")
 Rel(mcp, guide, "get-guidance / tool [Description] steer the choice")
-Rel(mcp, svc, "create-entity-business-rule -> Create()")
+Rel(mcp, svc, "create-entity-business-rules -> Create()")
 Rel(svc, filter, "validate + build envelope")
 Rel(svc, prov, "schema, lookup-Id resolve")
 Rel(filter, prov, "columns/types, display -> GUID")
@@ -109,7 +109,7 @@ Rel(esvc, addon, "AppendRule()")
 sequenceDiagram
   autonumber
   actor U as AI agent
-  participant T as create-entity-business-rule (MCP)
+  participant T as create-entity-business-rules (MCP)
   participant S as EntityBusinessRuleService
   participant P as FilterSchemaProvider
   participant V as Validator (Phase 0-2)
@@ -147,7 +147,7 @@ flowchart TD
 
     subgraph S1["① ВЫБОР ИНСТРУМЕНТА (routing)"]
         direction TB
-        R["Идиомы «limit/restrict the «Field» to … /<br/>show only «records» that … / business entity rule»<br/>→ MCP create-entity-business-rule (apply-static-filter)"]
+        R["Идиомы «limit/restrict the «Field» to … /<br/>show only «records» that … / business entity rule»<br/>→ MCP create-entity-business-rules (apply-static-filter)"]
         R --> R1["«ограничить записи lookup» ≠ page filterConfig/staticFilters<br/>(не редактировать body.js)"]
         R --> R2["«show the «Field» only for «records» where …»<br/>= ОГРАНИЧЕНИЕ записей, не visibility (не hide/show)"]
         R --> R3["«restrict lookup» ≠ data-query (не odata/SQL-отчёт)"]
@@ -205,7 +205,7 @@ USER PROMPT (any language)
    v
 (1) TOOL SELECTION (routing)
     Idioms "limit/restrict the <Field> to ... / show only <records> that ... / business entity rule"
-    route to MCP create-entity-business-rule (apply-static-filter).
+    route to MCP create-entity-business-rules (apply-static-filter).
     Disambiguations baked into guidance / skill / tool descriptions:
       - "restrict the records a lookup offers" != page filterConfig/staticFilters (do not edit body.js)
       - "show the <Field> only for <records> where ..." = record RESTRICTION, not visibility (no hide/show)

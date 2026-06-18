@@ -45,7 +45,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			.GetProperty("properties")
 			.GetProperty("args")
 			.GetProperty("properties")
-			.GetProperty("rule")
+			.GetProperty("rules").GetProperty("items")
 			.GetProperty("properties")
 			.GetProperty("actions")
 			.GetProperty("items")
@@ -81,7 +81,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rule"] = CreateShowElementRule()
+					["rules"] = new object[] { CreateShowElementRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -115,7 +115,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rule"] = CreateSysValueConditionRule()
+					["rules"] = new object[] { CreateSysValueConditionRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -162,7 +162,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["page-schema-name"] = target.PageSchemaName,
-					["rule"] = CreateContactPageRule(target, caption)
+					["rules"] = new object[] { CreateContactPageRule(target, caption) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

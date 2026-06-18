@@ -11,7 +11,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 public sealed class ODataCreateToolTests {
-	private static JsonElement Obj(string json) => JsonDocument.Parse(json).RootElement.Clone();
+	private static JsonElement Arr(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
 	[Test]
 	[Category("Unit")]
@@ -30,8 +30,8 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Posts the JSON body to the entity set URL and returns the created record with its Id.")]
-	public void Create_Should_Post_Body_And_Return_Created_Record() {
+	[Description("Posts each row to the entity set URL and returns the created records with their Ids.")]
+	public void Create_Should_Post_Rows_And_Return_Created_Records() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
@@ -39,19 +39,25 @@ public sealed class ODataCreateToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}");
+			.Returns(
+				"{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}",
+				"{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Globex\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "Account",
-			Data = Obj("{\"Name\":\"Acme\"}")
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]")
 		});
 
-		response.Success.Should().BeTrue();
-		response.Id.Should().Be("11111111-1111-1111-1111-111111111111");
+		response.Created.Should().Be(2);
+		response.Failed.Should().Be(0);
+		response.Results[0].Index.Should().Be(0);
+		response.Results[0].Id.Should().Be("11111111-1111-1111-1111-111111111111");
+		response.Results[1].Index.Should().Be(1);
+		response.Results[1].Id.Should().Be("22222222-2222-2222-2222-222222222222");
 		urlBuilder.Received(1).Build("odata/Account");
-		client.Received(1).ExecutePostRequest("http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1);
+		client.Received(2).ExecutePostRequest("http://creatio/odata/Account", Arg.Any<string>(), 30_000, 1, 1);
 	}
 
 	[Test]
@@ -68,7 +74,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
 		ODataCreateTool tool = new(resolver);
 
-		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Data = Obj("{\"Name\":\"A\"}") });
+		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
 
 		resolver.Received(1).Resolve<IApplicationClient>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
 		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
@@ -76,39 +82,37 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a validation failure without any remote call when entity is missing.")]
+	[Description("Returns a request-level failure without any remote call when entity is missing.")]
 	public void Create_Should_Fail_When_Entity_Missing() {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = " ", Data = Obj("{\"Name\":\"A\"}")
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = " ", Rows = Arr("[{\"Name\":\"A\"}]")
 		});
 
-		response.Success.Should().BeFalse();
 		response.Error.Should().Be("entity is required.");
 		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a validation failure without any remote call when data is empty.")]
-	public void Create_Should_Fail_When_Data_Empty() {
+	[Description("Returns a request-level failure without any remote call when rows is empty.")]
+	public void Create_Should_Fail_When_Rows_Empty() {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "Account", Data = Obj("{}")
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[]")
 		});
 
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("data is required");
+		response.Error.Should().Contain("rows is required");
 		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("An OData error body on the response is surfaced as a structured failure.")]
+	[Description("An OData error body on a row is surfaced as a structured per-row failure.")]
 	public void Create_Should_Surface_ODataError_As_Failure() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -120,17 +124,18 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "Account", Data = Obj("{\"X\":1}")
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"X\":1}]")
 		});
 
-		response.Success.Should().BeFalse();
-		response.Error.Should().Be("Column Name is required");
+		response.Failed.Should().Be(1);
+		response.Results.Single().Success.Should().BeFalse();
+		response.Results.Single().Error.Should().Be("Column Name is required");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("An ASP.NET server error body (e.g. EDM model NullReferenceException) returned with a non-failing status is reported as a failure, not a created record.")]
+	[Description("An ASP.NET server error body returned with a non-failing status is reported as a per-row failure, not a created record.")]
 	public void Create_Should_Surface_AspNet_ServerError_As_Failure() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -139,21 +144,21 @@ public sealed class ODataCreateToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
+			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "AddressType", Rows = Arr("[{\"Name\":\"Office\"}]")
 		});
 
-		response.Success.Should().BeFalse(because: "a server error body must never be reported as a successful create");
-		response.Error.Should().Contain("Object reference", because: "the ExceptionMessage should be surfaced to the caller");
-		response.Id.Should().BeNull(because: "no record was created");
+		response.Results.Single().Success.Should().BeFalse(because: "a server error body must never be reported as a successful create");
+		response.Results.Single().Error.Should().Contain("Object reference");
+		response.Results.Single().Id.Should().BeNull();
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A success-status body without an Id is treated as a failure, since a real OData create always echoes the record Id.")]
+	[Description("A success-status body without an Id is treated as a per-row failure, since a real OData create always echoes the record Id.")]
 	public void Create_Should_Fail_When_Response_Has_No_Id() {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -165,11 +170,61 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Name\":\"Office\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "AddressType", Rows = Arr("[{\"Name\":\"Office\"}]")
 		});
 
-		response.Success.Should().BeFalse(because: "a created record without an Id indicates the body is not a real create response");
-		response.Error.Should().Contain("did not return a record Id", because: "the failure should explain the missing Id");
+		response.Results.Single().Success.Should().BeFalse();
+		response.Results.Single().Error.Should().Contain("did not return a record Id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("By default a failed row does not abort the batch: remaining rows are still inserted and reported.")]
+	public void Create_Should_Continue_After_Row_Failure_By_Default() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(
+				"{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}",
+				"{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
+		ODataCreateTool tool = new(resolver);
+
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Bad\"},{\"Name\":\"Good\"}]")
+		});
+
+		response.Created.Should().Be(1);
+		response.Failed.Should().Be(1);
+		response.Results.Should().HaveCount(2, because: "continue-on-error attempts every row");
+		client.Received(2).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With stop-on-error the batch aborts after the first failed row and does not attempt later rows.")]
+	public void Create_Should_Stop_After_Row_Failure_When_Requested() {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
+		ODataCreateTool tool = new(resolver);
+
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", StopOnError = true,
+			Rows = Arr("[{\"Name\":\"Bad\"},{\"Name\":\"NeverTried\"}]")
+		});
+
+		response.Failed.Should().Be(1);
+		response.Results.Should().HaveCount(1, because: "stop-on-error aborts before the second row");
+		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
 }
