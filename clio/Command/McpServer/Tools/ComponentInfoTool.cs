@@ -349,11 +349,14 @@ public sealed class ComponentInfoTool(
 		string? resolvedFrom,
 		string? resolvedFromReason) {
 		IReadOnlyList<CompositeDefinition> all = composites ?? [];
-		string known = all.Count == 0
-			? (isMobile
-				? "composites are a web-only Designer feature; the mobile catalog has none — query the web component catalog instead"
-				: "this catalog declares no composites")
-			: "known composites: " + string.Join(", ", all.Select(item => $"'{item.Caption}'"));
+		string known;
+		if (all.Count > 0) {
+			known = "known composites: " + string.Join(", ", all.Select(item => $"'{item.Caption}'"));
+		} else if (isMobile) {
+			known = "composites are a web-only Designer feature; the mobile catalog has none — query the web component catalog instead";
+		} else {
+			known = "this catalog declares no composites";
+		}
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "composite",
