@@ -31,6 +31,12 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new SourceCodeSchemaCreateResponse {
+				Success = false,
+				Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			SourceCodeSchemaCreateCommand resolvedCommand;
 			try {

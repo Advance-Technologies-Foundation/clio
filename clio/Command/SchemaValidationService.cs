@@ -1372,8 +1372,8 @@ public static class SchemaValidationService
 			return;
 		}
 		result.Errors.Add(
-			"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
-			"but the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
+			"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') has an undeclared attribute binding — " +
+			"the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
 			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
 			canonicalEntry + " so the control binds to the entity column. " +
 			"If the attribute is already provided by a parent schema or the current body, " +

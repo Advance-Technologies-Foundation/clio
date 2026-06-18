@@ -35,6 +35,12 @@ public sealed class PageCreateTool(
 			Password = args.Password,
 			CaptionCulture = args.CaptionCulture
 		};
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			PageCreateCommand resolvedCommand;
 			try {

@@ -140,8 +140,8 @@ public sealed class GenerateProcessModelToolTests {
 			"missing-env"));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "resolver failures should be returned as normal command execution envelopes with the FromException exit code");
+		result.ExitCode.Should().Be(1,
+			because: "resolver failures are expected validation errors and must surface with exit code 1, not the unexpected-exception code -1");
 		result.Output.Should().ContainSingle(message =>
 			message.GetType() == typeof(ErrorMessage) &&
 			message.Value != null &&

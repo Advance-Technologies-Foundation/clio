@@ -405,6 +405,8 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
+		CollectWithPrefix(SchemaValidationService.ValidateStandardFieldBindings(body), "invalid form field bindings", errors);
+		CollectWithPrefix(SchemaValidationService.ValidateInsertedFieldSelfConsistency(body), "invalid form field bindings", errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
@@ -414,6 +416,12 @@ public sealed class PageUpdateTool(
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {
 		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private static void CollectWithPrefix(SchemaValidationResult result, string prefix, List<string> errors) {
+		if (result.IsValid) return;
+		foreach (string err in result.Errors)
+			errors.Add(prefix + ": " + err);
 	}
 
 	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {

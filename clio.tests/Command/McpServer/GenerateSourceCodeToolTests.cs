@@ -140,8 +140,8 @@ public sealed class GenerateSourceCodeToolTests
 		CommandExecutionResult result = tool.GenerateSourceCode(
 			new GenerateSourceCodeArgs("missing-env", null, null, null));
 
-		result.ExitCode.Should().Be(-1,
-			because: "resolver failures should be returned as structured error envelopes");
+		result.ExitCode.Should().Be(1,
+			because: "resolver failures are expected validation errors and must surface with exit code 1, not the unexpected-exception code -1");
 		result.Output.Should().ContainSingle(message =>
 			message.GetType() == typeof(ErrorMessage) &&
 			message.Value != null &&

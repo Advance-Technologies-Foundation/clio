@@ -50,7 +50,7 @@ public abstract class BaseTool<T>(
 		try {
 			resolvedCommand = ResolveCommand<TCommand>(options);
 		} catch (Exception e) {
-			return CommandExecutionResult.FromException(e);
+			return CommandExecutionResult.FromResolverError(e);
 		}
 
 		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path

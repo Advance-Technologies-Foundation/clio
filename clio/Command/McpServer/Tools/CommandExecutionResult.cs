@@ -50,6 +50,15 @@ public record CommandExecutionResult(
 	}
 
 	/// <summary>
+	/// Creates a failed <see cref="CommandExecutionResult"/> with exit code 1 and the
+	/// formatted exception message. Use for environment/resolver failures that are expected
+	/// validation errors, not unexpected runtime exceptions.
+	/// </summary>
+	public static CommandExecutionResult FromResolverError(Exception exception) {
+		return new CommandExecutionResult(1, [new ErrorMessage(FormatExceptionChain(exception))]);
+	}
+
+	/// <summary>
 	/// Creates a failed <see cref="CommandExecutionResult"/> with full exception details
 	/// including inner exception chain, preserving diagnostic information for debugging.
 	/// </summary>
