@@ -43,6 +43,9 @@ public sealed class McpGuidanceResourceE2ETests {
 		BuildReferenceUri("configuration-webservice-tests", "assertion-style");
 	private static readonly string ConfigurationWebServiceTestsEndpointTestPatternsUri =
 		BuildReferenceUri("configuration-webservice-tests", "endpoint-test-patterns");
+	private static readonly string AnalyticsWidgetsUri = BuildGuideUri("analytics-widgets");
+	private static readonly string AnalyticsWidgetsPlacementContextsUri =
+		BuildReferenceUri("analytics-widgets", "placement-contexts");
 
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
@@ -77,7 +80,9 @@ public sealed class McpGuidanceResourceE2ETests {
 				ConfigurationWebServiceManualRuntimeChecklistUri,
 				ConfigurationWebServiceTestsTestFixturePatternUri,
 				ConfigurationWebServiceTestsAssertionStyleUri,
-				ConfigurationWebServiceTestsEndpointTestPatternsUri
+				ConfigurationWebServiceTestsEndpointTestPatternsUri,
+				AnalyticsWidgetsUri,
+				AnalyticsWidgetsPlacementContextsUri
 			];
 		string[] expectedGeneratedUris = ComposableAppSkillResourceCatalog.GetEntries()
 			.Select(entry => entry.Article.Uri)
@@ -817,6 +822,31 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the validator guide should use the canonical numeric `.value` field in the async syssettings example");
 		article.Text.Should().Contain("setAttributePropertyValue(...)",
 			because: "the validator guide should redirect dynamic UI-state logic away from validators without pointing to removed handler or converter guides");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the analytics-widgets routing index guidance article")]
+	public async Task McpServer_Should_Return_AnalyticsWidgets_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(AnalyticsWidgetsUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the analytics-widgets guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(AnalyticsWidgetsUri,
+			because: "the returned article should preserve the stable analytics-widgets guidance URI");
+		article.Text.Should().Contain("dashboards",
+			because: "the routing index should point callers at the dashboards guide for layout, grid, catalog, sizing, and styling");
+		article.Text.Should().Contain("indicator-widget",
+			because: "the routing index should point callers at the indicator-widget guide for the metric widget payload contract");
+		article.Text.Should().Contain("review by 2026-12-18",
+			because: "the routing index should lead with the interim banner so the migration gate stays visible to callers");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

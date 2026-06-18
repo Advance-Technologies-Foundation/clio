@@ -78,6 +78,10 @@ internal static class GuidanceCatalog {
 				"dashboards",
 				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
 				DashboardGuidanceResource.Guide),
+			["analytics-widgets"] = Create(
+				"analytics-widgets",
+				"Routing index for authoring Freedom UI analytics widgets: routes to dashboards (layout), indicator-widget (payload), and placement-contexts (non-dashboard surfaces).",
+				AnalyticsWidgetsGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the ExpansionPanel + DataGrid composite, the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",

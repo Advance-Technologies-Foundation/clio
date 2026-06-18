@@ -207,6 +207,34 @@ public sealed class GuidanceGetToolE2ETests {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the analytics-widgets routing index article")]
+	public async Task GuidanceGet_Should_Return_AnalyticsWidgets_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "analytics-widgets"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "analytics-widgets is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/analytics-widgets",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("dashboards",
+			because: "the analytics-widgets routing index should point external callers at the dashboards guide for layout");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical related-list guidance article")]
 	public async Task GuidanceGet_Should_Return_Related_List_Guide() {
 		// Arrange

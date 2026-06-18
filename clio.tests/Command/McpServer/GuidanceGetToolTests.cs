@@ -61,6 +61,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
 		parameterDescription.Description.Should().Contain("indicator-widget",
 			because: "the top-level argument hint should mention the dedicated indicator widget guidance name");
+		parameterDescription.Description.Should().Contain("analytics-widgets",
+			because: "the top-level argument hint should mention the dedicated analytics-widgets routing guidance name");
 		parameterDescription.Description.Should().Contain("related-list",
 			because: "the top-level argument hint should mention the dedicated related-list (detail) guidance name");
 		parameterDescription.Description.Should().Contain("esq-filters",
@@ -77,6 +79,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
 		propertyDescription.Description.Should().Contain("indicator-widget",
 			because: "the serialized name field hint should mention the dedicated indicator widget guidance name");
+		propertyDescription.Description.Should().Contain("analytics-widgets",
+			because: "the serialized name field hint should mention the dedicated analytics-widgets routing guidance name");
 		propertyDescription.Description.Should().Contain("related-list",
 			because: "the serialized name field hint should mention the dedicated related-list (detail) guidance name");
 		propertyDescription.Description.Should().Contain("esq-filters",
@@ -125,6 +129,29 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical indicator widget article text");
 		result.Article.Text.Should().Contain("get-component-info",
 			because: "the trimmed indicator widget guide should point callers to get-component-info as the source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the analytics-widgets routing index article when the caller requests analytics-widgets.")]
+	public async Task GuidanceGet_Should_ReturnAnalyticsWidgetsArticle_WhenNameIsAnalyticsWidgets() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("analytics-widgets"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "analytics-widgets is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/analytics-widgets",
+			because: "the guidance tool should preserve the canonical analytics-widgets guide URI in the response");
+		result.Article.Text.Should().Contain("dashboards",
+			because: "the analytics-widgets routing index must point callers at the dashboards guide for layout");
+		result.Article.Text.Should().Contain("review by 2026-12-18",
+			because: "the analytics-widgets article must carry the interim banner so the migration gate stays visible to callers");
 	}
 
 	[Test]
@@ -358,8 +385,10 @@ public sealed class GuidanceGetToolTests {
 				"creatio-composable-app-development",
 				"creatio-freedom-iframe-section",
 				"data-bindings",
+				"dashboards",
 				"existing-app-maintenance",
 				"indicator-widget",
+				"analytics-widgets",
 				"esq-filters",
 				"feature-toggle",
 				"feature-toggle-tests",

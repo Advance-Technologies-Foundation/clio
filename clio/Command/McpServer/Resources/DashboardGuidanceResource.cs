@@ -177,6 +177,7 @@ public sealed class DashboardGuidanceResource {
 		       - Examples: "Total calls — 3", "Average handle time, sec — 160", "Overdue cases (response) — 1".
 		       - Size: 2 columns (6-up band) or 3 columns (4-up band); height 1 row. Only in the top band, never
 		         interleaved with charts.
+		       - Do not stack extra text inside a metric tile — it shows one aggregated value with its caption and a leading icon, not a stacked text block.
 		       - For the runtime payload (aggregate, static filter, parentName placement, theme presets) read the
 		         `indicator-widget` guidance.
 

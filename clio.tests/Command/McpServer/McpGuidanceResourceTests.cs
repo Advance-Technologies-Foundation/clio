@@ -1245,6 +1245,71 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the thin analytics-widgets index guide article that routes to the deep guides and carries the interim banner.")]
+	public void AnalyticsWidgetsGuidanceResource_Should_ReturnGuideArticle_WhenGetGuideCalled() {
+		// Arrange
+		AnalyticsWidgetsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the analytics-widgets guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/analytics-widgets",
+			because: "the resource should expose the stable MCP URI for analytics-widget routing guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the analytics-widgets guide should be discoverable as plain text");
+		article.Text.Should().Contain("dashboards",
+			because: "the thin index must route callers to the dashboards guide by name for layout, grid, catalog, sizing, and styling");
+		article.Text.Should().Contain("indicator-widget",
+			because: "the thin index must route callers to the indicator-widget guide by name for the metric widget payload contract");
+		article.Text.Should().Contain("review by 2026-12-18",
+			because: "the guide text must lead with the interim banner so reviewers can find the migration gate before it expires");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-modification checklist remains the single routing source that points dashboard/analytics work at the analytics-widgets guide after the per-tool clauses were collapsed.")]
+	public void PageModificationGuide_Should_RouteToAnalyticsWidgets_WhenChecklistInspected() {
+		// Arrange
+		string text = Clio.Command.McpServer.Resources.PageModificationGuidanceResource.Guide.Text;
+		// Act & Assert
+		text.Should().Contain("analytics-widgets",
+			because: "the page-modification pre-edit checklist is now the single place that routes dashboard/analytics and widget work to the analytics-widgets guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the net-new analytics-widgets placement-contexts reference describing the four placement surfaces without duplicating creatio-ui-guidelines content.")]
+	public void AnalyticsWidgetsPlacementContextsReference_Should_ReturnReferenceArticle_WhenGetPlacementContextsCalled() {
+		// Arrange
+		AnalyticsWidgetsGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetPlacementContexts();
+		TextResourceContents reference = result.Should().BeOfType<TextResourceContents>(
+			because: "the placement-contexts reference should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		reference.Uri.Should().Be("docs://mcp/references/analytics-widgets/placement-contexts",
+			because: "the reference should expose the stable MCP URI requested for the non-dashboard placement surfaces");
+		reference.MimeType.Should().Be("text/plain",
+			because: "the placement-contexts reference should be discoverable as plain text");
+		reference.Text.Should().Contain("Dashboards",
+			because: "the reference must describe the canonical dashboard surface as one of the four placement contexts");
+		reference.Text.Should().Contain("List-page analytics view",
+			because: "the reference must describe the list-page analytics view surface as one of the four placement contexts");
+		reference.Text.Should().Contain("Home page",
+			because: "the reference must describe the home page surface as one of the four placement contexts");
+		reference.Text.Should().Contain("Form-page widget area",
+			because: "the reference must describe the form-page widget area surface as one of the four placement contexts");
+		reference.Text.Should().NotContain("creatio-ui-guidelines",
+			because: "the clio-owned reference must not point back at the retired creatio-ui-guidelines content it replaces");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes configuration web-service guides so AI callers can retrieve them by name.")]
 	public void GuidanceCatalog_Should_Include_Configuration_WebService_Entries() {
 		// Act
