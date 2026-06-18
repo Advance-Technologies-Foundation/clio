@@ -3970,14 +3970,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
 				Field("summary", StringType, "Human-readable scan summary."),
 				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
 				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
-				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio sitePort."),
 				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
 				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
 			CommonErrorContract,
@@ -4112,14 +4112,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
-			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zip-file can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
+			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zipFile can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field(StatusFieldName, StringType, "Discovery status: ok, no-builds-found, products-folder-missing, products-folder-not-configured, or products-folder-unreadable."),
 				Field("products-folder", StringType, "Resolved creatio-products folder configured in clio appsettings.json."),
 				Field("products-folder-exists", BooleanType, "Whether the configured creatio-products folder exists on disk."),
 				Field("message", StringType, "Human-readable summary or remediation hint."),
-				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zip-file."),
+				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zipFile."),
 				Field("truncated", BooleanType, "True when more builds exist than were returned.")),
 			CommonErrorContract,
 			[],
@@ -4132,7 +4132,7 @@ internal static class ToolContractCatalog {
 					ListCreatioBuildsTool.ListCreatioBuildsToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Discover a build, then pass its full-path as the deploy-creatio zip-file. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
+				"Discover a build, then pass its full-path as the deploy-creatio zipFile. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
 			[],
 			[]);
 	}

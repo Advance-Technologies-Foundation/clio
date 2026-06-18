@@ -172,20 +172,18 @@ public class BindingsModule {
 		});
 
 		services.AddTransient<IKubernetesClient, KubernetesClient>();
-		services.AddTransient<IK8ContextValidator, K8ContextValidator>();
+		services.AddTransient<K8ContextValidator>();
 		services.AddTransient<IK8ServiceResolver, K8ServiceResolver>();
 		services.AddTransient<IK8DatabaseDiscovery, K8DatabaseDiscovery>();
 		services.AddTransient<IDatabaseConnectivityChecker, DatabaseConnectivityChecker>();
 		services.AddTransient<IDatabaseCapabilityChecker, DatabaseCapabilityChecker>();
 		services.AddTransient<IRedisDatabaseSelector, RedisDatabaseSelector>();
-		services.AddTransient<IK8DatabaseAssertion, K8DatabaseAssertion>();
-		services.AddTransient<IK8RedisAssertion, K8RedisAssertion>();
-		services.AddTransient<IFsPathAssertion, Common.Assertions.FsPathAssertion>();
-		services.AddTransient<IFsPermissionAssertion, Common.Assertions.FsPermissionAssertion>();
+		services.AddTransient<K8DatabaseAssertion>();
+		services.AddTransient<K8RedisAssertion>();
+		services.AddTransient<Common.Assertions.FsPathAssertion>();
+		services.AddTransient<Common.Assertions.FsPermissionAssertion>();
 		services.AddTransient<ILocalDatabaseAssertion, LocalDatabaseAssertion>();
 		services.AddTransient<ILocalRedisAssertion, LocalRedisAssertion>();
-		services.AddTransient<IAssertInfrastructureAggregator, AssertInfrastructureAggregator>();
-		services.AddTransient<IPassingInfrastructureService, PassingInfrastructureService>();
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<InstallerCommand>();
