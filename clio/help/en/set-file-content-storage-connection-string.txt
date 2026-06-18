@@ -1,0 +1,31 @@
+COMMAND TYPE
+    Service commands
+
+NAME
+    set-file-content-storage-connection-string - Set the connection string of a file content storage
+
+DESCRIPTION
+    Updates the connection string of a file content storage (SysFileContentStorage) record using the
+    Creatio DataService. The change is applied through the ORM layer, which encrypts the value
+    transparently and triggers entity events — invalidating the file storage configuration cache without
+    an application restart.
+
+    Alias: set-fcs-connection-string
+
+OPTIONS
+    Code (pos. 0)               File content storage code
+    ConnectionString (pos. 1)   New connection string value
+    --uri            -u         Application uri
+    --Password       -p         User password
+    --Login          -l         User login
+    --Environment    -e         Environment name
+
+EXAMPLES
+    set-file-content-storage-connection-string MyStorageCode "ServiceUrl=https://s3.example.com;AccessKey=...;SecretKey=...;ObjectBucketName=...;"
+    set-fcs-connection-string MyStorageCode "..." -e MyEnvironment
+
+NOTES
+    The connection string is sensitive: this command never writes its value to the console or the log.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -222,6 +222,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
@@ -250,6 +251,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<CreatePageBusinessRuleCommand>();
+		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
@@ -363,6 +365,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
+		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
@@ -396,6 +399,7 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
+		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -603,6 +607,7 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();
@@ -610,22 +615,36 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
-		services.AddTransient<HelpArtifactExporter>();
+		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
+		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
+		// committed docs never depend on local feature flags. It is therefore not DI-resolved.
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
 		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
-		services.AddMcpServer(options => {
+		// Gate MCP tools/resources/prompts behind the same feature toggle as the CLI: a type marked
+		// [FeatureToggle("key")] whose flag is off must not be registered with the MCP server, so it
+		// is invisible to MCP clients (the *FromAssembly scanners would otherwise register ALL of
+		// them, bypassing the CLI parser gate). The feature rule is delegated to the shared
+		// IFeatureToggleService.IsEnabled so there is one rule, not two; it is constructed here over
+		// the in-scope settingsRepository because the container is still being built and the service
+		// is not yet resolvable. The enumeration replicates the SDK's discovery exactly, so with
+		// nothing gated the registered set is identical to the previous *FromAssembly behaviour.
+		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
+		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors))
-				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
-				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
-				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+		// Single registration seam shared with the parity regression test: registers the feature-enabled
+		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
+		// hazard is documented on RegisterEnabledPrimitives).
+		McpFeatureToggleFilter.RegisterEnabledPrimitives(
+			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {

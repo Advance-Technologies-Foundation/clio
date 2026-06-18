@@ -45,6 +45,7 @@ Commands:
   download-configuration               Download configuration libraries from Creatio, dconf
   env-ui                               Interactive console UI for environment management, far, gui
   execute-sql-script                   Execute a SQL script in Creatio, sql
+  experimental                         List and toggle clio experimental feature flags, exp
   externalLink                         Handle external deep links, link
   extract-pkg-zip                      Extract a packaged application or package archive, extract, unzip
   generate-pkg-zip                     Prepare an archive of creatio package, comp-pkg, compress

@@ -315,6 +315,12 @@ Treat custom `CLIO*` diagnostics as actionable and rely on `clio/.editorconfig` 
 - Favor DI resolution and constructor injection over manual construction.
 - Using `new`/`new()` for behavior classes should be a last resort, not normal practice.
 
+### CLIO005 specifics
+
+- Favor removing dead DI registrations over suppressing the diagnostic.
+- Use `[ResolvedDynamically]` only for services genuinely resolved via reflection or from another assembly (e.g. `clio.mcp.server`).
+- See the "Using [ResolvedDynamically]" callout in `project-context.md` for the full what/when/when-not guidance.
+
 # Workspace diary
 
 Keep a persistent engineering diary to speed up future tasks.
@@ -351,6 +357,22 @@ Use multiple agents in parallel to review code for
 ## Nuget Management
 This projects uses Centrally managed nuget packages versions, see
 [Directory.Packages.props](./Directory.Packages.props) for details.
+
+# Feature toggles (experimental commands)
+
+Experimental / not-for-public CLI commands can be hidden behind a runtime flag.
+
+**To make a command experimental:**
+
+1. Put `[FeatureToggle("feature-key")]` on its **options class**, next to `[Verb]` — **not** on the command class. The options type is the only thing the parser and help reflect over.
+2. If the command also has an MCP tool/resource/prompt, put the **same** `[FeatureToggle("feature-key")]` on that `[McpServerToolType]` / `[McpServerResourceType]` / `[McpServerPromptType]` class too. The MCP surface is gated separately; the CLI attribute does not cover it.
+3. The feature is **off by default.** Enable it to test: `clio experimental --name feature-key --enable` (list/inspect with bare `clio experimental`; turn off with `--disable`). Flags persist in `appsettings.json` under `features`; there is no environment-variable override.
+
+While off, the command is invisible and unreachable on every surface (CLI parse, help, generated docs, dispatch, MCP) and is omitted from generated public docs. A command with no `[FeatureToggle]` is unaffected.
+
+**Do not** reintroduce `WithToolsFromAssembly` / `WithResourcesFromAssembly` / `WithPromptsFromAssembly`, and do not pass a `Type[]` to `WithTools` / `WithResources` / `WithPrompts` — that binds to the SDK's generic overload and registers nothing. MCP registration must go through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (which uses `IEnumerable<Type>`).
+
+See the "Feature toggles" section in `project-context.md` for the full rule and the four enforcement surfaces.
 
 # BMAD development pipeline
 

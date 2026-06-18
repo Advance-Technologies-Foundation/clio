@@ -34,6 +34,7 @@ public class FeatureOptions : RemoteCommandOptions {
 
 	[Option("use-feature-web-service", Required = false,
 		HelpText = "Use obsolete method to set feature state via feature webservice")]
+	[RequiresPackage("cliogate", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public bool UseFeatureWebService { get; set; }
 
 	[Option("UseFeatureWebService", Required = false, Hidden = true, HelpText = "Alias for --use-feature-web-service")]

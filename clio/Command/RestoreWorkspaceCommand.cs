@@ -58,6 +58,7 @@ namespace Clio.Command
 
 	[Verb("restore-workspace", Aliases = ["restorew", "pullw", "pull-workspace"],
 		HelpText = "Restore clio workspace")]
+	[RequiresPackage("cliogate", "2.0.0.0", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public class RestoreWorkspaceOptions : WorkspaceOptions
 	{
 
@@ -75,19 +76,16 @@ namespace Clio.Command
 		private readonly IWorkspace _workspace;
 		private readonly ILogger _logger;
 		private readonly CreateWorkspaceCommand _createWorkspaceCommand;
-		private readonly IClioGateway _clioGateway;
 
 		#endregion
 
 		#region Constructors: Public
 
-		public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger, CreateWorkspaceCommand createWorkspaceCommand, 
-			IClioGateway clioGateway) {
+		public RestoreWorkspaceCommand(IWorkspace workspace, ILogger logger, CreateWorkspaceCommand createWorkspaceCommand) {
 			workspace.CheckArgumentNull(nameof(workspace));
 			_workspace = workspace;
 			_logger = logger;
 			_createWorkspaceCommand = createWorkspaceCommand;
-			_clioGateway = clioGateway;
 		}
 
 		#endregion
@@ -96,7 +94,6 @@ namespace Clio.Command
 
 		public override int Execute(RestoreWorkspaceOptions options) {
 			try {
-				_clioGateway.CheckCompatibleVersion("2.0.0.0");
 				_workspace.Restore(options);
 				_logger.WriteInfo("Done");
 				return 0;

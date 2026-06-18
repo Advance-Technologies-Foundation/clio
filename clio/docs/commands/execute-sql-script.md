@@ -14,8 +14,9 @@ Executes custom SQL script on a web application. You can pass the script directl
 Output can be formatted as a table, CSV, or XLSX, and saved to a file.
 Silent mode is supported to suppress console output.
 
-This command requires cliogate to be installed on the target Creatio environment.
+This command requires cliogate version 2.0.0.41 or higher to be installed on the target Creatio environment.
 If cliogate is not installed or is an incompatible version, the command will display an error message and exit.
+Install or update cliogate with `clio install-gate -e <ENVIRONMENT_NAME>`.
 
 ## Options
 
@@ -47,7 +48,8 @@ If both Script and File are omitted, the command prompts for SQL input.
 Output is shown in the console unless --silent is specified.
 Results can be saved to a file in the chosen format.
 
-cliogate must be installed and compatible on the target environment for this command to work.
+cliogate version 2.0.0.41 or higher must be installed on the target environment for this command to work.
+Install or update it with: clio install-gate -e <ENVIRONMENT_NAME>
 
 ## Reporting Bugs
 
