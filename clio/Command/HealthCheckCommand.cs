@@ -48,7 +48,7 @@ namespace Clio.Command
 			try
 			{
 				Logger.WriteInfo($"Checking {checkName} {requestUri} ...");
-				ApplicationClient.ExecuteGetRequest(requestUri, RequestTimeout, RetryCount, DelaySec);
+				ApplicationClient.ExecuteGetRequest(requestUri, RequestTimeout, MaxAttempts, DelaySec);
 				Logger.WriteInfo($"\t{checkName} - OK");
 			}
 			catch (WebException ex)
@@ -102,7 +102,7 @@ namespace Clio.Command
 			if (options.IsNetCore.HasValue)
 				EnvironmentSettings.IsNetCore = options.IsNetCore.Value;
 			RequestTimeout = options.TimeOut;
-			RetryCount = options.RetryCount;
+			MaxAttempts = options.MaxAttempts;
 			DelaySec = options.RetryDelay;
 			bool checkWebApp = IsEnabled(options.WebApp);
 			bool checkWebHost = IsEnabled(options.WebHost);

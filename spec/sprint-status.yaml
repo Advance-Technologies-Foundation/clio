@@ -507,6 +507,20 @@ stories:
     depends_on: [story-detect-external-schema-changes-3, story-detect-external-schema-changes-4]
     blocks: []
 
+  # Reopened 2026-06-16: ENG-91317 returned (Codex via clio CLI kept overwriting external edits).
+  - id: story-detect-external-schema-changes-6
+    title: "CLI parity — auto-discover baseline in CLI update-page; CLI get-page persists .clio-pages; extract shared IPageBaselineGuard/IPageFileWriter"
+    feature: "detect-external-schema-changes"
+    size: M
+    status: in-progress
+    note: "ADR Option B left baseline I/O MCP-only, assuming CLI users pass --expected-checksum by hand; AI agents (Codex) don't, so CLI update-page silently overwrote designer edits. Baseline arm/refresh and get-page file output are now shared services (IPageBaselineGuard, IPageFileWriter) consumed by the CLI verbs AND the three MCP tools (update-page/sync-pages/get-page)."
+    file: spec/stories/story-detect-external-schema-changes-6.md
+    prd: spec/prd/prd-detect-external-schema-changes.md
+    adr: spec/adr/adr-detect-external-schema-changes.md
+    fr: [FR-02, FR-09, FR-11]
+    depends_on: [story-detect-external-schema-changes-3]
+    blocks: []
+
   # --- read-column-default-values stories (ENG-91318, epic ENG-85256) — added 2026-06-12 ---
   # Two-phase feature per ADR. Phase A (stories 1-5): documents-only investigation,
   # SM-01 counter = empty code diff (spec/** only). Phase B (stories 6-8): CONDITIONAL

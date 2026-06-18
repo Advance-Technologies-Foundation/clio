@@ -36,7 +36,7 @@ internal class PingAppCommandTests : BaseCommandTests<PingAppOptions>{
 		EnvironmentSettings.IsNetCore = isNetCore;
 		PingAppOptions options = new () {
 			TimeOut = 1, 
-			RetryCount = 2, 
+			MaxAttempts = 2, 
 			RetryDelay = 3
 		};
 			
@@ -59,7 +59,7 @@ internal class PingAppCommandTests : BaseCommandTests<PingAppOptions>{
 		//Arrange
 		PingAppOptions options = new () {
 			TimeOut = 1,
-			RetryCount = 2,
+			MaxAttempts = 2,
 			RetryDelay = 3,
 			IsNetCore = isNetCore
 		};

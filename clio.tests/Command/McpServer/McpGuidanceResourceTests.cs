@@ -266,6 +266,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should keep simple navigation on direct request wiring instead of custom handlers");
 		article.Text.Should().Contain("| create a related record from current context | `crt.CreateRecordRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should keep simple create flows on direct request wiring instead of custom handlers");
+		article.Text.Should().Contain("crt.CreateRecordRequest page-resolution note",
+			because: "handler guidance must carry the page-resolution note so callers know a CreateRecordRequest Add button needs a registered or explicit page");
+		article.Text.Should().Contain("There is no page for new or existing record",
+			because: "handler guidance must name the exact runtime error a section-less detail entity raises when CreateRecordRequest cannot resolve a page");
 		article.Text.Should().Contain("| cancel unsaved edits on the current page | `crt.CancelRecordChangesRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should cover the built-in cancel-edits trigger directly in the decision table");
 		article.Text.Should().Contain("| delete the current or selected record | `crt.DeleteRecordRequest` | button/menu `clicked.request` | no |",
@@ -1484,6 +1488,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
 		article.Text.Should().Contain("\"items\": []",
 			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
+		article.Text.Should().Contain("There is no page for new or existing record",
+			because: "the guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this exact runtime error on click");
+		article.Text.Should().Contain("features.editable.itemsCreation",
+			because: "the guide must steer callers to inline grid add as the safe default add affordance for a related list");
+		article.Text.Should().Contain("entityPageName",
+			because: "the guide must offer the explicit-page escape hatch for a header Add button when inline add is not wanted");
 	}
 
 	[Test]
