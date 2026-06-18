@@ -456,10 +456,27 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		}
 	}
 
+	// LOCAL TEST OVERRIDE — DO NOT COMMIT. Default location of the local web
+	// ComponentRegistry.json used when no env override is set. Relative to the current
+	// working directory (the repo holds a `components/` folder), so it is not tied to a
+	// specific machine. Lets the whole catalog load from this folder offline; docs live
+	// in its `docs` subfolder (see docs client).
+	private const string LocalTestRegistryFile = "components/ComponentRegistry.json";
+
 	private Stream? TryOpenLocalOverride(string requestedVersion) {
 		string envVarName = _flavor.LocalFileEnvironmentVariable;
 		string? path = Environment.GetEnvironmentVariable(envVarName);
 		if (string.IsNullOrWhiteSpace(path)) {
+			// LOCAL TEST OVERRIDE — DO NOT COMMIT. With no env var set, default the WEB
+			// registry to the hardcoded local file when it exists; otherwise fall through
+			// to the normal cache/CDN chain. Mobile flavor is left untouched.
+			if (string.Equals(envVarName, LocalFileEnvironmentVariable, StringComparison.Ordinal)
+				&& _fileSystem.File.Exists(LocalTestRegistryFile)) {
+				_logger.LogInformation(
+					"component-registry source=local-default flavor={Flavor} version={Version} path={Path}",
+					_flavor.DisplayName, requestedVersion, LocalTestRegistryFile);
+				return _fileSystem.File.OpenRead(LocalTestRegistryFile);
+			}
 			return null;
 		}
 

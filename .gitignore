@@ -213,6 +213,8 @@ clio/Properties/launchSettings.json
 
 
 ./.claude/settings.local.json
+./components
+//components
 
 
 publish-nexus.ps1

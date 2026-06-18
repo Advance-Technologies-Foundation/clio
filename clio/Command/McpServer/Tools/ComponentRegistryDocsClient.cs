@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -67,6 +68,18 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 				"component-registry-docs reject reason=invalid-path version={Version} path={Path}",
 				version, docPath);
 			return null;
+		}
+
+		// LOCAL TEST OVERRIDE — DO NOT COMMIT. Serve docs from a hardcoded local folder
+		// (C:\...\test\docs\*.md) when present, so the whole catalog + docs test fully
+		// offline with no env var. Falls through to the normal cache → CDN chain below
+		// whenever the local file is absent.
+		string? localDoc = TryReadLocalDoc(normalisedPath);
+		if (localDoc is not null) {
+			_logger.LogInformation(
+				"component-registry-docs source=local-file version={Version} path={Path}",
+				version, normalisedPath);
+			return localDoc;
 		}
 
 		// Tier 1: fresh cache → return immediately. Stale cache → still return, but
@@ -216,6 +229,25 @@ public sealed class ComponentRegistryDocsClient : IComponentRegistryDocsClient {
 			}
 		})));
 		_ = lazy.Value;
+	}
+
+	// LOCAL TEST OVERRIDE — DO NOT COMMIT. Default folder that holds the local docs
+	// (docs/*.md), sibling to the local ComponentRegistry.json used by the registry client.
+	// Relative to the current working directory (the repo holds a `components/` folder),
+	// so it is not tied to a specific machine.
+	private const string LocalTestDocsBaseDir = "components";
+
+	// LOCAL TEST OVERRIDE — DO NOT COMMIT. Reads a doc from the hardcoded local folder
+	// (normalisedDocPath already starts with "docs/" and is path-safe, e.g.
+	// "docs/expansion-panel-next-steps.component.md"). Returns null when the file is
+	// absent so the caller falls back to the normal cache → CDN chain.
+	private static string? TryReadLocalDoc(string normalisedDocPath) {
+		string baseFull = Path.GetFullPath(LocalTestDocsBaseDir);
+		string candidate = Path.GetFullPath(Path.Combine(baseFull, normalisedDocPath));
+		if (!candidate.StartsWith(baseFull, StringComparison.OrdinalIgnoreCase) || !File.Exists(candidate)) {
+			return null;
+		}
+		return File.ReadAllText(candidate, Encoding.UTF8);
 	}
 
 	private static string ResolveCdnBaseUrl() {
