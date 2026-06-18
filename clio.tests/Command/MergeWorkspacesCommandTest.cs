@@ -38,7 +38,8 @@ namespace Clio.Tests.Command
             _fileSystem = Substitute.For<IFileSystem>();
             _fileSystem.Directory.Exists(Arg.Any<string>()).Returns(true);
             _command = new MergeWorkspacesCommand(_workspaceMerger, _logger, _fileSystem);
-            _testOutputPath = Path.Combine(Path.GetTempPath(), "test-output");
+            // Unique per-test dir to avoid collisions across concurrent target frameworks
+            _testOutputPath = Path.Combine(Path.GetTempPath(), "test-output-" + Guid.NewGuid().ToString("N"));
             _testZipFileName = "TestMergedPackages";
             
             // Ensure test directory exists during test
