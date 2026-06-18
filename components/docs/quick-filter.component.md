@@ -55,15 +55,18 @@ this entry automatically; the documented chip insert does not).
 
 ```
 QuickFilterBy<X>            // view element name, e.g. QuickFilterByDate, QuickFilterByOwner
-QuickFilterBy<X>_Items      // attribute the converter writes into (filter expression for the collection)
+QuickFilterBy<X>_<viewAttributeName>  // attribute the converter writes into (filter expression); see note below
 QuickFilterBy<X>_Value      // attribute the converter reads from (current chip value)
 ```
 
-`FilterOptionsPreprocessor` names the filter attribute after `expose[].attribute`
-(`<ChipName>_Items`), while `QuickFilterPreprocessor` derives the value attribute name from
-the chip's `name` (`<ChipName>_Value`) regardless of `_filterOptions.from` — so `from` must
-point at that generated `<ChipName>_Value` attribute; deviating from the naming convention
-breaks the wiring. The platform-recommended caption resource key is
+`FilterOptionsPreprocessor` names the filter attribute after `expose[].attribute`, which is
+suffixed with the **target collection's bound attribute name**: `<ChipName>_<viewAttributeName>`.
+It is `<ChipName>_Items` only when that attribute is literally `Items`; when the DataGrid/Gallery is
+bound to a `DataGrid_xxxxxx` attribute the name is `<ChipName>_DataGrid_xxxxxx` (shipped example —
+`OrderProductCatalogPage`: `CatalogTagFilter_DataGrid_fqyjxvm`). The §2.2 `filterAttributes`
+registration must reuse this exact name. `QuickFilterPreprocessor` derives the value attribute from
+the chip's `name` (`<ChipName>_Value`) regardless of `_filterOptions.from` — so `from` must point at
+that `<ChipName>_Value` attribute. The platform-recommended caption resource key is
 `<elementName>_config_caption`.
 
 ---
@@ -270,6 +273,35 @@ an icon).
 
 Value: `boolean`.
 
+**The predicate lives in the converter as `target.customFilter`, NOT in `filterColumn`.** A `custom`
+filter does not derive its condition from `filterColumn` (that is the `lookup` / `date-range`
+mechanism) — it carries an explicit ESQ filter-group object. Shipped example — `Products_ListPage`
+`InactiveProductsQuickFilter`, a boolean column (`IsArchive`):
+
+```jsonc
+"target": {
+  "viewAttributeName": "Items",                 // the collection's bound attribute (see §1.1)
+  "customFilter": {
+    "items": {
+      "fbf6a62d-8013-428d-bc9d-4eaca3dae8d8": {  // any GUID key
+        "filterType": 1,                         // comparison filter
+        "comparisonType": 3,                     // Equal
+        "isEnabled": true,
+        "leftExpression":  { "expressionType": 0, "columnPath": "IsArchive" },  // the boolean column
+        "dataValueType": 12,                     // Boolean
+        "rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 12, "value": false } }
+      }
+    },
+    "logicalOperation": 0, "isEnabled": true, "filterType": 6, "rootSchemaName": "<EntitySchemaName>"
+  }
+}
+```
+
+There is **no `filterColumn`** key in a `custom` target. If you wire a custom filter with `filterColumn`
+(and no `customFilter`), `CustomQuickFilterCreator` adds no filter — the chip renders and toggles but
+**never filters anything** (a silent no-op; the collection still loads, unfiltered). `filterColumn` is
+read only by the `lookup` / `date-range` creators.
+
 ### 4.2 `filterType: "date-range"` — date range filter
 
 ```jsonc
@@ -355,8 +387,10 @@ Field meanings:
   filter applies to — the attribute the list is bound to, typically `"Items"`. It must
   match the collection attribute you register in step 2.2 (`path[1]` of the
   `viewModelConfigDiff` merge).
-- `target.filterColumn` — the entity column that the filter compares against
-  (e.g. `"CreatedOn"`, `"Owner"`, `"State"`).
+- `target.filterColumn` — **`lookup` / `date-range` only**: the entity column the filter compares
+  against (e.g. `"CreatedOn"`, `"Owner"`, `"State"`; `date-range` uses `filterColumnStart` /
+  `filterColumnEnd`). A `custom` filter has **no `filterColumn`** — its condition is an explicit
+  `target.customFilter` ESQ predicate instead (see §4.1).
 - `quickFilterType` — must match `filterType` at the root.
 - `from` — page attribute the converter **reads** the current chip value from. Must be the
   `<ChipName>_Value` attribute that `QuickFilterPreprocessor` generates from the chip's
@@ -456,6 +490,7 @@ the list never filters.
 10. **Forgetting `parentName`** — quick filters live inside the page's filter container (typically `LeftFilterContainerInner` on list pages); inserting into the wrong parent puts them outside the filter bar.
 11. **Registering the filter on the DataTable element instead of the collection attribute** — putting `_filterOptions` / `filterAttributes` on the `crt.DataGrid` / `crt.DataTable` view element does nothing. The registration belongs in `viewModelConfigDiff` under the collection **attribute's** `modelConfig` (`["attributes", "Items", "modelConfig"]`), not on the view element. See §2.3.
 12. **Registering at `["attributes", "Items"]` (one level too high)** — the runtime reads `filterAttributes` from `modelConfig`, so the `merge` path must end with `"modelConfig"`. A registration that omits the final `"modelConfig"` segment is silently ignored and the list never filters. See §2.3.
+13. **Custom filter wired with `filterColumn` instead of `customFilter`** — a `quickFilterType: "custom"` target needs an explicit `customFilter` ESQ predicate (§4.1); `filterColumn` is read only by the `lookup` / `date-range` creators. Without `customFilter`, `CustomQuickFilterCreator` adds no filter, so the chip toggles but **never filters** — a silent no-op (no error; the collection loads unfiltered and the toggle is ignored).
 
 ---
 
