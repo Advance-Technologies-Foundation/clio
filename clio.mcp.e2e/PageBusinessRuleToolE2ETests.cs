@@ -50,7 +50,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			.GetProperty("actions")
 			.GetProperty("items")
 			.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(6,
+		anyOf.GetArrayLength().Should().Be(7,
 			because: "the page tool should advertise only page action payload branches");
 		anyOf.EnumerateArray().Select(GetActionType).Should().BeEquivalentTo([
 				"hide-element",
@@ -58,7 +58,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 				"make-editable",
 				"make-read-only",
 				"make-required",
-				"make-optional"
+				"make-optional",
+				"apply-static-filter"
 			],
 			because: "entity-only actions should not appear in the page business-rule runtime schema");
 	}
