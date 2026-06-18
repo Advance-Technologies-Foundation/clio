@@ -928,6 +928,26 @@ public sealed class ComponentInfoToolTests {
 			because: "the not-found error must list the known composite captions");
 	}
 
+	[TestCase(true, "composites are a web-only Designer feature",
+		TestName = "CompositeNotFound: mobile empty catalog → web-only hint")]
+	[TestCase(false, "this catalog declares no composites",
+		TestName = "CompositeNotFound: web empty catalog → no-composites message")]
+	[Description("CreateCompositeNotFoundResponse emits flavor-correct empty-catalog guidance: the mobile path gets the web-only hint, the web path gets the no-composites message. Pins each branch of the flattened web/mobile/empty selector so a future refactor can't silently swap or drop one.")]
+	public void ComponentInfoTool_CompositeNotFound_EmptyCatalog_Message_Matches_Flavor(bool isMobile, string expectedFragment) {
+		ComponentInfoResponse response = ComponentInfoTool.CreateCompositeNotFoundResponse(
+			composites: [],
+			caption: "Anything",
+			isMobile: isMobile,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			resolvedFromReason: null);
+
+		response.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		response.Mode.Should().Be("composite", because: "the not-found response stays in composite mode");
+		response.Error.Should().Contain(expectedFragment,
+			because: $"an empty catalog with isMobile={isMobile} must emit the matching guidance");
+	}
+
 	[Test]
 	[Description("Detail of a composite-only component surfaces compositeOnly:true plus the actionable hint steering to the composite. Calls CreateDetailResponse directly (like the snapshot test) so the assertion targets the projection, not the version-resolution pipeline.")]
 	public void ComponentInfoTool_Detail_Should_Surface_CompositeOnly_And_Hint() {
