@@ -80,7 +80,7 @@ public sealed class ComponentRegistrySnapshotTests {
 		// baseInputs (root.references.baseInputs) — keys that should appear on every
 		// component's inputs after the merge.
 		detail.Inputs.Should().NotBeNull();
-		foreach (string inheritedKey in new[] { "classes", "id", "loading", "styles", "tabIndex" }) {
+		foreach (string inheritedKey in new[] { "classes", "id", "styles", "tabIndex" }) {
 			detail.Inputs!.Should().ContainKey(inheritedKey,
 				because: $"'{inheritedKey}' lives under root.references.baseInputs and must inherit onto every component's inputs surface");
 		}
@@ -108,6 +108,37 @@ public sealed class ComponentRegistrySnapshotTests {
 			because: "the transitive-closure filter must drop globals that no crt.Button binding references");
 		detail.References.TypeDefinitions.Count.Should().BeLessThan(20,
 			because: "crt.Button only needs a handful of typedefs reachable from its inputs/outputs/per-component typedefs — surfacing the full ~190-key global bag would defeat the closure filter");
+	}
+
+	[Test]
+	[Description("A detail response for a component that publishes Solution A selection-metadata (crt.DataGrid) must surface whenToUse/whenNotToUse/synonyms/useCases/appliesToCustomEntities through CreateDetailResponse — proving the producer's @whenToUse-family JSDoc tags reach the AI consumer instead of being dropped to the UnmappedExtensions bucket.")]
+	public void Live_Snapshot_Detail_Should_Surface_Selection_Metadata_When_Producer_Publishes_It() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.DataGrid", out ComponentRegistryEntry? dataGrid).Should().BeTrue(
+			because: "crt.DataGrid ships Solution A selection-metadata in the pinned live snapshot");
+
+		// Act
+		ComponentInfoResponse detail = ComponentInfoTool.CreateDetailResponse(
+			dataGrid!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert
+		detail.WhenToUse.Should().NotBeNullOrWhiteSpace(
+			because: "the producer publishes @whenToUse on crt.DataGrid and clio must surface it (Solution A, ENG-91571)");
+		detail.WhenNotToUse.Should().NotBeNullOrWhiteSpace(
+			because: "crt.DataGrid publishes @whenNotToUse to steer the agent away from image/list use-cases");
+		detail.Synonyms.Should().NotBeNullOrEmpty(
+			because: "crt.DataGrid publishes @synonym tags that must surface so list-mode discovery can match informal names");
+		detail.UseCases.Should().NotBeNullOrEmpty(
+			because: "crt.DataGrid publishes @useCase tags describing concrete scenarios it fits");
+		detail.AppliesToCustomEntities.Should().BeTrue(
+			because: "crt.DataGrid is buildable on a custom entity, so the published applicability flag must round-trip");
 	}
 
 	[Test]

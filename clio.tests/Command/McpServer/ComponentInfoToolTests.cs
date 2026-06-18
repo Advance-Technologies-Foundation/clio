@@ -84,6 +84,11 @@ public sealed class ComponentInfoToolTests {
 	    "componentType": "crt.Gallery",
 	    "category": "interactive",
 	    "description": "Gallery with bulk actions.",
+	    "synonyms": ["carousel", "photo grid"],
+	    "useCases": ["Browse an image collection as cards"],
+	    "whenToUse": "Use for an image or photo gallery.",
+	    "whenNotToUse": "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+	    "appliesToCustomEntities": true,
 	    "container": false,
 	    "parentTypes": ["crt.GridContainer"],
 	    "properties": {
@@ -336,6 +341,65 @@ public sealed class ComponentInfoToolTests {
 		response.Items.Should().ContainSingle()
 			.Which.ComponentType.Should().Be("crt.Gallery",
 				because: "bulkActions should surface the gallery contract");
+	}
+
+	[Test]
+	[Description("Detail mode surfaces the Solution A selection-metadata (synonyms/useCases/whenToUse/whenNotToUse/appliesToCustomEntities) the producer publishes on a component, so the agent can choose between visually similar components instead of guessing.")]
+	public async Task ComponentInfoTool_Should_Surface_Selection_Metadata_In_Detail() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Gallery"));
+
+		// Assert
+		response.Mode.Should().Be("detail",
+			because: "a known component type resolves to a detail response");
+		response.WhenToUse.Should().Be("Use for an image or photo gallery.",
+			because: "the @whenToUse selection guidance must reach the AI consumer (Solution A, ENG-91571)");
+		response.WhenNotToUse.Should().Be("Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-pattern guidance must surface so the agent avoids the wrong component");
+		response.Synonyms.Should().BeEquivalentTo(new[] { "carousel", "photo grid" },
+			because: "published @synonym tags must round-trip onto the detail response");
+		response.UseCases.Should().ContainSingle()
+			.Which.Should().Be("Browse an image collection as cards",
+				because: "published @useCase tags must round-trip onto the detail response");
+		response.AppliesToCustomEntities.Should().BeTrue(
+			because: "the applicability flag must round-trip so the agent knows the component is custom-entity-safe");
+	}
+
+	[Test]
+	[Description("List-mode keyword search matches a component by its published @synonym so an informal prompt term (e.g. 'carousel') discovers crt.Gallery even though neither the type name nor the description contains the word.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_Synonym() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "carousel"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'carousel' is a synonym only crt.Gallery publishes")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "synonym search must surface the component whose @synonym matched");
+	}
+
+	[Test]
+	[Description("List-mode search must NOT match a component by its whenNotToUse anti-guidance: a term that appears only in 'do NOT use this when…' must not surface the very component the guidance steers away from (the list response does not even carry whenNotToUse, so such a hit would be misleading).")]
+	public async Task ComponentInfoTool_Should_Not_Match_List_Search_By_WhenNotToUse() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "spreadsheet" appears ONLY inside crt.Gallery.whenNotToUse ("Avoid for spreadsheet rows…")
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "spreadsheet"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		(response.Items ?? []).Select(item => item.ComponentType).Should().NotContain("crt.Gallery",
+			because: "whenNotToUse is anti-guidance — matching it would surface the component its own metadata steers away from");
 	}
 
 	[Test]

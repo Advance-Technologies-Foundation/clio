@@ -50,6 +50,21 @@ and other scripting tools. Pass `--pretty` for a human-readable text
 rendering on stdout — the docs block surfaces under a `documentation:`
 section.
 
+Detail responses additionally carry the producer's **selection-metadata**
+when it is published for the component:
+
+- `whenToUse` / `whenNotToUse` — one-line "pick this when…" / "do NOT pick
+  this when…" guidance. Use them to choose between visually similar
+  components (e.g. `crt.Gallery` vs `crt.DataGrid` vs `crt.List`).
+- `synonyms` / `useCases` — alternate names and concrete scenarios. These are
+  also folded into `--search` matching, so an informal term like `table`
+  surfaces `crt.DataGrid`.
+- `appliesToCustomEntities` — `false` marks an entity-coupled component that
+  cannot be built on a custom entity; `entityCouplingNote` explains why.
+
+Each field is omitted when the producer published none; under `--pretty` they
+render directly beneath the `description:` line.
+
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"environment-superset"` | `"latest-fallback"`) so
 consumers can tell when the catalog actually matched the requested target

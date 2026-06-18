@@ -26,7 +26,7 @@ public sealed class ComponentInfoCommandTests {
 	[
 	  {"componentType":"crt.TabContainer","category":"containers","description":"Tab body.","container":true,"properties":{"caption":{"type":"string","description":"Tab caption."}}},
 	  {"componentType":"crt.Input","category":"fields","description":"Text input.","container":false,"properties":{}},
-	  {"componentType":"crt.Button","category":"interactive","description":"Menu button.","container":false,"properties":{}}
+	  {"componentType":"crt.Button","category":"interactive","description":"Menu button.","whenToUse":"Use to trigger an action or open a menu.","whenNotToUse":"Not for navigation links.","container":false,"properties":{}}
 	]
 	""";
 
@@ -168,6 +168,22 @@ public sealed class ComponentInfoCommandTests {
 		logger.Captured.Should().NotStartWith("{", because: "the pretty renderer does not emit JSON");
 		logger.Captured.Should().Contain("componentType:");
 		logger.Captured.Should().Contain("crt.TabContainer");
+	}
+
+	[Test]
+	[Description("--pretty renders the Solution A selection-metadata (whenToUse) so the human CLI detail view reaches parity with the MCP JSON response.")]
+	public async Task Emits_Selection_Metadata_In_Pretty_Detail() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommand(logger);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("whenToUse:",
+			because: "the --pretty detail view must label the selection guidance like the JSON response surfaces it");
+		logger.Captured.Should().Contain("Use to trigger an action or open a menu.",
+			because: "the published @whenToUse text must reach the human CLI surface, not just JSON");
 	}
 
 	[Test]
