@@ -196,21 +196,21 @@ public sealed class ComponentInfoCommand {
 		// Keep the CLI verb and the MCP tool in lockstep on composites (shared catalog +
 		// shared response builders), so `get-component-info` is consistent across surfaces.
 		if (hasComposite && hasComponentType) {
-			return ComponentInfoTool.CreateMutualExclusivityError(
+			return ComponentInfoResponseFactory.CreateMutualExclusivityError(
 				"get-component-info: --composite and component-type are mutually exclusive. "
 					+ "Pass --composite for a composite Designer element, or component-type for a single component.",
 				state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 		if (hasComposite) {
-			CompositeDefinition? definition = ComponentInfoTool.FindComposite(state.Composites, composite!);
+			CompositeDefinition? definition = ComponentInfoResponseFactory.FindComposite(state.Composites, composite!);
 			if (definition is null) {
-				return ComponentInfoTool.CreateCompositeNotFoundResponse(
+				return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 			}
 			string? compositeDocs = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
-			return ComponentInfoTool.CreateCompositeDetailResponse(
+			return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
 				definition, compositeDocs, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 

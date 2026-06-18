@@ -934,7 +934,7 @@ public sealed class ComponentInfoToolTests {
 		TestName = "CompositeNotFound: web empty catalog → no-composites message")]
 	[Description("CreateCompositeNotFoundResponse emits flavor-correct empty-catalog guidance: the mobile path gets the web-only hint, the web path gets the no-composites message. Pins each branch of the flattened web/mobile/empty selector so a future refactor can't silently swap or drop one.")]
 	public void ComponentInfoTool_CompositeNotFound_EmptyCatalog_Message_Matches_Flavor(bool isMobile, string expectedFragment) {
-		ComponentInfoResponse response = ComponentInfoTool.CreateCompositeNotFoundResponse(
+		ComponentInfoResponse response = ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 			composites: [],
 			caption: "Anything",
 			isMobile: isMobile,
