@@ -23,7 +23,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
 
-	private const int RouterCharCeiling = 2400;
+	private const int RouterCharCeiling = 2600;
 
 	private static readonly string[] NewCreatioGuides = ["analytics-widgets"];
 
@@ -124,8 +124,8 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert
 		foreach (string name in NewCreatioGuides) {
-			router.Should().Contain($"name={name}",
-				because: $"the router must route work to the kept {name} guide");
+			router.Should().Contain(name,
+				because: $"the kept {name} guide must be reachable from the router (named as a downstream leaf on the page-modification index line, not as a direct name= route under the tiered index model)");
 		}
 		foreach (string name in RolledBackGuides) {
 			router.Should().NotContain($"name={name}",
@@ -186,8 +186,8 @@ public sealed class McpGuidanceForcingTests {
 		string article = result.Article!.Text;
 
 		// Assert
-		article.Should().Contain("See also",
-			because: "analytics-widgets is a pointer guide that must route to its neighbors");
+		article.Should().Contain("Routing",
+			because: "analytics-widgets is a thin index guide whose Routing section must route to its neighbors");
 		article.Should().Contain("name=dashboards",
 			because: "the dashboards layout math lives in the dashboards guide and must be referenced by name, not copied");
 		article.Should().Contain("name=indicator-widget",

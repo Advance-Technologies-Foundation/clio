@@ -5,7 +5,7 @@ namespace Clio.Command.McpServer;
 /// This is a thin ROUTER, not a manual: it carries the few non-negotiable invariants that
 /// must survive client-side truncation, plus a names-only routing table that points the AI
 /// at the matching domain-index <c>get-guidance</c> article. Detailed rules and leaf-guide
-/// names live in <c>GuidanceCatalog</c> / the domain-index guides (loaded lazily on demand) —
+/// names live in <c>GuidanceCatalog</c> / the domain-index guides (loaded lazily on demand) -
 /// never duplicate guide content, and never enumerate leaf guide names, here.
 /// </summary>
 internal static class McpServerInstructions
@@ -22,7 +22,7 @@ internal static class McpServerInstructions
 		- Destructive tools (uninstall-creatio, clear-redis-db, stop-creatio, delete-*) are high-impact: confirm the target environment with the user first.
 		- Every response carries a correlation-id; on error, inspect the inner-exception chain.
 
-		## Load the matching guidance FIRST (get-guidance name=<domain index>; an unknown name returns availableGuides). Each index routes you on to its leaf guides — do not author from memory.
+		## Load the matching guidance FIRST (get-guidance name=<domain index>; an unknown name returns availableGuides). Each index routes you on to its leaf guides - do not author from memory.
 		- Freedom UI page create/edit, dashboards & analytics widgets -> get-component-info + name=page-modification (its pre-edit checklist routes on to analytics-widgets / dashboards / indicator-widget and the page-schema-* guides)
 		- Business rules / lookup filtering / dependent fields / static filters -> name=business-rules
 		- Raw ESQ queries -> name=esq
