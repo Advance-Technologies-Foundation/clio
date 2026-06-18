@@ -267,6 +267,7 @@ internal static class ToolContractCatalog {
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EventNameFieldName = "event_name";
+	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -565,7 +566,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(StatusFieldName, StringType, "Withdrawal status: withdrawn (consent set to denied) or withdraw-failed (a local I/O fault left consent unchanged)."),
-				Field("telemetry_consent", StringType, "Local consent value after the call: denied on success."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value after the call: denied on success."),
 				Field("events_purged", NumberType, "Count of not-yet-uploaded local telemetry event files deleted by the withdrawal.")),
 			CommonErrorContract,
 			[],
@@ -590,7 +591,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(StatusFieldName, StringType, "Consent lookup status: known or unknown."),
-				Field("telemetry_consent", StringType, "Local consent value: granted, denied, or unknown.")),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value: granted, denied, or unknown.")),
 			CommonErrorContract,
 			[],
 			[],
@@ -617,7 +618,7 @@ internal static class ToolContractCatalog {
 						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
 					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
 					Field("plugin_version", StringType, "Product plugin version."),
-					Field("telemetry_consent", StringType, "Optional first-use consent value after asking the user: granted or denied."),
+					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
 					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
 				],
 				Validators: [
@@ -657,7 +658,7 @@ internal static class ToolContractCatalog {
 			]),
 			[],
 			[
-				new ToolContractDefaultValue("telemetry_consent", "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
+				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
 			],
 			[
 				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
