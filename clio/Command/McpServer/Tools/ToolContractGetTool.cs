@@ -557,7 +557,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
 		return new ToolContractDefinition(
 			WithdrawTelemetryConsentTool.ToolName,
-			"Withdraws product telemetry consent: sets the locally stored decision to denied and deletes any not-yet-uploaded local telemetry events, so collection and upload both stop. Forward-looking — it does not delete events already uploaded to Creatio (those expire on the server-side retention timer). Idempotent and safe to call from any prior state.",
+			"Withdraws product telemetry consent: sets the locally stored decision to denied and deletes any not-yet-uploaded local telemetry events, so collection stops and no further uploads start. Forward-looking — it does not delete events already uploaded to Creatio (those expire on the server-side retention timer). Idempotent and safe to call from any prior state.",
 			new ToolInputSchemaContract([], []),
 			EnvelopeOutput(
 				SuccessFieldName,

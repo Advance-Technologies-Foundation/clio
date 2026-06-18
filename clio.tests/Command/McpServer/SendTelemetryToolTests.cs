@@ -433,6 +433,22 @@ public sealed class SendTelemetryToolTests
 			because: "duration_ms should be stored when the agent supplies it");
 		AttributeValue(attributes, "installation_id").Should().NotBeNullOrWhiteSpace(
 			because: "clio should enrich telemetry events with an anonymous installation identifier");
+		// Pin the full ENG-89424 AC3 required-field set. The enrichment fields below are added by
+		// BuildLogEvent and are NOT echoed from the request, so a regression that drops one (e.g.
+		// GetPlatform()/GetClioVersion() returning empty, or an attribute being removed) would
+		// otherwise pass the telemetry suite undetected.
+		AttributeValue(attributes, "session_id").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the session_id");
+		AttributeValue(attributes, "coding_agent").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the coding_agent");
+		AttributeValue(attributes, "plugin_version").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the plugin_version");
+		AttributeValue(attributes, "platform").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the platform; clio derives it locally");
+		AttributeValue(attributes, "clio_version").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the clio_version; clio derives it locally");
+		AttributeValue(attributes, "event_timestamp").Should().NotBeNullOrWhiteSpace(
+			because: "AC3 requires every event to carry the event_timestamp; clio derives it locally");
 	}
 
 	[Test]
