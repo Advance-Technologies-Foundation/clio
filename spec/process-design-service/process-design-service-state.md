@@ -157,9 +157,17 @@ User opened the modified UsrClioBpPerform1 in the designer and reported 3 issues
 **Consider:** FSD persistence — after BuildProcess on a file-design-mode stand the process is FS-only (not in DB/runtime); clio may need to trigger FS→DB load to make it runnable. On non-FSD envs SaveSchema writes to DB immediately.
 
 ## References
+- **This file is the entry point** — read it (+ the two sub-handoffs below) to resume; no need to re-describe the task.
+  - `spec/process-design-service/process-param-types-lookup-handoff.md` — params / friendly types / Lookup `referenceSchema` / `describe` root-cause detail.
+  - `spec/process-design-service/confluence-research-update-handoff.md` — Confluence research-article update task.
+- **Element/rules reference knowledge** (for adding new functionality — gateways, flows, intermediate events):
+  - `spec/ai-business-process-generation/ai-bp-element-catalog.md` — process element catalog + `data-id` vocabulary.
+  - `spec/ai-business-process-generation/ai-bp-connection-rules.md` — connection rules R1–R17 (the `validate-process-graph` ruleset).
+  - Shipped form of the above lives in code: `ProcessModelingGuidanceResource.cs` (guidance) + `ProcessGraphValidator.cs` (R1–R17).
 - Confluence research: TER/4702928908 (Approach 1 §3 = the decision + comparison table + package name).
-- Branches: `feature/ENG-90883-process-common-core` (base), `…-approach1-backend-designer` (this), `…-approach3-ui-designer`.
+- Branches: `feature/ENG-90883-process-common-core` (base), `…-approach1-backend-designer` (this).
 - Jira umbrella ENG-90883; ENG-91447 (titled Approach 3, reused for Approach 1 work).
+- **Approach 2/3 (UI/CDP-driving) is abandoned.** Its BMAD chain (PRD/ADR/stories/test-plan) and the CDP `ai-bp-ui-playbook.md` were removed — the decision + design for the shipped Approach 1 live here and in Confluence, not in an ADR.
 
 ## Code review follow-ups (2026-06-16 — recall review of the diff)
 
@@ -183,3 +191,32 @@ User opened the modified UsrClioBpPerform1 in the designer and reported 3 issues
 - [#8] Remove* "dangling Outgoings/Incomings corrupts the saved schema" — REFUTED during verification (metadata serializes FlowElements directly; nodes don't serialize Outgoings/Incomings; save-then-reload verified correct). Residual is only a hygiene divergence from canonical `ProcessSchema.RemoveElement`. Optional.
 - [#13] Cleanup: Create/Modify/ListUserTasks services triplicate the env→client→Build→POST→envelope skeleton + near-dup DTOs; extract one `PostWrapped<T>` helper when a refactor window opens.
 - [#15] MCP arg naming: the 3 new tools use camelCase params (matches the prevailing clio convention, e.g. ClearRedisTool); `describe-process` (kebab `JsonPropertyName`, from common-core) is the outlier. No change to the new tools; revisit describe-process for cross-tool consistency.
+
+## 2026-06-17/18 — modify params (addParameter/addMapping), friendly types, Lookup referenceSchema, describe type/ref
+> Focused sub-handoff with full root-cause detail: `spec/process-design-service/process-param-types-lookup-handoff.md`.
+
+- **Modify "Phase 2" param ops — DONE & VERIFIED LIVE** (supersedes the "Phase 2 TODO addParameter/…" above for params/mappings): server `ApplyOperation` now handles `addParameter` + `addMapping`, sharing `AddProcessParameter` / `ApplyMapping` with the build path (`AddProcessParameter` has a duplicate-name guard; `ApplyOperation` is now `internal` for unit tests; `InitializeLocalizableValues()` runs before `SaveSchema` so param captions persist). clio just forwards the ops.
+- **Friendly type → CONCRETE DataValueType:** `addParameter`/`parameters[]` `"Text"`/`"String"` → **ShortText**. Root cause: `GetInstanceByName("Text")` returns the **abstract base** `TextDataValueTypeUId 8b3f29bb-…`, which the visual designer renders **blank** (only concrete types show). server `ProcessDesigner.NormalizeParameterTypeName`. `Float`→`Float2`, `Money`→Currency(0.01), Integer/Boolean/Date/DateTime/Time/Guid/LongText already resolve concrete.
+- **Lookup parameters via `referenceSchema` (NEW capability):** `parameter.referenceSchema` = object name (e.g. `City`) → server resolves the `EntitySchema`, forces type **Lookup**, sets **`ReferenceSchemaUId` only** (its setter clears Name + marks the ref initialized; ALSO setting `ReferenceSchemaName` resets that flag → lazy Workspace lookup → NPE in the test harness). Works in `addParameter` AND build `parameters[]`. **VERIFIED LIVE:** `PCity` → Lookup → City in the designer.
+- **`describe-process` now returns `type` + `referenceSchema`:** server `ToDescribeParameter` resolves the names from the UIds (`DataValueTypeManager.GetInstanceByUId`, `EntitySchemaManager.GetInstanceByUId`) — on a read-back schema the OBJECT props are NULL, only UIds are populated. clio `DescribedParameter` gained `type`+`referenceSchema` `[JsonPropertyName]` fields, **else the command strips them on re-serialize** (this stripping caused repeated false "old assembly is loaded" conclusions — verify deployed behavior via the DESIGNER/metadata, not a freshly-added describe field).
+- **Optional process identity (refines review #2):** clio `ModifyBusinessProcessTool` `processName`/`processUid` are now `string? = null` (reordered after the required `operations`). They were non-nullable → the MCP SDK marked BOTH *required* → omitting one failed arg-validation with a generic `"An error occurred invoking …"` (no correlation-id) **before** the tool ran. Runtime still enforces exactly-one.
+- **clio surface updated:** tool `[Description]`, `ModifyBusinessProcessPrompt`, `ProcessModelingGuidanceResource`, docs `modify-business-process.{md,txt}` + `create-business-process.{md,txt}` (shared descriptor). e2e: added `ModifyBusinessProcess_Should_AddParametersIncludingLookup` (addParameter Guid + City Lookup, name-only identity; env-gated, not in CI). New regression test `DescribeProcessCommandTests.Execute_ShouldWriteParameterTypeAndReferenceSchema_WhenPresent`.
+
+### Deploy finding (CORRECTION to "Deploy loop" above)
+- A pool/site **restart alone does NOT pick up** a rebuilt `clioprocessbuilder.dll` — the new server code only loads after **compiling the package** in Creatio (Advanced settings → compile `clioprocessbuilder`). (This session: rebuild + restart left old code running; compile fixed it.)
+- clio MCP runs from `C:\Projects\clio\clio\bin\Debug\net10.0\clio.exe mcp` (user-scope `~/.claude.json`). **Kill all `clio.exe` before building** (they lock the output); the MCP respawns on the next tool call. Generic `"An error occurred invoking '<tool>'."` with no correlation-id often = a stale MCP process → restart it.
+
+### Git state (end of session)
+- **clio** `feature/ENG-90883-approach1-backend-designer` (PR #715, **OPEN**) — **ahead 24, NOT pushed**. Commits: `69f41af1` (feature) · `60a0d71a` (merge remote feature) · `a413d263` (e2e) · `89774bae` (merge `origin/master`; only conflict was the append-only diary, both entries kept). **master does NOT contain the process-designer files** — never branch a follow-up off master.
+- **server** ProcessBuilder `feature/ENG-91447-modify-add-params-mappings` — changes **UNCOMMITTED** (`ProcessDesigner.cs`, `ProcessDesignContracts.cs`, tests, `.gitignore`). **Local / git-ignored (do NOT commit):** `tests/clioprocessbuilder/app.config` (binding redirect — but REQUIRED locally for the server tests), `.build-props/env.Debug.props`, `.build-props/env.Release.props`.
+
+### Tests (this session)
+- server: `dotnet test tests/clioprocessbuilder/clioprocessbuilder.Tests.csproj -c dev-nf` → **52 passed** (addParameter happy/dup/blank/missing, lookup-with-reference, addMapping, ShortText assertion).
+- clio: full `Category=Unit` → **4327 passed**; the lone failure is **pre-existing flakiness** (`OpenAppCommand`/`NewPkgCommand` `IsDebugMode` error-mode; `Quartz …ForAllSchedulers` `TearDown` temp-dir) — passes in isolation, unrelated to this work. e2e compiles (0 errors).
+
+### Open (this session)
+1. **Commit the ProcessBuilder server repo** (uncommitted).
+2. **Recompile the package on krestov-test** so `describe` returns `referenceSchema: City` for created lookups (`ResolveReferenceSchemaName` built+tested, not yet deployed; the rest is already live).
+3. **Push clio #715** (ahead 24).
+4. Clean test params on `UsrTaskProcess` (`TestTextParam2`, `PInteger`…`PLookup`, `PCity`).
+5. Separate task: Confluence article update — `spec/process-design-service/confluence-research-update-handoff.md`.
