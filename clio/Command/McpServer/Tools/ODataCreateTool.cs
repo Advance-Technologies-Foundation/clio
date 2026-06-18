@@ -92,8 +92,14 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
 				return new ODataRowResult { Index = index, Success = false, Error = serverError };
 			}
-			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
-				? idEl.GetString()
+			// The primary key is normally a GUID string, but some entities key on a numeric column;
+			// accept either representation so a created record is never misreported as a failure.
+			string? id = root.TryGetProperty("Id", out JsonElement idEl)
+				? idEl.ValueKind switch {
+					JsonValueKind.String => idEl.GetString(),
+					JsonValueKind.Number => idEl.GetRawText(),
+					_ => null
+				}
 				: null;
 			if (string.IsNullOrEmpty(id)) {
 				// A successful OData create always echoes the new record with its Id; its absence
@@ -140,7 +146,8 @@ public sealed record ODataCreateArgs {
 
 	/// <summary>Whether to stop after the first failed row.</summary>
 	[JsonPropertyName("stop-on-error")]
-	[Description("Stop inserting after the first failed row. Default false: continue and report every row independently.")]
+	[Description("Stop inserting after the first failed row. Default false: continue and report every row independently. " +
+		"When true and a row fails, the rows after it are NOT attempted and do NOT appear in 'results', so 'results' may be shorter than the input 'rows'.")]
 	public bool StopOnError { get; init; }
 
 	/// <summary>Registered clio environment name.</summary>

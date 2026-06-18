@@ -13,8 +13,13 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 public interface IEntityBusinessRuleService {
 	/// <summary>
-	/// Creates a new business rule in the target package and entity schema.
+	/// Creates a single business rule in the target package and entity schema.
 	/// </summary>
+	/// <remarks>
+	/// This single-rule overload backs the <c>create-entity-business-rule</c> CLI command; the MCP tool
+	/// uses the batch <see cref="Create(EntityBusinessRulesBatchRequest)"/> overload exclusively (a
+	/// single MCP rule is sent as a one-element batch).
+	/// </remarks>
 	/// <param name="request">Business-rule creation input.</param>
 	/// <returns>Generated metadata about the created rule.</returns>
 	BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request);
@@ -87,7 +92,8 @@ internal sealed class EntityBusinessRuleService(
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Create(EntityBusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		ValidateBatchRequest(request);
+		BusinessRuleBatchValidation.RequireBatchFields(
+			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
 
 		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
@@ -98,13 +104,17 @@ internal sealed class EntityBusinessRuleService(
 		var pending = new List<(int Index, string Caption, string RuleName)>();
 		var toAppend = new List<BusinessRuleMetadataDto>();
 
+		// One static-filter context is shared across the whole batch: its schema/lookup caches then
+		// accumulate across rules instead of being rebuilt (and re-fetched) for every static-filter rule.
+		StaticFilterContext? batchStaticFilterContext = null;
+
 		for (int index = 0; index < request.Rules.Count; index++) {
 			BusinessRule rule = request.Rules[index];
 			string caption = rule?.Caption ?? string.Empty;
 			try {
 				ArgumentNullException.ThrowIfNull(rule);
 				StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(rule)
-					? staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
+					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 					: null;
 
 				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
@@ -134,20 +144,6 @@ internal sealed class EntityBusinessRuleService(
 		}
 
 		return results;
-	}
-
-	private static void ValidateBatchRequest(EntityBusinessRulesBatchRequest request) {
-		if (string.IsNullOrWhiteSpace(request.PackageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
-		}
-
-		if (request.Rules is null || request.Rules.Count == 0) {
-			throw new ArgumentException("rules is required and must contain at least one rule.");
-		}
 	}
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>

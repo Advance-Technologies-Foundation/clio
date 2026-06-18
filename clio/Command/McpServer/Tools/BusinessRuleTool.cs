@@ -39,7 +39,9 @@ public sealed class CreateEntityBusinessRuleTool(
 			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new EntityBusinessRulesBatchRequest(
 				args.PackageName,
 				args.EntitySchemaName,
-				args.Rules.Select(rule => rule.ToBusinessRule()).ToList()));
+				// A null array element must not collapse the whole batch: keep it as a null entry so the
+				// service isolates it as a single failed item instead of throwing during the projection.
+				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()));
 			return BusinessRuleBatchResponse.From(results);
 		} catch (Exception exception) {
 			return BusinessRuleBatchResponse.From(args.Rules
@@ -599,7 +601,9 @@ public sealed class CreatePageBusinessRuleTool(
 			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new PageBusinessRulesBatchRequest(
 				args.PackageName,
 				args.PageSchemaName,
-				args.Rules.Select(rule => rule.ToBusinessRule()).ToList()));
+				// A null array element must not collapse the whole batch: keep it as a null entry so the
+				// service isolates it as a single failed item instead of throwing during the projection.
+				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()));
 			return BusinessRuleBatchResponse.From(results);
 		} catch (Exception exception) {
 			return BusinessRuleBatchResponse.From(args.Rules

@@ -81,7 +81,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rules"] = new object[] { CreateShowElementRule() }
+					["rules"] = new object[] { CreateShowElementRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -115,7 +116,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rules"] = new object[] { CreateSysValueConditionRule() }
+					["rules"] = new object[] { CreateSysValueConditionRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -129,6 +131,37 @@ public sealed class PageBusinessRuleToolE2ETests {
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue page payload");
+	}
+
+	[Test]
+	[Description("Binds a multi-rule page batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds a multi-rule batch")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-batch-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreateShowElementRule(), CreateSysValueConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid two-rule page batch payload should bind and return the structured batch response, not an MCP binding error");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				ContainsText(message, invalidEnvironmentName),
+			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
 	[Test]
@@ -162,7 +195,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["page-schema-name"] = target.PageSchemaName,
-					["rules"] = new object[] { CreateContactPageRule(target, caption) }
+					["rules"] = new object[] { CreateContactPageRule(target, caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

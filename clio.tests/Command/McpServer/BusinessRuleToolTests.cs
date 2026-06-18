@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class BusinessRuleToolTests {
 	[Test]
 	[Category("Unit")]

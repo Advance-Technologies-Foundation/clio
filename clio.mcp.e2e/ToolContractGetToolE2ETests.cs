@@ -523,70 +523,70 @@ public sealed class ToolContractGetToolE2ETests {
 		contract.InputSchema.Validators.Should().Contain(validator =>
 
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.logicalOperation",
+				validator.Field == "rules[*].condition.logicalOperation",
 			because: "the contract should advertise the target architecture logicalOperation field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.conditions[*].comparisonType",
+				validator.Field == "rules[*].condition.conditions[*].comparisonType",
 			because: "the contract should advertise the target architecture comparisonType field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "conditional-field" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression" &&
 				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
 			because: "the contract should advertise the unary-versus-binary rightExpression rule");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
-				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Field == "rules[*].condition.conditions[*]" &&
 				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
 			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
 				validator.Code == "unsupported-equality-operands" &&
-				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Field == "rules[*].condition.conditions[*]" &&
 				validator.Context!.Contains("RichText or Image", StringComparison.Ordinal),
 			because: "the contract should advertise Creatio's equality limitation for rich text and image columns");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "date-time-constant" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should require timezone-aware DateTime and Time constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the contract should advertise odata-read lookup validation for condition constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.actions[*].type",
+				validator.Field == "rules[*].actions[*].type",
 			because: "the contract should advertise the target architecture action field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
-				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Field == "rules[*].actions[*].items[*]" &&
 				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
 			because: "the contract should advertise AttributeValue source support for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
-				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Field == "rules[*].actions[*].items[*]" &&
 				validator.Context!.Contains("direct-field arithmetic expression", StringComparison.Ordinal),
 			because: "the real MCP server contract should advertise the simple direct-field formula scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
-				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Field == "rules[*].actions[*].items[*].value.value" &&
 				validator.Context!.Contains("GUID string constants for Lookup targets", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for Set values including lookup targets");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-formula" &&
-				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Field == "rules[*].actions[*].items[*].value.expression" &&
 				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
 			because: "the contract should document formula payloads for Set values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Field == "rules[*].actions[*].items[*].value.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the contract should advertise odata-read lookup validation for set-values constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.conditions[*].comparisonType" &&
+				validator.Field == "rules[*].condition.conditions[*].comparisonType" &&
 				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
 			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
@@ -668,7 +668,7 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "page-business-rule creation requires environment package page and rule payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.actions[*].type" &&
+				validator.Field == "rules[*].actions[*].type" &&
 				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
 				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
 				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
@@ -678,12 +678,12 @@ public sealed class ToolContractGetToolE2ETests {
 			because: "the contract should advertise page-only action values");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-element" &&
-				validator.Field == "rule.actions[*].items" &&
+				validator.Field == "rules[*].actions[*].items" &&
 				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
 			because: "the contract should point callers to recursive page element discovery");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the page contract should advertise odata-read lookup validation for condition constants");
 		contract.PreferredFlow.Tools.Should().Equal(

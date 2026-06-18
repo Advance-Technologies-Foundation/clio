@@ -10,8 +10,13 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 public interface IPageBusinessRuleService {
 	/// <summary>
-	/// Creates a new page business rule in the target package and page schema.
+	/// Creates a single page business rule in the target package and page schema.
 	/// </summary>
+	/// <remarks>
+	/// This single-rule overload backs the <c>create-page-business-rule</c> CLI command; the MCP tool
+	/// uses the batch <see cref="Create(PageBusinessRulesBatchRequest)"/> overload exclusively (a single
+	/// MCP rule is sent as a one-element batch).
+	/// </remarks>
 	/// <param name="request">Page business-rule creation input.</param>
 	/// <returns>Generated metadata about the created rule.</returns>
 	BusinessRuleCreateResult Create(PageBusinessRuleCreateRequest request);
@@ -75,7 +80,8 @@ internal sealed class PageBusinessRuleService(
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Create(PageBusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		ValidateBatchRequest(request);
+		BusinessRuleBatchValidation.RequireBatchFields(
+			request.PackageName, request.PageSchemaName, "page-schema-name", request.Rules);
 
 		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.PageSchemaName, packageUId);
@@ -108,20 +114,6 @@ internal sealed class PageBusinessRuleService(
 		}
 
 		return results;
-	}
-
-	private static void ValidateBatchRequest(PageBusinessRulesBatchRequest request) {
-		if (string.IsNullOrWhiteSpace(request.PackageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(request.PageSchemaName)) {
-			throw new ArgumentException("page-schema-name is required.");
-		}
-
-		if (request.Rules is null || request.Rules.Count == 0) {
-			throw new ArgumentException("rules is required and must contain at least one rule.");
-		}
 	}
 
 	private static void ValidateCreateRequest(PageBusinessRuleCreateRequest request) {

@@ -613,8 +613,10 @@ public sealed class EntityBusinessRuleServiceTests {
 
 		// Assert
 		results.Should().OnlyContain(result => result.Success, because: "all three rules are valid");
-		results.Select(result => result.Name).Should().Equal(["Rule 1", "Rule 2", "Rule 3"]);
-		results.Should().OnlyContain(result => result.RuleName!.StartsWith("BusinessRule_"));
+		results.Select(result => result.Name).Should().Equal(["Rule 1", "Rule 2", "Rule 3"],
+			because: "per-rule outcomes are returned in input order keyed by caption");
+		results.Should().OnlyContain(result => result.RuleName!.StartsWith("BusinessRule_"),
+			because: "each created rule reports its generated internal rule name");
 		_addonSchemaDesignerClient.Received(1).GetSchema(Arg.Any<AddonGetRequestDto>());
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
@@ -643,8 +645,8 @@ public sealed class EntityBusinessRuleServiceTests {
 		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Create(request);
 
 		// Assert
-		results.Should().HaveCount(3);
-		results[0].Success.Should().BeTrue();
+		results.Should().HaveCount(3, because: "every input rule gets an outcome entry");
+		results[0].Success.Should().BeTrue(because: "the first rule is valid");
 		results[1].Success.Should().BeFalse(because: "the rule references an unknown attribute");
 		results[1].Error.Should().Contain("MissingStatus");
 		results[2].Success.Should().BeTrue(because: "a failed rule must not abort the remaining rules");
@@ -672,7 +674,7 @@ public sealed class EntityBusinessRuleServiceTests {
 		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Create(request);
 
 		// Assert
-		results.Should().OnlyContain(result => !result.Success);
+		results.Should().OnlyContain(result => !result.Success, because: "every rule failed validation");
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().BuildConfiguration();
@@ -695,6 +697,53 @@ public sealed class EntityBusinessRuleServiceTests {
 		// Assert
 		act.Should().Throw<ArgumentException>().WithMessage(expectedMessage);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a batch with no rules before remote dependencies are invoked.")]
+	public void Create_Batch_Should_Reject_When_Rules_Empty() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", []);
+
+		// Act
+		Action act = () => _service.Create(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rules is required and must contain at least one rule.",
+				because: "an empty batch is a request-level error");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks every converted rule of the batch as failed with the save error when the single add-on save throws, while pre-save validation failures keep their own error.")]
+	public void Create_Batch_Should_Mark_All_Pending_Failed_When_Save_Throws() {
+		// Arrange
+		_addonSchemaDesignerClient
+			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(_ => throw new InvalidOperationException("Add-on save failed."));
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "Good rule 1"),
+				CreateRule(caption: "Bad rule", leftPath: "MissingStatus"),
+				CreateRule(caption: "Good rule 2", actions: [new MakeReadOnlyBusinessRuleAction(["Status"])])
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Create(request);
+
+		// Assert
+		results.Should().HaveCount(3, because: "every input rule still gets an outcome");
+		results[0].Success.Should().BeFalse(because: "the single add-on save failed for the whole batch");
+		results[0].Error.Should().Contain("Add-on save failed.", because: "all converted rules share the same save error");
+		results[1].Success.Should().BeFalse(because: "this rule failed validation before the save");
+		results[1].Error.Should().Contain("MissingStatus", because: "a pre-save validation failure keeps its own error, not the save error");
+		results[2].Success.Should().BeFalse(because: "the single add-on save failed for the whole batch");
+		results[2].Error.Should().Contain("Add-on save failed.", because: "all converted rules share the same save error");
 	}
 
 	private static EntityDesignSchemaDto BuildEntitySchema() {
