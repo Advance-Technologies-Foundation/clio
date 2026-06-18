@@ -64,6 +64,8 @@ public sealed class MobilePageConversionGuideTool {
 		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
+		"plus requestConversions (component event-binding requests/actions converted for mobile — supported requests are already " +
+		"remapped inside elementMap[].mobileValues, unsupported ones stripped from the binding, custom ones flagged; advisory summary only), " +
 		"plus constraints and ordered nextSteps. " +
 		"YOU (the caller) build the mobile page body from the guide and persist it with create-page (mobile template) + update-page, then validate-page. " +
 		"Call get-guidance with name `freedom-page-web-to-mobile-conversion` before acting on the guide.")]

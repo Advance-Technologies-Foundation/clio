@@ -25,6 +25,15 @@ public sealed class WebToMobilePageConversionRules {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// Group: web↔mobile request (action) equivalence. Requests are wired declaratively to a
+	/// component's event binding (e.g. a button's <c>clicked: { request, params }</c>); the mobile app
+	/// supports only a subset of web requests. Used to remap a supported request, strip an unsupported
+	/// one, or flag an unknown/custom one during conversion.
+	/// </summary>
+	[JsonPropertyName("requests")]
+	public IReadOnlyList<RequestMappingRule> Requests { get; init; } = [];
+
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement> Extensions { get; init; }
@@ -65,6 +74,37 @@ public sealed class ContainerMappingRule {
 	/// <summary>Mobile container name (e.g. "AreaProfileContainer").</summary>
 	[JsonPropertyName("mobile")]
 	public string Mobile { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// Maps a web request (action) to its mobile counterpart. A request is dispatched declaratively from a
+/// component's event binding (<c>clicked</c> / <c>valueChange</c> / <c>updated</c>) as
+/// <c>{ "request": "crt.X", "params": { ... } }</c>. An empty/null <see cref="Mobile"/> means the
+/// request is NOT supported on mobile (the binding is stripped during conversion). A request absent from
+/// this map entirely is treated as unknown/custom and flagged for manual review (kept as-is).
+/// </summary>
+public sealed class RequestMappingRule {
+	/// <summary>Web request type, e.g. "crt.SaveRecordRequest".</summary>
+	[JsonPropertyName("web")]
+	public string Web { get; init; }
+
+	/// <summary>Mobile request type (often the same name). Empty/null when unsupported on mobile.</summary>
+	[JsonPropertyName("mobile")]
+	public string Mobile { get; init; }
+
+	/// <summary>One of: DirectMapping, WithAdaptation, Unsupported, RequiresManualDecision.</summary>
+	[JsonPropertyName("category")]
+	public string Category { get; init; }
+
+	/// <summary>
+	/// Optional web→mobile rename of <c>params</c> keys (for requests whose parameter names differ).
+	/// Empty for direct mappings — params are carried verbatim.
+	/// </summary>
+	[JsonPropertyName("paramMap")]
+	public IReadOnlyDictionary<string, string> ParamMap { get; init; } = new Dictionary<string, string>();
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }

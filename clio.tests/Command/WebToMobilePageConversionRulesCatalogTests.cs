@@ -34,6 +34,18 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("The bundled rules store only SUPPORTED requests (web→mobile); unsupported web requests are intentionally absent (a request not in the map is flagged at conversion time).")]
+	public void LoadBundled_ReturnsSeededRequests() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		rules.Requests.Should().NotBeEmpty();
+		rules.Requests.Should().Contain(r =>
+			r.Web == "crt.SaveRecordRequest" && r.Mobile == "crt.SaveRecordRequest" && r.Category == "DirectMapping");
+		rules.Requests.Should().OnlyContain(r => !string.IsNullOrEmpty(r.Mobile),
+			because: "the map lists only requests supported on mobile; unsupported ones are simply not stored");
+	}
+
+	[Test]
 	[Description("Bundled templates carry container-name correspondence (e.g. SideAreaProfileContainer -> AreaProfileContainer).")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();

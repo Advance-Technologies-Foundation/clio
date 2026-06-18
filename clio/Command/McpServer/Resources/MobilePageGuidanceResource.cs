@@ -407,6 +407,30 @@ public sealed class MobilePageGuidanceResource {
 		         Reloads data from a data source.
 		         params: dataSourceName? (string), updateCache? (boolean)
 
+		       crt.QuickFilterRequest
+		         Applies a quick filter to a list/value attribute.
+		         params: filterValue? (depends on the filter attribute)
+
+		       ── List items ──────────────────────────────────────────────
+
+		       crt.CreateListItemRequest
+		         Creates an item in a list/collection.
+		         params: defaultValues? ([{attributeName, value}])
+
+		       crt.UpdateListItemRequest
+		         Updates an item in a list/collection.
+		         params: recordId? (string)
+
+		       crt.DeleteListItemRequest
+		         Deletes an item from a list/collection.
+		         params: recordId? (string)
+
+		       ── Advanced ────────────────────────────────────────────────
+
+		       crt.ExecuteExpressionRequest
+		         Evaluates an expression via the mobile expression engine.
+		         params: expression (string, required)
+
 		       ── Business process ────────────────────────────────────────
 
 		       crt.RunBusinessProcessRequest

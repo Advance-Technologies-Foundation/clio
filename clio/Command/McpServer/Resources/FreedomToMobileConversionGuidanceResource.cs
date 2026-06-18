@@ -80,7 +80,13 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
 			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
 			     carries the type and EVERY source property the mobile component supports — never drop any of
-			     them. Then add ONLY what mobileValues deliberately leaves out:
+			     them. It also already carries the CONVERTED event-binding requests (a button's `clicked`, a
+			     field's `valueChange`/`updated`): supported requests are kept (remapped when the mobile name
+			     differs); a request NOT in the supported map (web-only with no mobile equivalent, or a custom
+			     usr.* request) is kept and FLAGGED for you to verify/remove. (Only a request a rules version
+			     explicitly marks unsupported has its binding stripped outright.) Do NOT re-add or hand-edit
+			     these bindings — paste mobileValues as-is. Then add ONLY
+			     what mobileValues deliberately leaves out:
 			       • the value binding (control, or value for lookups) — type-specific, so it is not prebuilt;
 			       • for a structural mapping (grid -> crt.List), itemLayout.body — build it from the
 			         mobileContracts example.
@@ -157,6 +163,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  passing its `rule` VERBATIM to create-page-business-rule on the MOBILE page (after approval).
 			  droppedRules[] did not convert (every referenced element drops) — report them.
 			  OBJECT-/entity-level business rules are shared across web and mobile — do NOT re-create or touch them.
+			- REQUESTS (actions) on component event bindings (a button's `clicked`, a field's `valueChange`/`updated`)
+			  ARE converted for you and already baked into elementMap[].mobileValues — paste mobileValues verbatim.
+			  The conversion map stores only the requests SUPPORTED on mobile (a subset of web): those are kept and
+			  remapped. A request NOT in the map (a web-only request with no mobile equivalent, or a custom usr.*
+			  request) is kept and FLAGGED for you to verify on mobile and remove if it does not apply. (A rules
+			  version may also explicitly mark a request unsupported, in which case its binding is stripped.)
+			  guide.requestConversions is the advisory summary (convertedRequests / flaggedRequests / droppedRequests).
+			  Page `handlers` (the web-only AMD section) are NEVER transferred — re-implement that behavior as entity-level business rules.
 			- One data source per page. If the web page used several (see guide.dataSources), keep only
 			  the primary one.
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's

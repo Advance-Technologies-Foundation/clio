@@ -391,6 +391,19 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageBusinessRuleConversionInfo PageBusinessRules { get; init; }
 
+	/// <summary>
+	/// Requests (actions) referenced by the source page's component event bindings (a button's
+	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
+	/// mobile. Supported requests are remapped in-place inside the affected element's
+	/// <c>elementMap[].mobileValues</c>; unsupported requests have their binding stripped (the component
+	/// stays); unknown/custom requests are kept and flagged for manual review. This section is an
+	/// advisory SUMMARY — the actionable result is already baked into <c>mobileValues</c>. Null when the
+	/// source page references no requests. (Page <c>handlers</c> are web-only and never transferred.)
+	/// </summary>
+	[JsonPropertyName("requestConversions")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public RequestConversionInfo RequestConversions { get; init; }
+
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];
@@ -477,6 +490,72 @@ public sealed class DroppedPageBusinessRule {
 	[JsonPropertyName("caption")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Caption { get; init; }
+
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
+}
+
+/// <summary>
+/// Advisory summary of how the source page's component event-binding requests (actions) were converted
+/// for mobile. The actionable result is already applied to each affected element's
+/// <c>elementMap[].mobileValues</c>; this section explains what happened so the user can review.
+/// </summary>
+public sealed class RequestConversionInfo {
+	/// <summary>Requests carried to mobile (kept in the binding; remapped when the mobile name differs).</summary>
+	[JsonPropertyName("convertedRequests")]
+	public IReadOnlyList<ConvertedRequest> ConvertedRequests { get; init; } = [];
+
+	/// <summary>Requests with no mobile equivalent: the binding was stripped (the component still renders).</summary>
+	[JsonPropertyName("droppedRequests")]
+	public IReadOnlyList<DroppedRequest> DroppedRequests { get; init; } = [];
+
+	/// <summary>Unknown/custom requests kept verbatim but flagged: verify they exist on mobile.</summary>
+	[JsonPropertyName("flaggedRequests")]
+	public IReadOnlyList<FlaggedRequest> FlaggedRequests { get; init; } = [];
+}
+
+/// <summary>A request carried to mobile from a component's event binding.</summary>
+public sealed class ConvertedRequest {
+	/// <summary>Name of the component that carries the binding (e.g. "SaveButton").</summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; init; }
+
+	/// <summary>Event binding the request is wired to (e.g. "clicked", "valueChange").</summary>
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
+
+	[JsonPropertyName("webRequest")]
+	public string WebRequest { get; init; }
+
+	[JsonPropertyName("mobileRequest")]
+	public string MobileRequest { get; init; }
+}
+
+/// <summary>A request stripped from a component's event binding (no mobile equivalent).</summary>
+public sealed class DroppedRequest {
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; init; }
+
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
+
+	[JsonPropertyName("webRequest")]
+	public string WebRequest { get; init; }
+
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
+}
+
+/// <summary>An unknown/custom request kept in the binding but flagged for manual verification.</summary>
+public sealed class FlaggedRequest {
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; init; }
+
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
+
+	[JsonPropertyName("request")]
+	public string Request { get; init; }
 
 	[JsonPropertyName("reason")]
 	public string Reason { get; init; }

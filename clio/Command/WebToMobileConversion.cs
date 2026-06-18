@@ -94,8 +94,17 @@ public static class WebToMobileAnalysisService {
 		HashSet<string> dataSourceSet = new(dataSources, StringComparer.OrdinalIgnoreCase);
 		string primaryDs = ResolvePrimaryDs(attrToDs, dataSources);
 		JObject resources = ParseResources(bundle);
+		// Request (action) conversion: as the element map prebuilds each insert's mobileValues, the
+		// event-binding requests (a button's clicked, etc.) are remapped/stripped/flagged in-place and
+		// recorded into these collectors for the advisory requestConversions summary.
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap = BuildRequestMap(rules);
+		var convertedRequests = new List<ConvertedRequest>();
+		var droppedRequests = new List<DroppedRequest>();
+		var flaggedRequests = new List<FlaggedRequest>();
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources);
+			tree, map, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
+			requestMap, convertedRequests, droppedRequests, flaggedRequests);
+		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -130,6 +139,7 @@ public static class WebToMobileAnalysisService {
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
 			PageBusinessRules = pageBusinessRules,
+			RequestConversions = requestConversions,
 			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null),
 			GuidanceArticle = GuidanceArticleName,
@@ -630,7 +640,11 @@ public static class WebToMobileAnalysisService {
 		string PrimaryDs,
 		JObject Resources,
 		string RelocateTarget,
-		List<ElementMapEntry> Out);
+		List<ElementMapEntry> Out,
+		IReadOnlyDictionary<string, RequestMappingRule> RequestMap,
+		List<ConvertedRequest> ConvertedRequests,
+		List<DroppedRequest> DroppedRequests,
+		List<FlaggedRequest> FlaggedRequests);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -646,9 +660,14 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> attrToColumn,
 		IReadOnlySet<string> dataSources,
 		string primaryDs,
-		JObject resources) {
+		JObject resources,
+		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
+		List<ConvertedRequest> convertedRequests,
+		List<DroppedRequest> droppedRequests,
+		List<FlaggedRequest> flaggedRequests) {
 		var ctx = new ElementMapContext(map, mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
-			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), []);
+			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
+			requestMap, convertedRequests, droppedRequests, flaggedRequests);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
 		return ctx.Out;
 	}
@@ -847,10 +866,17 @@ public static class WebToMobileAnalysisService {
 			if (ExcludedSourceProps.Contains(prop.Name)) {
 				continue;
 			}
+			// Event bindings (clicked / valueChange / updated …) carry a request — they are NOT plain
+			// registry props (they are request-binding outputs, absent from allowed) and are converted
+			// deliberately by ProcessEventBindings below, so skip them here.
+			if (IsEventBinding(prop.Value)) {
+				continue;
+			}
 			if (allowed.Contains(prop.Name)) {
 				values[prop.Name] = prop.Value.DeepClone();
 			}
 		}
+		ProcessEventBindings(ctx, node, values, mobileName);
 		string label = ResolveFieldLabel(ctx, node, mobileName, mobileType, caption);
 		if (!string.IsNullOrEmpty(label)) {
 			values["label"] = label;
@@ -860,6 +886,101 @@ public static class WebToMobileAnalysisService {
 		} catch {
 			return null;
 		}
+	}
+
+	/// <summary>
+	/// A component event binding is a property whose value is an object carrying a string <c>request</c>
+	/// (the Freedom UI <c>{ request, params }</c> shape used by <c>clicked</c> / <c>valueChange</c> /
+	/// <c>updated</c>). This structural test recognizes every such binding without a registry of outputs.
+	/// </summary>
+	private static bool IsEventBinding(JToken value) =>
+		value is JObject obj && obj["request"] is JValue { Type: JTokenType.String } req
+		&& !string.IsNullOrWhiteSpace(req.ToString());
+
+	/// <summary>
+	/// Converts the source node's event-binding requests (actions) for mobile and writes the surviving
+	/// ones into the prebuilt <paramref name="values"/>: a SUPPORTED request is kept (and its name remapped
+	/// when the mobile type differs, params renamed per the rule's paramMap); an UNSUPPORTED request has its
+	/// whole binding omitted (the component stays, the dead action is dropped); an UNKNOWN/custom request is
+	/// kept verbatim and flagged. Each outcome is recorded for the advisory requestConversions summary.
+	/// </summary>
+	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
+		foreach (JProperty prop in node.Properties()) {
+			if (!IsEventBinding(prop.Value)) {
+				continue;
+			}
+			string binding = prop.Name;
+			var source = (JObject)prop.Value;
+			string webRequest = source["request"].ToString();
+			values.Remove(binding); // own this property regardless of the prune loop
+
+			if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
+				if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
+					var clone = (JObject)source.DeepClone();
+					clone["request"] = rule.Mobile;
+					ApplyParamMap(clone, rule.ParamMap);
+					values[binding] = clone;
+					ctx.ConvertedRequests.Add(new ConvertedRequest {
+						ElementName = elementName, Binding = binding, WebRequest = webRequest, MobileRequest = rule.Mobile
+					});
+				} else {
+					ctx.DroppedRequests.Add(new DroppedRequest {
+						ElementName = elementName, Binding = binding, WebRequest = webRequest,
+						Reason = string.IsNullOrWhiteSpace(rule.Note)
+							? "Request is not supported on mobile; the binding was removed (the component still renders)."
+							: rule.Note
+					});
+				}
+				continue;
+			}
+
+			// Not in the map: unknown OOTB request or a custom usr.* — keep it but flag for review.
+			values[binding] = (JObject)source.DeepClone();
+			ctx.FlaggedRequests.Add(new FlaggedRequest {
+				ElementName = elementName, Binding = binding, Request = webRequest,
+				Reason = "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
+			});
+		}
+	}
+
+	/// <summary>Renames keys in the binding's <c>params</c> object per the rule's web→mobile param map (no-op when empty).</summary>
+	private static void ApplyParamMap(JObject binding, IReadOnlyDictionary<string, string> paramMap) {
+		if (paramMap is null || paramMap.Count == 0 || binding["params"] is not JObject prms) {
+			return;
+		}
+		foreach (KeyValuePair<string, string> pair in paramMap) {
+			if (string.IsNullOrWhiteSpace(pair.Key) || string.IsNullOrWhiteSpace(pair.Value)) {
+				continue;
+			}
+			if (prms[pair.Key] is { } moved) {
+				prms.Remove(pair.Key);
+				prms[pair.Value] = moved;
+			}
+		}
+	}
+
+	/// <summary>Builds the web-request → mapping-rule lookup (case-insensitive) from the resolved rules.</summary>
+	private static IReadOnlyDictionary<string, RequestMappingRule> BuildRequestMap(WebToMobilePageConversionRules rules) {
+		var map = new Dictionary<string, RequestMappingRule>(StringComparer.OrdinalIgnoreCase);
+		foreach (RequestMappingRule rule in rules?.Requests ?? []) {
+			if (!string.IsNullOrWhiteSpace(rule?.Web)) {
+				map[rule.Web] = rule;
+			}
+		}
+		return map;
+	}
+
+	/// <summary>Assembles the advisory request-conversion summary; null when the page references no requests.</summary>
+	private static RequestConversionInfo BuildRequestConversionInfo(
+		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged) {
+		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
+			return null;
+		}
+		return new RequestConversionInfo {
+			ConvertedRequests = converted,
+			DroppedRequests = dropped,
+			FlaggedRequests = flagged
+		};
 	}
 
 	/// <summary>The bound column code of a field node: the first <c>$ref</c> that maps to a declared attribute's column.</summary>

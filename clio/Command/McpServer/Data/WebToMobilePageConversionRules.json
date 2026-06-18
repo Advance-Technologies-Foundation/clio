@@ -87,5 +87,32 @@
       "primaryWeb": "crt.FolderTree",
       "note": "Many->one: mobile FolderTreeActions is produced from web crt.FolderTree (primary); web crt.FolderTreeActions is consumed. Values are reconciled against the mobile component's registry contract."
     }
+  ],
+  "requests": [
+    { "web": "crt.SaveRecordRequest", "mobile": "crt.SaveRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateRecordRequest", "mobile": "crt.CreateRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.UpdateRecordRequest", "mobile": "crt.UpdateRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteRecordRequest", "mobile": "crt.DeleteRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CopyRecordRequest", "mobile": "crt.CopyRecordRequest", "category": "DirectMapping" },
+    { "web": "crt.CancelRecordChangesRequest", "mobile": "crt.CancelRecordChangesRequest", "category": "DirectMapping" },
+    { "web": "crt.ClosePageRequest", "mobile": "crt.ClosePageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenPageRequest", "mobile": "crt.OpenPageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenLookupPageRequest", "mobile": "crt.OpenLookupPageRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenCustomWebViewPageRequest", "mobile": "crt.OpenCustomWebViewPageRequest", "category": "DirectMapping" },
+    { "web": "crt.ShowDialogRequest", "mobile": "crt.ShowDialogRequest", "category": "DirectMapping" },
+    { "web": "crt.OpenAddressOnMapRequest", "mobile": "crt.OpenAddressOnMapRequest", "category": "DirectMapping" },
+    { "web": "crt.LoadDataRequest", "mobile": "crt.LoadDataRequest", "category": "DirectMapping" },
+    { "web": "crt.QuickFilterRequest", "mobile": "crt.QuickFilterRequest", "category": "DirectMapping" },
+    { "web": "crt.ExecuteExpressionRequest", "mobile": "crt.ExecuteExpressionRequest", "category": "DirectMapping" },
+    { "web": "crt.RunBusinessProcessRequest", "mobile": "crt.RunBusinessProcessRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateListItemRequest", "mobile": "crt.CreateListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.UpdateListItemRequest", "mobile": "crt.UpdateListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteListItemRequest", "mobile": "crt.DeleteListItemRequest", "category": "DirectMapping" },
+    { "web": "crt.UploadFileRequest", "mobile": "crt.UploadFileRequest", "category": "DirectMapping" },
+    { "web": "crt.DeleteFileRequest", "mobile": "crt.DeleteFileRequest", "category": "DirectMapping" },
+    { "web": "crt.AddCommunicationOptionsRequest", "mobile": "crt.AddCommunicationOptionsRequest", "category": "DirectMapping" },
+    { "web": "crt.CreateCommunicationOptionRequest", "mobile": "crt.CreateCommunicationOptionRequest", "category": "DirectMapping" },
+    { "web": "crt.RemoveCommunicationOptionRequest", "mobile": "crt.RemoveCommunicationOptionRequest", "category": "DirectMapping" },
+    { "web": "crt.SetAttributeFromBarcodeRequest", "mobile": "crt.SetAttributeFromBarcodeRequest", "category": "DirectMapping" }
   ]
 }

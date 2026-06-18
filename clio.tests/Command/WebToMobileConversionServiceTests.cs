@@ -642,4 +642,110 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	#endregion
+
+	#region Request (action) conversion
+
+	private static readonly IReadOnlySet<string> RequestMobileTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Button", "crt.FlexContainer" };
+
+	private static readonly WebToMobilePageConversionRules RequestRules = new() {
+		Requests = [
+			new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" },
+			new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported", Note = "Printables are web-only." },
+			new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.OpenPageRequest", Category = "WithAdaptation" }
+		]
+	};
+
+	private static MobilePageConversionGuide AnalyzeRequests(PageBundleInfo bundle) =>
+		WebToMobileAnalysisService.Analyze(
+			bundle, RequestMobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			RequestRules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+	private static PageBundleInfo ButtonBundle(string buttonName, string request, string @params = """{ "preventCardClose": false }""") =>
+		Bundle($$"""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "{{buttonName}}", "type": "crt.Button", "caption": "Act",
+				  "clicked": { "request": "{{request}}", "params": {{@params}} } } ] } ]
+			""");
+
+	private static JsonObject ClickedOf(MobilePageConversionGuide guide, string buttonName) =>
+		Element(guide, buttonName).MobileValues!.AsObject();
+
+	[Test]
+	[Description("A supported event-binding request is kept in mobileValues with the same request, params preserved, and recorded as converted.")]
+	public void Analyze_SupportedRequest_KeptAndRecorded() {
+		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("SaveButton", "crt.SaveRecordRequest"));
+
+		JsonObject vals = ClickedOf(guide, "SaveButton");
+		JsonObject clicked = vals["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.SaveRecordRequest");
+		clicked["params"]!["preventCardClose"]!.GetValue<bool>().Should().BeFalse(because: "params are carried verbatim");
+
+		guide.RequestConversions.Should().NotBeNull();
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r =>
+			r.ElementName == "SaveButton" && r.Binding == "clicked"
+			&& r.WebRequest == "crt.SaveRecordRequest" && r.MobileRequest == "crt.SaveRecordRequest");
+		guide.RequestConversions.DroppedRequests.Should().BeEmpty();
+		guide.RequestConversions.FlaggedRequests.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("An unsupported event-binding request has its binding stripped from mobileValues; the component stays and the request is recorded as dropped.")]
+	public void Analyze_UnsupportedRequest_BindingStrippedComponentKept() {
+		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("PrintButton", "crt.PrintablesRequest"));
+
+		JsonObject vals = ClickedOf(guide, "PrintButton");
+		vals["type"]!.GetValue<string>().Should().Be("crt.Button", because: "the component still renders");
+		vals.ContainsKey("clicked").Should().BeFalse(because: "the unsupported request's binding is removed");
+
+		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
+			r.ElementName == "PrintButton" && r.Binding == "clicked" && r.WebRequest == "crt.PrintablesRequest");
+		guide.RequestConversions.ConvertedRequests.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("An unknown/custom request (absent from the map) is kept verbatim in mobileValues and flagged for manual review.")]
+	public void Analyze_UnknownRequest_KeptAndFlagged() {
+		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("CustomButton", "usr.MyCustomRequest"));
+
+		JsonObject clicked = ClickedOf(guide, "CustomButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("usr.MyCustomRequest");
+
+		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+			r.ElementName == "CustomButton" && r.Binding == "clicked" && r.Request == "usr.MyCustomRequest");
+		guide.RequestConversions.ConvertedRequests.Should().BeEmpty();
+		guide.RequestConversions.DroppedRequests.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("A request whose mobile name differs is remapped in mobileValues (params verbatim) and recorded with both web and mobile names.")]
+	public void Analyze_RenamedRequest_RemappedInBinding() {
+		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("OpenButton", "crt.LegacyOpenRequest"));
+
+		JsonObject clicked = ClickedOf(guide, "OpenButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest");
+		clicked["params"]!["preventCardClose"]!.GetValue<bool>().Should().BeFalse();
+
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r =>
+			r.WebRequest == "crt.LegacyOpenRequest" && r.MobileRequest == "crt.OpenPageRequest");
+	}
+
+	[Test]
+	[Description("A page with no event-binding requests yields a null requestConversions section.")]
+	public void Analyze_NoRequests_RequestConversionsNull() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Plain", "type": "crt.Button", "caption": "Act" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeRequests(bundle);
+
+		guide.RequestConversions.Should().BeNull();
+	}
+
+	#endregion
 }
