@@ -101,7 +101,7 @@ public sealed class ComponentInfoTool(
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: component-type, search, schema-type, environment-name, version, uri, login, password.");
+			"Valid: component-type, composite, search, schema-type, environment-name, version, uri, login, password.");
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return new ComponentInfoResponse {
 				Success = false,
@@ -189,21 +189,14 @@ public sealed class ComponentInfoTool(
 		if (hasComposite && hasComponentType) {
 			// Mode "list" mirrors the sibling version/environment mutual-exclusivity guard
 			// (and every other argument-validation error) so callers branch on one shape.
-			return new ComponentInfoResponse {
-				Success = false,
-				Mode = "list",
-				Error = "'composite' and 'component-type' are mutually exclusive. Pass 'composite' for a composite "
+			return CreateMutualExclusivityError(
+				"'composite' and 'component-type' are mutually exclusive. Pass 'composite' for a composite "
 					+ "Designer element, or 'component-type' for a single component.",
-				Count = 0,
-				Items = [],
-				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom,
-				ResolvedFromReason = resolvedFromReason
-			};
+				state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 		if (hasComposite) {
 			return await BuildCompositeDetailAsync(
-				args.Composite!.Trim(), state, resolvedFrom, resolvedFromReason, cancellationToken).ConfigureAwait(false);
+				args.Composite!.Trim(), state, isMobile, resolvedFrom, resolvedFromReason, cancellationToken).ConfigureAwait(false);
 		}
 
 		if (string.IsNullOrWhiteSpace(args.ComponentType)
@@ -222,6 +215,12 @@ public sealed class ComponentInfoTool(
 		string requestedType = args.ComponentType.Trim();
 		IReadOnlyList<ComponentRegistryEntry> suggestions =
 			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
+		// Carry composites on the not-found response too, so both mode:"list" shapes
+		// (normal list and component-not-found suggestions) surface composites uniformly.
+		IReadOnlyList<CompositeDefinition> notFoundComposites =
+			ComponentInfoGrouping.FilterComposites(state.Composites, args.Search);
+		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
+			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
@@ -230,6 +229,7 @@ public sealed class ComponentInfoTool(
 				+ "or omit 'component-type' to list the full catalog.",
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
+			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom,
 			ResolvedFromReason = resolvedFromReason
@@ -317,13 +317,14 @@ public sealed class ComponentInfoTool(
 	private async Task<ComponentInfoResponse> BuildCompositeDetailAsync(
 		string caption,
 		ComponentCatalogState state,
+		bool isMobile,
 		string? resolvedFrom,
 		string? resolvedFromReason,
 		CancellationToken cancellationToken) {
 		CompositeDefinition? composite = FindComposite(state.Composites, caption);
 		if (composite is null) {
 			return CreateCompositeNotFoundResponse(
-				state.Composites, caption, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+				state.Composites, caption, isMobile, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 		string? documentation = await ComponentDocumentationLoader
 			.LoadAsync(docsClient, composite.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
@@ -343,12 +344,15 @@ public sealed class ComponentInfoTool(
 	internal static ComponentInfoResponse CreateCompositeNotFoundResponse(
 		IReadOnlyList<CompositeDefinition>? composites,
 		string caption,
+		bool isMobile,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? resolvedFromReason) {
 		IReadOnlyList<CompositeDefinition> all = composites ?? [];
 		string known = all.Count == 0
-			? "this catalog declares no composites"
+			? (isMobile
+				? "composites are a web-only Designer feature; the mobile catalog has none — query the web component catalog instead"
+				: "this catalog declares no composites")
 			: "known composites: " + string.Join(", ", all.Select(item => $"'{item.Caption}'"));
 		return new ComponentInfoResponse {
 			Success = false,
@@ -362,6 +366,29 @@ public sealed class ComponentInfoTool(
 			ResolvedFromReason = resolvedFromReason
 		};
 	}
+
+	/// <summary>
+	/// Builds the list-shaped error response for the <c>composite</c> / <c>component-type</c>
+	/// mutual-exclusivity guard, shared by the MCP tool and the CLI verb so both surfaces emit
+	/// the same envelope (<c>mode:"list"</c>, empty items, version markers). The per-surface
+	/// wording is passed in — the CLI prefixes <c>get-component-info:</c> and spells the flag
+	/// <c>--composite</c>, the MCP tool quotes the JSON field names.
+	/// </summary>
+	internal static ComponentInfoResponse CreateMutualExclusivityError(
+		string message,
+		string? resolvedTargetVersion,
+		string? resolvedFrom,
+		string? resolvedFromReason) =>
+		new() {
+			Success = false,
+			Mode = "list",
+			Error = message,
+			Count = 0,
+			Items = [],
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
+		};
 
 	/// <summary>
 	/// Builds the <c>mode: "composite"</c> detail response. When the composite declares docs
@@ -559,7 +586,7 @@ public sealed class ComponentInfoResponse {
 	public bool Success { get; init; }
 
 	/// <summary>
-	/// Gets or sets the response mode: <c>detail</c> or <c>list</c>.
+	/// Gets or sets the response mode: <c>detail</c>, <c>list</c>, or <c>composite</c>.
 	/// </summary>
 	[JsonPropertyName("mode")]
 	public string Mode { get; init; } = "list";

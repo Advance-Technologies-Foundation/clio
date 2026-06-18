@@ -196,23 +196,16 @@ public sealed class ComponentInfoCommand {
 		// Keep the CLI verb and the MCP tool in lockstep on composites (shared catalog +
 		// shared response builders), so `get-component-info` is consistent across surfaces.
 		if (hasComposite && hasComponentType) {
-			return new ComponentInfoResponse {
-				Success = false,
-				Mode = "list",
-				Error = "get-component-info: --composite and component-type are mutually exclusive. "
+			return ComponentInfoTool.CreateMutualExclusivityError(
+				"get-component-info: --composite and component-type are mutually exclusive. "
 					+ "Pass --composite for a composite Designer element, or component-type for a single component.",
-				Count = 0,
-				Items = [],
-				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom,
-				ResolvedFromReason = resolvedFromReason
-			};
+				state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
 		if (hasComposite) {
 			CompositeDefinition? definition = ComponentInfoTool.FindComposite(state.Composites, composite!);
 			if (definition is null) {
 				return ComponentInfoTool.CreateCompositeNotFoundResponse(
-					state.Composites, composite!, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 			}
 			string? compositeDocs = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
@@ -249,12 +242,19 @@ public sealed class ComponentInfoCommand {
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+		// Carry composites on the not-found response too, so both mode:"list" shapes
+		// (normal list and component-not-found suggestions) surface composites uniformly.
+		IReadOnlyList<CompositeDefinition> notFoundComposites =
+			ComponentInfoGrouping.FilterComposites(state.Composites, options.Search);
+		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
+			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
 			Error = $"Component type '{componentType}' was not found.",
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
+			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
 			ResolvedTargetVersion = state.ResolvedVersion,
 			ResolvedFrom = resolvedFrom,
 			ResolvedFromReason = resolvedFromReason

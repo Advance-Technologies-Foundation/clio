@@ -197,6 +197,15 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
+		// A composite with a blank/whitespace caption has no usable lookup key. The producer
+		// requires a caption, so a blank one is a malformed registry — fail loudly instead of
+		// silently dropping it (which would hide the producer mistake). Mirrors the guards above.
+		int blankCompositeCaptions = composites.Count(composite => string.IsNullOrWhiteSpace(composite.Caption));
+		if (blankCompositeCaptions > 0) {
+			throw new InvalidOperationException(
+				$"{sourceDescription} contains {blankCompositeCaptions} composite(s) with a blank caption. "
+				+ "Each composite must declare a non-empty caption (its lookup key).");
+		}
 		// Composites are looked up by caption (FirstOrDefault, case-insensitive), so a
 		// duplicate caption would silently shadow one composite. Fail loudly, mirroring the
 		// duplicate-componentType guard above, instead of serving an ambiguous catalog.
