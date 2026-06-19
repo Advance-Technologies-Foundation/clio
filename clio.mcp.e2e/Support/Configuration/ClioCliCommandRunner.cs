@@ -10,6 +10,9 @@ internal static class ClioCliCommandRunner {
 	private const int CliogateReadinessAttempts = 12;
 	private static readonly TimeSpan CliogateReadinessDelay = TimeSpan.FromSeconds(5);
 
+	private const int CliogateInstallAttempts = 6;
+	private static readonly TimeSpan CliogateInstallDelay = TimeSpan.FromSeconds(10);
+
 	public static async Task<ClioCliCommandResult> RunAsync(
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,
@@ -69,27 +72,40 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
-		ClioCliCommandResult installResult = await RunAsync(
-			settings,
-			["install-gate", "-e", environmentName],
-			cancellationToken: cancellationToken);
-		if (installResult.ExitCode == 0) {
-			await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
-			return;
+		ClioCliCommandResult? lastInstallResult = null;
+		for (int attempt = 0; attempt < CliogateInstallAttempts; attempt++) {
+			lastInstallResult = await RunAsync(
+				settings,
+				["install-gate", "-e", environmentName],
+				cancellationToken: cancellationToken);
+			if (lastInstallResult.ExitCode == 0) {
+				await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
+				return;
+			}
+
+			// Check if cliogate is already available before retrying
+			ClioCliCommandResult pkgCheckResult = await RunAsync(
+				settings,
+				["list-packages", "-e", environmentName, "--Json", "true"],
+				cancellationToken: cancellationToken);
+			if (pkgCheckResult.ExitCode == 0 &&
+				TryReadSuccessFlag(pkgCheckResult.StandardOutput, out bool alreadyReady) &&
+				alreadyReady) {
+				await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
+				return;
+			}
+
+			if (attempt < CliogateInstallAttempts - 1) {
+				await Task.Delay(CliogateInstallDelay, cancellationToken);
+			}
 		}
 
-		ClioCliCommandResult getPkgListResult = await RunAsync(
-			settings,
-			["list-packages", "-e", environmentName, "--Json", "true"],
-			cancellationToken: cancellationToken);
-		bool cliogateAlreadyAvailable =
-			getPkgListResult.ExitCode == 0 &&
-			TryReadSuccessFlag(getPkgListResult.StandardOutput, out bool success) &&
-			success;
-		cliogateAlreadyAvailable.Should().BeTrue(
+		lastInstallResult.Should().NotBeNull(
+			because: "cliogate installation should capture the last install result for diagnostics");
+		lastInstallResult!.ExitCode.Should().Be(0,
 			because:
-			$"the arrange step must either install cliogate successfully or confirm that list-packages already works. install stderr: {installResult.StandardError}. install stdout: {installResult.StandardOutput}. verification stdout: {getPkgListResult.StandardOutput}. verification stderr: {getPkgListResult.StandardError}");
-		await WaitForCliogateReadinessAsync(settings, environmentName, cancellationToken);
+			$"cliogate must be installed before MCP tests that require it. " +
+			$"install stderr: {lastInstallResult.StandardError}. install stdout: {lastInstallResult.StandardOutput}");
 	}
 
 	private static async Task WaitForCliogateReadinessAsync(

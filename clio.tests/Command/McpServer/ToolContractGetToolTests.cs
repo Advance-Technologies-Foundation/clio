@@ -1468,7 +1468,7 @@ public sealed class ToolContractGetToolTests {
 
 		ToolContractDefinition deploy = result.Tools!.Single(contract =>
 			contract.Name == InstallerCommandTool.DeployCreatioToolName);
-		deploy.InputSchema.Required.Should().Contain(["site-name", "zip-file", "site-port"],
+		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
 			because: "deploy-creatio requires the site name, build archive, and port");
 		deploy.OutputContract.Kind.Should().Be("command-execution-result",
 			because: "deploy-creatio returns the standard command execution result payload");

@@ -4039,11 +4039,11 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private const string SiteNameFieldName = "site-name";
-	private const string ZipFileFieldName = "zip-file";
-	private const string SitePortFieldName = "site-port";
-	private const string DbServerNameFieldName = "db-server-name";
-	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SiteNameFieldName = "siteName";
+	private const string ZipFileFieldName = "zipFile";
+	private const string SitePortFieldName = "sitePort";
+	private const string DbServerNameFieldName = "dbServerName";
+	private const string RedisServerNameFieldName = "redisServerName";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -4109,14 +4109,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
 				Field("summary", StringType, "Human-readable scan summary."),
 				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
 				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
-				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio sitePort."),
 				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
 				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
 			CommonErrorContract,
@@ -4130,7 +4130,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
 			[],
 			[]);
 	}
@@ -4173,8 +4173,8 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
-				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
 			]);
 	}
 
@@ -4251,14 +4251,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
-			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zip-file can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
+			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zipFile can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field(StatusFieldName, StringType, "Discovery status: ok, no-builds-found, products-folder-missing, products-folder-not-configured, or products-folder-unreadable."),
 				Field("products-folder", StringType, "Resolved creatio-products folder configured in clio appsettings.json."),
 				Field("products-folder-exists", BooleanType, "Whether the configured creatio-products folder exists on disk."),
 				Field("message", StringType, "Human-readable summary or remediation hint."),
-				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zip-file."),
+				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zipFile."),
 				Field("truncated", BooleanType, "True when more builds exist than were returned.")),
 			CommonErrorContract,
 			[],
@@ -4271,7 +4271,7 @@ internal static class ToolContractCatalog {
 					ListCreatioBuildsTool.ListCreatioBuildsToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Discover a build, then pass its full-path as the deploy-creatio zip-file. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
+				"Discover a build, then pass its full-path as the deploy-creatio zipFile. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
 			[],
 			[]);
 	}

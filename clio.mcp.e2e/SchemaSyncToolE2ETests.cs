@@ -717,10 +717,10 @@ public sealed class SchemaSyncToolE2ETests {
 			because: because);
 		callResult.StructuredContent.Should().BeNull(
 			because: "binding-layer failures should not return a structured sync-schemas payload");
-		callResult.Content.Should().NotBeNullOrEmpty(
-			because: "invocation failures should still expose human-readable diagnostics");
-		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
-				message.Contains("An error occurred invoking 'sync-schemas'.", StringComparison.Ordinal),
+		string diagnostics = string.Join(
+			Environment.NewLine,
+			(callResult.Content ?? []).Select(content => content.ToString()));
+		diagnostics.Should().Contain("An error occurred invoking 'sync-schemas'.",
 			because: "the transport-level failure should surface as the generic invocation error for the tool");
 	}
 
