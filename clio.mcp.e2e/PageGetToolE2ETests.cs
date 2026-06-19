@@ -230,8 +230,8 @@ public sealed class PageGetToolE2ETests {
 
 		response.Success.Should().BeFalse(
 			because: "legacy aliases should be rejected before list-pages can fall back to an unscoped query");
-		response.Error.Should().Be("Use 'code' instead of 'app-code'.",
-			because: "the MCP tool should direct callers to the canonical selector field");
+		response.Error.Should().Be("Rename: 'app-code' -> 'code'",
+			because: "the MCP tool should direct callers to the canonical selector field using the centralized alias-rename format");
 	}
 
 	[Test]
