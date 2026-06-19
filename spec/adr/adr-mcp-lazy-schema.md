@@ -1,6 +1,6 @@
 # ADR — MCP lazy-schema tool surface (reduce context impact, not just tool count)
 
-- **Status:** Proposed (revised after adversarial review 2026-06-19)
+- **Status:** Accepted (decisions resolved 2026-06-19; revised after adversarial review)
 - **Date:** 2026-06-19
 - **Jira:** ENG-90312 (same goal as PR #624; this ADR proposes an alternative design)
 - **Related:** PR [#624](https://github.com/Advance-Technologies-Foundation/clio/pull/624) (draft), spike branch `spike/mcp-lazy-schema`
@@ -111,15 +111,15 @@ executor, so **full schemas never sit in `tools/list`**.
   (`CommandExecutionResult` with execution-log messages), so 1 executor unifies 74
   command outputs predictably.
 
-## Relationship to PR #624 (must be decided before stories)
+## Relationship to PR #624 (RESOLVED 2026-06-19)
 
 #624 and this ADR share Jira ENG-90312 and both restructure the MCP surface in
 **mutually incompatible** ways (anyOf consolidation vs lazy-schema + free-form
-executor). They must not both merge. **Proposed resolution:** this ADR **supersedes
-#624's Phase-2 `anyOf`** (the part it replaces); #624's Phase-1 flat dedup/cleanup is
-complementary and may be reused. Action: confirm supersede-vs-build-on with the #624
-author and update #624's status before opening stories. Until reconciled, this is a
-**blocker** on starting implementation.
+executor). **Decision (Alex):** #624 is **left as a fallback plan** — neither merged
+into nor superseded right now. This ADR proceeds **independently**: the `clio-run`
+executor is built from scratch here (it does NOT depend on #624's branch), and #624
+is not coordinated against. If this design fails to pan out, #624 remains the backup.
+Practical consequence: implementation must not assume any #624 artifact exists.
 
 ## Trade-offs (accepted)
 
@@ -184,14 +184,26 @@ schemas (~25–35k) plus LM Studio's loaded context. That residual is **out of s
 - Isolated gpt-oss-20b probe (`--strict-mcp-config`, clio-only) still overflowed on
   the non-clio envelope (see Success metric).
 
-## Open decisions (resolve before / during stories)
+## Resolved decisions (2026-06-19, Alex)
 
-1. **#624 supersede vs build-on** — coordinate with author (blocker).
-2. **Default profile** — opt-in first (no breaking default) vs core-by-default after
-   consumer migration. Recommended: opt-in until aliases + inventory land.
-3. **`clio-run` split** safe vs destructive (security).
-4. Exact core-tool list + index taxonomy.
-5. Arg-binding converter approach (argv re-parse vs custom kebab-aware deserializer).
+1. **#624** — left as a **fallback plan**; this ADR proceeds independently, `clio-run`
+   built from scratch (see *Relationship to PR #624*).
+2. **Default profile** — **core-by-default** (slim catalog is the default for all
+   consumers). The full-catalog escape hatch is opt-in via the feature key below.
+   **Binding constraint:** because core-by-default is breaking for consumers of flat
+   long-tail tool names, the deprecation aliases + consumer inventory (Story 9/10)
+   MUST land together with the default flip — they are no longer deferrable.
+3. **`clio-run` split** — **YES**: `clio-run` (safe/non-destructive) and a separate
+   `clio-run-destructive`. `clio-run` is never `ReadOnly`/auto-approve; destructive
+   commands route only through the destructive surface (Story 8).
+4. **Feature key** — `mcp-full-tool-catalog`. OFF by default (⇒ core-by-default);
+   enabling it re-registers the full flat catalog as a back-compat escape hatch.
+
+### Still open (during stories, non-blocking)
+
+- Exact core-tool list + index taxonomy (Story 7).
+- Arg-binding converter approach: argv re-parse vs custom kebab-aware deserializer
+  (Story 4).
 
 ## Consequences
 

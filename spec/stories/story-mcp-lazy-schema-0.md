@@ -4,7 +4,7 @@
 **FR coverage**: ADR "Relationship to PR #624", "Open decisions" 1/2/3
 **PRD**: _none — spike-driven feature_
 **ADR**: [adr-mcp-lazy-schema.md](../adr/adr-mcp-lazy-schema.md)
-**Status**: ready-for-dev
+**Status**: done (resolved 2026-06-19, Alex)
 **Size**: S (< 2h) — coordination + written decision, no code
 **Risk**: HIGH — **BLOCKER for all implementation stories (1-11)**
 **Type**: decision-story / prerequisite
@@ -65,7 +65,17 @@ This is a documents-only decision story; SM is an empty code diff (spec/** only)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: n/a (documents-only)
+- Notes: Decisions resolved by Alex (one-by-one):
+  1. **#624** — left as a **fallback plan**; NOT superseded, NOT built-on. This ADR
+     proceeds independently; `clio-run` built from scratch; no #624 coordination.
+     (AC-01/02 satisfied via the "fallback" option rather than supersede/build-on.)
+  2. **Default profile** — **core-by-default**. Binding constraint: deprecation
+     aliases + consumer inventory (Story 9/10) MUST land with the default flip (AC-03).
+  3. **clio-run split** — **YES**, `clio-run` (safe) + `clio-run-destructive`;
+     `clio-run` never `ReadOnly`/auto-approve (AC-04).
+  4. **Feature-key** = `mcp-full-tool-catalog`, OFF by default ⇒ core-by-default;
+     enabling re-registers the full flat catalog (AC-05).
+  ADR Status → Accepted. sprint-status: Stories 1/2/3/6/9 unblocked → ready-for-dev.

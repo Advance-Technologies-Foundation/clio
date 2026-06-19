@@ -522,8 +522,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: S
     risk: high
-    status: ready-for-dev
-    note: "BLOCKER for stories 1-11. Decision-story / documents-only (spec/** diff). Resolves ADR open decisions 1/2/3 + names the IFeatureToggleService feature-key."
+    status: done
+    note: "RESOLVED 2026-06-19 (Alex). #624 = fallback, build independently. Default = core-by-default (aliases+inventory must land with the flip). clio-run = split safe/destructive (never ReadOnly). Feature-key = mcp-full-tool-catalog (OFF by default). ADR Status → Accepted. Stories 1/2/3/6/9 unblocked."
     file: spec/stories/story-mcp-lazy-schema-0.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: []
@@ -545,8 +545,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: medium
-    status: blocked
-    note: "Gated on Story 0 (feature-key + default-profile decision). Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates the RegisterEnabledPrimitives seam; flag OFF reproduces FULL catalog (fail-closed)."
+    status: ready-for-dev
+    note: "Unblocked 2026-06-19 (Story 0 resolved). Feature-key = mcp-full-tool-catalog, OFF by default ⇒ core-by-default. Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates the RegisterEnabledPrimitives seam; flag ON reproduces FULL catalog (back-compat escape hatch)."
     file: spec/stories/story-mcp-lazy-schema-1.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -560,8 +560,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: low
-    status: blocked
-    note: "Gated on Story 0 for scope only; technically independent. Alternative A complementary first step (~14-16k token win). Produces the anti-patterns/flow-hints migration list for Story 7."
+    status: ready-for-dev
+    note: "Unblocked 2026-06-19 (Story 0 resolved). Alternative A complementary first step (~14-16k token win). Produces the anti-patterns/flow-hints migration list for Story 7."
     file: spec/stories/story-mcp-lazy-schema-2.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -573,8 +573,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: medium
-    status: blocked
-    note: "Gated on Story 0. Replaces BaseTool's hardcoded options switch (BaseTool.cs:99-128) with ICommandOptionsRegistry + generalized ResolveFromCallContainer. Foundation for Story 4."
+    status: ready-for-dev
+    note: "Unblocked 2026-06-19 (Story 0 resolved). Replaces BaseTool's hardcoded options switch (BaseTool.cs:99-128) with ICommandOptionsRegistry + generalized ResolveFromCallContainer. Foundation for Story 4."
     file: spec/stories/story-mcp-lazy-schema-3.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -613,8 +613,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: L
     risk: medium
-    status: blocked
-    note: "Gated on Story 0. Lossy reflection fallback (McpToolSchemaCatalog.cs:91-178) is NOT acceptable as long-tail schema source. Coverage-guard test fails on uncovered commands."
+    status: ready-for-dev
+    note: "Unblocked 2026-06-19 (Story 0 resolved). Lossy reflection fallback (McpToolSchemaCatalog.cs:91-178) is NOT acceptable as long-tail schema source. Coverage-guard test fails on uncovered commands."
     file: spec/stories/story-mcp-lazy-schema-6.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -651,8 +651,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: high
-    status: blocked
-    note: "BLOCKER for the default flip (Story 10) and the ×74 migration (Story 11). Documents-only (spec/** diff). Inventories ~74 commands × 8 artifact types + every hardcoded flat-tool-name consumer; produces the alias list + per-command checklist."
+    status: ready-for-dev
+    note: "Unblocked 2026-06-19 (Story 0 resolved). BLOCKER for the default flip (Story 10) and the ×74 migration (Story 11). Documents-only (spec/** diff). Inventories ~74 commands × 8 artifact types + every hardcoded flat-tool-name consumer; produces the alias list + per-command checklist."
     file: spec/stories/story-mcp-lazy-schema-9.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
