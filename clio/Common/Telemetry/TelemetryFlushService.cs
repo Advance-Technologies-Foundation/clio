@@ -161,6 +161,13 @@ public sealed class TelemetryFlushService : ITelemetryFlushService
 		HttpClient http = _httpClientFactory.CreateClient(HttpClientName);
 		int offset = 0;
 		while (offset < spool.Count && !cancellationToken.IsCancellationRequested) {
+			// Re-check consent before each batch: a withdraw-telemetry-consent call during a long
+			// flush must stop further uploads (it also purges the on-disk spool). Only the single
+			// batch already read into memory and in flight at the moment of withdrawal may complete.
+			if (_telemetryService.GetConsentStatus().TelemetryConsent != TelemetryService.ConsentGranted) {
+				_logger.LogDebug("telemetry-flush stopped reason=consent-withdrawn remaining={Count}", spool.Count - offset);
+				return;
+			}
 			List<string> batchFiles = spool.Skip(offset).Take(MaxBatchSize).ToList();
 			offset += batchFiles.Count;
 			List<(string Path, OpenTelemetryLogEvent Event)> batch = ReadBatch(batchFiles);

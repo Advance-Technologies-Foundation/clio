@@ -147,12 +147,21 @@ through a sibling pipeline implemented in
 `Tools/ComponentRegistryDocsClient.cs`:
 
 - **Cache.** `~/.clio/cache/component-registry/{version}/{docPath}` (plus a
-  `.meta.json` sidecar). Same 5-minute TTL + stale-while-revalidate as the
-  registry payload; `~/.clio/cache/component-registry/` delete resets the
-  whole chain in one go.
+  `.meta.json` sidecar). Same 5-minute TTL as the registry payload;
+  `~/.clio/cache/component-registry/` delete resets the whole chain in one go.
+  **Unlike the registry payload, docs do NOT use stale-while-revalidate.** A
+  fresh entry returns immediately; a *stale* entry is revalidated against the
+  CDN **synchronously**, capped by `ComponentRegistryDocsClient.StaleRevalidateBudget`
+  (5 s), and the stale bytes are served only as a fallback when the CDN cannot
+  return a fresh copy in time (stale-if-error). This deliberately trades a few
+  seconds of latency for documentation freshness — an outdated guide silently
+  steers the agent into wrong page schemas (ENG-91135). The registry payload
+  keeps stale-while-revalidate; only the docs tier changed.
 - **CDN.** `https://academy.creatio.com/api/mcp/{version}/{docPath}` — three
   attempts with exponential backoff on 5xx / network errors, immediate
-  fall-through on 4xx.
+  fall-through on 4xx. On a stale-cache revalidation the whole retry sequence is
+  bounded by the 5 s budget above; on a cold-cache miss it runs unbounded
+  (there is no stale copy to fall back to).
 - **No embedded tier for docs.** If the cache misses and the CDN cannot
   serve the file, the docs client returns `null` and the MCP tool **skips
   that file** — partial-failure mode by design. The other docs of the same

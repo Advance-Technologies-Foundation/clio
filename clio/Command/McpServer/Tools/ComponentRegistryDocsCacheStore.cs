@@ -15,8 +15,11 @@ namespace Clio.Command.McpServer.Tools;
 /// Stores fetched component documentation (markdown) payloads on disk under the same
 /// cache root as <see cref="ComponentRegistryCacheStore"/>. Per-version, per-doc-path
 /// files plus a sidecar carrying ETag / Last-Modified / SHA-256. The TTL matches the
-/// registry payload (5 minutes), and stale entries are still returned to support the
-/// stale-while-revalidate flow on top of this store.
+/// registry payload (5 minutes). Stale entries are still returned (with
+/// <see cref="ComponentRegistryDocsCacheReadResult.IsFresh"/> = <see langword="false"/>)
+/// so the client can decide what to do with them — the docs client revalidates a stale
+/// entry synchronously against the CDN and only serves the stale bytes as a fallback
+/// (ENG-91135).
 /// </summary>
 public interface IComponentRegistryDocsCacheStore {
 	/// <summary>Reads a cached documentation payload (fresh or stale) when one exists.</summary>

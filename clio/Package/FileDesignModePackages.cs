@@ -53,7 +53,7 @@ namespace Clio.Package
 
 		// After restart the application may accept HTTP requests with a delay.
 		// Keep retries relatively generous to avoid flaky behavior in local/dev environments.
-		private const int retryRequestCount = 30;
+		private const int maxRequestAttempts = 30;
 
 		private const int delayBetweenRetryAttemptsSec = 3;
 
@@ -99,7 +99,7 @@ namespace Clio.Package
 		private bool IsFileDesignModeUrl {
 			get {
 				string responseFormServer
-					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
+					= _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl, string.Empty, Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
 				var response = _jsonConverter.DeserializeObject<BoolResponse>(responseFormServer);
 				if (response.Success) {
 					return response.Value;
@@ -126,7 +126,7 @@ namespace Clio.Package
 				return;
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
-			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, retryRequestCount, delayBetweenRetryAttemptsSec);
+			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
 			if (response.Success) {
 				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
@@ -149,7 +149,7 @@ namespace Clio.Package
 			string rawResponse;
 			try {
 				rawResponse = _applicationClient.ExecutePostRequest(_setFileDesignModeUrl, payload,
-					Timeout.Infinite, retryCount: 1, delaySec: delayBetweenRetryAttemptsSec);
+					Timeout.Infinite, maxAttempts: 1, delaySec: delayBetweenRetryAttemptsSec);
 			} catch (Exception ex) {
 				string message = ex.Message ?? string.Empty;
 				bool isNotFound = message.IndexOf("404", StringComparison.Ordinal) >= 0

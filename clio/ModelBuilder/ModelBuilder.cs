@@ -24,7 +24,7 @@ internal class ModelBuilder : IModelBuilder{
 	#region Constants: Private
 
 	private const string DefaultNamespace = "Models";
-	private const int SchemaRequestRetryCount = 3;
+	private const int SchemaRequestMaxAttempts = 3;
 	private const int SchemaRequestDelaySeconds = 2;
 
 	#endregion
@@ -345,7 +345,7 @@ internal class ModelBuilder : IModelBuilder{
 		string responseJson = _applicationClient.ExecutePostRequest(
 			EntitySchemaManagerRequestUrl,
 			string.Empty,
-			retryCount: SchemaRequestRetryCount,
+			maxAttempts: SchemaRequestMaxAttempts,
 			delaySec: SchemaRequestDelaySeconds);
 
 		JsonSerializerSettings settings = new() {
@@ -364,7 +364,7 @@ internal class ModelBuilder : IModelBuilder{
 		string definition
 			= _applicationClient.ExecutePostRequest(RuntimeEntitySchemaRequestUrl,
 				$"{{\"Name\" : \"{schema.Key}\"}}",
-				retryCount: SchemaRequestRetryCount,
+				maxAttempts: SchemaRequestMaxAttempts,
 				delaySec: SchemaRequestDelaySeconds);
 
 		JToken jt;
