@@ -1124,7 +1124,7 @@ internal static class ToolContractCatalog {
 				],
 				Examples = [
 					Example("Find status-like lookups for a configured environment", new Dictionary<string, object?> {
-						[QueryFieldName] = "status",
+						[QueryFieldName] = StatusFieldName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
@@ -1678,7 +1678,7 @@ internal static class ToolContractCatalog {
 					ExampleTaskSchemaName, "Require status for a specific owner", ExampleOwnerAttributeName, ExampleEqualConditionComparison,
 					MakeRequiredActionTypeName, ["Status"], ExampleLookupValueId),
 				BusinessRuleExample("Create a readonly rule when a text field is filled in",
-					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Lock planned date when name is filled", "Name", IsFilledInComparisonType,
 					MakeReadOnlyActionTypeName, ["PlannedDate"]),
 				BusinessRuleExample("Create a readonly rule when completed is true",
 					ExampleTaskSchemaName, "Lock name and description when completed", "Completed", ExampleEqualConditionComparison,
@@ -1705,7 +1705,7 @@ internal static class ToolContractCatalog {
 					"CurrentUserRoles", "contain", ExampleLookupValueId,
 					MakeRequiredActionTypeName, ["Status"]),
 				BusinessRuleExample("Create a Set values rule with text number boolean Date DateTime and Time constants",
-					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Populate defaults when name is filled", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleSetValueItem("UsrTextResult", "Ready"),
 						BusinessRuleSetValueItem("UsrScore", 42),
@@ -1716,12 +1716,12 @@ internal static class ToolContractCatalog {
 						BusinessRuleSetValueItem("UsrOwner", ExampleLookupValueId)
 					]),
 				BusinessRuleExample("Create a Set values rule with a formula that sums two number fields",
-					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Calculate total effort when name is filled", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleFormulaSetValueItem("UsrTotalEffort", "UsrEstimatedEffort + UsrExtraEffort")
 					]),
 				BusinessRuleExample("Create a Set values rule from a forward reference attribute",
-					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", "is-filled-in",
+					ExampleTaskSchemaName, "Copy creator age when name changes", "Name", IsFilledInComparisonType,
 					"set-values", [
 						BusinessRuleAttributeSetValueItem("UsrCreatorAge", "CreatedBy.Age")
 					]),
@@ -3211,7 +3211,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
-					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
+					Field(SchemaTypeFieldName, StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
 					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
@@ -3238,7 +3238,7 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
-				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
+				Alias(ParameterScope, SchemaTypeFieldName, "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
 			[],
@@ -3249,7 +3249,7 @@ internal static class ToolContractCatalog {
 				Example("List the full component catalog", new Dictionary<string, object?>()),
 				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
 					[ComponentTypeFieldName] = "crt.Toggle",
-					["schema-type"] = "mobile"
+					[SchemaTypeFieldName] = "mobile"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),
@@ -3984,7 +3984,7 @@ internal static class ToolContractCatalog {
 			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
-				Field("status", StringType, "Availability status for the requested range."),
+				Field(StatusFieldName, StringType, "Availability status for the requested range."),
 				Field("summary", StringType, "Human-readable scan summary."),
 				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
 				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
@@ -4433,7 +4433,7 @@ internal static class ToolContractCatalog {
 					}),
 					Example("Find lookup values for status", new Dictionary<string, object?> {
 						["kind"] = DataForgeTool.DataForgeFindKindLookups,
-						[QueryFieldName] = "status",
+						[QueryFieldName] = StatusFieldName,
 						[EnvironmentNameFieldName] = ExampleEnvironmentName
 					})
 				],
