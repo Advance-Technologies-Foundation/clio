@@ -88,6 +88,14 @@ the approval entity's foreign-key column to the parent, related to `PDS.Id`:
 }}
 ```
 
+> **Which approval entity?** An object with a dedicated visa entity (e.g. `Order` → `OrderVisa`) binds to
+> that entity, and the dependency FK is its column to the master (`attributePath: "Order"`). A custom or
+> arbitrary object with **no** dedicated visa entity uses the universal **`SysApproval`** entity, whose FK to
+> the master record is **`EntityId`** — so `approvalEntityName: "SysApproval"`, the datasource is over
+> `SysApproval`, and the dependency is `{ "attributePath": "EntityId", "relationPath": "<master>DS.Id" }`
+> (shipped example: `UsrApprovalTestApp_FormPage` — `SysApproval` + `EntityId → PDS.Id`). The `entityName`
+> input is the master record's own entity in both cases.
+
 ### 2.2 Declare attribute in `viewModelConfigDiff`
 
 The top-level `modelConfig.path` binds the collection to the datasource — **without it the grid stays empty**.

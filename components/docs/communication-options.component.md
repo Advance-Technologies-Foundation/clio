@@ -12,12 +12,15 @@
 - **Parent types**: `crt.FlexContainer`, `crt.GridContainer`, `crt.TabContainer`, root page container
 - **Typical children**: none
 
-> **Scope — this component is for Contact / Account communication data only.**
-> The backing entity is the standard `ContactCommunication` (for Contact pages) or `AccountCommunication`
-> (for Account pages); the Page Designer only offers this element on pages whose primary entity is
-> `Contact` or `Account`. It is **not** a generic "type + value" list for an arbitrary custom entity —
-> wiring it to a custom communication-like table is unsupported and fails at runtime (see § 5, pitfall 1). For a
-> custom record's own "type/value" detail use a `crt.DataGrid` over your custom entity instead.
+> **Scope — backed by `ContactCommunication` / `AccountCommunication` only.**
+> The component edits the standard `ContactCommunication` (a Contact's phones/emails/web) or
+> `AccountCommunication` (an Account's). The page entity does **not** have to be `Contact`/`Account`: it
+> binds to a Contact/Account **reference** through `masterRecordColumnValue` — `"$Id"` when the page entity
+> itself is `Contact`/`Account`, or a Contact/Account lookup attribute on any other entity (shipped
+> `CommOptionsAutotest_FormPage` does this on a custom entity). What is **not** supported is pointing it at a
+> custom communication-like table — it expects the standard `CommunicationType` / `Number` / master-FK shape
+> and fails at runtime otherwise (§5, pitfall 4). For a custom record's own "type/value" detail use a
+> `crt.DataGrid` over your custom entity instead.
 
 ---
 
@@ -157,11 +160,16 @@ Rules:
 
 Drop `layoutConfig` when the parent is a `crt.FlexContainer`.
 
-> **The column-name inputs are view-model attribute names, not bare entity columns.** On a web page the
-> component reads each row as `row[typeColumnName]`, `row.getControl(numberColumnName)`,
-> `row.attributes[displayFormatColumnName]` — so they must equal the `<DS>_<ColumnCode>` keys declared
-> in § 2.2, e.g. `"CommunicationOptions_z4g5fjxDS_Number"`, **not** `"Number"`. (Mobile pages bind
-> differently and use the bare entity column name, e.g. `"Number"`.)
+> **The column-name inputs (`typeColumnName` / `numberColumnName` / `primaryColumnName` /
+> `displayFormatColumnName`) are optional.** When the collection's row attributes follow the
+> `<collection>DS_<ColumnCode>` convention (§2.2), the component derives them — the designer drop and
+> shipped pages (e.g. `CommOptionsAutotest_FormPage`) omit these inputs entirely. The element inputs that
+> are actually needed are `items`, `masterRecordColumnName`, and `masterRecordColumnValue`.
+>
+> If you do set them, they are **view-model attribute names, not bare entity columns** — the web component
+> reads each row as `row[typeColumnName]` / `row.getControl(numberColumnName)` /
+> `row.attributes[displayFormatColumnName]`, so they must equal the `<DS>_<ColumnCode>` keys from §2.2
+> (e.g. `"CommunicationOptions_z4g5fjxDS_Number"`, not `"Number"`). (Mobile pages use the bare entity column name.)
 
 ---
 
@@ -283,8 +291,11 @@ This guide covers only the assembly mechanics.
 5. **`masterRecordColumnName` mismatch.** It must be the foreign-key column on the communication entity
    that points back to the page record: `"Contact"` for `ContactCommunication`, `"Account"` for
    `AccountCommunication`.
-6. **`masterRecordColumnValue` bound to a non-ID attribute.** Bind to the page record id (`"$Id"`); a
-   display value breaks the foreign-key filter.
+6. **`masterRecordColumnValue` not bound to the page's Contact/Account reference.** It must carry the
+   Contact/Account **id** the communication rows belong to: `"$Id"` when the page entity itself is
+   `Contact`/`Account`, otherwise a Contact/Account **lookup attribute** on the page (e.g.
+   `"$PDS_<ContactColumn>"` — shipped `CommOptionsAutotest_FormPage` binds it to a Contact lookup column).
+   A display value or a non-Contact id breaks the foreign-key filter.
 7. **`columnsCount` of 0.** Coerced to `1` at runtime when zero/falsy; always pass a positive integer.
 8. **`showNoDataPlaceholder: true` on narrow layouts.** The placeholder image is tall; use `false` in
    compact sidebar layouts.

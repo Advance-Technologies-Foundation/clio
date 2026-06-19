@@ -15,12 +15,19 @@
 
 ---
 
-## 1. Mental model — the 1 + N places you must edit
+## 1. Mental model — slot composition
 
 | # | Section | What you add |
 |---|---|---|
-| 1 | `viewConfigDiff` | An `insert` op with `type: "crt.ExpansionPanel"` and a `title`. |
-| 2+ | `viewConfigDiff` (more entries) | Additional `insert` ops for each child element with `parentName: "<ExpansionPanel_id>"` and `propertyName: "items"` (or `"tools"`). |
+| 1 | `viewConfigDiff` | An `insert` op with `type: "crt.ExpansionPanel"`, a `title`, and both slot arrays declared in `values`: `"items": []` and `"tools": []`. |
+| 2 | `viewConfigDiff` | A `crt.GridContainer` in the panel's `"items"` slot (the body container); when there are header controls, a `crt.GridContainer` in the `"tools"` slot (the header container). |
+| 3+ | `viewConfigDiff` | Body widgets (file list / data grid / label) inside the items-slot container; header controls (buttons / search filter) inside the tools-slot container. |
+
+The panel composes through its two slots. It declares each slot it uses as an empty array in its
+own `values` (`"items": []`, `"tools": []`), and children attach into a container in that slot
+rather than to the panel directly: a `crt.GridContainer` in `items` holds the body widgets, and a
+single `crt.GridContainer` in `tools` holds the header controls as a row. This is the shape shipped
+panels use (e.g. `TestGridExpansionPanel60`).
 
 If the panel hosts a data-bound element (e.g. `crt.DataGrid`), that child still needs its
 own `modelConfigDiff` / `viewModelConfigDiff` entries (the panel itself is purely layout).
@@ -62,47 +69,73 @@ ExpansionPanel_<id>_body      // optional: a Container child holding the body
     "expanded": false,
     "fullWidthHeader": true,
     "togglePosition": "before",
+    "items": [],
+    "tools": [],
     "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 6 }
   }
 }
 ```
 
-### 2.2 Insert children into `items` (`viewConfigDiff` entries)
+### 2.2 Insert the body container into `items`, then the body widgets inside it
 
 ```jsonc
-{
-  "operation": "insert",
-  "name": "ExpansionPanel_xkp4r_Label",
-  "parentName": "ExpansionPanel_xkp4r",
-  "propertyName": "items",
-  "index": 0,
-  "values": {
-    "type": "crt.Label",
-    "caption": "#ResourceString(Inside_Caption)#",
-    "labelType": "body",
-    "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 1 }
+[
+  // body container — a crt.GridContainer in the panel's items slot
+  {
+    "operation": "insert",
+    "name": "ExpansionPanel_xkp4r_body",
+    "parentName": "ExpansionPanel_xkp4r",
+    "propertyName": "items",
+    "index": 0,
+    "values": { "type": "crt.GridContainer", "items": [] }
+  },
+  // body widget — inside the container, NOT directly on the panel
+  {
+    "operation": "insert",
+    "name": "ExpansionPanel_xkp4r_Label",
+    "parentName": "ExpansionPanel_xkp4r_body",
+    "propertyName": "items",
+    "index": 0,
+    "values": {
+      "type": "crt.Label",
+      "caption": "#ResourceString(Inside_Caption)#",
+      "labelType": "body",
+      "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 1 }
+    }
   }
-}
+]
 ```
 
-### 2.3 Insert children into `tools` (e.g. an action button)
+### 2.3 Insert the header container into `tools`, then the controls inside it
 
 ```jsonc
-{
-  "operation": "insert",
-  "name": "ExpansionPanel_xkp4r_AddBtn",
-  "parentName": "ExpansionPanel_xkp4r",
-  "propertyName": "tools",
-  "index": 0,
-  "values": {
-    "type": "crt.Button",
-    "icon": "add-button-icon",
-    "iconPosition": "only-icon",
-    "displayType": "text",
-    "color": "default",
-    "clicked": { "request": "crt.CreateRecordRequest" }
+[
+  // header container — one crt.GridContainer in the panel's tools slot (holds all header controls)
+  {
+    "operation": "insert",
+    "name": "ExpansionPanel_xkp4r_tools",
+    "parentName": "ExpansionPanel_xkp4r",
+    "propertyName": "tools",
+    "index": 0,
+    "values": { "type": "crt.GridContainer", "items": [] }
+  },
+  // header control — inside the container, NOT directly on the panel
+  {
+    "operation": "insert",
+    "name": "ExpansionPanel_xkp4r_AddBtn",
+    "parentName": "ExpansionPanel_xkp4r_tools",
+    "propertyName": "items",
+    "index": 0,
+    "values": {
+      "type": "crt.Button",
+      "icon": "add-button-icon",
+      "iconPosition": "only-icon",
+      "displayType": "text",
+      "color": "default",
+      "clicked": { "request": "crt.CreateRecordRequest" }
+    }
   }
-}
+]
 ```
 
 ---
@@ -134,6 +167,7 @@ The component does **not** declare `dataValueTypes`; it doesn't bind to a column
 ```jsonc
 // viewConfigDiff entries (top-level inserts)
 [
+  // panel — declares BOTH slot arrays empty
   {
     "operation": "insert",
     "name": "AttachmentsPanel",
@@ -144,13 +178,25 @@ The component does **not** declare `dataValueTypes`; it doesn't bind to a column
       "type": "crt.ExpansionPanel",
       "title": "#ResourceString(AttachmentsPanel_Title)#",
       "expanded": true,
+      "items": [],
+      "tools": [],
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 8 }
     }
   },
+  // body container in the items slot
+  {
+    "operation": "insert",
+    "name": "AttachmentsPanel_body",
+    "parentName": "AttachmentsPanel",
+    "propertyName": "items",
+    "index": 0,
+    "values": { "type": "crt.GridContainer", "items": [] }
+  },
+  // the widget — inside the body container, NOT directly on the panel
   {
     "operation": "insert",
     "name": "AttachmentsPanel_FileList",
-    "parentName": "AttachmentsPanel",
+    "parentName": "AttachmentsPanel_body",
     "propertyName": "items",
     "index": 0,
     "values": {
@@ -171,8 +217,8 @@ Plus the corresponding `viewModelConfigDiff` and `modelConfigDiff` entries for `
 
 ## 5. Common pitfalls
 
-1. **Forgetting `parentName` on children** — without it, the child inserts at the page root and the panel appears empty.
-2. **Wrong `propertyName`** — children go into `"items"` (body) or `"tools"` (header). Anything else is silently rejected.
+1. **Panel slot or container missing** — the runtime renders children only into a slot the panel pre-declared (`"items": []` / `"tools": []`) that holds a container. A child inserted into an undeclared slot, or placed directly on the panel instead of a slot `crt.GridContainer`, raises `Item "<PanelName>" is not a container for other items` and the panel does not render. Declare both arrays on the panel and route children through a `crt.GridContainer` per slot (§1).
+2. **Forgetting `parentName` on children** — without it, the child inserts at the page root and the panel appears empty. Use the right `propertyName` too: `"items"` for body, `"tools"` for header — anything else is silently rejected.
 3. **`rowSpan: 1` on a collapsed panel** — when the panel expands the body has no room and content gets clipped. Plan for the expanded height.
 4. **Putting `tools` content with non-trivial layout** — the toolbar is a flex row; large/wide items break the header. Stick to icon buttons + small inputs in `tools`.
 5. **`expanded: true` causing a heavy panel to render eagerly** — if the body has a `crt.DataGrid` or `crt.Feed`, those load on render. Set `expanded: false` (the default) for performance, or lazy-load via attribute binding.
@@ -182,8 +228,8 @@ Plus the corresponding `viewModelConfigDiff` and `modelConfigDiff` entries for `
 
 ## 6. Quick checklist
 
-- [ ] `insert` op in `viewConfigDiff` with `type: "crt.ExpansionPanel"`, unique `name`, `propertyName: "items"`.
+- [ ] `insert` op in `viewConfigDiff` with `type: "crt.ExpansionPanel"`, unique `name`, `propertyName: "items"`, and **both** `"items": []` and `"tools": []` declared in `values`.
 - [ ] `title` (localized) provided.
-- [ ] Children inserted with `parentName: "<ExpansionPanel_id>"` and `propertyName: "items"` (or `"tools"`).
+- [ ] A `crt.GridContainer` inserted into each used slot (`items` for body, `tools` for header); widgets/controls inserted **inside those containers**, never directly on the panel.
 - [ ] `expanded` chosen intentionally (`false` for performance, `true` for primary content).
 - [ ] `layoutConfig` reserves enough `rowSpan` for the expanded state.
