@@ -312,6 +312,7 @@ public sealed class SchemaSyncTool(
 			DefaultValueSource: column.DefaultValueSource,
 			Masked: column.Masked) {
 			LegacyTitle = column.LegacyTitle,
+			LegacyCaption = column.LegacyCaption,
 			DefaultValueConfig = column.DefaultValueConfig
 		};
 	}

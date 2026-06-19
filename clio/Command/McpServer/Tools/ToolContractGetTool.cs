@@ -2478,7 +2478,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — and in a `columns` add-batch the read-shape scalar `caption` is promoted to `title-localizations` — so a column read from get-app-info can be sent back by adding the `action` verb.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -3634,12 +3634,12 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractAlias TitleParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, "title", RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'title'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'title' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias CaptionParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, CaptionFieldName, RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'caption'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'caption' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias DescriptionParameterAlias() {

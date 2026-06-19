@@ -570,13 +570,15 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Rejects legacy scalar title fields in sync-schemas create operations even when title-localizations are also provided.")]
-	public async Task SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
+	[Description("Accepts a legacy scalar title as an en-US fallback in a sync-schemas create operation when title-localizations is omitted.")]
+	public async Task SchemaSync_CreateLookup_Should_Use_Legacy_Title_As_EnUs_Fallback() {
 		// Arrange
 		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
 		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
 		SchemaSyncArgs args = new(
 			"dev",
@@ -584,8 +586,7 @@ public sealed class SchemaSyncToolTests {
 			[
 				new SchemaSyncOperation(
 					"create-lookup",
-					"UsrTodoStatus",
-					TitleLocalizations: Localizations("Todo Status")) {
+					"UsrTodoStatus") {
 					LegacyTitle = "Todo Status"
 				}
 			]);
@@ -594,11 +595,12 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncResponse response = await tool.SchemaSync(args);
 
 		// Assert
-		response.Success.Should().BeFalse();
-		response.Results.Should().ContainSingle();
-		response.Results[0].Error.Should().Contain("legacy 'title'",
-			because: "sync-schemas should reject the old scalar field instead of silently accepting it");
-		fakeCreateCommand.CapturedOptions.Should().BeNull();
+		response.Success.Should().BeTrue(
+			because: "a scalar title must be promoted to the en-US localization instead of hard-failing the create");
+		fakeCreateCommand.CapturedOptions!.TitleLocalizations.Should().ContainKey("en-US",
+			because: "the legacy scalar title is the en-US fallback when no localization map is supplied");
+		fakeCreateCommand.CapturedOptions!.TitleLocalizations!["en-US"].Should().Be("Todo Status",
+			because: "the derived en-US caption must be the scalar title value");
 	}
 
 	[Test]
@@ -1097,6 +1099,160 @@ public sealed class SchemaSyncToolTests {
 			because: "the rejection must list the 'is-required' alias agents commonly send for the required flag");
 		error.Should().Contain("caption",
 			because: "the rejection must tell the agent the read-shape scalar 'caption' is accepted in place of title-localizations");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Auto-derives the en-US caption from the humanized column name for an update-operations add that supplies only column-name and type (field-test title-localizations blocker).")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_AutoDefault_EnUs_From_ColumnName_When_Title_Localizations_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date")
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a bare {column-name, type} add must not hard-fail purely for a missing localization map");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrDueDate\"", StringComparison.Ordinal)
+				&& operation.Contains("Due Date", StringComparison.Ordinal),
+			because: "the en-US caption must be the humanized column name (Usr prefix stripped, PascalCase space-split)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Promotes a scalar legacy title to the en-US caption for an update-operations add when no localization map is provided.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Promote_Scalar_Title_When_Map_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date") {
+						LegacyTitle = "Deadline"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a scalar title must be promoted to en-US instead of hard-failing the add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Deadline", StringComparison.Ordinal),
+			because: "the scalar title outranks the humanized column name in the en-US derivation precedence");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Promotes a scalar legacy caption to the en-US caption for an update-operations add when no title or localization map is provided.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Promote_Scalar_Caption_When_Title_And_Map_Omitted() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date") {
+						LegacyCaption = "Target Date"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a scalar caption must be promoted to en-US instead of hard-failing the add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Target Date", StringComparison.Ordinal),
+			because: "the scalar caption outranks the humanized column name when no scalar title is present");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors an explicit title-localizations.en-US over every scalar/column-name fallback for an update-operations add.")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Prefer_Explicit_EnUs_Over_Fallbacks() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date",
+						TitleLocalizations: Localizations("Explicit Caption")) {
+						LegacyTitle = "Scalar Title",
+						LegacyCaption = "Scalar Caption"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an explicit en-US map remains valid for an add");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("Explicit Caption", StringComparison.Ordinal)
+				&& !operation.Contains("Scalar Title", StringComparison.Ordinal),
+			because: "the explicit title-localizations.en-US must win over the scalar title/caption fallbacks");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still rejects a Cyrillic en-US value supplied explicitly for an update-operations add (ENG-91044 script guard preserved).")]
+	public async Task SchemaSync_UpdateOperations_Add_Should_Reject_Cyrillic_EnUs() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrDueDate", Type: "Date",
+						TitleLocalizations: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+							["en-US"] = "Термін"
+						})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "non-English text under en-US must still be rejected by the script/culture guard");
+		response.Results[0].Error.Should().Contain("en-US",
+			because: "the error must identify the culture key whose value is in the wrong script");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "an invalid en-US value must be rejected before the command executes");
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {

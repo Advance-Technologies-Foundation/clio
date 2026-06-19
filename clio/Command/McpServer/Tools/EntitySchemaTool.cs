@@ -109,6 +109,7 @@ public sealed class CreateEntitySchemaTool(
 			column.TitleLocalizations,
 			column.LegacyTitle,
 			column.LegacyCaption,
+			column.ResolveName(),
 			context);
 		string? resolvedReferenceSchemaName = column.ResolveReferenceSchemaName();
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
@@ -308,6 +309,8 @@ public sealed class UpdateEntitySchemaTool(
 				operation.Action,
 				operation.TitleLocalizations,
 				operation.LegacyTitle,
+				operation.LegacyCaption,
+				operation.ResolveColumnName(),
 				context);
 		IReadOnlyDictionary<string, string>? descriptionLocalizations =
 			EntitySchemaLocalizationContract.NormalizeMutationDescriptionLocalizations(
@@ -479,6 +482,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 					args.Action,
 					args.TitleLocalizations,
 					args.LegacyTitle,
+					args.LegacyCaption,
+					resolvedColumnName,
 					context);
 			TitleLocalizationNormalizationResult titleNormalization =
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
@@ -666,9 +671,8 @@ public sealed record CreateEntitySchemaColumnArgs(
 	string Type,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. Must include en-US.")]
-	[property: Required]
-	Dictionary<string, string> TitleLocalizations,
+	[property: Description("Column title/caption localizations. OPTIONAL — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
+	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("reference-schema-name")]
 	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account. Do not set for ImageLookup — it references the SysImage schema automatically.")]
@@ -808,7 +812,7 @@ public abstract record ColumnModificationArgsBase(
 	string? Type = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. Required for add. Must include en-US when provided.")]
+	[property: Description("Column title/caption localizations. OPTIONAL for add — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("description-localizations")]
@@ -880,8 +884,12 @@ public abstract record ColumnModificationArgsBase(
 	bool? DoNotControlIntegrity = null
 ) {
 	[property: JsonPropertyName("title")]
-	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
+	[property: Description("Legacy scalar title. For add it is used only as an en-US fallback when title-localizations is omitted; prefer title-localizations.")]
 	public string? LegacyTitle { get; init; }
+
+	[property: JsonPropertyName("caption")]
+	[property: Description("Legacy scalar caption alias. For add it is used only as an en-US fallback when title-localizations is omitted; prefer title-localizations.")]
+	public string? LegacyCaption { get; init; }
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Legacy scalar description. Not accepted by MCP. Use description-localizations instead.")]
