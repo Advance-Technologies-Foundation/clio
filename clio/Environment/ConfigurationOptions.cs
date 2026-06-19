@@ -234,9 +234,7 @@ namespace Clio
 
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
-			Features = new Dictionary<string, bool> {
-				["mcp-lazy-tools"] = true
-			};
+			Features = new Dictionary<string, bool>();
 		}
 
 		//TODO: This wont work for Mac and Linux
