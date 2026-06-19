@@ -52,23 +52,29 @@ Both wiring values derive from the approval list's `name`.
 
 ```jsonc
 [
+  // panel — declares BOTH slot arrays empty
   { "operation": "insert", "name": "ApprovalsPanel", "parentName": "MainContainer", "propertyName": "items", "index": 0,
     "values": { "type": "crt.ExpansionPanel", "title": "#ResourceString(ApprovalsPanel_title)#", "expanded": true,
+      "items": [], "tools": [],
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 10 } } },
 
+  // body: GridContainer in the items slot → ApprovalList inside it
   { "operation": "insert", "name": "ApprovalsPanel_wrap", "parentName": "ApprovalsPanel", "propertyName": "items", "index": 0,
-    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"] } },
-
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"], "items": [] } },
   { "operation": "insert", "name": "ApprovalList_main", "parentName": "ApprovalsPanel_wrap", "propertyName": "items", "index": 0,
     "values": { "type": "crt.ApprovalList", "masterRecordColumnValue": "$Id", "recordColumnName": "RecordId",
       "features": { "editable": false },
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 10 } } },
 
-  { "operation": "insert", "name": "ApprovalList_mainRefreshBtn", "parentName": "ApprovalsPanel", "propertyName": "tools", "index": 0,
+  // tools: GridContainer in the tools slot → FlexContainer(row) → the controls (never directly in tools)
+  { "operation": "insert", "name": "ApprovalsPanel_toolbar", "parentName": "ApprovalsPanel", "propertyName": "tools", "index": 0,
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)"], "items": [] } },
+  { "operation": "insert", "name": "ApprovalsPanel_toolbarRow", "parentName": "ApprovalsPanel_toolbar", "propertyName": "items", "index": 0,
+    "values": { "type": "crt.FlexContainer", "direction": "row", "alignItems": "center", "gap": "none", "items": [] } },
+  { "operation": "insert", "name": "ApprovalList_mainRefreshBtn", "parentName": "ApprovalsPanel_toolbarRow", "propertyName": "items", "index": 0,
     "values": { "type": "crt.Button", "icon": "reload-icon", "iconPosition": "only-icon", "color": "default",
       "clicked": { "request": "crt.LoadDataRequest", "params": { "config": { "loadType": "reload" }, "dataSourceName": "ApprovalList_mainDS" } } } },
-
-  { "operation": "insert", "name": "ApprovalList_mainSearch", "parentName": "ApprovalsPanel", "propertyName": "tools", "index": 1,
+  { "operation": "insert", "name": "ApprovalList_mainSearch", "parentName": "ApprovalsPanel_toolbarRow", "propertyName": "items", "index": 1,
     "values": { "type": "crt.SearchFilter", "targetAttributes": ["ApprovalList_main"] } }
 ]
 ```
@@ -84,7 +90,7 @@ The `crt.ApprovalList` also needs its own data source (`modelConfigDiff`) keyed 
 2. **Search not scoped.** `targetAttributes` must contain the approval list name.
 3. **Expecting an add button.** This preset has none — do not invent a create action; approvals come from the approval process.
 4. **`recordColumnName` left at `RecordId` on a non-default entity.** Set it to the FK column on the approval entity that references the master record.
-5. **Nested element is one level deeper.** The list goes into the inner `crt.GridContainer`, not directly into `crt.ExpansionPanel.items`.
+5. **Slot composition.** The panel's `values` must declare `"items": []` **and** `"tools": []`; the list goes into a `crt.GridContainer` in the `items` slot, and the toolbar controls into a `crt.GridContainer` (+ a `crt.FlexContainer` row) in the `tools` slot — never directly on the panel. Omitting a slot array throws `Item "<PanelName>" is not a container for other items` at runtime and the form does not render.
 
 ## 5. Quick checklist
 

@@ -56,26 +56,31 @@ name first, then fill the three params/attributes from it.
 
 ```jsonc
 [
+  // panel — declares BOTH slot arrays empty
   { "operation": "insert", "name": "AttachmentsPanel", "parentName": "MainContainer", "propertyName": "items", "index": 0,
     "values": { "type": "crt.ExpansionPanel", "title": "#ResourceString(AttachmentsPanel_title)#", "expanded": true,
+      "items": [], "tools": [],
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 10 } } },
 
+  // body: GridContainer in the items slot → FileList inside it
   { "operation": "insert", "name": "AttachmentsPanel_wrap", "parentName": "AttachmentsPanel", "propertyName": "items", "index": 0,
-    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"] } },
-
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"], "items": [] } },
   { "operation": "insert", "name": "FileList_attachments", "parentName": "AttachmentsPanel_wrap", "propertyName": "items", "index": 0,
     "values": { "type": "crt.FileList", "masterRecordColumnValue": "$Id", "recordColumnName": "RecordId",
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 10 } } },
 
-  { "operation": "insert", "name": "FileList_attachmentsUploadBtn", "parentName": "AttachmentsPanel", "propertyName": "tools", "index": 0,
+  // tools: GridContainer in the tools slot → FlexContainer(row) → the controls (never directly in tools)
+  { "operation": "insert", "name": "AttachmentsPanel_toolbar", "parentName": "AttachmentsPanel", "propertyName": "tools", "index": 0,
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)"], "items": [] } },
+  { "operation": "insert", "name": "AttachmentsPanel_toolbarRow", "parentName": "AttachmentsPanel_toolbar", "propertyName": "items", "index": 0,
+    "values": { "type": "crt.FlexContainer", "direction": "row", "alignItems": "center", "gap": "none", "items": [] } },
+  { "operation": "insert", "name": "FileList_attachmentsUploadBtn", "parentName": "AttachmentsPanel_toolbarRow", "propertyName": "items", "index": 0,
     "values": { "type": "crt.Button", "icon": "upload-button-icon", "iconPosition": "only-icon", "color": "default",
       "clicked": { "request": "crt.UploadFileRequest", "params": { "viewElementName": "FileList_attachments" } } } },
-
-  { "operation": "insert", "name": "FileList_attachmentsRefreshBtn", "parentName": "AttachmentsPanel", "propertyName": "tools", "index": 1,
+  { "operation": "insert", "name": "FileList_attachmentsRefreshBtn", "parentName": "AttachmentsPanel_toolbarRow", "propertyName": "items", "index": 1,
     "values": { "type": "crt.Button", "icon": "reload-icon", "iconPosition": "only-icon", "color": "default",
       "clicked": { "request": "crt.LoadDataRequest", "params": { "config": { "loadType": "reload" }, "dataSourceName": "FileList_attachmentsDS" } } } },
-
-  { "operation": "insert", "name": "FileList_attachmentsSearch", "parentName": "AttachmentsPanel", "propertyName": "tools", "index": 2,
+  { "operation": "insert", "name": "FileList_attachmentsSearch", "parentName": "AttachmentsPanel_toolbarRow", "propertyName": "items", "index": 2,
     "values": { "type": "crt.SearchFilter", "targetAttributes": ["FileList_attachments"] } }
 ]
 ```
@@ -91,7 +96,7 @@ The `crt.FileList` also needs its own data source (`modelConfigDiff`) keyed `Fil
 2. **Refresh `dataSourceName` mismatch.** It must be exactly `<fileList.name>DS`; any other value refreshes nothing.
 3. **Search not scoped.** `targetAttributes` must contain the file list name, or the search box filters nothing.
 4. **`recordColumnName` left at `RecordId` on a non-default entity.** Set it to the actual FK column on the attachment entity that references the master record.
-5. **Nested element is one level deeper.** The file list goes into the inner `crt.GridContainer`, not directly into `crt.ExpansionPanel.items`.
+5. **Slot composition.** The panel's `values` must declare `"items": []` **and** `"tools": []`; the file list goes into a `crt.GridContainer` in the `items` slot, and the toolbar controls into a `crt.GridContainer` (+ a `crt.FlexContainer` row) in the `tools` slot — never directly on the panel. Omitting a slot array throws `Item "<PanelName>" is not a container for other items` at runtime and the form does not render.
 
 ## 5. Quick checklist
 

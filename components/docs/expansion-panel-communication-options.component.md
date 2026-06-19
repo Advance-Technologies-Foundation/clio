@@ -54,19 +54,26 @@ So the `readonly: true` from the static drop is **overwritten to `false`**, and 
 
 ```jsonc
 [
+  // panel — declares BOTH slot arrays empty
   { "operation": "insert", "name": "CommOptionsPanel", "parentName": "MainContainer", "propertyName": "items", "index": 0,
     "values": { "type": "crt.ExpansionPanel", "title": "#ResourceString(CommOptionsPanel_title)#", "expanded": true,
+      "items": [], "tools": [],
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 4, "rowSpan": 4 } } },
 
+  // body: GridContainer in the items slot → CommunicationOptions inside it
   { "operation": "insert", "name": "CommOptionsPanel_wrap", "parentName": "CommOptionsPanel", "propertyName": "items", "index": 0,
-    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"] } },
-
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)", "minmax(32px, 1fr)"], "items": [] } },
   { "operation": "insert", "name": "CommunicationOptions_main", "parentName": "CommOptionsPanel_wrap", "propertyName": "items", "index": 0,
     "values": { "type": "crt.CommunicationOptions", "columnsCount": 2, "showNoDataPlaceholder": true, "labelPosition": "auto",
       "readonly": false, "masterRecordColumnValue": "$Id", "masterRecordColumnName": "Contact",
       "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } } },
 
-  { "operation": "insert", "name": "CommunicationOptions_mainAddBtn", "parentName": "CommOptionsPanel", "propertyName": "tools", "index": 0,
+  // tools: GridContainer in the tools slot → FlexContainer(row) → the add button (never directly in tools)
+  { "operation": "insert", "name": "CommOptionsPanel_toolbar", "parentName": "CommOptionsPanel", "propertyName": "tools", "index": 0,
+    "values": { "type": "crt.GridContainer", "columns": ["minmax(32px, 1fr)"], "items": [] } },
+  { "operation": "insert", "name": "CommOptionsPanel_toolbarRow", "parentName": "CommOptionsPanel_toolbar", "propertyName": "items", "index": 0,
+    "values": { "type": "crt.FlexContainer", "direction": "row", "alignItems": "center", "gap": "none", "items": [] } },
+  { "operation": "insert", "name": "CommunicationOptions_mainAddBtn", "parentName": "CommOptionsPanel_toolbarRow", "propertyName": "items", "index": 0,
     "values": { "type": "crt.Button", "icon": "add-button-icon", "iconPosition": "only-icon", "color": "default",
       "clicked": { "request": "crt.AddCommunicationOptionsRequest", "params": { "viewElementName": "CommunicationOptions_main" } } } }
 ]
@@ -81,7 +88,7 @@ references the id attribute (`"$Id"`); ensure that attribute exists in `viewMode
 2. **Wrong master entity.** The auto-binding only fires for `Contact`/`Account`. On any other entity the widget stays `readonly` and unbound — there is no Communication Options support there.
 3. **`readonly` left `true`.** The static drop ships `readonly: true`; the command flips it to `false`. When hand-authoring an editable widget, set `readonly: false` yourself.
 4. **Add button not bound.** Without `params.viewElementName = <widget.name>` the add action has no target.
-5. **Nested element is one level deeper.** The widget goes into the inner `crt.GridContainer`, not directly into `crt.ExpansionPanel.items`.
+5. **Slot composition.** The panel's `values` must declare `"items": []` **and** `"tools": []`; the widget goes into a `crt.GridContainer` in the `items` slot, and the add button into a `crt.GridContainer` (+ a `crt.FlexContainer` row) in the `tools` slot — never directly on the panel. Omitting a slot array throws `Item "<PanelName>" is not a container for other items` at runtime and the form does not render.
 
 ## 5. Quick checklist
 
