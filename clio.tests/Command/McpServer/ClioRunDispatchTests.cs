@@ -1,195 +1,201 @@
 using System;
 using System.Linq;
 using System.Text.Json;
-using Clio;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
 
+/// <summary>
+/// clio-run / clio-run-destructive now dispatch by MCP tool NAME against the invoker registry (not by
+/// CLI [Verb]): unknown tool → structured miss, destructiveness gate from the tool annotation, and a
+/// known tool is invoked through the SDK and its CallToolResult is returned unchanged.
+/// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ClioRunDispatchTests {
 
-	private sealed class SafeOptions : EnvironmentOptions { }
-
-	private ICommandOptionsRegistry _registry;
-	private IClioRunArgBinder _argBinder;
-	private ICommandDestructivenessClassifier _classifier;
-	private IEnvironmentScopedCommandExecutor _executor;
+	private IMcpToolInvokerRegistry _registry;
 	private ClioRunExecutor _sut;
 
 	[SetUp]
 	public void SetUp() {
-		_registry = Substitute.For<ICommandOptionsRegistry>();
-		_argBinder = Substitute.For<IClioRunArgBinder>();
-		_classifier = Substitute.For<ICommandDestructivenessClassifier>();
-		_executor = Substitute.For<IEnvironmentScopedCommandExecutor>();
-		_sut = new ClioRunExecutor(_registry, _argBinder, _classifier, _executor);
+		_registry = Substitute.For<IMcpToolInvokerRegistry>();
+		_sut = new ClioRunExecutor(_registry);
 	}
 
-	private void RegisterCommand(string verb, Type optionsType) {
-		_registry.TryResolveOptionsType(verb, out Arg.Any<Type>())
+	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.
+	[McpServerToolType]
+	private static class EchoToolType {
+		[McpServerTool(Name = "echo-tool", Destructive = false)]
+		[System.ComponentModel.Description("Echoes its input back.")]
+		public static string Echo([System.ComponentModel.Description("payload")] string value) => $"echo:{value}";
+	}
+
+	private static McpServerTool BuildEchoTool() =>
+		McpServerTool.Create(
+			typeof(EchoToolType).GetMethod(nameof(EchoToolType.Echo))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
+	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
+	private static RequestContext<CallToolRequestParams> CallContext() =>
+		(RequestContext<CallToolRequestParams>)System.Runtime.CompilerServices.RuntimeHelpers
+			.GetUninitializedObject(typeof(RequestContext<CallToolRequestParams>));
+
+	private void RegisterTool(string name, McpServerTool tool, bool destructive) {
+		_registry.TryGetTool(name, out Arg.Any<McpServerTool>())
 			.Returns(call => {
-				call[1] = optionsType;
+				call[1] = tool;
 				return true;
 			});
+		_registry.IsDestructive(name).Returns(destructive);
 	}
+
+	private static string ErrorText(CallToolResult result) =>
+		string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a structured 'unknown command' result (not an exception) when the verb is not registered.")]
-	public void Run_ShouldReturnUnknownCommandResult_WhenCommandIsNotRegistered() {
+	[Description("Returns a structured 'unknown tool' result (not an exception) when the tool name is not registered.")]
+	public async Task RunAsync_ShouldReturnUnknownToolResult_WhenToolIsNotRegistered() {
 		// Arrange
-		_registry.TryResolveOptionsType("nope", out Arg.Any<Type>()).Returns(false);
+		_registry.TryGetTool("nope", out Arg.Any<McpServerTool>()).Returns(false);
 
 		// Act
-		CommandExecutionResult result = _sut.Run("nope", null, destructiveSurface: false);
+		CallToolResult result = await _sut.RunAsync("nope", null, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.ExitCode.Should().Be(-1, because: "an unknown command is a failure result");
-		result.Output.OfType<ErrorMessage>().Should().Contain(
-			m => ((string)m.Value).Contains("unknown command 'nope'", StringComparison.Ordinal),
-			because: "the failure must be a structured unknown-command message");
-		_executor.DidNotReceiveWithAnyArgs().ResolveAndExecute(default);
+		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
+		ErrorText(result).Should().Contain("unknown tool 'nope'",
+			because: "the failure must be a structured unknown-tool message");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a structured error when 'command' is null or whitespace.")]
-	public void Run_ShouldReturnError_WhenCommandIsBlank() {
+	public async Task RunAsync_ShouldReturnError_WhenCommandIsBlank() {
 		// Arrange
 
 		// Act
-		CommandExecutionResult result = _sut.Run("   ", null, destructiveSurface: false);
+		CallToolResult result = await _sut.RunAsync("   ", null, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.ExitCode.Should().Be(-1, because: "a blank command cannot be dispatched");
-		result.Output.OfType<ErrorMessage>().Should().Contain(
-			m => ((string)m.Value).Contains("'command' is required", StringComparison.Ordinal),
+		result.IsError.Should().BeTrue(because: "a blank command cannot be dispatched");
+		ErrorText(result).Should().Contain("'command' is required",
 			because: "the error must explain the missing command");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("clio-run refuses a destructive command and points to clio-run-destructive.")]
-	public void Run_ShouldRefuse_WhenDestructiveCommandRunOnSafeSurface() {
+	[Description("clio-run refuses a destructive tool and points to clio-run-destructive.")]
+	public async Task RunAsync_ShouldRefuse_WhenDestructiveToolRunOnSafeSurface() {
 		// Arrange
-		RegisterCommand("delete-thing", typeof(SafeOptions));
-		_classifier.IsDestructive("delete-thing").Returns(true);
+		RegisterTool("delete-thing", BuildEchoTool(), destructive: true);
 
 		// Act
-		CommandExecutionResult result = _sut.Run("delete-thing", null, destructiveSurface: false);
+		CallToolResult result = await _sut.RunAsync("delete-thing", null, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.ExitCode.Should().Be(-1, because: "the safe surface must refuse destructive commands");
-		result.Output.OfType<ErrorMessage>().Should().Contain(
-			m => ((string)m.Value).Contains("clio-run-destructive", StringComparison.Ordinal),
+		result.IsError.Should().BeTrue(because: "the safe surface must refuse destructive tools");
+		ErrorText(result).Should().Contain("clio-run-destructive",
 			because: "the refusal must route the caller to the destructive surface");
-		_argBinder.DidNotReceiveWithAnyArgs().Bind(default, default, default);
-		_executor.DidNotReceiveWithAnyArgs().ResolveAndExecute(default);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("clio-run-destructive refuses a non-destructive command and points to clio-run.")]
-	public void Run_ShouldRefuse_WhenNonDestructiveCommandRunOnDestructiveSurface() {
+	[Description("clio-run-destructive refuses a non-destructive tool and points to clio-run.")]
+	public async Task RunAsync_ShouldRefuse_WhenNonDestructiveToolRunOnDestructiveSurface() {
 		// Arrange
-		RegisterCommand("get-thing", typeof(SafeOptions));
-		_classifier.IsDestructive("get-thing").Returns(false);
+		RegisterTool("get-thing", BuildEchoTool(), destructive: false);
 
 		// Act
-		CommandExecutionResult result = _sut.Run("get-thing", null, destructiveSurface: true);
+		CallToolResult result = await _sut.RunAsync("get-thing", null, destructiveSurface: true, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.ExitCode.Should().Be(-1, because: "the destructive surface must refuse safe commands");
-		result.Output.OfType<ErrorMessage>().Should().Contain(
-			m => ((string)m.Value).Contains("not destructive", StringComparison.Ordinal),
-			because: "the refusal must explain the command belongs on clio-run");
-		_executor.DidNotReceiveWithAnyArgs().ResolveAndExecute(default);
+		result.IsError.Should().BeTrue(because: "the destructive surface must refuse safe tools");
+		ErrorText(result).Should().Contain("not destructive",
+			because: "the refusal must explain the tool belongs on clio-run");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the binder's structured error and does not execute when arg binding fails.")]
-	public void Run_ShouldReturnBindError_WhenArgBindingFails() {
+	[Description("A known safe tool is invoked through the SDK and its CallToolResult is returned to the caller.")]
+	public async Task RunAsync_ShouldInvokeToolAndReturnResult_WhenSafeToolIsValid() {
 		// Arrange
-		RegisterCommand("get-thing", typeof(SafeOptions));
-		_classifier.IsDestructive("get-thing").Returns(false);
-		_argBinder.Bind("get-thing", typeof(SafeOptions), Arg.Any<JsonElement?>())
-			.Returns(ClioRunBindResult.Fail("Error: failed to bind arguments for 'get-thing': unknown argument '--x'"));
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
 
 		// Act
-		CommandExecutionResult result = _sut.Run("get-thing", null, destructiveSurface: false);
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.ExitCode.Should().Be(-1, because: "a binding failure is a failed result");
-		result.Output.OfType<ErrorMessage>().Should().Contain(
-			m => ((string)m.Value).Contains("failed to bind arguments", StringComparison.Ordinal),
-			because: "the binder's verbatim error must be surfaced");
-		_executor.DidNotReceiveWithAnyArgs().ResolveAndExecute(default);
+		result.IsError.Should().NotBe(true, because: "a valid invocation must not be an error");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hello", StringComparison.Ordinal),
+			because: "clio-run must reach the real tool method and return its output");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A known safe command resolves, binds, and executes via the env-scoped executor, returning its envelope.")]
-	public void Run_ShouldResolveBindAndExecute_WhenSafeCommandIsValid() {
+	[Description("Rejects a non-object 'args' value with a structured error before dispatch.")]
+	public async Task RunAsync_ShouldReturnError_WhenArgsIsNotObject() {
 		// Arrange
-		RegisterCommand("get-thing", typeof(SafeOptions));
-		_classifier.IsDestructive("get-thing").Returns(false);
-		SafeOptions boundOptions = new();
-		_argBinder.Bind("get-thing", typeof(SafeOptions), Arg.Any<JsonElement?>())
-			.Returns(ClioRunBindResult.Ok(boundOptions));
-		CommandExecutionResult expected = new(0, [new InfoMessage("done")], CorrelationId: "abc");
-		_executor.ResolveAndExecute(boundOptions).Returns(expected);
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("\"not-an-object\"").RootElement;
 
 		// Act
-		CommandExecutionResult result = _sut.Run("get-thing", null, destructiveSurface: false);
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.Should().BeSameAs(expected,
-			because: "clio-run must return the env-scoped executor's envelope unchanged");
-		_executor.Received(1).ResolveAndExecute(boundOptions);
+		result.IsError.Should().BeTrue(because: "args must be a JSON object");
+		ErrorText(result).Should().Contain("must be a JSON object",
+			because: "the error must explain the expected args shape");
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("ClioRunTool delegates to the executor with destructiveSurface=false.")]
-	public void ClioRunTool_ShouldDelegateToExecutor_WithSafeSurface() {
+	public async Task ClioRunTool_ShouldDelegateToExecutor_WithSafeSurface() {
 		// Arrange
 		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
-		CommandExecutionResult expected = new(0, []);
-		executor.Run("get-thing", Arg.Any<JsonElement?>(), false).Returns(expected);
+		CallToolResult expected = new() { Content = [] };
+		executor.RunAsync("get-thing", Arg.Any<JsonElement?>(), false, Arg.Any<RequestContext<CallToolRequestParams>>(), Arg.Any<CancellationToken>())
+			.Returns(new ValueTask<CallToolResult>(expected));
 		ClioRunTool tool = new(executor);
 
 		// Act
-		CommandExecutionResult result = tool.Run("get-thing");
+		CallToolResult result = await tool.Run(CallContext(), "get-thing");
 
 		// Assert
 		result.Should().BeSameAs(expected, because: "the tool returns the executor result unchanged");
-		executor.Received(1).Run("get-thing", Arg.Any<JsonElement?>(), false);
+		await executor.Received(1).RunAsync("get-thing", Arg.Any<JsonElement?>(), false, Arg.Any<RequestContext<CallToolRequestParams>>(), Arg.Any<CancellationToken>());
 	}
 
 	[Test]
 	[Category("Unit")]
 	[Description("ClioRunDestructiveTool delegates to the executor with destructiveSurface=true.")]
-	public void ClioRunDestructiveTool_ShouldDelegateToExecutor_WithDestructiveSurface() {
+	public async Task ClioRunDestructiveTool_ShouldDelegateToExecutor_WithDestructiveSurface() {
 		// Arrange
 		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
-		CommandExecutionResult expected = new(0, []);
-		executor.Run("delete-thing", Arg.Any<JsonElement?>(), true).Returns(expected);
+		CallToolResult expected = new() { Content = [] };
+		executor.RunAsync("delete-thing", Arg.Any<JsonElement?>(), true, Arg.Any<RequestContext<CallToolRequestParams>>(), Arg.Any<CancellationToken>())
+			.Returns(new ValueTask<CallToolResult>(expected));
 		ClioRunDestructiveTool tool = new(executor);
 
 		// Act
-		CommandExecutionResult result = tool.Run("delete-thing");
+		CallToolResult result = await tool.Run(CallContext(), "delete-thing");
 
 		// Assert
 		result.Should().BeSameAs(expected, because: "the tool returns the executor result unchanged");
-		executor.Received(1).Run("delete-thing", Arg.Any<JsonElement?>(), true);
+		await executor.Received(1).RunAsync("delete-thing", Arg.Any<JsonElement?>(), true, Arg.Any<RequestContext<CallToolRequestParams>>(), Arg.Any<CancellationToken>());
 	}
 
 	[Test]

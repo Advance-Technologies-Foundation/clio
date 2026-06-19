@@ -580,7 +580,7 @@ stories:
     size: M
     risk: medium
     status: review
-    note: "Implemented 2026-06-19. ICommandOptionsRegistry (verb+alias→Type, canonical collisions throw, ambiguous aliases fail-safe to a miss) + EnvironmentScopedCommandExecutor generalizes BaseTool's env-scoped resolution/locked-execute via runtime-generic dispatch. BaseTool switch refactored to share the env-less decision. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1256 pass."
+    note: "Implemented 2026-06-19, then SUPERSEDED 2026-06-19 by the [Verb]→MCP-tool dispatch pivot. The CLI-[Verb] ICommandOptionsRegistry could not reach the 42 MCP-only tools (no [Verb]), so it was REMOVED along with ClioRunArgBinder and CommandDestructivenessClassifier. clio-run now dispatches by MCP tool name via IMcpToolInvokerRegistry (SDK-built McpServerTool over the full feature-enabled catalog). EnvironmentScopedCommandExecutor reduced to the static UsesEnvironmentlessResolution helper still consumed by BaseTool. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1244 pass, 1 skipped."
     file: spec/stories/story-mcp-lazy-schema-3.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -593,7 +593,7 @@ stories:
     size: L
     risk: high
     status: review
-    note: "Implemented 2026-06-19 (additive — no flat tool removed/gated). ClioRunTool + ClioRunDestructiveTool over IClioRunExecutor: registry→bind(ClioRunArgBinder, argv re-parse via CommandLineParser, NOT STJ)→destructiveness gate (CommandDestructivenessClassifier, fail-closed)→env-scoped dispatch. Unknown command/parse/unknown-key → structured Error. clio-run never ReadOnly. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1256 pass. Feature-gating deferred to a later story per ADR."
+    note: "Implemented 2026-06-19, then REWORKED 2026-06-19 to dispatch by MCP TOOL NAME (not CLI [Verb]). ClioRunTool + ClioRunDestructiveTool over IClioRunExecutor now resolve the target McpServerTool by name from IMcpToolInvokerRegistry and invoke it through the SDK (reusing SDK arg-binding + per-call DI), so ANY hidden tool — including the 42 MCP-only tools (sync-schemas, odata-*, execute-esq, …) — is reachable. Destructiveness derives from each tool's [McpServerTool(Destructive)] annotation. Returns the target tool's CallToolResult; unknown tool / non-object args → structured Error. clio-run never ReadOnly; refuses destructive (→ clio-run-destructive) and vice-versa. EMPIRICAL: clio-run sync-schemas no longer returns 'unknown command' — it reaches the real tool. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1244 pass, 1 skipped."
     file: spec/stories/story-mcp-lazy-schema-4.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-1, story-mcp-lazy-schema-3]
