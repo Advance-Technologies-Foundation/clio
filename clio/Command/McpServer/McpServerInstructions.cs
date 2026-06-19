@@ -21,6 +21,18 @@ internal static class McpServerInstructions
 
 		## Typical workflows
 
+		### Product telemetry
+		Three tools manage local product telemetry about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract. If no such skill is active (ad-hoc clio use, scripts, or CI), do not call these tools or prompt for consent. The tools:
+		- `get-telemetry-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
+		- `send-telemetry` validates and stores a single workflow telemetry event as a local OpenTelemetry-shaped file once consent is `granted`.
+		- `withdraw-telemetry-consent` sets the stored decision to `denied` and deletes any not-yet-uploaded local events; call it when the developer asks to stop, turn off, opt out of, or withdraw telemetry.
+
+		Consent gates storage: `send-telemetry` stores nothing until consent is `granted`, so establish consent before sending any event (call `get-telemetry-consent`; if `unknown`, obtain the user's decision and persist it once via `send-telemetry`); events sent earlier are silently dropped.
+		Consent can be withdrawn at any time with `withdraw-telemetry-consent`: it stops all further collection and upload and discards the local outbox. Withdrawal is forward-looking — events already uploaded to Creatio are not deleted (they expire on the server-side retention timer). After withdrawal `get-telemetry-consent` returns `denied`.
+		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
+		Call `get-tool-contract` for `get-telemetry-consent`, `send-telemetry`, and `withdraw-telemetry-consent` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
+		Recording each event needs a `send-telemetry` call; once consent is granted, clio uploads those stored events in the background — no agent action for delivery.
+
 		### Inspect an environment
 		1. `list-environments` → pick an environment name
 		2. `list-packages` with that environment → see installed packages
@@ -57,6 +69,9 @@ internal static class McpServerInstructions
 		- `uninstall-creatio`, `clear-redis-db-by-environment`, `stop-creatio` are high-impact; confirm with the user first.
 		- Do not call `compile-creatio` or `restart-by-environment-name` "just in case" — see the rules above.
 		- When in doubt, prefer read-only tools (`list-packages`, `get-schema`, `list-environments`).
+
+		## Calling tools
+		- Every tool that takes parameters wraps them in a single top-level `args` object: put all fields inside `args`, never at the top level (a flat top-level payload is rejected with a missing-`args` error). Tools with no parameters take an empty object.
 
 		## Tool naming conventions
 		- Many tools have two variants: `*-by-environment-name` (uses a registered alias)
