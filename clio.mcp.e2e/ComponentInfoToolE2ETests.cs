@@ -285,6 +285,36 @@ public sealed class ComponentInfoToolE2ETests {
 	}
 
 	[Test]
+	[Description("Detail mode on the real MCP server surfaces the Solution A selection-metadata (whenToUse / whenNotToUse / synonyms) the producer publishes on crt.DataGrid, so the agent receives the 'pick this when…' guidance that steers component choice (ENG-91134 / ENG-91571).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info surfaces whenToUse selection-metadata on detail")]
+	[AllureDescription("Starts the real clio MCP server, requests detail for crt.DataGrid, and verifies the selection-metadata fields the producer publishes (@whenToUse/@whenNotToUse/@synonym) reach the response.")]
+	public async Task ComponentInfoTool_Should_Surface_Selection_Metadata_On_Detail() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["component-type"] = "crt.DataGrid" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "crt.DataGrid is a shipped component and detail mode must succeed");
+		response.Mode.Should().Be("detail",
+			because: "a component-type lookup returns the detail contract");
+		response.WhenToUse.Should().NotBeNullOrWhiteSpace(
+			because: "the producer publishes @whenToUse on crt.DataGrid and clio must surface the selection guidance to the agent (Solution A, ENG-91571)");
+		response.WhenNotToUse.Should().NotBeNullOrWhiteSpace(
+			because: "the producer publishes @whenNotToUse on crt.DataGrid to steer the agent toward crt.Gallery/crt.List for the wrong use-cases");
+		response.Synonyms.Should().NotBeNullOrEmpty(
+			because: "crt.DataGrid publishes @synonym tags that must round-trip so informal terms (e.g. 'table') discover it");
+	}
+
+	[Test]
 	[Description("Rejects passing both version and environment-name on the real MCP server — the two version sources are mutually exclusive.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-component-info rejects version + environment-name together")]

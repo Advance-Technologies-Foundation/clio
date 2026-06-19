@@ -92,9 +92,17 @@ public static class ComponentInfoGrouping {
 			.ToArray();
 	}
 
+	// Search matches POSITIVE selection signals only (componentType, description, whenToUse,
+	// synonyms, useCases). WhenNotToUse is deliberately NOT searched: it names the scenarios a
+	// component is WRONG for (and the component to use instead), so matching it would surface the
+	// very component the guidance steers away from — e.g. searching "image" must not return
+	// crt.DataGrid just because its whenNotToUse says "not for image collections (use crt.Gallery)".
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
 		return ContainsCi(entry.ComponentType, query)
 			|| ContainsCi(entry.Description, query)
+			|| ContainsCi(entry.WhenToUse, query)
+			|| entry.Synonyms.Any(synonym => ContainsCi(synonym, query))
+			|| entry.UseCases.Any(useCase => ContainsCi(useCase, query))
 			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
 			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
 			|| entry.Properties.Any(property =>

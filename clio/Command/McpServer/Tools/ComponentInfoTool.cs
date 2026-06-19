@@ -81,6 +81,8 @@ public sealed class ComponentInfoTool(
 	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
 		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
 		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
+		"Detail responses include selection-metadata when the producer publishes it: whenToUse / whenNotToUse (one-line 'pick this when…' / 'do NOT pick this when…' guidance) plus synonyms / useCases — " +
+		"use whenToUse / whenNotToUse to choose between visually similar components (e.g. crt.Gallery vs crt.DataGrid vs crt.List) instead of guessing. " +
 		"The list response also returns 'composites' — pre-built combinations of several components that have NO componentType of their own " +
 		"(e.g. 'Expanded list', 'Attachments', 'Next steps'). When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
 		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — never insert it directly; build the matching composite instead. " +
@@ -347,6 +349,12 @@ public sealed class ComponentInfoTool(
 			Count = 1,
 			ComponentType = entry.ComponentType,
 			Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+			Synonyms = entry.Synonyms.Count == 0 ? null : entry.Synonyms,
+			UseCases = entry.UseCases.Count == 0 ? null : entry.UseCases,
+			WhenToUse = string.IsNullOrWhiteSpace(entry.WhenToUse) ? null : entry.WhenToUse,
+			WhenNotToUse = string.IsNullOrWhiteSpace(entry.WhenNotToUse) ? null : entry.WhenNotToUse,
+			AppliesToCustomEntities = entry.AppliesToCustomEntities,
+			EntityCouplingNote = string.IsNullOrWhiteSpace(entry.EntityCouplingNote) ? null : entry.EntityCouplingNote,
 			CompositeOnly = entry.CompositeOnly == true ? true : null,
 			CompositeOnlyHint = entry.CompositeOnly == true ? CompositeOnlyHintText : null,
 			Container = entry.Container ? true : null,
@@ -489,9 +497,57 @@ public sealed record ComponentInfoArgs(
 }
 
 /// <summary>
+/// Shared Solution A (ENG-91571) selection-metadata fields surfaced flat on both the public
+/// <see cref="ComponentInfoResponse"/> detail payload and the registry-side
+/// <see cref="ComponentRegistryEntry"/>. Declared once here so the identical
+/// <c>whenToUse</c>/<c>whenNotToUse</c>/<c>appliesToCustomEntities</c>/<c>entityCouplingNote</c>
+/// JSON fields are not copy-pasted across both types — System.Text.Json keeps them flat on every
+/// derived type, so the JSON shape and the snapshot-guard binding behaviour are unchanged.
+/// </summary>
+public abstract class ComponentSelectionMetadata {
+	/// <summary>
+	/// Gets or sets the one-line "pick this when…" selection guidance (Solution A,
+	/// ENG-91571). The primary signal for choosing between visually similar components
+	/// (e.g. <c>crt.Gallery</c> vs <c>crt.DataGrid</c> vs <c>crt.List</c>). Omitted when
+	/// the producer published none.
+	/// </summary>
+	[JsonPropertyName("whenToUse")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? WhenToUse { get; init; }
+
+	/// <summary>
+	/// Gets or sets the one-line "do NOT pick this when…" anti-pattern guidance
+	/// (Solution A, ENG-91571), typically naming the component to use instead. Omitted
+	/// when the producer published none.
+	/// </summary>
+	[JsonPropertyName("whenNotToUse")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? WhenNotToUse { get; init; }
+
+	/// <summary>
+	/// Gets or sets the applicability constraint (Solution A, ENG-91571). <c>false</c>
+	/// flags an entity-coupled component that cannot be built on a custom entity (see
+	/// <see cref="EntityCouplingNote"/> for why); omitted when the producer stated no
+	/// constraint (treat as unconstrained).
+	/// </summary>
+	[JsonPropertyName("appliesToCustomEntities")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? AppliesToCustomEntities { get; init; }
+
+	/// <summary>
+	/// Gets or sets the human-readable reason a restrictive
+	/// <see cref="AppliesToCustomEntities"/> applies (Solution A, ENG-91571). Omitted
+	/// when the producer published none.
+	/// </summary>
+	[JsonPropertyName("entityCouplingNote")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? EntityCouplingNote { get; init; }
+}
+
+/// <summary>
 /// Structured response from the <c>get-component-info</c> MCP tool.
 /// </summary>
-public sealed class ComponentInfoResponse {
+public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	/// <summary>
 	/// Gets or sets whether the request completed successfully.
 	/// </summary>
@@ -539,6 +595,26 @@ public sealed class ComponentInfoResponse {
 	[JsonPropertyName("description")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Description { get; init; }
+
+	/// <summary>
+	/// Gets or sets the alternate names a user might use for this component (Solution A,
+	/// ENG-91571). Surfaced on detail responses so the agent can confirm a match by an
+	/// informal name; also folded into the list-mode keyword search. Omitted when empty.
+	/// </summary>
+	[JsonPropertyName("synonyms")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Synonyms { get; init; }
+
+	/// <summary>
+	/// Gets or sets the concrete scenarios this component fits (Solution A, ENG-91571).
+	/// Omitted when the producer published none.
+	/// </summary>
+	[JsonPropertyName("useCases")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? UseCases { get; init; }
+
+	// WhenToUse / WhenNotToUse / AppliesToCustomEntities / EntityCouplingNote are inherited
+	// from ComponentSelectionMetadata (Solution A, ENG-91571).
 
 	/// <summary>
 	/// Gets or sets the composite-only flag on a component detail response. <c>true</c>
@@ -829,7 +905,7 @@ public sealed class CompositeSummary {
 /// <summary>
 /// Curated Freedom UI component definition stored in the shipped registry.
 /// </summary>
-public sealed class ComponentRegistryEntry {
+public sealed class ComponentRegistryEntry : ComponentSelectionMetadata {
 	/// <summary>
 	/// Gets or sets the Freedom UI component type.
 	/// </summary>
@@ -936,6 +1012,27 @@ public sealed class ComponentRegistryEntry {
 	[JsonPropertyName("designerDefaults")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public JsonElement? DesignerDefaults { get; init; }
+
+	/// <summary>
+	/// Gets or sets alternate names a user might use for this component (Solution A,
+	/// ENG-91571) — produced from repeatable <c>@synonym</c> JSDoc tags on the component
+	/// class. Feeds the list-mode keyword search so a prompt like "table" finds
+	/// <c>crt.DataGrid</c>. Empty when the producer published no synonyms.
+	/// </summary>
+	[JsonPropertyName("synonyms")]
+	public IReadOnlyList<string> Synonyms { get; init; } = [];
+
+	/// <summary>
+	/// Gets or sets concrete scenarios the component fits (Solution A, ENG-91571) —
+	/// produced from repeatable <c>@useCase</c> JSDoc tags. Surfaced on the detail
+	/// response and folded into the list-mode keyword search. Empty when none published.
+	/// </summary>
+	[JsonPropertyName("useCases")]
+	public IReadOnlyList<string> UseCases { get; init; } = [];
+
+	// WhenToUse / WhenNotToUse / AppliesToCustomEntities / EntityCouplingNote are inherited
+	// from ComponentSelectionMetadata (Solution A, ENG-91571) — produced from the
+	// @whenToUse / @whenNotToUse / @appliesToCustomEntities / @entityCouplingNote JSDoc tags.
 
 	/// <summary>
 	/// Captures any per-component field clio has not mapped yet (e.g. a future

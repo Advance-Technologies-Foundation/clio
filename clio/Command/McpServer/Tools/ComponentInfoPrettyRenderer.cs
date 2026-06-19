@@ -135,6 +135,7 @@ public static class ComponentInfoPrettyRenderer {
 		if (!string.IsNullOrWhiteSpace(response.Description)) {
 			sb.Append("description:      ").AppendLine(response.Description);
 		}
+		AppendSelectionMetadata(sb, response);
 		if (response.CompositeOnly == true) {
 			sb.Append("compositeOnly:    ").AppendLine("yes");
 			if (!string.IsNullOrWhiteSpace(response.CompositeOnlyHint)) {
@@ -156,6 +157,33 @@ public static class ComponentInfoPrettyRenderer {
 		AppendTypeDefinitions(sb, response.References?.TypeDefinitions);
 		AppendExample(sb, response.Example);
 		AppendDocumentation(sb, response.Documentation);
+	}
+
+	/// <summary>
+	/// Renders the Solution A selection-metadata block (whenToUse / whenNotToUse /
+	/// synonyms / useCases / applicability) directly under the description so the human
+	/// <c>--pretty</c> view reaches parity with the MCP JSON. Each line is omitted when
+	/// the producer published no value for that field.
+	/// </summary>
+	private static void AppendSelectionMetadata(StringBuilder sb, ComponentInfoResponse response) {
+		if (!string.IsNullOrWhiteSpace(response.WhenToUse)) {
+			sb.Append("whenToUse:        ").AppendLine(response.WhenToUse);
+		}
+		if (!string.IsNullOrWhiteSpace(response.WhenNotToUse)) {
+			sb.Append("whenNotToUse:     ").AppendLine(response.WhenNotToUse);
+		}
+		if (response.Synonyms is { Count: > 0 } synonyms) {
+			sb.Append("synonyms:         ").AppendLine(string.Join(", ", synonyms));
+		}
+		if (response.UseCases is { Count: > 0 } useCases) {
+			sb.Append("useCases:         ").AppendLine(string.Join("; ", useCases));
+		}
+		if (response.AppliesToCustomEntities is { } appliesToCustomEntities) {
+			sb.Append("appliesToCustomEntities: ").AppendLine(appliesToCustomEntities ? "yes" : "no");
+		}
+		if (!string.IsNullOrWhiteSpace(response.EntityCouplingNote)) {
+			sb.Append("entityCouplingNote: ").AppendLine(response.EntityCouplingNote);
+		}
 	}
 
 	/// <summary>
