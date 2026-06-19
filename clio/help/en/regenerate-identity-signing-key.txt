@@ -1,0 +1,62 @@
+COMMAND TYPE
+    Identity commands
+
+NAME
+    regenerate-identity-signing-key - regenerate the instance identity-assertion signing key pair
+
+ALIASES
+    identity-regenerate-key
+
+DESCRIPTION
+    The regenerate-identity-signing-key command triggers a server-side
+    regeneration of the instance identity-assertion signing key pair via the
+    Creatio endpoint identityAssertion/regenerateSigningKey. The private key is
+    created and stored securely inside Creatio and never leaves the instance.
+
+    This operation is destructive: assertions signed with the previous key stop
+    validating, and the new public key must be re-registered with Identity Service
+    V3. After regenerating, run get-identity-public-jwk to export the new public
+    key.
+
+    Requires the EnableIdentityAssertionIssuer feature to be enabled and the
+    CanManageIdentityAssertionIssuer operation permission for the current user.
+
+SYNOPSIS
+    regenerate-identity-signing-key [options]
+
+OPTIONS
+    --format                            Output format: text (OK, default) or json (status object)
+                                        Default: text
+
+    --timeout                           Request timeout in milliseconds
+                                        Default: 100000
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
+
+    --clientId                          OAuth client id
+
+    --clientSecret                      OAuth client secret
+
+    --authAppUri                        OAuth app URI
+
+EXAMPLES
+    clio regenerate-identity-signing-key -e development
+        Regenerate the signing key pair on the development environment
+
+    clio identity-regenerate-key -e development --format json
+        Regenerate the key and print a JSON status object
+
+RETURN VALUES
+    0       Signing key regenerated successfully
+    1       Signing key could not be regenerated or an error occurred
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
