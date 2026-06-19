@@ -146,6 +146,24 @@ Implication for external AI:
 - newer design surfaces are easier to automate semantically
 - older execution surfaces require log parsing and success/failure inference from generic output
 
+### MCP tool exit codes
+
+The `exit-code` on a `CommandExecutionResult` envelope follows one contract across every
+environment-aware tool (the shared `BaseTool` execution path):
+
+| `exit-code` | Meaning | Examples |
+|---|---|---|
+| `0` | Success | the command ran and reported success |
+| `1` | **Expected, caller-actionable failure** — bad input or an unmet precondition the caller can fix | unknown environment name, missing URI, empty required argument, a required package (e.g. `cliogate`) not installed |
+| `-1` | **Unexpected runtime failure** — an exception the caller could not have anticipated | DI/bootstrap/wiring errors, a failed HTTP/verification call, an exception thrown inside the command |
+
+The split lets an external AI distinguish "I sent something wrong, let me correct and retry" (`1`)
+from "clio itself failed, retrying the same call won't help" (`-1`). Source of truth:
+`CommandExecutionResult.FromValidationError` / `FromResolverError` (code `1`) versus
+`FromError` / `FromException` (code `-1`); a deliberate environment failure is raised as
+`EnvironmentResolutionException` so it is never conflated with an unexpected `InvalidOperationException`
+from the DI container.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.

@@ -203,4 +203,32 @@ public sealed class PageUpdateToolBaselineTests
 		meta.Baseline.Checksum.Should().Be("fresh-after-save",
 			because: "after a forced overwrite the baseline must track the new server state");
 	}
+
+	[Test]
+	[Description("update-page must NOT false-reject an insert whose label resource is supplied via the 'resources' parameter: the pre-resolution field-binding validators run with the parsed explicitResources, matching the resource-aware post-resolution path.")]
+	public void UpdatePage_ShouldSucceed_WhenInsertLabelResourceProvidedViaResourcesParameter() {
+		// Arrange
+		const string bodyWithResourceBoundInsert =
+			"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrContactPhone\"," +
+			"\"values\":{\"type\":\"crt.PhoneInput\",\"label\":\"$Resources.Strings.PDS_UsrContactPhone\",\"control\":\"$PDS_UsrContactPhone\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[]," +
+			"\"values\":{\"attributes\":{\"PDS_UsrContactPhone\":{\"modelConfig\":{\"path\":\"PDS.UsrContactPhone\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert,
+			"{\"PDS_UsrContactPhone\":\"Contact phone\"}", null, "sandbox", null, null, null,
+			SkipSampling: true, OutputDirectory: "/ws");
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the label resource key is registered through the 'resources' parameter, so the pre-resolution field-binding gate must accept it instead of failing with 'invalid form field bindings'");
+		response.Error.Should().BeNull(
+			because: "a valid resource-backed insert must produce no validation error at the MCP layer");
+	}
 }
