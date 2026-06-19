@@ -751,6 +751,24 @@ public sealed record CreateEntitySchemaColumnArgs(
 	/// </summary>
 	/// <returns>The canonical required flag, or the alias when the canonical field is absent.</returns>
 	public bool? ResolveRequired() => Required ?? IsRequiredAlias;
+
+	/// <summary>
+	/// Gets the <c>column-name</c> alias for <c>name</c>. The <c>get-tool-contract</c> output advertises
+	/// <c>column-name</c> (alias <c>name</c>) for column identity, so an agent following the contract naturally
+	/// puts <c>column-name</c> into the read/create-shape <c>columns[]</c> array. Accepting it here keeps that
+	/// documented field working instead of silently dropping it (field-test defect #1).
+	/// </summary>
+	[property: JsonPropertyName("column-name")]
+	[property: Description("Alias for name. Accepts the get-tool-contract column identity field 'column-name'.")]
+	public string? ColumnNameAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective column code, preferring the canonical <c>name</c> and falling back to the
+	/// <c>column-name</c> alias advertised by <c>get-tool-contract</c>.
+	/// </summary>
+	/// <returns>The canonical name, or the <c>column-name</c> alias when the canonical field is absent.</returns>
+	public string? ResolveName() =>
+		!string.IsNullOrWhiteSpace(Name) ? Name : ColumnNameAlias;
 }
 
 /// <summary>

@@ -44,6 +44,24 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// A real SDK-built tool whose method throws, so InvokeAsync surfaces an exception (which the SDK
+	// wraps) for the error-masking guard test.
+	[McpServerToolType]
+	private static class ThrowingToolType {
+		internal const string FailureMessage = "boom: underlying tool blew up";
+
+		[McpServerTool(Name = "throwing-tool", Destructive = false)]
+		[System.ComponentModel.Description("Always throws.")]
+		public static string Throw([System.ComponentModel.Description("payload")] string value) =>
+			throw new InvalidOperationException(FailureMessage);
+	}
+
+	private static McpServerTool BuildThrowingTool() =>
+		McpServerTool.Create(
+			typeof(ThrowingToolType).GetMethod(nameof(ThrowingToolType.Throw))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
 	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
@@ -172,6 +190,24 @@ public sealed class ClioRunDispatchTests {
 		result.Content.OfType<TextContentBlock>().Should().Contain(
 			block => block.Text.Contains("echo:hello", StringComparison.Ordinal),
 			because: "clio-run must reach the real tool method and return its output");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the real failure message in a structured Error result (not a thrown exception or a generic message) when the dispatched tool fails (field-test defect #3).")]
+	public async Task RunAsync_ShouldReturnStructuredErrorWithRealMessage_WhenDispatchedToolThrows() {
+		// Arrange
+		RegisterTool("throwing-tool", BuildThrowingTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("throwing-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "a failing dispatched tool must yield a structured error result, not escape to the generic outer filter");
+		ErrorText(result).Should().Contain(ThrowingToolType.FailureMessage,
+			because: "the real (inner-most) failure message must be surfaced so the agent can self-correct instead of seeing a generic 'An error occurred' message");
 	}
 
 	[Test]

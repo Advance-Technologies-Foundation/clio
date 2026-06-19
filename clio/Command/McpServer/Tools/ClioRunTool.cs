@@ -88,7 +88,31 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		// tool, and avoids the RequestContext constructor's non-null-server guard.
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
-		return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
+		try {
+			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) {
+			// Honour cooperative cancellation/timeout — let it propagate so the host sees a cancellation,
+			// not a masked tool error.
+			throw;
+		}
+		catch (Exception ex) {
+			// Without this catch the exception escapes to the outer McpToolErrorFilter, which the agent
+			// sees as a generic "An error occurred invoking '<tool>'" with no detail — so it cannot
+			// self-correct. Surface the real (inner-most) message as a structured Error result instead
+			// (field-test defect #3).
+			return Error($"Error: tool '{toolName}' failed: {GetInnermostMessage(ex)}");
+		}
+	}
+
+	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause
+	// rather than a generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
+	private static string GetInnermostMessage(Exception ex) {
+		Exception current = ex;
+		while (current.InnerException is not null) {
+			current = current.InnerException;
+		}
+		return current.Message;
 	}
 
 	private CallToolResult EnforceDestructivenessGate(string toolName, bool destructiveSurface) {

@@ -44,11 +44,23 @@ public sealed class ToolContractGetTool {
 		[Required]
 		ToolContractGetArgs args) {
 		try {
+			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
+			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
+			// overflow bag rather than binding to ToolNames. Recover a flat tool-names / name (and the
+			// known kebab/camel/snake spellings) from the overflow when ToolNames was not bound and the
+			// overflow contains ONLY name-bearing keys, so the natural flat shape resolves contracts
+			// instead of failing. A genuinely-unknown key still falls through to the helpful alias error.
+			IReadOnlyList<string>? flatToolNames = TryRecoverFlatToolNames(args);
+			if (flatToolNames is not null) {
+				return ToolContractCatalog.GetContracts(flatToolNames, _toolInvokerRegistry);
+			}
 			string? aliasError = CollectLegacyAliasError(args);
 			if (aliasError is not null) {
 				return new ToolContractGetResponse(
 					false,
-					Error: new ToolContractError("invalid-parameter-alias", aliasError));
+					Error: new ToolContractError(
+						"invalid-parameter-alias",
+						aliasError + " " + ExpectedArgsShapeHint));
 			}
 			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry);
 		} catch (Exception ex) {
@@ -56,9 +68,12 @@ public sealed class ToolContractGetTool {
 				false,
 				Error: new ToolContractError(
 					"internal-error",
-					$"get-tool-contract failed: {ex.Message}. Expected args shape: {{\"tool-names\": [\"list-pages\", ...] }} or omit tool-names to list all."));
+					$"get-tool-contract failed: {ex.Message}. {ExpectedArgsShapeHint}"));
 		}
 	}
+
+	private const string ExpectedArgsShapeHint =
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,
@@ -70,7 +85,62 @@ public sealed class ToolContractGetTool {
 		["names"] = ToolNamesParam
 	};
 
+	// Flat top-level keys that carry the tool name(s) when the nested `args` wrapper is omitted. Limited
+	// to the canonical 'tool-names' (which lands in the overflow bag only when the call is flat) and the
+	// natural 'name' spelling. The camelCase/snake_case legacy spellings (toolName, tool_names, ...) are
+	// deliberately NOT recovered here — they keep returning the teaching alias error from LegacyAliases.
+	private static readonly HashSet<string> FlatToolNameKeys = new(StringComparer.Ordinal) {
+		ToolNamesParam,
+		"name"
+	};
+
 	private const string ToolNamesParam = "tool-names";
+
+	/// <summary>
+	/// Recovers a flat <c>tool-names</c> payload from the overflow bag when the caller sent the request
+	/// without the SDK's nested <c>args</c> wrapper. Returns the recovered names only when <see
+	/// cref="ToolContractGetArgs.ToolNames"/> was not bound and EVERY overflow key is a recognized
+	/// name-bearing key; otherwise returns <c>null</c> so an unknown key still produces the helpful
+	/// alias error. String and string-array overflow values are both accepted.
+	/// </summary>
+	private static IReadOnlyList<string>? TryRecoverFlatToolNames(ToolContractGetArgs args) {
+		if (args.ToolNames is { Count: > 0 }) {
+			return null;
+		}
+		Dictionary<string, System.Text.Json.JsonElement>? overflow = args.ExtensionData;
+		if (overflow is null || overflow.Count == 0) {
+			return null;
+		}
+		if (!overflow.Keys.All(FlatToolNameKeys.Contains)) {
+			return null;
+		}
+		List<string> recovered = [];
+		foreach (System.Text.Json.JsonElement value in overflow.Values) {
+			switch (value.ValueKind) {
+				case System.Text.Json.JsonValueKind.String:
+					string? single = value.GetString();
+					if (!string.IsNullOrWhiteSpace(single)) {
+						recovered.Add(single.Trim());
+					}
+					break;
+				case System.Text.Json.JsonValueKind.Array:
+					foreach (System.Text.Json.JsonElement item in value.EnumerateArray()) {
+						if (item.ValueKind == System.Text.Json.JsonValueKind.String) {
+							string? name = item.GetString();
+							if (!string.IsNullOrWhiteSpace(name)) {
+								recovered.Add(name.Trim());
+							}
+						}
+					}
+					break;
+				default:
+					// A name-bearing key carrying a non-string/non-array value is malformed; do not
+					// recover — let it fall through to the alias error path with the shape hint.
+					return null;
+			}
+		}
+		return recovered.Count > 0 ? recovered : null;
+	}
 
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
 		return McpToolArgumentSupport.BuildLegacyAliasError(

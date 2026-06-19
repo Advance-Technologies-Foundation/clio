@@ -958,6 +958,95 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Coerces a columns add-batch whose item identifies the column via the contract-advertised 'column-name' alias and resolves it to a non-empty ColumnName (field-test defect #1).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_ColumnName_Alias_In_Columns_Array() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					// an agent following get-tool-contract puts the advertised 'column-name' field into columns[]
+					new CreateEntitySchemaColumnArgs(null!, "Text", Localizations("Status")) {
+						ColumnNameAlias = "UsrStatus"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns[] add specifying the contract-advertised 'column-name' field must resolve to a valid ColumnName instead of failing 'Column name is required'");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrStatus\"", StringComparison.Ordinal),
+			because: "the 'column-name' alias must resolve to the canonical column name on the coerced add");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Coerces a columns add-batch whose item identifies the column via the canonical 'name' field and resolves it to a non-empty ColumnName (field-test defect #1).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_Name_In_Columns_Array() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrPriority", "Text", Localizations("Priority"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns[] add using the canonical 'name' field must keep working unchanged");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrPriority\"", StringComparison.Ordinal),
+			because: "the canonical 'name' field must resolve to the canonical column name on the coerced add");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Prefers the canonical 'name' over the 'column-name' alias when both are present on a columns add-batch item (field-test defect #1 precedence).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Prefer_Name_Over_ColumnName_Alias() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrCanonical", "Text", Localizations("Canonical")) {
+						ColumnNameAlias = "UsrAlias"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an explicit canonical 'name' must take precedence over the 'column-name' alias");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrCanonical\"", StringComparison.Ordinal),
+			because: "the explicit canonical 'name' wins over the 'column-name' alias when both are present");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Promotes the read-shape scalar 'caption' to title-localizations when coercing a columns add-batch so a get-app-info column round-trips into an add (ENG-90313 AC1).")]
 	public async Task SchemaSync_UpdateEntity_Coercion_Should_Promote_Caption_To_TitleLocalizations() {
 		// Arrange

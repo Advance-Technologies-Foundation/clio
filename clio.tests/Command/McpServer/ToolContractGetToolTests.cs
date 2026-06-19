@@ -1481,6 +1481,77 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Resolves contracts from a flat top-level 'tool-names' array sent without the nested 'args' wrapper (field-test defect #4).")]
+	public void ToolContractGet_Should_Resolve_Contracts_From_Flat_ToolNames() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flat = JsonDocument.Parse("[\"get-tool-contract\"]").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["tool-names"] = flat
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a flat top-level 'tool-names' (no nested 'args' wrapper) must resolve contracts instead of failing");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "the flat-shape tool name must resolve to its contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves a contract from a flat scalar 'name' sent without the nested 'args' wrapper (field-test defect #4).")]
+	public void ToolContractGet_Should_Resolve_Contract_From_Flat_Name_Scalar() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flat = JsonDocument.Parse("\"get-tool-contract\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["name"] = flat
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a flat scalar 'name' must resolve a single contract instead of failing");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "the flat 'name' value must resolve to its contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the helpful 'Expected args shape' hint for a genuinely-unknown wrong-shape key instead of an opaque error (field-test defect #4).")]
+	public void ToolContractGet_Should_Return_Expected_Shape_Hint_For_Wrong_Shape() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement element = JsonDocument.Parse("\"list-pages\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["wrong-shape"] = element
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unknown key is not a recoverable flat shape");
+		result.Error!.Message.Should().Contain("Expected args shape",
+			because: "the wrong-shape path must surface the helpful expected-shape hint rather than an opaque error");
+		result.Error.Message.Should().Contain("tool-names",
+			because: "the hint must teach the canonical tool-names array shape");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical create-sys-setting contract with reference-schema-name as an input field and warning in the output envelope.")]
 	public void ToolContractGet_Should_Return_CreateSysSetting_Contract_With_ReferenceSchemaName_And_Warning() {
 		ToolContractGetTool tool = new();

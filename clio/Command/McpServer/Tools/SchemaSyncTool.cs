@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.DataForge;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -44,12 +45,28 @@ public sealed class SchemaSyncTool(
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
-		ApplicationDataForgeResult? dataForge = enrichmentService is not null
-			? enrichmentService.Enrich(
-				args.EnvironmentName,
-				CollectCandidateTerms(args),
-				CollectLookupHints(args))
-			: null;
+		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
+		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
+		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
+		// belt-and-suspenders: a throwing enrichment service must NEVER fail an otherwise-valid column
+		// op — degrade by attaching the warning and proceeding (field-test defect #2).
+		ApplicationDataForgeResult? dataForge = null;
+		if (enrichmentService is not null) {
+			try {
+				dataForge = enrichmentService.Enrich(
+					args.EnvironmentName,
+					CollectCandidateTerms(args),
+					CollectLookupHints(args));
+			} catch (Exception ex) {
+				dataForge = new ApplicationDataForgeResult(
+					Used: true,
+					Health: null,
+					Status: null,
+					Coverage: new DataForgeCoverage(false, false, false, false, false),
+					Warnings: [$"dataforge:{ex.Message}"],
+					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
+			}
+		}
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -286,7 +303,7 @@ public sealed class SchemaSyncTool(
 	private static UpdateEntitySchemaOperationArgs CoerceColumnToAddOperation(CreateEntitySchemaColumnArgs column) {
 		return new UpdateEntitySchemaOperationArgs(
 			Action: "add",
-			ColumnName: column.Name,
+			ColumnName: column.ResolveName() ?? string.Empty,
 			Type: column.ResolveType(),
 			TitleLocalizations: ResolveAddBatchTitleLocalizations(column),
 			ReferenceSchemaName: column.ResolveReferenceSchemaName(),

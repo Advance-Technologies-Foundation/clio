@@ -166,7 +166,7 @@ names are accepted, and the legacy read-shape field names are accepted as aliase
 
 | Concept | Canonical (write) | Read-shape alias (also accepted) |
 |---|---|---|
-| Column identity | `column-name` (in `update-operations`) / `name` (in `columns`) | `name` |
+| Column identity | `column-name` (in `update-operations`) / `name` (in `columns`) | `name` in `update-operations`; `column-name` in `columns` |
 | Column type | `type` | `data-value-type` |
 | Lookup reference | `reference-schema-name` | `reference-schema` |
 | Required flag | `required` | `is-required` |
