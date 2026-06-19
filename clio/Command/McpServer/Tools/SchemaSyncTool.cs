@@ -408,7 +408,7 @@ public sealed class SchemaSyncTool(
 /// </summary>
 public sealed record SchemaSyncArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

@@ -59,7 +59,7 @@ public sealed class GenerateSourceCodeTool(
 /// </summary>
 public sealed record GenerateSourceCodeArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

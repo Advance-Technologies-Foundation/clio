@@ -96,17 +96,17 @@ public sealed record PageListArgs(
 	int? Limit,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri,
 	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login,
 	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password,
 
 	[property: JsonPropertyName("uid")]

@@ -44,7 +44,7 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 /// <summary>MCP arguments for the <c>clear-browser-session</c> tool.</summary>
 public sealed record ClearBrowserSessionArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName);
 

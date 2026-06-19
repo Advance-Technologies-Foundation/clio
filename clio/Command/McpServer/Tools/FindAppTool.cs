@@ -28,17 +28,12 @@ public sealed class FindAppTool(
 	/// </summary>
 	[McpServerTool(Name = FindAppToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("""
-				 Finds installed Creatio applications AND their sections in a single call, without needing the application code up front.
-				 Matches a case-insensitive substring against application name, code, description, and section captions/codes.
-				 Use this to map an imprecise application name (e.g. "Customer Request Management") to its real code (e.g. CrtCaseManagementApp)
-				 instead of calling list-apps and then list-app-sections per application.
-				 Omit both 'search-pattern' and 'code' to enumerate every application with its sections in one response.
-				 The returned 'code' (application) and section 'code' fields can be used directly for follow-up MCP calls
-				 such as get-app-info, list-app-sections, or create-app-section.
-				 """)]
+	[Description(
+		"Finds installed Creatio applications AND their sections in one call, matching a case-insensitive substring " +
+		"against application name/code/description and section captions/codes — use it to resolve an imprecise app name to its real code. " +
+		"Omit both filters to enumerate every application with its sections. Returned codes feed get-app-info, list-app-sections, create-app-section.")]
 	public FindAppResponse FindApp(
-		[Description("Parameters: environment-name (required); search-pattern (optional case-insensitive substring over application name/code/description and section captions/codes), code (optional exact application code). Omit both filters to list all applications with their sections.")]
+		[Description("environment-name (required); search-pattern (optional substring), code (optional exact app code). Omit both to list all apps with sections.")]
 		[Required]
 		FindAppArgs args) {
 		try {
@@ -61,7 +56,7 @@ public sealed class FindAppTool(
 /// </summary>
 public sealed record FindAppArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

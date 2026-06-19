@@ -57,7 +57,7 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 /// <summary>MCP arguments for the <c>get-browser-session</c> tool.</summary>
 public sealed record GetBrowserSessionArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 	[property: JsonPropertyName("force-refresh")]

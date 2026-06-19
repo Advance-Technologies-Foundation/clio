@@ -359,19 +359,13 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema. "
-		+ "Omit 'package-name' to get the MERGED/EFFECTIVE schema with columns from ALL packages "
-		+ "(including custom columns added in other packages) — use this for column discovery. "
-		+ "Supply 'package-name' only to inspect a single package layer's slice. "
-		+ "IMPORTANT: an empty column list from a single-package read does NOT prove a column is absent; "
-		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package. "
-		+ "Note: in the merged view a few schema-level fields are not exposed by the runtime endpoint and are "
-		+ "returned as null (NOT false/0), so null means 'unavailable in merged mode' rather than a real value: "
-		+ "parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, "
-		+ "use-live-editing; supply 'package-name' to read those authoritative values.")]
+	[Description("Returns structured properties for a remote Creatio entity schema. "
+		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
+		+ "an empty column list from a single-package read does NOT prove a column is absent. "
+		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing).")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("Parameters: environment-name, schema-name (required); package-name (optional — omit for the "
-			+ "merged all-packages view, supply for a single package layer)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
@@ -556,7 +550,7 @@ public abstract record EntitySchemaCreateArgsBase(
 	Dictionary<string, string> TitleLocalizations,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -613,7 +607,7 @@ public sealed record CreateLookupArgs(
 /// </summary>
 public abstract record EntitySchemaTargetArgsBase(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -994,7 +988,7 @@ public sealed record UpdateEntitySchemaOperationArgs(
 /// </remarks>
 public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -1028,7 +1022,7 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 /// </summary>
 public sealed record ModifyEntitySchemaColumnArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -1075,7 +1069,7 @@ public sealed record ModifyEntitySchemaColumnArgs(
 /// </summary>
 public sealed record FindEntitySchemaArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

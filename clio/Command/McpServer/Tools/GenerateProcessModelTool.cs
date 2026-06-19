@@ -70,7 +70,7 @@ public sealed record GenerateProcessModelArgs(
 	string? Culture,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName
 );

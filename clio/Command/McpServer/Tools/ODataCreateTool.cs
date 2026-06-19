@@ -104,7 +104,7 @@ public sealed record ODataCreateArgs {
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
 }

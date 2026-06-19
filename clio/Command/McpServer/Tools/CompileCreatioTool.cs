@@ -96,7 +96,7 @@ public sealed class CompileCreatioTool(
 /// </summary>
 public sealed record CompileCreatioArgs(
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

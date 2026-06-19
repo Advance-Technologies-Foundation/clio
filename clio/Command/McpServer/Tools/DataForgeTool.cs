@@ -28,7 +28,7 @@ public sealed class DataForgeTool(
 
 	private const string SourceName = "clio+dataforge-service";
 	private const string PlatformRequirementDescription =
-		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
+		"Requires Creatio 10.0.0+ (CrtDataForge).";
 
 	[McpServerTool(Name = DataForgeStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
@@ -286,7 +286,7 @@ public sealed record DataForgeRelationPairArgs(
 /// </summary>
 public abstract record DataForgeConnectionArgsBase {
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
 }
 

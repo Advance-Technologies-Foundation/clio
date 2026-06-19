@@ -35,9 +35,12 @@ public sealed class McpProfileGatingTests
 
 	// tools/list budget ceiling for lazy mode. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok)
 	// for the clio surface. We measure the serialized ProtocolTool set (name + description + input
-	// schema) of the lazy tools as a proxy for the tools/list payload and ratchet it below 48k bytes
-	// to catch silent core-set bloat while leaving headroom for the verbose core descriptions.
-	private const int MaxLazyToolsSerializedBytes = 48 * 1024;
+	// schema) of the lazy tools as a proxy for the tools/list payload. Story 2 slimmed the core
+	// descriptions (and the ubiquitous environment-name/uri/login/password params), dropping the lazy
+	// payload from ~37.4k to ~30.1k bytes; the remaining bulk is the input-schema bodies, which Story 2
+	// does not touch. The ratchet is tightened to 33k bytes — below the post-slim measurement with a
+	// small (~3k) headroom — to lock in the win and catch any silent re-growth of the core descriptions.
+	private const int MaxLazyToolsSerializedBytes = 33 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 

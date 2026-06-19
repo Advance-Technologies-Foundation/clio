@@ -20,9 +20,11 @@ public sealed class CreateEntityBusinessRuleTool(
 	
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates an entity-level Freedom UI business rule. Use for: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter — limit/restrict a lookup field to records matching a fixed condition by ANY mechanism — attribute value, relative period, fixed time-of-day (datePart), child existence/count, or gating by another field (e.g. 'show only <records> that have at least one related <child>', 'limit a lookup to records whose <field> is filled', 'only records where a status flag is set'). PREFER this tool over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where ...' request on a Freedom UI section/page — entity business rules apply everywhere the lookup is used and are the documented Creatio no-code surface. Phrases like 'business entity rule', 'apply static filter', 'apply-static-filter', 'limit lookup to', 'restrict lookup', 'show only ... that have ...' route here. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rule.")]
+	[Description("Creates an entity-level Freedom UI business rule: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter (restrict a lookup to records matching a fixed condition by ANY mechanism — attribute value, relative period, time-of-day, child existence/count, or gating by another field). " +
+		"PREFER this over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where …' request — entity rules apply everywhere the lookup is used. " +
+		"Read get-guidance `business-rules` / `business-rule-filters` and get-tool-contract `create-entity-business-rule` before calling.")]
 	public CommandExecutionResult BusinessRuleCreate(
-		[Description("Parameters: environment-name, package-name, entity-schema-name, rule (all required).")]
+		[Description("environment-name, package-name, entity-schema-name, rule (all required).")]
 		[Required]
 		CreateEntityBusinessRuleArgs args) {
 		CreateEntityBusinessRuleOptions options = new () {
@@ -44,7 +46,7 @@ public sealed record CreateEntityBusinessRuleArgs
 	/// Gets the registered Creatio environment name.
 	/// </summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Creatio environment name.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public string EnvironmentName { get; init; } = null!;
 
@@ -592,7 +594,7 @@ public sealed record CreatePageBusinessRuleArgs
 	/// Gets the registered Creatio environment name.
 	/// </summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Creatio environment name.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public string EnvironmentName { get; init; } = null!;
 

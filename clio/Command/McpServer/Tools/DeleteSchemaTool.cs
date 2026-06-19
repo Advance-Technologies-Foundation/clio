@@ -48,7 +48,7 @@ public record DeleteSchemaArgs(
 	string SchemaName,
 
 	[property:JsonPropertyName("environment-name")]
-	[Description("Creatio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

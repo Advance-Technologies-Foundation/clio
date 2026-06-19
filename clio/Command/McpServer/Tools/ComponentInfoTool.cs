@@ -64,20 +64,13 @@ public sealed class ComponentInfoTool(
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with a component list or a full component definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Get curated Freedom UI component metadata by component type or list all known types. " +
-		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
-		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
-		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
-		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
-		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
-		"When resolvedFrom is 'latest-fallback' the version is unknown and the response sets requiresVersionConfirmation: true — do not silently assume the component set: tell the user the version is unknown and request confirmation before proceeding (resolvedFromReason says whether a retry might help). " +
-		"When you target a page-editing environment, pass the same environment-name here. " +
-		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
-		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
+	[Description("Get curated Freedom UI component metadata by component type, or list all known types (omit component-type, or pass 'list'). " +
+		"PROACTIVELY list the catalog at the start of any page work to discover the full component set (including non-obvious types such as crt.Gallery) rather than authoring from memory. " +
+		"Pass environment-name to scope the catalog to that environment's real platform version; otherwise 'latest' (a superset of all versions) is used and may list components that do not exist there. " +
+		"Check resolvedFrom / requiresVersionConfirmation on the response and confirm with the user when the version is unknown (see the server instructions' Freedom UI component section). " +
+		"Pass schema-type 'mobile' for the separate mobile registry (default 'web').")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog), search (optional keyword filter). " +
-			"schema-type: 'web' (default) or 'mobile'. environment-name: PREFERRED — scopes the catalog to the target platform version (mutually exclusive with version). " +
-			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
+		[Description("component-type (optional; omit or 'list' for the catalog), search (optional). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
@@ -373,27 +366,27 @@ public sealed record ComponentInfoArgs(
 	string? Search = null,
 
 	[property: JsonPropertyName("schema-type")]
-	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+	[property: Description("Component registry: 'web' (default) or 'mobile'.")]
 	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
+	[property: Description("Registered environment name; scopes the catalog to its real platform version. Preferred. Mutually exclusive with version.")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
+	[property: Description("Explicit catalog version (3-part semver). Mutually exclusive with environment-name.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 ) {
 	/// <summary>

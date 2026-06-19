@@ -243,7 +243,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("get-page tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	[Description("get-page tool description routes callers to the page-modification guide (whose pre-edit checklist owns the specialized handler/validator/lookup-routing rules) before they edit the body.")]
 	public void PageGetTool_Description_Should_Contain_Validator_Binding_Location_Guidance() {
 		// Arrange
 		var method = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!;
@@ -255,24 +255,16 @@ public class PageToolsTests
 		string description = descAttr.Description;
 
 		// Assert
-		description.Should().Contain("SCHEMA_HANDLERS",
-			because: "get-page description should surface the handler section name so callers know which guide to read before editing");
-		description.Should().Contain("call get-guidance with name `page-schema-handlers`",
-			because: "get-page description should route callers to the dedicated handler guide through get-guidance");
-		description.Should().Contain("SCHEMA_VALIDATORS",
-			because: "get-page description should surface the section name so callers know which guide to read before editing");
-		description.Should().Contain("call get-guidance with name `page-schema-validators`",
-			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
-		description.Should().Contain("get-guidance with name `page-modification`",
-			because: "get-page description should route callers to the general page modification guide before body edits");
+		description.Should().Contain("get-guidance `page-modification`",
+			because: "get-page description should route callers to the general page modification guide before body edits (the detailed handler/validator/lookup routing now lives in that guide's pre-edit checklist, not inline)");
 		description.Should().Contain("pre-edit checklist",
-			because: "get-page description should leave specialized guide selection to the general page modification guide");
+			because: "get-page description should defer specialized guide selection to the page-modification pre-edit checklist instead of duplicating it inline");
+		description.Should().Contain("mobile-page-modification",
+			because: "get-page description must still route mobile pages to the mobile-specific guide");
 		description.Should().NotContain("page-schema-resources",
 			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
-		description.Should().Contain("classify the mechanism, not the wording",
-			because: "get-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
-		description.Should().Contain("not crt.InitRequest",
-			because: "get-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
+		description.Should().NotContain("crt.InitRequest",
+			because: "the verbose lookup-vs-handler routing prose is moved into the page-modification guide GATE table — it must not be re-inlined on get-page");
 	}
 
 	[Test]
@@ -303,7 +295,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("update-page tool description routes validator authoring to the dedicated guidance resource instead of duplicating validator rules inline.")]
+	[Description("update-page tool description routes page-body authoring to the page-modification guide instead of duplicating section rules inline, while keeping its load-bearing conflict-detection and Designer Presence behaviour.")]
 	public void PageUpdateTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
 		// Arrange
 		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
@@ -315,32 +307,20 @@ public class PageToolsTests
 		string description = descAttr.Description;
 
 		// Assert
-		description.Should().Contain("SCHEMA_HANDLERS",
-			because: "update-page description should surface the handler section name as part of body authoring rules");
-		description.Should().Contain("call get-guidance with name `page-schema-handlers` first",
-			because: "update-page description should make handler guidance a mandatory precondition before handler authoring");
+		description.Should().Contain("get-guidance `page-modification`",
+			because: "update-page description should route page-body edits through the general page modification guide (the per-section handler/validator/converter routing now lives in that guide's pre-edit checklist, not inline)");
+		description.Should().Contain("pre-edit checklist",
+			because: "update-page description should defer specialized guide selection to the page-modification pre-edit checklist instead of duplicating it inline");
 		description.Should().Contain("Designer Presence",
 			because: "update-page should disclose the best-effort live designer notification behaviour in its MCP description");
-		description.Should().Contain("forms-auth",
-			because: "update-page should disclose the forms-auth prerequisite for the live notification path");
-		description.Should().Contain("SCHEMA_VALIDATORS",
-			because: "update-page description should surface the validator section name as part of body authoring rules");
-		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
-			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
-		description.Should().Contain("call get-guidance with name `page-modification`",
-			because: "update-page description should route broad page edits through the general page modification guide");
-		description.Should().Contain("page-schema-resources",
-			because: "update-page must surface the resources guidance trigger inline because routing through page-modification alone was empirically insufficient \u2014 agents skipped the leaf guide when adding localizable strings");
-		description.Should().Contain("$Resources.Strings.*",
-			because: "update-page description should expose the syntactic trigger ($Resources.Strings.*) so agents can detect resource-related edits without semantic classification");
-		description.Should().Contain("`#ResourceString(",
-			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
-		description.Should().Contain("do NOT register localizable strings",
-			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
-		description.Should().Contain("classify the mechanism, not the wording",
-			because: "update-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
-		description.Should().Contain("not crt.InitRequest",
-			because: "update-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
+		description.Should().Contain("CONFLICT DETECTION",
+			because: "update-page must keep the checksum-baseline conflict-detection contract in its description \u2014 it is behaviour, not duplicated guidance");
+		description.Should().Contain("force=true",
+			because: "update-page must keep the explicit conflict-override instruction so a model does not blindly retry the same body");
+		description.Should().Contain("INSERTED-FIELD CONTRACT",
+			because: "update-page must keep the inserted-field contract summary, which is the authoritative write-time contract reused across tools");
+		description.Should().Contain("`run-process-button`",
+			because: "update-page should still name the run-process-button guide so process-button work resolves codes via get-process-signature first");
 	}
 
 	[Test]

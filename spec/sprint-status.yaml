@@ -566,8 +566,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: low
-    status: ready-for-dev
-    note: "Unblocked 2026-06-19 (Story 0 resolved). Alternative A complementary first step (~14-16k token win). Produces the anti-patterns/flow-hints migration list for Story 7."
+    status: review
+    note: "Implemented + verified locally 2026-06-19 (net10.0). Lazy tools/list 37.4k->30.1k bytes (~9.4k->~7.5k tok); FULL 244.8k->230.6k bytes; ServerInstructions 9.6k->~4.1k chars. Slimmed get-page/update-page/get-component-info/find-app/get-entity-schema-properties/validate-page/create-entity-business-rule + DataForge suffix; deduped environment-name/uri/login/password/resources via McpToolDescriptions consts across ~45 tool files. Moved-guidance list in story Dev Agent Record. 1263 McpServer unit tests green. Not yet pushed."
     file: spec/stories/story-mcp-lazy-schema-2.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
