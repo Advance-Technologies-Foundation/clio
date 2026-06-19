@@ -573,8 +573,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: medium
-    status: ready-for-dev
-    note: "Unblocked 2026-06-19 (Story 0 resolved). Replaces BaseTool's hardcoded options switch (BaseTool.cs:99-128) with ICommandOptionsRegistry + generalized ResolveFromCallContainer. Foundation for Story 4."
+    status: review
+    note: "Implemented 2026-06-19. ICommandOptionsRegistry (verb+alias→Type, canonical collisions throw, ambiguous aliases fail-safe to a miss) + EnvironmentScopedCommandExecutor generalizes BaseTool's env-scoped resolution/locked-execute via runtime-generic dispatch. BaseTool switch refactored to share the env-less decision. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1256 pass."
     file: spec/stories/story-mcp-lazy-schema-3.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -586,8 +586,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: L
     risk: high
-    status: blocked
-    note: "The ADR 'hard part'. Free-form JSON args bound via CommandLineParser (argv re-parse), NOT raw STJ. Built from scratch (not present in this branch — it is #624's). clio-run never ReadOnly."
+    status: review
+    note: "Implemented 2026-06-19 (additive — no flat tool removed/gated). ClioRunTool + ClioRunDestructiveTool over IClioRunExecutor: registry→bind(ClioRunArgBinder, argv re-parse via CommandLineParser, NOT STJ)→destructiveness gate (CommandDestructivenessClassifier, fail-closed)→env-scoped dispatch. Unknown command/parse/unknown-key → structured Error. clio-run never ReadOnly. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1256 pass. Feature-gating deferred to a later story per ADR."
     file: spec/stories/story-mcp-lazy-schema-4.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-1, story-mcp-lazy-schema-3]

@@ -70,7 +70,14 @@ Test naming + AAA + `because` + `[Description]`.
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" -f net10.0` → 1256 passed, 1 skipped (pre-existing), 0 failed. New: `ClioRunArgBindingTests` (10), `ClioRunDispatchTests` (9).
 - Notes:
+  - **Additive** — no existing flat tool removed or gated; full catalog preserved (non-breaking). Feature-gating is a later story per ADR.
+  - New tools `ClioRunTool` (`clio-run`, ReadOnly=false, Destructive=false — never auto-approved) and `ClioRunDestructiveTool` (`clio-run-destructive`, Destructive=true), both `(string command, JsonElement? args)`, delegating to a shared `IClioRunExecutor` (`ClioRunExecutor`). Files: `clio/Command/McpServer/Tools/ClioRunTool.cs`.
+  - Arg binding (`IClioRunArgBinder` / `ClioRunArgBinder`): free-form JSON object → `--kebab value` argv (bool true→bare flag, false/null→omitted, arrays→repeated flag, nested object→error) → `Parser.ParseArguments(argv, optionsType)` with `CaseInsensitiveEnumValues`. **CommandLineParser is the source of truth** for names/aliases/Required/enum — NOT raw STJ (AC-02). Unknown key, missing Required, bad enum → structured `Error: ...` echoing parser errors (AC-03/04/05/ERR). Parser `HelpWriter` is captured to a `StringWriter` so errors never leak to stdio.
+  - Destructiveness gate (`ICommandDestructivenessClassifier` / `CommandDestructivenessClassifier`): curated destructive-verb set + destructive name prefixes (delete-/remove-/uninstall-/unreg/deactivate/drop-/clear-). `clio-run` refuses destructive (routes to `clio-run-destructive`); `clio-run-destructive` refuses non-destructive; unknown/unclassifiable fails CLOSED (treated destructive ⇒ safe surface refuses). Minimal per the story; Story 8 hardens.
+  - Unknown command → structured `unknown command 'X'` result (AC-06), not an exception. Execution reuses BaseTool's locked-execute + log-flush via the Story 3 `EnvironmentScopedCommandExecutor`, so the `CommandExecutionResult` envelope is identical to flat tools (AC-01/07).
+  - DI: binder/classifier/registry singletons, executor + tools transient in `BindingsModule.cs`. Tools auto-discovered by `[McpServerToolType]` scan. CLIO* clean.
+  - **NOT done (out of scope / deferred, flag to architect):** (1) feature-key gating of `clio-run` (CLI + MCP attribute) — Story 1/later; (2) `clio.mcp.e2e` coverage — deferred (E2E harness not exercised here; flagged NOT in CI); (3) integration test `ClioRunExecutionTests` against a real env-scoped container — dispatch is covered at unit level via substituted resolver; (4) inline-contract-on-error is Story 5.

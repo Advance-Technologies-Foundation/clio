@@ -375,6 +375,13 @@ public class BindingsModule {
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
+		services.AddSingleton<ICommandOptionsRegistry, CommandOptionsRegistry>();
+		services.AddTransient<IEnvironmentScopedCommandExecutor, EnvironmentScopedCommandExecutor>();
+		services.AddSingleton<IClioRunArgBinder, ClioRunArgBinder>();
+		services.AddSingleton<ICommandDestructivenessClassifier, CommandDestructivenessClassifier>();
+		services.AddTransient<IClioRunExecutor, ClioRunExecutor>();
+		services.AddTransient<ClioRunTool>();
+		services.AddTransient<ClioRunDestructiveTool>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();

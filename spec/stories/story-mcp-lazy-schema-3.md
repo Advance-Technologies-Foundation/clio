@@ -63,7 +63,12 @@ Test naming + AAA + `because` + `[Description]`.
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" -f net10.0` → 1256 passed, 1 skipped (pre-existing), 0 failed. New: `CommandOptionsRegistryTests` (11), `EnvironmentScopedCommandExecutorTests` (4).
 - Notes:
+  - New `ICommandOptionsRegistry` / `CommandOptionsRegistry` (`clio/Command/McpServer/Tools/CommandOptionsRegistry.cs`): reflects `[Verb]` over `Program.GetCommandOptionTypes()` (same source the CLI parser uses); maps canonical name + aliases → options `Type`; case-insensitive; `TryResolveOptionsType` returns a miss (no throw) for unknown/blank. A test-only `IEnumerable<Type>` ctor overload injects synthetic colliding verbs.
+  - **AC-05 collision detection adjusted to fit production reality:** the real verb set contains a genuine duplicate ALIAS `comp-pkg` (on both `generate-pkg-zip` and `compile-package`). A blanket throw on any duplicate would break startup. Resolution: **canonical-name** collisions throw at construction (true parser-breaking ambiguity); **alias** collisions are detected and the ambiguous alias is removed so it resolves to a MISS (never a silent wrong dispatch) — canonical names always win over aliases. This satisfies AC-05's intent (detected, not silent last-wins) without breaking the existing CLI. Flagged as a follow-up below.
+  - New `IEnvironmentScopedCommandExecutor` / `EnvironmentScopedCommandExecutor` generalizes BaseTool's env-scoped resolution + locked-execute + log-flush + notify for a runtime-only-known options type (reflection over the generic `IToolCommandResolver.Resolve`/`ResolveWithoutEnvironment` + `Command<T>.Execute`; unwraps `TargetInvocationException`). The env-less special-case decision lives once in `UsesEnvironmentlessResolution` and is shared with `BaseTool` (AC-03/AC-04 — zero behavioral drift; the 4 flat tools now route through the same decision and all their existing tests pass).
+  - DI: interfaces registered in `BindingsModule.cs`; CLIO* clean (build runs analyzers as errors, 0 errors).
+  - Integration test (`GeneralizedResolverTests`, env-scoped real container) NOT added — the resolution layer is covered at unit level via a substituted `IToolCommandResolver`; a real-container integration test is deferred (would require a live BindingsModule build).
