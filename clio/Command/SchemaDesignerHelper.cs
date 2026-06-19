@@ -45,7 +45,7 @@ internal static class SchemaDesignerHelper {
 		if (string.IsNullOrWhiteSpace(schemaName))
 			return "schema-name is required";
 		if (!PageSchemaMetadataHelper.IsValidSchemaName(schemaName))
-			return "schema-name must start with a letter and contain only letters, digits, or underscores";
+			return PageSchemaMetadataHelper.SchemaNameFormatError;
 		if (string.IsNullOrWhiteSpace(packageName))
 			return "package-name is required";
 		return null;

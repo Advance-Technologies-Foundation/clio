@@ -45,7 +45,7 @@ public class GetIdentityAssertionTool(
 		[Description("Output format: 'text' (assertion token) or 'json' (full payload)")]
 		string format = IdentityToolFormat.DefaultFormat) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		GetIdentityAssertionOptions options = new() {
 			Environment = environmentName,
@@ -82,7 +82,7 @@ public class GetIdentityPublicJwkTool(
 		[Description("Output format: 'text' (compact JWK) or 'json' (indented JWK)")]
 		string format = IdentityToolFormat.DefaultFormat) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		GetIdentityPublicJwkOptions options = new() {
 			Environment = environmentName,
@@ -120,7 +120,7 @@ public class RegenerateIdentitySigningKeyTool(
 		[Description("Output format: 'text' (OK) or 'json' (status object)")]
 		string format = IdentityToolFormat.DefaultFormat) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		RegenerateIdentitySigningKeyOptions options = new() {
 			Environment = environmentName,
@@ -156,7 +156,7 @@ public class CheckAuthCodeFlowTool(
 		[Description("Output format: 'text' (true/false) or 'json' (flag object)")]
 		string format = IdentityToolFormat.DefaultFormat) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		CheckAuthCodeFlowOptions options = new() {
 			Environment = environmentName,

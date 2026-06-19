@@ -23,10 +23,10 @@ public sealed class ShowWebAppListToolE2ETests
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes show-webApp-list, and verifies that the structured environment payload is returned without masking sensitive values.")]
-	[AllureName("Show web app list returns unmasked structured environment settings")]
-	[Description("Returns registered web application settings through MCP as structured JSON without masking password fields.")]
-	public async Task ShowWebAppList_Should_Return_Unmasked_Structured_Result()
+	[AllureDescription("Starts the real clio MCP server, invokes show-webApp-list, and verifies that the structured environment payload is returned with sensitive values masked.")]
+	[AllureName("Show web app list returns structured environment settings with masked sensitive values")]
+	[Description("Returns registered web application settings through MCP as structured JSON with password and client secret fields masked.")]
+	public async Task ShowWebAppList_Should_Return_Masked_Structured_Result()
 	{
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -41,7 +41,7 @@ public sealed class ShowWebAppListToolE2ETests
 		AssertToolCallSucceeded(actResult);
 		AssertStructuredPayloadReturned(actResult);
 		AssertSandboxEnvironmentIsPresent(actResult, settings.Sandbox.EnvironmentName!);
-		AssertSensitiveValuesAreNotMasked(actResult, settings.Sandbox.EnvironmentName!, sandboxEnvironment);
+		AssertSensitiveValuesAreMasked(actResult, settings.Sandbox.EnvironmentName!, sandboxEnvironment);
 	}
 
 	private static async Task<ShowWebAppListArrangeContext> ArrangeAsync(McpE2ESettings settings)
@@ -96,21 +96,21 @@ public sealed class ShowWebAppListToolE2ETests
 			because: "the real MCP result should include the configured sandbox environment from clio settings");
 	}
 
-	[AllureStep("Assert sensitive values are not masked in MCP result")]
-	[AllureDescription("Assert that password and client secret values are returned unmasked for the sandbox environment in the MCP payload")]
-	private static void AssertSensitiveValuesAreNotMasked(
+	[AllureStep("Assert sensitive values are masked in MCP result")]
+	[AllureDescription("Assert that password and client secret values are masked in the sandbox environment MCP payload")]
+	private static void AssertSensitiveValuesAreMasked(
 		ShowWebAppListActResult actResult,
 		string environmentName,
 		EnvironmentSettings sandboxEnvironment)
 	{
 		ShowWebAppListEnvironmentEnvelope environment = actResult.Environments.Single(item => item.Name == environmentName);
-		environment.Password.Should().Be(sandboxEnvironment.Password,
-			because: "the MCP tool contract should return the real password instead of the masked CLI display value");
+		environment.Password.Should().Be("****",
+			because: "the MCP tool should mask the password field to protect sensitive credentials from AI consumers");
 
 		if (!string.IsNullOrWhiteSpace(sandboxEnvironment.ClientSecret))
 		{
-			environment.ClientSecret.Should().Be(sandboxEnvironment.ClientSecret,
-				because: "the MCP tool contract should return the real OAuth client secret instead of the masked CLI display value");
+			environment.ClientSecret.Should().Be("****",
+				because: "the MCP tool should mask the OAuth client secret field to protect sensitive credentials from AI consumers");
 		}
 	}
 

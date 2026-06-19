@@ -51,7 +51,43 @@ public static class ComponentInfoGrouping {
 			.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
 			.Select(entry => new ComponentInfoListItem {
 				ComponentType = entry.ComponentType,
-				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description
+				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+				CompositeOnly = entry.CompositeOnly == true ? true : null
+			})
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Filters composites by the same keyword semantics as <see cref="FilterEntries"/>:
+	/// a case-insensitive substring match over the caption and description. Returns the
+	/// input unchanged when no search is supplied. Used by list mode so a search narrows
+	/// both the component and the composite sections in one call.
+	/// </summary>
+	public static IReadOnlyList<CompositeDefinition> FilterComposites(
+		IReadOnlyList<CompositeDefinition>? composites, string? search) {
+		if (composites is null || composites.Count == 0) {
+			return [];
+		}
+		if (string.IsNullOrWhiteSpace(search)) {
+			return composites;
+		}
+		string query = search.Trim();
+		return composites
+			.Where(composite => ContainsCi(composite.Caption, query) || ContainsCi(composite.Description, query))
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Projects composites to compact list items ordered alphabetically by caption,
+	/// mirroring <see cref="CreateItems"/>. Description is null-coalesced so the response
+	/// omits empty strings.
+	/// </summary>
+	public static IReadOnlyList<CompositeSummary> CreateCompositeItems(IReadOnlyList<CompositeDefinition> composites) {
+		return composites
+			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.Select(composite => new CompositeSummary {
+				Caption = composite.Caption,
+				Description = string.IsNullOrWhiteSpace(composite.Description) ? null : composite.Description
 			})
 			.ToArray();
 	}

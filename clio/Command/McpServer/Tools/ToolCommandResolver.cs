@@ -46,26 +46,31 @@ public class ToolCommandResolver(
 		ArgumentNullException.ThrowIfNull(options);
 		SettingsBootstrapReport bootstrapReport = settingsBootstrapService.GetReport();
 		EnvironmentSettings settings;
+		// These four throws are EXPECTED, caller-actionable resolution failures (unknown environment,
+		// missing URI, broken settings bootstrap) → EnvironmentResolutionException, which BaseTool maps
+		// to exit code 1. Unexpected failures below (settings.Fill, BindingsModule.Register,
+		// GetRequiredService) stay plain exceptions → exit code -1, so a real DI/wiring bug remains
+		// distinguishable from a bad environment name.
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
-				throw new InvalidOperationException(
+				throw new EnvironmentResolutionException(
 					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
-				throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
+				throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
-				?? throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
+				?? throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
 			settings = settings.Fill(options, interactiveConsole);
-		} 
+		}
 		else {
 			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
-					throw new InvalidOperationException(
+					throw new EnvironmentResolutionException(
 						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 				}
-				throw new InvalidOperationException(
+				throw new EnvironmentResolutionException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}

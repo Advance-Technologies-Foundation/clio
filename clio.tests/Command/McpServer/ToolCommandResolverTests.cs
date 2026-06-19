@@ -42,9 +42,9 @@ public class ToolCommandResolverTests {
 		Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(options);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
+		act.Should().Throw<EnvironmentResolutionException>()
 			.WithMessage("*missing-env*",
-				"because resolver-based MCP commands must not fall back to default localhost credentials");
+				"because an unknown environment is an expected, caller-actionable resolution failure (mapped to exit code 1), not an unexpected runtime error, and must not fall back to default localhost credentials");
 	}
 
 	[Test]

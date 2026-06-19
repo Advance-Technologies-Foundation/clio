@@ -217,7 +217,12 @@ public sealed class PageUpdateTool(
 			}
 			return (null, mobileResult.Warnings);
 		}
-		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
+		// Field-binding validators suppress label-resource errors for keys supplied via the
+		// `resources` parameter, so this pre-resolution gate must see them too — otherwise a page
+		// whose label is provided in `resources` is falsely rejected here, before the
+		// resource-aware post-resolution validation runs (matches PageUpdateOptions / PageSyncTool / PageValidateTool).
+		SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? explicitResources, out _);
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
@@ -389,7 +394,8 @@ public sealed class PageUpdateTool(
 		}
 	}
 
-	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
+	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
+		string body, IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
@@ -405,6 +411,8 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
+		CollectWithPrefix(SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources), "invalid form field bindings", errors);
+		CollectWithPrefix(SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources), "invalid form field bindings", errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
@@ -414,6 +422,12 @@ public sealed class PageUpdateTool(
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {
 		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private static void CollectWithPrefix(SchemaValidationResult result, string prefix, List<string> errors) {
+		if (result.IsValid) return;
+		foreach (string err in result.Errors)
+			errors.Add(prefix + ": " + err);
 	}
 
 	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {

@@ -266,6 +266,8 @@ internal static class ToolContractCatalog {
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string EventNameFieldName = "event_name";
+	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -295,6 +297,9 @@ internal static class ToolContractCatalog {
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
+			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
+			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
+			[WithdrawTelemetryConsentTool.ToolName] = BuildWithdrawTelemetryConsent(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
@@ -358,6 +363,9 @@ internal static class ToolContractCatalog {
 		GuidanceGetTool.ToolName,
 		ExecuteEsqTool.ToolName,
 		SettingsHealthTool.ToolName,
+		GetTelemetryConsentTool.ToolName,
+		SendTelemetryTool.ToolName,
+		WithdrawTelemetryConsentTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -535,6 +543,137 @@ internal static class ToolContractCatalog {
 					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildSendTelemetry() {
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
+	}
+
+	private static ToolContractDefinition BuildGetTelemetryConsent() {
+		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
+	}
+
+	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
+		return new ToolContractDefinition(
+			WithdrawTelemetryConsentTool.ToolName,
+			"Withdraws product telemetry consent: sets the locally stored decision to denied and deletes any not-yet-uploaded local telemetry events, so collection stops and no further uploads start. Forward-looking — it does not delete events already uploaded to Creatio (those expire on the server-side retention timer). Idempotent and safe to call from any prior state.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Withdrawal status: withdrawn (consent set to denied) or withdraw-failed (a local I/O fault left consent unchanged)."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value after the call: denied on success."),
+				Field("events_purged", NumberType, "Count of not-yet-uploaded local telemetry event files deleted by the withdrawal.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Withdraw telemetry consent when the developer opts out", new Dictionary<string, object?>())
+			],
+			Flow([WithdrawTelemetryConsentTool.ToolName], "Call when the developer asks to stop, turn off, opt out of, or withdraw product telemetry. Idempotent and safe from any state; after success get-telemetry-consent returns denied and the workflow continues without telemetry."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active, do not call this tool or prompt for consent.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Consent lookup status: known or unknown."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value: granted, denied, or unknown.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read local telemetry consent", new Dictionary<string, object?>())
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Sending a telemetry event before consent is established", "Use this read-only consent tool before any telemetry event. Do not call send-telemetry until consent is granted or the first-run answer must be persisted.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			new ToolInputSchemaContract(
+				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
+				[
+					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field(EventNameFieldName, StringType,
+						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
+					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
+					Field("plugin_version", StringType, "Product plugin version."),
+					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
+						Context: "event_name must be one of the documented product event names.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal,
+					"status == rejected"
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Telemetry status: recorded (clio accepted the event; any upload to a collector happens separately and is not confirmed by this call), consent-denied, record-failed, or rejected."),
+				Field("event_id", StringType, "Generated event identifier when an event is recorded."),
+				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("telemetry-consent-required",
+					"Telemetry consent is not yet established. Ask the user and retry with telemetry_consent set to granted or denied."),
+				new ToolErrorCodeContract("record-unavailable",
+					"clio could not record the event because of a local I/O fault; it was not retained."),
+				new ToolErrorCodeContract("unsupported-fields",
+					"The payload contains fields outside the documented product telemetry fields."),
+				new ToolErrorCodeContract("missing-required-field",
+					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+				new ToolErrorCodeContract("unknown-event-name",
+					"event_name is not one of the documented product event names."),
+				new ToolErrorCodeContract("unknown-consent",
+					"telemetry_consent is set to a value other than granted or denied."),
+				new ToolErrorCodeContract("invalid-duration",
+					"duration_ms must be a non-negative value when supplied."),
+				new ToolErrorCodeContract("invalid-session-id",
+					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
+				new ToolErrorCodeContract("field-too-long",
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+			]),
+			[],
+			[
+				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
+			],
+			[
+				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
+					[EventNameFieldName] = "business_plan_generated",
+					["coding_agent"] = "Codex",
+					["plugin_version"] = "0.1.0"
+				})
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildGuidanceGet() {
@@ -3900,11 +4039,11 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private const string SiteNameFieldName = "site-name";
-	private const string ZipFileFieldName = "zip-file";
-	private const string SitePortFieldName = "site-port";
-	private const string DbServerNameFieldName = "db-server-name";
-	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SiteNameFieldName = "siteName";
+	private const string ZipFileFieldName = "zipFile";
+	private const string SitePortFieldName = "sitePort";
+	private const string DbServerNameFieldName = "dbServerName";
+	private const string RedisServerNameFieldName = "redisServerName";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -3970,14 +4109,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
 				Field("summary", StringType, "Human-readable scan summary."),
 				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
 				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
-				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio sitePort."),
 				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
 				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
 			CommonErrorContract,
@@ -3991,7 +4130,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
 			[],
 			[]);
 	}
@@ -4034,8 +4173,8 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
-				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
 			]);
 	}
 
@@ -4112,14 +4251,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
-			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zip-file can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
+			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zipFile can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field(StatusFieldName, StringType, "Discovery status: ok, no-builds-found, products-folder-missing, products-folder-not-configured, or products-folder-unreadable."),
 				Field("products-folder", StringType, "Resolved creatio-products folder configured in clio appsettings.json."),
 				Field("products-folder-exists", BooleanType, "Whether the configured creatio-products folder exists on disk."),
 				Field("message", StringType, "Human-readable summary or remediation hint."),
-				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zip-file."),
+				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zipFile."),
 				Field("truncated", BooleanType, "True when more builds exist than were returned.")),
 			CommonErrorContract,
 			[],
@@ -4132,7 +4271,7 @@ internal static class ToolContractCatalog {
 					ListCreatioBuildsTool.ListCreatioBuildsToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Discover a build, then pass its full-path as the deploy-creatio zip-file. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
+				"Discover a build, then pass its full-path as the deploy-creatio zipFile. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
 			[],
 			[]);
 	}

@@ -99,9 +99,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences) =
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences, CompositeDefinition[] composites) =
 			DeserializeEnvelope(stream, "Component registry stream");
-		return BuildState(rawEntries, globalReferences, "Component registry stream", resolvedVersion, source);
+		return BuildState(rawEntries, globalReferences, composites, "Component registry stream", resolvedVersion, source);
 	}
 
 	/// <summary>
@@ -111,11 +111,12 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
 	/// <c>null</c> global content — there is no envelope to carry it.
 	/// </summary>
-	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences) DeserializeEnvelope(
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences, CompositeDefinition[] Composites) DeserializeEnvelope(
 		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
 		ComponentRegistryEntry[] entries;
 		RegistryGlobalReferences? globalReferences = null;
+		CompositeDefinition[] composites = [];
 
 		if (document.RootElement.ValueKind == JsonValueKind.Array) {
 			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
@@ -133,6 +134,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 				?? throw new InvalidOperationException($"{sourceDescription} envelope was empty or invalid.");
 			entries = envelope.Components;
 			globalReferences = envelope.References;
+			composites = envelope.Composites ?? [];
 		} else {
 			throw new InvalidOperationException(
 				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
@@ -141,7 +143,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return (entries, globalReferences);
+		return (entries, globalReferences, composites);
 	}
 
 	/// <summary>
@@ -149,7 +151,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// entries (mobile registry has no global <c>content</c> block).
 	/// </summary>
 	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
-		(ComponentRegistryEntry[] entries, _) = DeserializeEnvelope(stream, sourceDescription);
+		(ComponentRegistryEntry[] entries, _, _) = DeserializeEnvelope(stream, sourceDescription);
 		return entries;
 	}
 
@@ -169,6 +171,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	internal static ComponentCatalogState BuildState(
 		ComponentRegistryEntry[] rawEntries,
 		RegistryGlobalReferences? globalReferences,
+		CompositeDefinition[] composites,
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) {
@@ -194,7 +197,37 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 
 		Dictionary<string, ComponentRegistryEntry> lookup = orderedEntries
 			.ToDictionary(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase);
-		return new ComponentCatalogState(orderedEntries, lookup, resolvedVersion, source, globalReferences);
+		// A composite with a blank/whitespace caption has no usable lookup key. The producer
+		// requires a caption, so a blank one is a malformed registry — fail loudly instead of
+		// silently dropping it (which would hide the producer mistake). Mirrors the guards above.
+		int blankCompositeCaptions = composites.Count(composite => string.IsNullOrWhiteSpace(composite.Caption));
+		if (blankCompositeCaptions > 0) {
+			throw new InvalidOperationException(
+				$"{sourceDescription} contains {blankCompositeCaptions} composite(s) with a blank caption. "
+				+ "Each composite must declare a non-empty caption (its lookup key).");
+		}
+		// Composites are looked up by caption (FirstOrDefault, case-insensitive), so a
+		// duplicate caption would silently shadow one composite. Fail loudly, mirroring the
+		// duplicate-componentType guard above, instead of serving an ambiguous catalog.
+		string[] duplicateCaptions = composites
+			.Where(composite => !string.IsNullOrWhiteSpace(composite.Caption))
+			.GroupBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.Where(group => group.Count() > 1)
+			.Select(group => group.Key)
+			.OrderBy(caption => caption, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		if (duplicateCaptions.Length > 0) {
+			throw new InvalidOperationException(
+				$"{sourceDescription} contains duplicate composite captions: {string.Join(", ", duplicateCaptions)}.");
+		}
+		CompositeDefinition[] orderedComposites = composites
+			.Where(composite => !string.IsNullOrWhiteSpace(composite.Caption))
+			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		return new ComponentCatalogState(
+			orderedEntries, lookup, resolvedVersion, source, globalReferences) {
+			Composites = orderedComposites,
+		};
 	}
 
 	/// <summary>
@@ -208,7 +241,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		string sourceDescription,
 		string resolvedVersion,
 		ComponentRegistrySource source) =>
-		BuildState(rawEntries, globalReferences: null, sourceDescription, resolvedVersion, source);
+		BuildState(rawEntries, globalReferences: null, composites: [], sourceDescription, resolvedVersion, source);
 }
 
 /// <summary>
@@ -304,4 +337,11 @@ public sealed record ComponentCatalogState(
 	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
 	string ResolvedVersion,
 	ComponentRegistrySource Source,
-	RegistryGlobalReferences? GlobalReferences = null);
+	RegistryGlobalReferences? GlobalReferences = null) {
+	/// <summary>
+	/// Top-level composites parsed from the wrapped envelope. Defaults to an empty list so a state
+	/// constructed directly (bypassing <see cref="ComponentInfoCatalog.BuildState"/>) never yields
+	/// null — call sites iterate this list without a null-guard.
+	/// </summary>
+	public IReadOnlyList<CompositeDefinition> Composites { get; init; } = [];
+}

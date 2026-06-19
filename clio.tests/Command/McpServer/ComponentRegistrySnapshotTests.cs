@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -64,6 +65,15 @@ public sealed class ComponentRegistrySnapshotTests {
 				UnmappedKeys(entry.References.UnmappedExtensions).Should().BeEmpty(
 					because: $"any new key under '{entry.ComponentType}'.references.* must be mapped");
 			}
+		}
+
+		// Assert — composites (top-level `composites[]`). The guard is symmetric with the
+		// per-component check so a producer adding a key under a composite cannot drop it
+		// silently. No-op until the live fixture is refreshed to a payload that ships
+		// composites, but it locks the contract the moment one appears.
+		foreach (CompositeDefinition composite in state.Composites ?? System.Array.Empty<CompositeDefinition>()) {
+			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
+				because: $"any new key on composite '{composite.Caption}' must be mapped");
 		}
 	}
 
@@ -177,6 +187,37 @@ public sealed class ComponentRegistrySnapshotTests {
 		}
 		state.Entries.Should().NotBeEmpty(
 			because: "the live mobile catalog must list at least one component");
+	}
+
+	[Test]
+	[Description("A synthetic payload that actually ships a top-level composites[] entry and a compositeOnly component must deserialise with no fields on an UnmappedExtensions bucket. The live snapshot ships no composites yet, so the composite arm of the guard in Live_Registry_Snapshot_... is a no-op today — this test exercises that arm for real so a producer renaming/adding a key under a composite is caught.")]
+	public void Synthetic_Composite_Payload_Should_Parse_With_No_Unmapped_Fields() {
+		// A minimal wrapped envelope carrying one top-level composite and one compositeOnly
+		// component — the composite-bearing shape the live snapshot does not yet contain.
+		const string payload = """
+		{
+		  "components": [
+		    { "componentType": "crt.ExpansionPanel", "category": "containers", "description": "Collapsible panel.", "container": true, "properties": {} },
+		    { "componentType": "crt.NextSteps", "category": "interactive", "description": "Next steps widget.", "compositeOnly": true, "properties": {} }
+		  ],
+		  "composites": [
+		    { "caption": "Next steps", "description": "Expansion panel wrapping a crt.NextSteps list.", "docs": ["docs/expansion-panel-next-steps.component.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(payload));
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// The composite arm of the guard now actually iterates (proving it is not dead).
+		state.Composites.Should().NotBeNull(because: "the payload ships a top-level composites[] array");
+		state.Composites!.Should().ContainSingle(because: "exactly one composite is declared")
+			.Which.Caption.Should().Be("Next steps");
+		state.Lookup["crt.NextSteps"].CompositeOnly.Should().BeTrue(
+			because: "the compositeOnly component flag must round-trip through deserialisation");
+		foreach (CompositeDefinition composite in state.Composites!) {
+			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
+				because: $"every key on composite '{composite.Caption}' must be mapped, not dropped to an UnmappedExtensions bucket");
+		}
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>

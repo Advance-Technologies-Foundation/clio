@@ -342,6 +342,112 @@ public sealed class ComponentInfoToolE2ETests {
 			because: "the caller must be told why the request was rejected");
 	}
 
+	[Test]
+	[Description("Binds the composite arg over the wire and routes to a structured mode:composite response — proves the new composite argument and branch are reachable end to end through the real MCP server, independently of whether the live registry ships any composites yet.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info binds the composite arg and returns mode:composite")]
+	[AllureDescription("Starts the real clio MCP server and requests a composite by caption; verifies the arg binds and the composite branch returns a structured mode:composite envelope.")]
+	public async Task ComponentInfoTool_Should_Accept_Composite_Arg_Over_The_Wire() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act — a caption that cannot exist, so the assertion is deterministic regardless of
+		// whether the live registry has been refreshed to a payload that ships composites.
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["composite"] = "Definitely Not A Composite XYZ" });
+
+		// Assert
+		response.Mode.Should().Be("composite",
+			because: "the composite arg must bind and route to the composite branch over the wire");
+		response.Success.Should().BeFalse(
+			because: "an unknown composite caption returns a structured not-found composite envelope");
+		response.Error.Should().Contain("Definitely Not A Composite XYZ",
+			because: "the not-found error must echo the requested caption");
+	}
+
+	[Test]
+	[Description("Rejects passing both composite and component-type over the wire — they are mutually exclusive. The error uses mode:list, mirroring the version/environment guard.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info rejects composite + component-type together")]
+	[AllureDescription("Starts the real clio MCP server and verifies that supplying both composite and component-type returns a structured mutually-exclusive error.")]
+	public async Task ComponentInfoTool_Should_Reject_Composite_And_ComponentType_Together() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["composite"] = "Expanded list",
+				["component-type"] = "crt.TabContainer"
+			});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "composite and component-type select two different things and must not be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the caller must be told why the request was rejected");
+		response.Mode.Should().Be("list",
+			because: "argument-validation errors use mode:list, consistent with the version/environment guard");
+	}
+
+	[Test]
+	[Description("Happy path over the wire: a caption that actually resolves returns a mode:composite success envelope. Points the real clio process at a local registry fixture (CLIO_COMPONENT_REGISTRY_LOCAL_FILE) that ships a composite, since the live CDN catalog may not ship composites yet.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info returns a resolved composite detail over the wire")]
+	[AllureDescription("Starts the real clio MCP server pointed at a local registry fixture containing one composite, requests it by caption, and verifies the mode:composite success shape (caption matches, documentationUnavailable omitted for a no-docs composite).")]
+	public async Task ComponentInfoTool_Should_Return_Resolved_Composite_Detail_Over_The_Wire() {
+		// Arrange — write a minimal registry fixture that ships a resolvable composite, and point the
+		// spawned clio process at it via the Tier-0 local-file override (read before cache/CDN). docs:[]
+		// keeps the happy path fully offline and deterministic (no doc fetch).
+		string fixturePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-composites-{Guid.NewGuid():N}.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.ExpansionPanel", "category": "containers", "description": "Collapsible panel.", "container": true, "properties": {} }
+		  ],
+		  "composites": [
+		    { "caption": "E2E Composite Probe", "description": "An expansion panel assembled for the e2e wire test.", "docs": [] }
+		  ]
+		}
+		""";
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			// Documented Tier-0 override (see docs/commands/get-component-info.md); read every call,
+			// before the disk cache and CDN, so the spawned process serves this composite-bearing catalog.
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+			// Act
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["composite"] = "E2E Composite Probe" });
+
+			// Assert — the success path the other two composite e2e tests do not cover.
+			response.Success.Should().BeTrue(
+				because: "the caption resolves in the local registry fixture, so the composite detail succeeds over the wire");
+			response.Mode.Should().Be("composite",
+				because: "a resolved composite returns the dedicated composite mode");
+			response.Caption.Should().Be("E2E Composite Probe",
+				because: "the response echoes the matched composite caption");
+			response.DocumentationUnavailable.Should().BeNull(
+				because: "the composite declares no docs, so documentationUnavailable is omitted rather than signalling a fetch failure");
+		}
+		finally {
+			File.Delete(fixturePath);
+		}
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

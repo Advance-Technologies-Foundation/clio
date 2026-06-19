@@ -23,7 +23,9 @@ public static class ComponentInfoPrettyRenderer {
 
 		AppendHeader(sb, response);
 
-		if (string.Equals(response.Mode, "detail", System.StringComparison.OrdinalIgnoreCase)
+		if (string.Equals(response.Mode, "composite", System.StringComparison.OrdinalIgnoreCase)) {
+			AppendComposite(sb, response);
+		} else if (string.Equals(response.Mode, "detail", System.StringComparison.OrdinalIgnoreCase)
 			&& !string.IsNullOrWhiteSpace(response.ComponentType)) {
 			AppendDetail(sb, response);
 		} else {
@@ -58,20 +60,73 @@ public static class ComponentInfoPrettyRenderer {
 	}
 
 	private static void AppendList(StringBuilder sb, ComponentInfoResponse response) {
-		if (response.Items is null || response.Items.Count == 0) {
+		bool hasItems = response.Items is { Count: > 0 };
+		bool hasComposites = response.Composites is { Count: > 0 };
+		if (!hasItems && !hasComposites) {
 			sb.AppendLine().AppendLine("(no components)");
 			return;
 		}
 
-		sb.AppendLine();
-		int width = response.Items.Max(item => item.ComponentType.Length);
-		foreach (ComponentInfoListItem item in response.Items) {
-			sb.Append("  ").Append(item.ComponentType.PadRight(width));
-			if (!string.IsNullOrWhiteSpace(item.Description)) {
-				sb.Append("  ").Append(item.Description);
+		if (hasItems) {
+			sb.AppendLine();
+			int width = response.Items!.Max(item => item.ComponentType.Length);
+			foreach (ComponentInfoListItem item in response.Items) {
+				sb.Append("  ").Append(item.ComponentType.PadRight(width));
+				if (!string.IsNullOrWhiteSpace(item.Description)) {
+					sb.Append("  ").Append(item.Description);
+				}
+				if (item.CompositeOnly == true) {
+					sb.Append("  (composite-only)");
+				}
+				sb.AppendLine();
+			}
+		}
+
+		AppendComposites(sb, response.Composites);
+	}
+
+	/// <summary>
+	/// Renders the list-mode <c>composites:</c> section — the pre-built Designer elements
+	/// (e.g. "Expanded list", "Next steps") that have no <c>componentType</c> of their own.
+	/// Without this, list-mode <c>--pretty</c> would silently hide every composite the JSON
+	/// surface returns. Fetch a composite's assembly docs with <c>--composite "&lt;caption&gt;"</c>.
+	/// </summary>
+	private static void AppendComposites(StringBuilder sb, IReadOnlyList<CompositeSummary>? composites) {
+		if (composites is null || composites.Count == 0) {
+			return;
+		}
+		sb.AppendLine().AppendLine("composites:");
+		int width = composites.Max(composite => composite.Caption.Length);
+		foreach (CompositeSummary composite in composites) {
+			sb.Append("  ").Append(composite.Caption.PadRight(width));
+			if (!string.IsNullOrWhiteSpace(composite.Description)) {
+				sb.Append("  ").Append(composite.Description);
 			}
 			sb.AppendLine();
 		}
+	}
+
+	/// <summary>
+	/// Renders a <c>mode: "composite"</c> detail response: the composite's caption,
+	/// description, and concatenated assembly documentation. When the composite declares
+	/// docs but none could be loaded (transient CDN/cache failure) the response carries
+	/// <c>documentationUnavailable</c>; surface that here so the human view reaches parity
+	/// with the JSON consumers. On a not-found composite the caption is empty (the error
+	/// line is already printed by <see cref="Render"/>), so nothing is emitted here.
+	/// </summary>
+	private static void AppendComposite(StringBuilder sb, ComponentInfoResponse response) {
+		if (string.IsNullOrWhiteSpace(response.Caption)) {
+			return;
+		}
+		sb.AppendLine();
+		sb.Append("composite:        ").AppendLine(response.Caption);
+		if (!string.IsNullOrWhiteSpace(response.Description)) {
+			sb.Append("description:      ").AppendLine(response.Description);
+		}
+		if (response.DocumentationUnavailable == true) {
+			sb.AppendLine().AppendLine("(documentation is declared for this composite but could not be loaded)");
+		}
+		AppendDocumentation(sb, response.Documentation);
 	}
 
 	private static void AppendDetail(StringBuilder sb, ComponentInfoResponse response) {
@@ -81,6 +136,12 @@ public static class ComponentInfoPrettyRenderer {
 			sb.Append("description:      ").AppendLine(response.Description);
 		}
 		AppendSelectionMetadata(sb, response);
+		if (response.CompositeOnly == true) {
+			sb.Append("compositeOnly:    ").AppendLine("yes");
+			if (!string.IsNullOrWhiteSpace(response.CompositeOnlyHint)) {
+				sb.Append("compositeOnlyHint: ").AppendLine(response.CompositeOnlyHint);
+			}
+		}
 		if (response.Container is { } container) {
 			sb.Append("container:        ").AppendLine(container ? "yes" : "no");
 		}

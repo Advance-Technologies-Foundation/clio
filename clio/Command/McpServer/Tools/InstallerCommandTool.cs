@@ -60,26 +60,26 @@ public class InstallerCommandTool(
 /// Minimal MCP arguments for the <c>deploy-creatio</c> tool.
 /// </summary>
 public sealed record DeployCreatioArgs(
-	[property: JsonPropertyName("site-name")]
+	[property: JsonPropertyName("siteName")]
 	[property: Description("Creatio instance name")]
 	[property: Required]
 	string SiteName,
 
-	[property: JsonPropertyName("zip-file")]
+	[property: JsonPropertyName("zipFile")]
 	[property: Description("Path to the Creatio archive file")]
 	[property: Required]
 	string ZipFile,
 
-	[property: JsonPropertyName("site-port")]
+	[property: JsonPropertyName("sitePort")]
 	[property: Description("Port where Creatio will be deployed")]
 	[property: Required]
 	int SitePort,
 
-	[property: JsonPropertyName("db-server-name")]
+	[property: JsonPropertyName("dbServerName")]
 	[property: Description("Optional local database server configuration name; omit to keep the default Kubernetes deployment path")]
 	string? DbServerName,
 
-	[property: JsonPropertyName("redis-server-name")]
+	[property: JsonPropertyName("redisServerName")]
 	[property: Description("Optional local Redis server configuration name")]
 	string? RedisServerName
 );
