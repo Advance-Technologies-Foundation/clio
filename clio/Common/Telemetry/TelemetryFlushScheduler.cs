@@ -54,7 +54,12 @@ public sealed class TelemetryFlushScheduler : ITelemetryFlushScheduler
 		if (!_gate.Wait(0)) {
 			return;
 		}
+		// Publish the run task to _pending before its body runs: the body first awaits this gate,
+		// so a concurrent DrainAsync (called on MCP server exit) can never observe the previous,
+		// already-completed task and skip the flush that was just scheduled here.
+		TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		_pending = Task.Run(async () => {
+			await ready.Task.ConfigureAwait(false);
 			try {
 				using CancellationTokenSource cts = new(FlushRunTimeout);
 				await _flushService.FlushAsync(cts.Token).ConfigureAwait(false);
@@ -65,6 +70,7 @@ public sealed class TelemetryFlushScheduler : ITelemetryFlushScheduler
 				_gate.Release();
 			}
 		});
+		ready.SetResult();
 	}
 
 	/// <inheritdoc />

@@ -1,4 +1,4 @@
-# ADR: clio product-telemetry client (`send-telemetry` / `get-telemetry-consent`)
+# ADR: clio product-telemetry client (`send-telemetry` / `get-telemetry-consent` / `withdraw-telemetry-consent`)
 
 - **Status:** Accepted
 - **Date:** 2026-06-15
@@ -11,9 +11,10 @@
 
 ## Context
 
-clio's MCP server exposes two product-telemetry tools used by the CAADT app-creation skill:
-`get-telemetry-consent` (read-only consent check) and `send-telemetry` (store one workflow
-event). Events are persisted locally as OpenTelemetry-log-shaped JSON, and a background flusher
+clio's MCP server exposes three product-telemetry tools used by the CAADT app-creation skill:
+`get-telemetry-consent` (read-only consent check), `send-telemetry` (store one workflow event),
+and `withdraw-telemetry-consent` (set the stored decision to denied and purge the not-yet-uploaded
+local outbox; see decision 10). Events are persisted locally as OpenTelemetry-log-shaped JSON, and a background flusher
 uploads them OTLP/HTTP to a collector when one is configured and consent is granted. Per
 ENG-89424, local-file collection is the agreed interim mode until the remote endpoint is live.
 

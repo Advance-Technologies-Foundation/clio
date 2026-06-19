@@ -437,6 +437,47 @@ public sealed class TelemetryFlushServiceTests
 			because: "the flusher must keep events spooled while consent is still unknown");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Stops an in-progress multi-batch flush when consent is withdrawn mid-run, leaving the unsent batches spooled.")]
+	public async Task FlushAsync_Should_Stop_Remaining_Batches_When_Consent_Withdrawn_Mid_Flush()
+	{
+		// Arrange: a spool larger than one batch, so the per-batch consent re-check runs more than once.
+		for (int index = 0; index < 120; index++) {
+			WriteEventFile(BaseTime.AddSeconds(index), $"evt_{index:D3}");
+		}
+		FakeHttpHandler handler = new();
+		ITelemetryService telemetryService = Substitute.For<ITelemetryService>();
+		// Granted for the top-of-flush gate and the first batch's re-check, then withdrawn: the flusher
+		// re-reads consent before EACH batch (TelemetryFlushService.FlushCoreAsync), so a denial returned
+		// on the third read must stop the run after the single batch already read into memory.
+		telemetryService.GetConsentStatus().Returns(
+			new TelemetryConsentResult(true, "known", "granted"),
+			new TelemetryConsentResult(true, "known", "granted"),
+			new TelemetryConsentResult(true, "known", "denied"));
+		ITelemetryFlushOptionsProvider optionsProvider = Substitute.For<ITelemetryFlushOptionsProvider>();
+		optionsProvider.Resolve().Returns(new TelemetryFlushOptions(DefaultEndpoint, null));
+		TelemetryFlushService service = new(
+			new System.IO.Abstractions.FileSystem(),
+			new FakeHttpClientFactory(handler),
+			telemetryService,
+			optionsProvider,
+			_telemetryHome,
+			new MutableTimeProvider(BaseTime.AddHours(1)),
+			NullLogger<TelemetryFlushService>.Instance);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		handler.Requests.Should().ContainSingle(
+			because: "withdrawing consent mid-flush must stop further uploads after the in-flight batch");
+		LogRecordEventNames(handler.Requests[0].Body!).Should().HaveCount(TelemetryFlushService.MaxBatchSize,
+			because: "only the first batch, read into memory before the withdrawal, may be delivered");
+		EventFiles().Should().HaveCount(120 - TelemetryFlushService.MaxBatchSize,
+			because: "batches not yet attempted when consent was withdrawn must stay spooled for a later run");
+	}
+
 	private TelemetryFlushService CreateService(FakeHttpHandler handler, string endpoint = DefaultEndpoint,
 		string ingestKey = null, string consent = "granted", TimeProvider timeProvider = null)
 	{
