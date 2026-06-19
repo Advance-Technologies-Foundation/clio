@@ -35,6 +35,9 @@ public static class ModifyBusinessProcessPrompt {
 		   such as `City` to create a Lookup to that object).
 		 - `addMapping` — `mapping` (`elementId`, `elementParameter`, and exactly one of `processParameter` |
 		   `value` | `expression`) to bind an element's input parameter to a value.
+		 - `setFilter` — `elementId` + a `filter` (object + conditions of column/comparison/value, column may be a
+		   lookup dot-path; the server serializes the platform filter). On a `signalStart` this restricts the record
+		   trigger to matching records. `clearFilter` — `elementId` (removes the element's filter).
 		 Operations apply in order; any failure aborts the edit (nothing is saved). Example — switch a process to
 		 start on record save: `removeElement` the start event, `addElement` a `signalStart`, then `addFlow` from it
 		 to the first task. Confirm destructive removals with the user before proceeding.

@@ -7,7 +7,7 @@ DESCRIPTION
     any failure aborts the whole edit (nothing is saved). Identify the process by --name or --uid, and
     provide the operations as a JSON array file (--operations) or inline (--operations-json).
 
-    Operations: addElement, removeElement, addFlow, removeFlow, addParameter, addMapping.
+    Operations: addElement, removeElement, addFlow, removeFlow, addParameter, addMapping, setFilter, clearFilter.
 
 SYNOPSIS
     clio modify-business-process --name <CODE> --operations <FILE> -e <ENVIRONMENT_NAME>
@@ -31,12 +31,14 @@ OPTIONS
 
 OPERATIONS
     A JSON array; each item is an object with an "op":
-      addElement      { "op":"addElement", "element": { id, type, caption, userTaskName?, signal? } }
+      addElement      { "op":"addElement", "element": { id, type, caption, userTaskName?, signal?, filter? } }
       removeElement   { "op":"removeElement", "elementId": "<local id or UId>" }
       addFlow         { "op":"addFlow", "source": "<id>", "target": "<id>" }
       removeFlow      { "op":"removeFlow", "source": "<id>", "target": "<id>" }
       addParameter    { "op":"addParameter", "parameter": { name, type, direction?, caption?, referenceSchema? } }
       addMapping      { "op":"addMapping", "mapping": { elementId, elementParameter, processParameter|value|expression } }
+      setFilter       { "op":"setFilter", "elementId": "<id>", "filter": { object, logicalOperation?, conditions:[ { column, comparison, value|processParameter|elementParameter|expression } ], groups? } }
+      clearFilter     { "op":"clearFilter", "elementId": "<id>" }
 
     referenceSchema on a parameter = an object (entity schema) name, e.g. "City", which creates a
     Lookup parameter referencing that object (type is ignored when referenceSchema is set).

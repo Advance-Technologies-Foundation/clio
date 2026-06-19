@@ -32,7 +32,7 @@ public class ModifyBusinessProcessTool(
 		 + "removeElement (with 'elementId' = the element's local id or UId), addFlow / removeFlow (with 'source' "
 		 + "and 'target' element ids), addParameter (with a 'parameter': name, type e.g. Text/Integer/Guid, "
 		 + "direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), addMapping (with a "
-		 + "'mapping': elementId, elementParameter, and exactly one of processParameter | value | expression). "
+		 + "'mapping': elementId, elementParameter, and exactly one of processParameter | value | expression), setFilter (elementId + a 'filter': {object, logicalOperation:and|or, conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|processParameter|elementParameter|expression}], groups?} — on a signalStart restricts the record trigger; server serializes the platform filter), clearFilter (elementId)."
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
 		 + "Use describe-process to inspect the current elements/ids first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(

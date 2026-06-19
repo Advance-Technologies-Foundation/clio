@@ -76,7 +76,7 @@ public sealed class ListUserTasksToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string environmentName = settings.Sandbox.EnvironmentName;
+		string environmentName = settings.Sandbox.EnvironmentName ?? string.Empty;
 		if (requireReachableEnvironment && string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run list-user-tasks MCP E2E.");
 		}

@@ -31,6 +31,10 @@ public static class CreateBusinessProcessPrompt {
 		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
 		 - `mappings`: array binding `elementId` + `elementParameter` to one of
 		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
+		 - For a record trigger use a `signalStart` element (`signal` = entity + `on`: added|modified|deleted);
+		   restrict it to matching records with a `filter` (object + conditions of column/comparison/value, where
+		   column is the entity column name and may be a lookup dot-path; the server serializes the platform
+		   filter — never hand-write filter JSON).
 		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
 		 confirm the target package with the user before building.
 		 """;

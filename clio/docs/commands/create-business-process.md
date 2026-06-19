@@ -45,7 +45,7 @@ A JSON object with the following fields:
 | `name` | Unique schema code of the process to create. |
 | `caption` | Human-readable caption. |
 | `packageName` | Target package the process is created in. |
-| `elements` | Array of `{ id, type, caption, userTaskName?, signal? }`. `type` is `startEvent` \| `signalStart` \| `endEvent` \| `userTask` (aliases `readData`, `performTask`). For a record trigger ("run on save"), use a `signalStart` element with `signal: { entity, on }` where `on` is one of `added` \| `modified` \| `deleted` (one event) — the platform-native alternative to a client-side page save handler. |
+| `elements` | Array of `{ id, type, caption, userTaskName?, signal?, filter? }`. `type` is `startEvent` \| `signalStart` \| `endEvent` \| `userTask` (aliases `readData`, `performTask`). For a record trigger ("run on save"), use a `signalStart` element with `signal: { entity, on }` where `on` is one of `added` \| `modified` \| `deleted` (one event) — the platform-native alternative to a client-side page save handler. Add a `filter` (see [Filter](#filter)) to a `signalStart` to fire the trigger only for records matching a condition. |
 | `flows` | Array of `{ source, target }` referencing element ids. |
 | `parameters` | Array of `{ name, type, direction, caption, referenceSchema? }` (process inputs / variables). `referenceSchema` (an object name, e.g. `City`) makes the parameter a Lookup to that object. |
 | `mappings` | Array of `{ elementId, elementParameter }` plus one of `processParameter` \| `value` \| `expression`. |
@@ -93,6 +93,44 @@ Record-triggered variant — a process that starts when a `UsrTestRunButton` rec
   ]
 }
 ```
+
+## Filter
+
+A `filter` on a `signalStart` restricts the trigger to records matching a condition. The server
+serializes the platform `Terrasoft.FilterGroup` — never hand-write filter JSON.
+
+| Field | Description |
+|---|---|
+| `object` | Root object (entity) the columns belong to; defaults to the signal entity. |
+| `logicalOperation` | `and` (default) or `or`. |
+| `conditions` | Array of `{ column, comparison, <value> }`. `column` is the entity column name and may be a lookup dot-path (e.g. `Account.Code`). `comparison`: `equal` (default), `notEqual`, `greater`, `greaterOrEqual`, `less`, `lessOrEqual`, `contains`, `startWith`, `endWith`, `isNull`, `isNotNull`. The right-hand value is exactly one of `value` (constant), `processParameter`, `elementParameter` (`{ elementId, parameter }`), or `expression`; `isNull`/`isNotNull` take none. |
+| `groups` | Optional nested groups, each with its own `logicalOperation` (recursive AND/OR). |
+
+Fire only when `Name` (column `UsrName`) equals `Start`:
+
+```json
+{
+  "name": "UsrOnSaveStart",
+  "caption": "On save when Name = Start",
+  "packageName": "Custom",
+  "elements": [
+    { "id": "SignalStart1", "type": "signalStart",
+      "signal": { "entity": "UsrTestRunButton", "on": "modified" },
+      "filter": { "object": "UsrTestRunButton",
+        "conditions": [ { "column": "UsrName", "comparison": "equal", "value": "Start" } ] } },
+    { "id": "task1", "type": "performTask", "caption": "Show task" },
+    { "id": "EndEvent1", "type": "endEvent" }
+  ],
+  "flows": [
+    { "source": "SignalStart1", "target": "task1" },
+    { "source": "task1", "target": "EndEvent1" }
+  ]
+}
+```
+
+> Data tasks (Read/Add/Modify/Delete data) also accept a `filter`, but their target object / read
+> config is not buildable yet, so a data-task filter is not end-to-end usable in this increment — only
+> the `signalStart` filter is.
 
 ## Examples
 

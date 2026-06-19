@@ -48,9 +48,13 @@ public sealed class ProcessModelingGuidanceResource {
 			- Activities: `userTask` referencing any task from list-user-tasks via `userTaskName`
 			  (aliases `readData`->ReadDataUserTask, `performTask`->ActivityUserTask).
 			- Sequence flows; process-level parameters; element-parameter mappings.
+			- A data source `filter` on a `signalStart` to restrict WHICH records fire the trigger (see the
+			  "Data source filters" section below).
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
-			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
-			  READ existing processes (`describe-process`); don't expect to build those types in this increment.
+			  sub-process, the Read/Add/Modify/Delete-data target object + read config (so a `filter` on a data
+			  task is serialized but not end-to-end usable yet — only the `signalStart` filter is). Use the catalog
+			  below to reason about a solution and to READ existing processes (`describe-process`); don't expect to
+			  build those types in this increment.
 
 			== Descriptor (create-business-process) ==
 			{
@@ -79,8 +83,47 @@ public sealed class ProcessModelingGuidanceResource {
 			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
 			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
 			  "added or modified"). "On save" of a record edited on a page = "modified"; a brand-new record = "added".
+			- To fire the trigger ONLY for records matching a condition (e.g. only when Name = "Start"), add a
+			  `filter` to the signalStart element (full shape in "Data source filters" below):
+			    { "id": "Start1", "type": "signalStart",
+			      "signal": { "entity": "UsrTestRunButton", "on": "modified" },
+			      "filter": { "object": "UsrTestRunButton",
+			        "conditions": [ { "column": "UsrName", "comparison": "equal", "value": "Start" } ] } }
+			  Use the entity COLUMN name (here `UsrName`), not the field caption ("Name").
 			- To convert an EXISTING process to start on a record event, use `modify-business-process`:
 			  removeElement the current start, addElement a `signalStart`, addFlow signalStart -> (first activity).
+
+			== Data source filters (signalStart trigger condition) ==
+			- A `filter` declares, high-level, WHICH records a filtered element acts on. The server serializes it to
+			  the platform Terrasoft.FilterGroup — you NEVER hand-write the escaped filter JSON.
+			- Usable today on a `signalStart` (restrict the record trigger). Shape:
+			    "filter": {
+			      "object": "<EntityName>",        // root object; defaults to the signal entity if omitted
+			      "logicalOperation": "and",       // "and" (default) | "or"
+			      "conditions": [
+			        { "column": "UsrName",      "comparison": "equal", "value": "Start" },
+			        { "column": "Account.Code", "comparison": "equal", "value": "1" }   // dot-path traverses a lookup
+			      ],
+			      "groups": [                       // optional nested groups, each with its own logicalOperation
+			        { "logicalOperation": "or", "conditions": [ /* ... */ ] }
+			      ]
+			    }
+			- `column` is the entity COLUMN name (e.g. `UsrName`, not the caption "Name") and may be a dot-path
+			  through lookups (`Account.Code`, `Account.Owner.Name`); the server resolves the column type from the
+			  object's schema (so you don't supply types).
+			- `comparison`: equal (default) | notEqual | greater | greaterOrEqual | less | lessOrEqual | contains |
+			  startWith | endWith | isNull | isNotNull.
+			- The right-hand value of a condition is exactly ONE of: `value` (a constant as a string — the server
+			  types it by the column), `processParameter` (a process parameter by name), `elementParameter`
+			  ({ elementId, parameter } — another element's output), `expression` (a raw token). isNull/isNotNull
+			  take none.
+			- Groups nest to any depth: A AND (B OR C) = conditions:[A] + groups:[{ "logicalOperation":"or",
+			  conditions:[B, C] }].
+			- A `filter` on a data task (Read/Add/Modify/Delete data) is serialized too, but those tasks' target
+			  object / read config is not buildable yet, so data-task filters are NOT end-to-end usable in this
+			  increment — use the signalStart filter.
+			- On an EXISTING process, set/clear a filter via `modify-business-process` ops `setFilter`
+			  ({ op:"setFilter", elementId, filter }) and `clearFilter` ({ op:"clearFilter", elementId }).
 
 			== Build recipe (intent -> running process) ==
 			1. Translate the request into a graph: one start event, the activities, the sequence flows, one or
@@ -91,7 +134,7 @@ public sealed class ProcessModelingGuidanceResource {
 			5. Verify: `describe-process` (element types, user-task names, parameter sources, the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
-			   addParameter / addMapping — same parameter/mapping shapes as a build).
+			   addParameter / addMapping / setFilter / clearFilter — same parameter/mapping/filter shapes as a build).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.

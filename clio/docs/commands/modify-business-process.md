@@ -12,7 +12,7 @@ failure aborts the whole edit (nothing is saved). Identify the process by exactl
 `--uid`, and provide the operations as a JSON array file (`--operations`) or inline (`--operations-json`). Requires
 the `clioprocessbuilder` package on the target environment.
 
-Operations: `addElement`, `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`.
+Operations: `addElement`, `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`, `setFilter`, `clearFilter`.
 
 ## Synopsis
 
@@ -46,12 +46,14 @@ A JSON array; each item is an object with an `op`:
 
 | op | Fields | Effect |
 |---|---|---|
-| `addElement` | `element` (id, type, caption, userTaskName?, signal?) | Adds an element (same descriptor as a build). |
+| `addElement` | `element` (id, type, caption, userTaskName?, signal?, filter?) | Adds an element (same descriptor as a build). |
 | `removeElement` | `elementId` (local id or UId) | Removes the element plus its sequence flows. |
 | `addFlow` | `source`, `target` (element ids) | Adds a sequence flow. |
 | `removeFlow` | `source`, `target` (element ids) | Removes the matching sequence flow. |
 | `addParameter` | `parameter` (name, type, direction?, caption?, referenceSchema?) | Adds a process-level parameter (same shape as a build `parameters[]` entry). `referenceSchema` (an object name) makes it a Lookup to that object. |
 | `addMapping` | `mapping` (elementId, elementParameter, + one of processParameter/value/expression) | Binds an element input parameter to a value (same shape as a build `mappings[]` entry). |
+| `setFilter` | `elementId`, `filter` (object, logicalOperation?, conditions[], groups?) | Sets a data source filter (same shape as a build element's `filter`). On a `signalStart` restricts the record trigger to matching records. |
+| `clearFilter` | `elementId` | Removes the element's data source filter. |
 
 Example — switch a process to start on record save (the proper alternative to a client save handler):
 
@@ -77,6 +79,22 @@ Example — add a lookup parameter referencing an object (a Lookup to `City`):
 ```json
 [
   { "op": "addParameter", "parameter": { "name": "City", "referenceSchema": "City", "direction": "In" } }
+]
+```
+
+Example — restrict a signal-start trigger to records where `Name` (column `UsrName`) equals `Start`
+(the server serializes the platform filter; never hand-write filter JSON):
+
+```json
+[
+  {
+    "op": "setFilter",
+    "elementId": "SignalStart1",
+    "filter": {
+      "object": "UsrTestRunButton",
+      "conditions": [ { "column": "UsrName", "comparison": "equal", "value": "Start" } ]
+    }
+  }
 ]
 ```
 
