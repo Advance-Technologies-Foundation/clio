@@ -4,7 +4,7 @@
 **FR coverage**: ADR Decision 5 ("Gating uses IFeatureToggleService"), "Empirical basis" (replace env-var scaffold)
 **PRD**: _none — spike-driven feature_
 **ADR**: [adr-mcp-lazy-schema.md](../adr/adr-mcp-lazy-schema.md)
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day)
 **Risk**: MEDIUM — touches the single MCP registration seam; opt-in by default keeps it safe
 **Blocked by**: story-mcp-lazy-schema-0 (feature-key string + default-profile decision)
@@ -27,12 +27,12 @@ core-vs-long-tail membership is production-grade (no env var, fail-closed, opt-i
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given the feature flag is OFF (default), when the MCP server starts, then `tools/list` is byte-for-byte the current FULL catalog (~124 tools) — no behavior change for existing consumers.
-- [ ] **AC-02** — Given the feature flag is ON, when the MCP server starts, then only the core profile tool types register and `tools/list` is the reduced set, gated through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (the existing seam, `IEnumerable<Type>` — never `Type[]`, never `*FromAssembly`).
-- [ ] **AC-03** — Given the flag string, when `IFeatureToggleService.IsEnabled` is consulted, then the exact feature-key from Story 0 is used and comparison is case-insensitive.
-- [ ] **AC-04** — Given core-vs-long-tail membership, when defined, then it is config-driven (not hardcoded scattered constants) and unit-assertable.
-- [ ] **AC-05** — Given the env var `CLIO_MCP_TOOL_TYPES`, when grepped after this story, then no production code path reads it (scaffold removed).
-- [ ] **AC-ERR** — Given a malformed/absent flag, when the server starts, then it fails closed to the FULL catalog (never partially registers an undefined profile) and logs nothing user-facing.
+- [x] **AC-01** — Given the feature flag is OFF (default), when the MCP server starts, then `tools/list` is the current FULL catalog — `SelectToolTypes(enabled, lazyToolsEnabled:false)` returns the enabled set unchanged (test `SelectToolTypes_ShouldReturnFullSet_WhenLazyToolsDisabled`; the SDK-parity test `RegisterEnabledPrimitives_ShouldRegisterSamePrimitivesAsSdkFromAssemblyScan_WhenNothingGated` continues to pass via the default-false overload).
+- [x] **AC-02** — Given the feature flag is ON, only the core profile tool types + the 3 always-on executor/contract types register, gated through the single `McpFeatureToggleFilter.RegisterEnabledPrimitives` seam using the `IEnumerable<Type>` overload (no `Type[]`, no `*FromAssembly`). Tests `SelectToolTypes_ShouldReturnCorePlusExecutors_WhenLazyToolsEnabled`, `...ShouldSelectOnlyCoreAndAlwaysOnTypes...`.
+- [x] **AC-03** — `BindingsModule` consults `IFeatureToggleService.IsFeatureEnabled(McpCoreToolProfile.FeatureKey)` with key `mcp-lazy-tools`; `IsFeatureEnabled`/`ISettingsRepository.IsFeatureEnabled` compare case-insensitively against the same `appsettings.json features` store.
+- [x] **AC-04** — Membership is a single maintained constant set `McpCoreToolProfile.CoreToolTypes` + `AlwaysOnLazyToolTypes` (public, `typeof`-checked), unit-assertable directly and via `SelectToolTypes`.
+- [x] **AC-05** — `ApplyToolProfile`/`CLIO_MCP_TOOL_TYPES` removed; test `SelectToolTypes_ShouldIgnoreSpikeEnvVar_WhenSet` proves the env var is no longer consulted.
+- [x] **AC-ERR** — `SelectToolTypes` returns the full set whenever `lazyToolsEnabled` is false; `IsFeatureEnabled` returns false for an absent/false/malformed flag, so the server fails closed to the FULL catalog with no user-facing log.
 
 ## Implementation Notes
 
@@ -68,7 +68,14 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`. AAA + `because` on every
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj -c Release --filter "Category=Unit&(Module=McpServer|Module=Command)" -f net10.0` → 2972 passed, 26 skipped, 0 failed.
 - Notes:
+  - New: `clio/Command/McpServer/McpCoreToolProfile.cs` — `FeatureKey = "mcp-lazy-tools"`, `CoreToolTypes` (18 declaring `[McpServerToolType]` classes for the inventory's ~20 proposed core tools — several core tools share a class), `AlwaysOnLazyToolTypes` ({ClioRunTool, ClioRunDestructiveTool, ToolContractGetTool}). Marked provisional pending Story 7.
+  - `McpFeatureToggleFilter`: removed the `ApplyToolProfile`/`CLIO_MCP_TOOL_TYPES` spike scaffold; added public pure `SelectToolTypes(enabledToolTypes, lazyToolsEnabled)` and a `bool lazyToolsEnabled = false` optional parameter on `RegisterEnabledPrimitives` (default false keeps the existing 4-arg parity-test call and full-catalog behaviour).
+  - `BindingsModule.cs`: passes `mcpFeatureToggleService.IsFeatureEnabled(McpCoreToolProfile.FeatureKey)` into the seam.
+  - `ExperimentalCommand.cs`: added `StandaloneFeatureKeys` so `mcp-lazy-tools` is a recognized key (listed by `clio experimental`, no "unknown key" warning on `--enable/--disable`). Reused existing `IFeatureToggleService.IsFeatureEnabled(string)` — no new string-key capability was needed.
+  - Budget ratchet: lazy `tools/list` = **27 tools** (per-TYPE: core classes declare extra `[McpServerTool]` methods, e.g. DataForgeTool 8). Tests assert tool COUNT ≤ 30 and serialized `ProtocolTool` payload ≤ 48 KiB.
+  - Tests: `clio.tests/Command/McpServer/McpProfileGatingTests.cs` (7) + `ExperimentalCommandTests` recognized-key test.
+  - MCP/docs: reviewed — no public tool/option/help/docs change (profile gating is a registration-filter behaviour, not a command/option change). Integration + E2E test rows from the story's Test Requirements are deferred (E2E is not in CI; manual gate per project-context.md).

@@ -118,6 +118,15 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 			.Select(info => (info.FeatureName, info.Enabled, Orphan: false))
 			.ToList();
 
+		// Standalone feature keys (gating a registration profile, not a single attributed type) are
+		// recognized keys with no attribute carrier, so they are listed explicitly with their current
+		// settings state rather than as orphans.
+		foreach (string key in StandaloneFeatureKeys) {
+			if (catalogKeys.Add(key)) {
+				rows.Add((key, _featureToggleService.IsFeatureEnabled(key), Orphan: false));
+			}
+		}
+
 		// Settings keys that no attribute references are surfaced as orphans so a leftover/renamed
 		// flag in appsettings.json is still visible and manageable.
 		foreach (KeyValuePair<string, bool> feature in _settingsRepository.GetFeatures()) {
@@ -144,11 +153,19 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 		_logger.PrintTable(table);
 	}
 
+	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
+	// options/MCP type. The mcp-lazy-tools profile key gates a registration-filter PROFILE (which
+	// tool TYPES register flat), not a single hideable command, so it has no attribute carrier — it
+	// is enumerated here so `clio experimental` lists it and `--enable/--disable` does not warn it is
+	// unknown. Compared case-insensitively, like all feature keys.
+	internal static readonly string[] StandaloneFeatureKeys = [McpServer.McpCoreToolProfile.FeatureKey];
+
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()
 			.Select(type => type.GetCustomAttribute<FeatureToggleAttribute>(inherit: false))
 			.Where(attribute => attribute is not null)
 			.Select(attribute => attribute.FeatureName)
+			.Concat(StandaloneFeatureKeys)
 			.Distinct(StringComparer.OrdinalIgnoreCase);
 
 	// Sources every feature-gated type clio knows about: command option types from the CLI verb set

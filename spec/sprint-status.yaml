@@ -551,8 +551,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: medium
-    status: ready-for-dev
-    note: "PIVOTED 2026-06-19 to OPT-IN lazy mode. Feature-key = mcp-lazy-tools, OFF by default ⇒ FULL flat catalog (unchanged, zero regression); ON ⇒ lazy (core per-type + clio-run/-destructive + get-tool-contract). Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates RegisterEnabledPrimitives via IFeatureToggleService. Per-TYPE granularity. Non-breaking keystone that delivers the −97% to opted-in consumers."
+    status: review
+    note: "PIVOTED 2026-06-19 to OPT-IN lazy mode. Feature-key = mcp-lazy-tools, OFF by default ⇒ FULL flat catalog (unchanged, zero regression); ON ⇒ lazy (core per-type + clio-run/-destructive + get-tool-contract). Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates RegisterEnabledPrimitives via IFeatureToggleService. Per-TYPE granularity. Non-breaking keystone that delivers the −97% to opted-in consumers. IMPLEMENTED 2026-06-19: McpCoreToolProfile (18 core types + 3 always-on), McpFeatureToggleFilter.SelectToolTypes gating, BindingsModule wiring via IsFeatureEnabled, experimental command recognizes the standalone key. Lazy tools/list = 27 tools (per-TYPE). Validated: dotnet test --filter \"Category=Unit&(Module=McpServer|Module=Command)\" (2972 passed)."
     file: spec/stories/story-mcp-lazy-schema-1.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
