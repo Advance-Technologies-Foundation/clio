@@ -128,8 +128,8 @@ public static class McpFeatureToggleFilter
 
 		IEnumerable<Type> enabledResourceTypes = GetEnabledTypes(
 			assembly, typeof(McpServerResourceTypeAttribute), isEnabled);
-		IEnumerable<Type> enabledToolTypes = GetEnabledTypes(
-			assembly, typeof(McpServerToolTypeAttribute), isEnabled);
+		IEnumerable<Type> enabledToolTypes = ApplyToolProfile(GetEnabledTypes(
+			assembly, typeof(McpServerToolTypeAttribute), isEnabled));
 		IEnumerable<Type> enabledPromptTypes = GetEnabledTypes(
 			assembly, typeof(McpServerPromptTypeAttribute), isEnabled);
 
@@ -137,5 +137,21 @@ public static class McpFeatureToggleFilter
 			.WithResources(enabledResourceTypes)
 			.WithTools(enabledToolTypes, serializerOptions)
 			.WithPrompts(enabledPromptTypes, serializerOptions);
+	}
+
+	// SPIKE (spike/mcp-lazy-schema): narrow the registered tool TYPES to an allowlist so the
+	// tools/list payload (and thus LLM context) shrinks dramatically for small local models.
+	// Driven by env CLIO_MCP_TOOL_TYPES="DataForgeTool,ToolContractGetTool,..." (simple class
+	// names, case-insensitive). Unset/empty => full set (current behaviour). Temporary measuring
+	// scaffold; the real design replaces flat long-tail tools with get-tool-contract + clio-run.
+	private static IEnumerable<Type> ApplyToolProfile(IEnumerable<Type> toolTypes) {
+		string profile = Environment.GetEnvironmentVariable("CLIO_MCP_TOOL_TYPES");
+		if (string.IsNullOrWhiteSpace(profile)) {
+			return toolTypes;
+		}
+		HashSet<string> allow = profile
+			.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return toolTypes.Where(type => allow.Contains(type.Name)).ToArray();
 	}
 }
