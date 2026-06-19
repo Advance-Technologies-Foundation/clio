@@ -72,10 +72,14 @@ This is a documents-only decision story; SM is an empty code diff (spec/** only)
   1. **#624** — left as a **fallback plan**; NOT superseded, NOT built-on. This ADR
      proceeds independently; `clio-run` built from scratch; no #624 coordination.
      (AC-01/02 satisfied via the "fallback" option rather than supersede/build-on.)
-  2. **Default profile** — **core-by-default**. Binding constraint: deprecation
-     aliases + consumer inventory (Story 9/10) MUST land with the default flip (AC-03).
+  2. **Default profile** — **AMENDED 2026-06-19 → OPT-IN lazy mode** (was
+     core-by-default). Default OFF = full flat catalog (unchanged, zero regression);
+     consumers opt in to lazy mode for the −97%. Drops the breaking migration:
+     Story 10 (aliases) + Story 11 (×74) DEFERRED. Rationale: the executor delivers
+     the token-impact goal regardless of default; core-by-default added a
+     disproportionate breaking cost for no extra goal value (AC-03 superseded).
   3. **clio-run split** — **YES**, `clio-run` (safe) + `clio-run-destructive`;
      `clio-run` never `ReadOnly`/auto-approve (AC-04).
-  4. **Feature-key** = `mcp-full-tool-catalog`, OFF by default ⇒ core-by-default;
-     enabling re-registers the full flat catalog (AC-05).
+  4. **Feature-key** = `mcp-lazy-tools` (amended from `mcp-full-tool-catalog`), OFF by
+     default ⇒ full flat catalog (unchanged); ON ⇒ lazy mode (core + executors). AC-05.
   ADR Status → Accepted. sprint-status: Stories 1/2/3/6/9 unblocked → ready-for-dev.

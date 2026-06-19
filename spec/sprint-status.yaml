@@ -510,7 +510,13 @@ stories:
     blocks: []
 
   # --- mcp-lazy-schema stories (ENG-90312), added 2026-06-19 ---
-  # Spike-driven feature, no PRD; source = spec/adr/adr-mcp-lazy-schema.md (Proposed).
+  # PIVOT 2026-06-19: OPT-IN lazy mode (feature-key mcp-lazy-tools, default OFF=full/unchanged).
+  #   Goal (reduce CONTEXT token impact) is delivered by the clio-run executor (Stories 3+4, DONE,
+  #   CI-green in PR #743) gated behind an opt-in flag. Core-by-default was dropped → Stories 10
+  #   (aliases) and 11 (×74 migration) DEFERRED (only the budget test survives, folded into Story 1).
+  #   Done so far: 0 (decisions), 3+4 (executor+registry), 9 (inventory). Next: 1 (opt-in gating),
+  #   then 6 (curated contracts), 5/7 (lazy UX), 2 (slimming bonus), 8 (security hardening).
+  # Spike-driven feature, no PRD; source = spec/adr/adr-mcp-lazy-schema.md (Accepted).
   # BLOCKERS (must clear before any implementation story leaves blocked):
   #   - Story 0 (decision): #624 supersede-vs-build-on + default-profile + clio-run split + feature-key.
   #     Stories 1-11 are GATED on Story 0 (status: blocked) and flip to ready-for-dev once Story 0 resolves.
@@ -546,7 +552,7 @@ stories:
     size: M
     risk: medium
     status: ready-for-dev
-    note: "Unblocked 2026-06-19 (Story 0 resolved). Feature-key = mcp-full-tool-catalog, OFF by default ⇒ core-by-default. Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates the RegisterEnabledPrimitives seam; flag ON reproduces FULL catalog (back-compat escape hatch)."
+    note: "PIVOTED 2026-06-19 to OPT-IN lazy mode. Feature-key = mcp-lazy-tools, OFF by default ⇒ FULL flat catalog (unchanged, zero regression); ON ⇒ lazy (core per-type + clio-run/-destructive + get-tool-contract). Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates RegisterEnabledPrimitives via IFeatureToggleService. Per-TYPE granularity. Non-breaking keystone that delivers the −97% to opted-in consumers."
     file: spec/stories/story-mcp-lazy-schema-1.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
@@ -665,8 +671,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: L
     risk: high
-    status: blocked
-    note: "Breaking MCP wire change. Aliases must land (and inventory complete) before any default flip — honor Story 0 'opt-in until aliases+inventory land' decision. Destructive aliases proxy to the destructive surface (Story 8)."
+    status: deferred
+    note: "DEFERRED 2026-06-19 (pivot to opt-in lazy mode). No default flip ⇒ no breaking wire change ⇒ aliases not required for release. Only revived if a future decision flips the GLOBAL default to core. Alias map already drafted in Story 9 inventory."
     file: spec/stories/story-mcp-lazy-schema-10.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on:
@@ -682,8 +688,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: L
     risk: medium
-    status: blocked
-    note: "Per AGENTS.md, 8 artifact types per migrated command. McpToolBudgetTests does NOT exist here (it is #624's) — built from scratch; asserts core tools/list ≤ ~5-8k tokens. Likely split per-batch during execution. MCP e2e NOT in CI."
+    status: deferred
+    note: "DEFERRED 2026-06-19 (pivot). The ×74 doc/MCP migration is NOT needed — flat tools stay by default, so no per-command doc changes. ONLY the tool-budget ratchet test survives as a small standalone item (asserts lazy-mode tools/list ≤ ~5-8k tokens) — fold into Story 1. Revived fully only if global default flips to core."
     file: spec/stories/story-mcp-lazy-schema-11.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on:

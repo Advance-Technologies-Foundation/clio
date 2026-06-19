@@ -1,6 +1,6 @@
 # ADR — MCP lazy-schema tool surface (reduce context impact, not just tool count)
 
-- **Status:** Accepted (decisions resolved 2026-06-19; revised after adversarial review)
+- **Status:** Accepted (decisions resolved 2026-06-19; **pivoted to opt-in lazy mode** 2026-06-19 — see Resolved decisions #2)
 - **Date:** 2026-06-19
 - **Jira:** ENG-90312 (same goal as PR #624; this ADR proposes an alternative design)
 - **Related:** PR [#624](https://github.com/Advance-Technologies-Foundation/clio/pull/624) (draft), spike branch `spike/mcp-lazy-schema`
@@ -188,22 +188,38 @@ schemas (~25–35k) plus LM Studio's loaded context. That residual is **out of s
 
 1. **#624** — left as a **fallback plan**; this ADR proceeds independently, `clio-run`
    built from scratch (see *Relationship to PR #624*).
-2. **Default profile** — **core-by-default** (slim catalog is the default for all
-   consumers). The full-catalog escape hatch is opt-in via the feature key below.
-   **Binding constraint:** because core-by-default is breaking for consumers of flat
-   long-tail tool names, the deprecation aliases + consumer inventory (Story 9/10)
-   MUST land together with the default flip — they are no longer deferrable.
+2. **Default profile** — **OPT-IN lazy mode** (pivoted 2026-06-19). The default is
+   the **full flat catalog, unchanged** — zero regression for every existing consumer
+   (CAADT / adaclio / e2e / Claude Desktop). Context-constrained consumers (small
+   local models, multi-server setups) **opt in** to lazy mode, which registers the
+   core flat set + `clio-run`/`clio-run-destructive` + `get-tool-contract` and drops
+   the long-tail flat schemas (the measured −97%). **Rationale:** the token-impact
+   goal is delivered by the executor regardless of which mode is default; tying it to
+   core-by-default forced a disproportionate breaking migration (×74 docs/tests + 76
+   aliases + consumer breakage) that opt-in avoids entirely. **Consequence:** the
+   deprecation aliases (Story 10) and the ×74 doc migration (Story 11) are **no longer
+   required** — they become optional, only relevant if a future decision flips the
+   global default to core. Story 9's inventory + alias map are kept for that option.
 3. **`clio-run` split** — **YES**: `clio-run` (safe/non-destructive) and a separate
    `clio-run-destructive`. `clio-run` is never `ReadOnly`/auto-approve; destructive
-   commands route only through the destructive surface (Story 8).
-4. **Feature key** — `mcp-full-tool-catalog`. OFF by default (⇒ core-by-default);
-   enabling it re-registers the full flat catalog as a back-compat escape hatch.
+   commands route only through the destructive surface (Story 8). (Already built,
+   Story 4.)
+4. **Feature key** — `mcp-lazy-tools`. OFF by default ⇒ **full flat catalog
+   (unchanged)**; enabling it switches to lazy mode (core + executors + on-demand
+   schema). This respects the project's opt-in / fail-closed feature-toggle contract:
+   default-off = current behaviour, so nothing breaks until a consumer chooses lazy.
+
+5. **Core/long-tail registration granularity** — **per-TYPE** (Option A). Lazy mode
+   keeps whole core tool-type classes flat; a few long-tail tools living inside a
+   core class staying flat is negligible against the −97% win, and it avoids custom
+   per-method registration that would diverge from the SDK's `WithTools(types)` scan.
 
 ### Still open (during stories, non-blocking)
 
-- Exact core-tool list + index taxonomy (Story 7).
+- Exact core tool-type list + index taxonomy (Story 7; provisional 20-tool core set
+  in Story 9 inventory).
 - Arg-binding converter approach: argv re-parse vs custom kebab-aware deserializer
-  (Story 4).
+  (Story 4 — resolved: argv re-parse via CommandLineParser).
 
 ## Consequences
 
