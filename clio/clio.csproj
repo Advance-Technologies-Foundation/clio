@@ -10,8 +10,8 @@
 		<Authors>creatio rnd team</Authors>
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
-		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.58</AssemblyVersion>
+		<!-- Fallback sentinel; SetVersionFromGitTag target replaces it with the latest git tag. CI overrides via /p:AssemblyVersion. -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">0.0.0.0</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -166,7 +166,7 @@
 
 	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
 	<Target Name="SetVersionFromGitTag"
-	        BeforeTargets="GenerateAssemblyInfo;GenerateNuspec"
+	        BeforeTargets="GetAssemblyVersion;GenerateNuspec"
 	        Condition="'$(AssemblyVersion)' == '0.0.0.0'">
 		<Exec Command="git describe --tags --abbrev=0 --match &quot;[0-9]*.[0-9]*.[0-9]*.[0-9]*&quot;"
 		      ConsoleToMSBuild="true"
