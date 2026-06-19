@@ -54,14 +54,24 @@ DESCRIPTION
     - Call `clio get-guidance --name page-schema-resources` for localization details
 
     CONFLICT DETECTION:
-    When --expected-checksum is supplied, update-page compares it against the
-    current SysSchema.Checksum of the editable schema before saving. If the
-    schema was modified outside your session (for example, edited in the
-    Creatio designer), the save is blocked with a structured conflict response
-    (conflict: true + conflictDetails) instead of silently overwriting the
-    external changes. Re-run get-page, re-apply your edit on top of the fresh
-    body, then retry — or pass --force to deliberately overwrite. A small
-    race window between the check and the save remains (last write wins).
+    update-page guards against overwriting schema changes made outside your
+    session (for example, edited in the Creatio designer). It obtains the
+    baseline checksum in one of two ways:
+      - automatically, from the .clio-pages/{schema-name}/meta.json baseline
+        written by a previous get-page for the same environment. No extra flags
+        are needed — this is what protects AI-agent CLI flows that read a page
+        with get-page and then save it with update-page.
+      - explicitly, from --expected-checksum (takes precedence over the on-disk
+        baseline).
+    Before saving, the baseline is compared against the current
+    SysSchema.Checksum of the editable schema. On a mismatch the save is blocked
+    with a structured conflict response (conflict: true + conflictDetails)
+    instead of silently overwriting the external changes. Re-run get-page,
+    re-apply your edit on top of the fresh body, then retry — or pass --force to
+    deliberately overwrite. After a successful save the on-disk baseline is
+    refreshed automatically, so consecutive updates in the same session do not
+    false-conflict. A small race window between the check and the save remains
+    (last write wins).
 
 SYNOPSIS
     clio update-page [options]

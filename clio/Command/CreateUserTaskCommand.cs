@@ -128,7 +128,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 			PackageUId = packageUId
 		});
 		string createResponseJson = ApplicationClient.ExecutePostRequest(createNewSchemaUrl, createRequestBody,
-			RequestTimeout, RetryCount, DelaySec);
+			RequestTimeout, MaxAttempts, DelaySec);
 
 		DesignerResponse<ProcessUserTaskDesignSchemaDto> createResponse = UserTaskSchemaSupport
 			.Deserialize<DesignerResponse<ProcessUserTaskDesignSchemaDto>>(createResponseJson, "CreateNewSchema");
@@ -142,7 +142,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		string saveSchemaUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema);
 		string saveRequestBody = JsonSerializer.Serialize(schema);
 		string saveResponseJson = ApplicationClient.ExecutePostRequest(saveSchemaUrl, saveRequestBody, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 
 		SaveDesignItemDesignerResponse saveResponse = UserTaskSchemaSupport
 			.Deserialize<SaveDesignItemDesignerResponse>(saveResponseJson, "SaveSchema");
@@ -164,7 +164,7 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 			PackageName = packageName
 		});
 		Logger.WriteInfo($"Building package '{packageName}'...");
-		ApplicationClient.ExecutePostRequest(buildPackageUrl, buildRequestBody, RequestTimeout, RetryCount, DelaySec);
+		ApplicationClient.ExecutePostRequest(buildPackageUrl, buildRequestBody, RequestTimeout, MaxAttempts, DelaySec);
 	}
 
 	private void ApplyParameterDirectionMetadataIfNeeded(string packageName, string schemaName,

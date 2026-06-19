@@ -462,7 +462,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
@@ -1210,7 +1210,7 @@ public class PageToolsTests
 					}
 				}
 			}.ToString());
-		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
 
 		// Act
 		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -1271,7 +1271,7 @@ public class PageToolsTests
 				if (callIndex == 2) return getSchemaResponse.ToString();
 				return saveResponse.ToString();
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1303,7 +1303,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1347,7 +1347,7 @@ public class PageToolsTests
 				SchemaType = 9
 			}
 		]);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrWeb_FormPage",
 			Body = """
@@ -1408,7 +1408,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [
@@ -1485,7 +1485,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		// The incoming replace body changes that same UsrName from insert to merge.
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrDowngrade_FormPage",
@@ -1536,12 +1536,12 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "$Resources.Strings.UsrName" } }]""",
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
@@ -1589,7 +1589,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -1620,7 +1620,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -1657,7 +1657,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		var options = new PageUpdateOptions {
 			SchemaName = "MissingPage",
 			Body = validBody,
@@ -1676,7 +1676,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrEmptyBody_FormPage",
 			Body = string.Empty,
@@ -1703,7 +1703,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrInvalidResources_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1730,7 +1730,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrProxyBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1756,7 +1756,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMergeBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMergeBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1778,7 +1778,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrHandlerDrivenBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrHandlerDrivenBinding_FormPage",
 			Body = CreatePageBody(
@@ -1810,7 +1810,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrValidatorPlacement_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrValidatorPlacement_FormPage",
 			Body = CreatePageBody(
@@ -1843,11 +1843,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
@@ -1874,11 +1874,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		// The actual broken body from the ENG-89796 production incident: `await X = Y`
 		// — `await` is an expression and cannot be an assignment target.
 		string incidentBody = "define(\"Bad_FormPage\", [], function() {\n" +
@@ -1916,11 +1916,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1948,14 +1948,14 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1977,11 +1977,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -2008,11 +2008,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -2038,11 +2038,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
@@ -2070,11 +2070,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
@@ -2138,13 +2138,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2184,13 +2184,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2229,13 +2229,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2278,13 +2278,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2342,7 +2342,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
@@ -2389,7 +2389,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
@@ -2435,7 +2435,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
@@ -2459,7 +2459,16 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
+	}
+
+	private static IPageFileWriter CreatePassthroughPageFileWriter() {
+		IPageFileWriter writer = Substitute.For<IPageFileWriter>();
+		writer.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		return writer;
 	}
 
 	private static (PageGetTool tool, MockFileSystem mockFs) CreatePageGetToolWithBody(string body) {
@@ -2483,7 +2492,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		return (new PageGetTool(command, logger, commandResolver, mockFs), mockFs);
+		return (new PageGetTool(command, logger, commandResolver, new PageFileWriter(mockFs)), mockFs);
 	}
 
 	private static JObject CreateMetadataResponse(
@@ -2581,7 +2590,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2627,7 +2636,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2837,7 +2846,7 @@ public class PageToolsTests
 		failingFs.DirectoryInfo.New(Arg.Any<string>()).Returns(workspaceDir);
 		failingFs.Directory.When(d => d.CreateDirectory(Arg.Any<string>()))
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
-		PageGetTool tool = new(command, logger, commandResolver, failingFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(failingFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2918,7 +2927,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue(because: "expected success; error: " + response.Error);
@@ -2989,7 +2998,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -3043,7 +3052,7 @@ public class PageToolsTests
 				};
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -3165,7 +3174,7 @@ public class PageToolsTests
 				};
 			});
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
@@ -3212,7 +3221,7 @@ public class PageToolsTests
 		};
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder);
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder, CreatePassthroughPageFileWriter());
 
 		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = "Leads_ListPage" }, out PageGetResponse response);
 
@@ -3289,7 +3298,7 @@ public class PageToolsTests
 				};
 			});
 		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
 			SchemaName = "Opportunities_ListPage",
@@ -3995,14 +4004,14 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -4045,7 +4054,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -4053,7 +4062,7 @@ public class PageToolsTests
 		samplingService
 			.TrySamplingReviewAsync(Arg.Any<ModelContextProtocol.Server.McpServer>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
 			.Returns((PageSamplingReview)null);
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody();
 		PageUpdateArgs args = new("UsrValid_FormPage", body, "{\"caption\":\"Hello\"}", null, null, null, null, null);
 
@@ -4082,12 +4091,12 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
 		PageUpdateArgs args = new("UsrBad_FormPage", "define('BadPage', {})}", null, null, null, null, null, null);
 
 		// Act
@@ -4113,11 +4122,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
 
 		// Act
@@ -4140,11 +4149,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, bodyWithBadJson);
@@ -4178,11 +4187,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new MockFileSystem());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
 		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
 

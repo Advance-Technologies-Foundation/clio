@@ -87,7 +87,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		string deleteUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem);
 		string deleteRequestBody = JsonSerializer.Serialize(new[] { schemaItem });
 		string deleteResponseJson = ApplicationClient.ExecutePostRequest(deleteUrl, deleteRequestBody, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 
 		DeleteWorkspaceItemsResponse deleteResponse =
 			Deserialize<DeleteWorkspaceItemsResponse>(deleteResponseJson, "Delete");
@@ -110,7 +110,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			// silent success:true rowsAffected:0 — see clio.tests/Command/DeleteSchemaRemoteCommandTests.
 			string itemsUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems);
 			string itemsJson = ApplicationClient.ExecutePostRequest(
-				itemsUrl, string.Empty, RequestTimeout, RetryCount, DelaySec);
+				itemsUrl, string.Empty, RequestTimeout, MaxAttempts, DelaySec);
 			WorkspaceItemsResponse itemsResponse =
 				Deserialize<WorkspaceItemsResponse>(itemsJson, "GetWorkspaceItems");
 			WorkspaceExplorerItemDto item = (itemsResponse.Items ?? [])
@@ -125,7 +125,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 			string deleteUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeleteWorkspaceItem);
 			string requestBody = JsonSerializer.Serialize(new[] { item });
 			string responseJson = ApplicationClient.ExecutePostRequest(
-				deleteUrl, requestBody, RequestTimeout, RetryCount, DelaySec);
+				deleteUrl, requestBody, RequestTimeout, MaxAttempts, DelaySec);
 			DeleteWorkspaceItemsResponse deleteResponse =
 				Deserialize<DeleteWorkspaceItemsResponse>(responseJson, "Delete");
 			if (!deleteResponse.Success || deleteResponse.RowsAffected <= 0) {
@@ -196,7 +196,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 	private WorkspaceExplorerItemDto FindWorkspaceSchemaItem(string schemaName, HashSet<string> workspacePackages) {
 		string getWorkspaceItemsUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems);
 		string responseJson = ApplicationClient.ExecutePostRequest(getWorkspaceItemsUrl, string.Empty, RequestTimeout,
-			RetryCount, DelaySec);
+			MaxAttempts, DelaySec);
 
 		WorkspaceItemsResponse response = Deserialize<WorkspaceItemsResponse>(responseJson, "GetWorkspaceItems");
 		List<WorkspaceExplorerItemDto> matches = (response.Items ?? [])

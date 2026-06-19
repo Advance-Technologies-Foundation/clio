@@ -4,7 +4,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -13,7 +12,7 @@ public sealed class PageGetTool(
 	PageGetCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver,
-	IFileSystem fileSystem)
+	IPageFileWriter pageFileWriter)
 	: BaseTool<PageGetOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "get-page";
@@ -56,90 +55,24 @@ public sealed class PageGetTool(
 				return new PageGetResponse { Success = false, Error = ex.Message };
 			}
 			resolvedCommand.TryGetPage(options, out PageGetResponse response);
-			if (response.Success) {
-				return WriteFilesAndCompact(response, args);
+			if (!response.Success) {
+				return response;
 			}
-			return response;
+			PageGetResponse written = pageFileWriter.WritePageFiles(
+				response, args.SchemaName, args.EnvironmentName, args.Uri, args.OutputDirectory);
+			if (!written.Success) {
+				return written;
+			}
+			// Compact the MCP envelope: the heavy bundle/raw payloads now live on disk
+			// (bundle.json/body.js), so the tool returns metadata + file paths only — mirroring
+			// the prior WriteFilesAndCompact behavior.
+			return new PageGetResponse {
+				Success = true,
+				Page = written.Page,
+				Editable = written.Editable,
+				Files = written.Files
+			};
 		});
-	}
-
-	private PageGetResponse WriteFilesAndCompact(PageGetResponse response, PageGetArgs args) {
-		string schemaName = args.SchemaName;
-		string? outputDirectory = args.OutputDirectory;
-		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-			fileSystem,
-			fileSystem.Directory.GetCurrentDirectory(),
-			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			ClioRuntimePaths.Home,
-			outputDirectory);
-		string rootDir = fileSystem.Path.Combine(anchor, ".clio-pages");
-		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
-		try {
-			if (fileSystem.Directory.Exists(schemaDir)) {
-				fileSystem.Directory.Delete(schemaDir, recursive: true);
-			}
-			fileSystem.Directory.CreateDirectory(schemaDir);
-			EnsureGitIgnoreEntry(rootDir);
-		} catch (Exception ex) {
-			return new PageGetResponse { Success = false, Error = $"Failed to prepare output directory '{schemaDir}': {ex.Message}" };
-		}
-		string bodyFile   = fileSystem.Path.Combine(schemaDir, "body.js");
-		string bundleFile = fileSystem.Path.Combine(schemaDir, "bundle.json");
-		string metaFile   = fileSystem.Path.Combine(schemaDir, "meta.json");
-		string fetchedAt = DateTime.UtcNow.ToString("o");
-		PageBaselineInfo baseline = BuildBaseline(args, response, fetchedAt);
-		try {
-			fileSystem.File.WriteAllText(bodyFile,   response.Raw.Body);
-			fileSystem.File.WriteAllText(bundleFile, System.Text.Json.JsonSerializer.Serialize(response.Bundle));
-			fileSystem.File.WriteAllText(metaFile,   System.Text.Json.JsonSerializer.Serialize(new PageMetaFileModel {
-				FetchedAt = fetchedAt,
-				Page = response.Page,
-				Baseline = baseline
-			}));
-		} catch (Exception ex) {
-			return new PageGetResponse { Success = false, Error = $"Failed to write page files: {ex.Message}" };
-		}
-		return new PageGetResponse {
-			Success = true,
-			Page = response.Page,
-			Editable = response.Editable,
-			Files = new PageGetFilesInfo {
-				BodyFile = bodyFile,
-				BundleFile = bundleFile,
-				MetaFile = metaFile,
-				FetchedAt = fetchedAt
-			}
-		};
-	}
-
-	private void EnsureGitIgnoreEntry(string rootDir) {
-		try {
-			if (!fileSystem.Directory.Exists(rootDir)) {
-				fileSystem.Directory.CreateDirectory(rootDir);
-			}
-			string gitignorePath = fileSystem.Path.Combine(rootDir, ".gitignore");
-			if (!fileSystem.File.Exists(gitignorePath)) {
-				fileSystem.File.WriteAllText(gitignorePath, "*\n!.gitignore\n");
-			}
-		} catch {
-			// ignore — gitignore is best-effort hygiene; never block a successful get-page.
-		}
-	}
-
-	private static PageBaselineInfo BuildBaseline(PageGetArgs args, PageGetResponse response, string fetchedAt) {
-		if (response.Editable is null) {
-			return null;
-		}
-		return new PageBaselineInfo {
-			SchemaName = args.SchemaName,
-			EnvironmentName = string.IsNullOrWhiteSpace(args.EnvironmentName) ? null : args.EnvironmentName,
-			EnvironmentUri = string.IsNullOrWhiteSpace(args.Uri) ? null : args.Uri,
-			EditableSchemaExists = response.Editable.EditableSchemaExists,
-			EditableSchemaUId = response.Editable.EditableSchemaUId,
-			Checksum = response.Editable.Checksum,
-			ModifiedOn = response.Editable.ModifiedOn,
-			CapturedAt = fetchedAt
-		};
 	}
 }
 

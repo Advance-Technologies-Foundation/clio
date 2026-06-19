@@ -127,6 +127,7 @@ namespace Clio.Command {
 		private readonly ILogger _logger;
 		private readonly IPageDesignerHierarchyClient _hierarchyClient;
 		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
+		private readonly IPageBaselineGuard _pageBaselineGuard;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -134,6 +135,12 @@ namespace Clio.Command {
 		/// <param name="applicationClient">Remote Creatio client.</param>
 		/// <param name="serviceUrlBuilder">Service URL builder.</param>
 		/// <param name="logger">Logger used for CLI output.</param>
+		/// <param name="pageBaselineGuard">Required shared conflict-detection baseline orchestrator. The CLI
+		/// entry point auto-discovers the on-disk <c>.clio-pages/{schema}/meta.json</c> baseline
+		/// before a save and refreshes it afterwards — so CLI users get the same external-modification
+		/// protection as the MCP tools without passing <c>--expected-checksum</c> by hand. Injected as a
+		/// required dependency so a broken DI registration fails loudly at resolve time instead of
+		/// silently reverting to overwrite-without-checking.</param>
 		/// <param name="hierarchyClient">Designer hierarchy client used to resolve replacing schemas.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
@@ -141,6 +148,7 @@ namespace Clio.Command {
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			ILogger logger,
+			IPageBaselineGuard pageBaselineGuard,
 			IPageDesignerHierarchyClient hierarchyClient = null,
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null) {
 			_applicationClient = applicationClient;
@@ -148,6 +156,7 @@ namespace Clio.Command {
 			_logger = logger;
 			_hierarchyClient = hierarchyClient;
 			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
+			_pageBaselineGuard = pageBaselineGuard;
 		}
 
 		/// <summary>
@@ -352,7 +361,14 @@ namespace Clio.Command {
 		/// <returns>Command exit code.</returns>
 		public override int Execute(PageUpdateOptions options) {
 			options.NotifyDesignerPresence = true;
+			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
+			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
+			// schema was modified out-of-band, instead of silently overwriting the external edit.
+			(string metaFilePath, bool baselineArmed) = _pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
+			if (baselineArmed && success && !options.DryRun) {
+				_pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+			}
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
 		}

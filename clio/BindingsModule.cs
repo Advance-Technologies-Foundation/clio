@@ -275,6 +275,10 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
+		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
+		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
@@ -637,6 +641,10 @@ public class BindingsModule {
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();
+		services.AddTransient<GetIdentityAssertionCommand>();
+		services.AddTransient<GetIdentityPublicJwkCommand>();
+		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
+		services.AddTransient<CheckAuthCodeFlowCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
