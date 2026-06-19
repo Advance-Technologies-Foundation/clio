@@ -216,6 +216,10 @@ internal class Program {
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
+		typeof(GetIdentityAssertionOptions),
+		typeof(GetIdentityPublicJwkOptions),
+		typeof(RegenerateIdentitySigningKeyOptions),
+		typeof(CheckAuthCodeFlowOptions),
 
 
 	];
@@ -457,6 +461,10 @@ internal class Program {
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
+			GetIdentityAssertionOptions opts => Resolve<GetIdentityAssertionCommand>(opts).Execute(opts),
+			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
+			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
+			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
