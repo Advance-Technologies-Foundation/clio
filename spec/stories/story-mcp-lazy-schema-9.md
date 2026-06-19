@@ -4,7 +4,7 @@
 **FR coverage**: ADR Risks ("Breaking consumers", "Migration scale ×74") — inventory prerequisite
 **PRD**: _none — spike-driven feature_
 **ADR**: [adr-mcp-lazy-schema.md](../adr/adr-mcp-lazy-schema.md)
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day) — documents-only inventory; empty code diff (spec/** only)
 **Risk**: HIGH — **BLOCKER for flipping any default (Story 10); estimates are unrealistic without it**
 **Blocked by**: story-mcp-lazy-schema-0
@@ -65,7 +65,34 @@ SM = empty code diff (spec/** only).
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: n/a — documents-only (empty code diff; spec/** only)
 - Notes:
+  - Output: [spec/mcp-lazy-schema/mcp-lazy-schema-migration-inventory.md](../mcp-lazy-schema/mcp-lazy-schema-migration-inventory.md).
+    All counts extracted from the spike branch @ `f594e913` (no invented data); the
+    extraction method is in the doc's Appendix.
+  - **Real numbers (corrects ADR estimates):**
+    - Total MCP tools = **126** (ADR's "~124" was approximate). 39 ReadOnly, 62 Destructive.
+    - Proposed flat **core = 20** (Story 7 finalises); **long-tail = 106** → 44 safe
+      (`clio-run`), 62 destructive (`clio-run-destructive`).
+    - Curated contracts = **61** in `ToolContractCatalog.Contracts` (47 in the default
+      `CanonicalToolNames` — that is the ADR's "~46"); **63** non-executor tools are
+      **uncovered** (Story 6 gap), including 3 that are in the proposed core
+      (`find-app`, `list-environments`, `list-packages`).
+  - **AC-01** — §1/§3: full 126-tool catalog with flags + per-command 8-artifact matrix +
+    repo-wide artifact denominators; Story 11 migration estimate ≈ 300–400 file edits.
+  - **AC-02** — §4: consumer references across CAADT, adaclio, clio e2e with repo+path; one
+    vendored-pyyaml false positive excluded. adaclio allow-lists by `mcp__clio` prefix (not
+    per-tool) so its allow-list survives; e2e/unit `CallToolAsync("<flat-name>")` are hard
+    bindings that break on the move.
+  - **AC-03** — §5 (104-row alias list, 75 consumer-backed) + §3 (per-command checklist).
+  - **AC-04** — §3: Prompts (~19 files / ≥24 long-tail names) and Resources (28 files)
+    that reference moved tool names are inventoried.
+  - **AC-05** — §1 `Tier` column assigns every tool to core/long-tail (none unassigned);
+    Story 1's profile config remains authoritative.
+  - **AC-ERR** — §4: all three named repos present and grepped (no unverified entries);
+    integrations outside the three named repos flagged as residual/unverified risk.
+  - MCP review: documents-only spec change; no MCP tool/prompt/resource source touched ⇒
+    **MCP reviewed, no update required**. Docs: no command behavior changed ⇒
+    **docs reviewed, no update required**.

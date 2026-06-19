@@ -651,8 +651,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: M
     risk: high
-    status: ready-for-dev
-    note: "Unblocked 2026-06-19 (Story 0 resolved). BLOCKER for the default flip (Story 10) and the ×74 migration (Story 11). Documents-only (spec/** diff). Inventories ~74 commands × 8 artifact types + every hardcoded flat-tool-name consumer; produces the alias list + per-command checklist."
+    status: review
+    note: "DONE 2026-06-19 (documents-only, empty code diff). spec/mcp-lazy-schema/mcp-lazy-schema-migration-inventory.md @ f594e913. Real counts: 126 tools (39 RO / 62 destructive); proposed core=20, long-tail=106 (44 safe→clio-run, 62→clio-run-destructive); 61 curated contracts (47 default CanonicalToolNames), 63 uncovered (Story 6 gap, incl 3 core: find-app/list-environments/list-packages); 76 long-tail names referenced by consumers; 104-row alias list (75 consumer-backed). Story 11 ≈300-400 file edits. BLOCKER for Story 10 flip + Story 11 migration now cleared."
     file: spec/stories/story-mcp-lazy-schema-9.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
