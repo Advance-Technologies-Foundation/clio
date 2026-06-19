@@ -69,11 +69,12 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			return Error($"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.");
 		}
 
-		CallToolResult gateFailure = EnforceDestructivenessGate(toolName, destructiveSurface);
-		if (gateFailure is not null) {
-			return gateFailure;
-		}
-
+		// No destructive-vs-safe refusal: field testing showed capable models loop indefinitely on the
+		// "use the other executor" redirect (20+ redirects, zero actions) and never build. Both clio-run
+		// and clio-run-destructive now execute ANY tool directly; destructive safety is enforced at the
+		// HOST level via the tools' Destructive=true flag (the host prompts/those gated commands behave
+		// exactly as they did in the pre-lazy full catalog). `destructiveSurface` is retained on the
+		// signature for back-compat but no longer routes/refuses.
 		CallToolRequestParams childParams;
 		try {
 			childParams = BuildChildParams(toolName, tool, args);
@@ -113,19 +114,6 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			current = current.InnerException;
 		}
 		return current.Message;
-	}
-
-	private CallToolResult EnforceDestructivenessGate(string toolName, bool destructiveSurface) {
-		bool isDestructive = toolRegistry.IsDestructive(toolName);
-		if (destructiveSurface && !isDestructive) {
-			return Error(
-				$"Error: tool '{toolName}' is not destructive; run it via 'clio-run' instead of 'clio-run-destructive'.");
-		}
-		if (!destructiveSurface && isDestructive) {
-			return Error(
-				$"Error: tool '{toolName}' is destructive (or its safety is unknown); run it via 'clio-run-destructive'.");
-		}
-		return null;
 	}
 
 	// Maps the caller's free-form `args` object onto the target tool's argument dictionary. Most clio
@@ -187,20 +175,22 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 }
 
 /// <summary>
-/// Generic, non-destructive MCP executor for the long tail of clio tools. Never
-/// <see cref="McpServerToolAttribute.ReadOnly"/> / auto-approve. Refuses destructive tools.
+/// Single generic MCP executor for the long tail of clio tools hidden from <c>tools/list</c> in lazy
+/// mode. Runs ANY tool (read or write/destructive) by name — the caller never has to choose a different
+/// executor. Marked <see cref="McpServerToolAttribute.Destructive"/> so the host gates it; never
+/// <see cref="McpServerToolAttribute.ReadOnly"/> / auto-approve.
 /// </summary>
 [McpServerToolType]
 public sealed class ClioRunTool(IClioRunExecutor executor) {
 
-	/// <summary>Stable MCP tool name for the safe generic executor.</summary>
+	/// <summary>Stable MCP tool name for the generic executor.</summary>
 	internal const string ToolName = "clio-run";
 
 	/// <summary>
-	/// Runs a non-destructive clio MCP tool by name with free-form JSON arguments.
+	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-	[Description("Generic executor for the non-destructive long tail of clio MCP tools hidden from tools/list. `command` is an MCP tool name (kebab-case, e.g. \"sync-pages\", \"execute-esq\") and `args` is the JSON arguments object that tool expects. Refuses destructive tools (use `clio-run-destructive`). Unknown tool or invalid args return a structured Error result. NOT auto-approved.")]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
 		[Description("clio MCP tool name (kebab-case), e.g. \"execute-esq\"")] string command,
@@ -210,20 +200,21 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 }
 
 /// <summary>
-/// Generic MCP executor for destructive clio tools. Routes only tools classified as destructive;
-/// refuses non-destructive ones.
+/// Deprecated alias of <see cref="ClioRunTool"/> kept for back-compat. Behaves identically — runs ANY
+/// tool by name (it no longer refuses non-destructive tools), so a caller that picks either executor
+/// succeeds. Prefer <c>clio-run</c>.
 /// </summary>
 [McpServerToolType]
 public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 
-	/// <summary>Stable MCP tool name for the destructive generic executor.</summary>
+	/// <summary>Stable MCP tool name for the (deprecated) destructive alias.</summary>
 	internal const string ToolName = "clio-run-destructive";
 
 	/// <summary>
-	/// Runs a destructive clio MCP tool by name with free-form JSON arguments.
+	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Generic executor for DESTRUCTIVE clio MCP tools hidden from tools/list (sync-schemas, odata-create/update/delete, delete-app, restore-creatio, compile-creatio, create/update-sys-setting, etc.). `command` is an MCP tool name (kebab-case) and `args` is the JSON arguments object that tool expects. Refuses non-destructive tools (use `clio-run`). Unknown tool or invalid args return a structured Error result. Hosts should require confirmation.")]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
 		[Description("clio MCP tool name (kebab-case), e.g. \"sync-schemas\"")] string command,

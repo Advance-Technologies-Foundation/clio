@@ -142,36 +142,43 @@ public sealed class ClioRunDispatchTests {
 			because: "the error must explain the missing command");
 	}
 
+	// The destructive-vs-safe REFUSAL was removed: field testing showed capable models loop forever on
+	// the "use the other executor" redirect and never act. Both surfaces now run ANY tool directly;
+	// host-level Destructive=true is the safety boundary. These tests pin that there is no refusal.
 	[Test]
 	[Category("Unit")]
-	[Description("clio-run refuses a destructive tool and points to clio-run-destructive.")]
-	public async Task RunAsync_ShouldRefuse_WhenDestructiveToolRunOnSafeSurface() {
+	[Description("clio-run runs a destructive tool directly (no 'use the other executor' refusal) — eliminates the model-looping footgun.")]
+	public async Task RunAsync_ShouldRunDestructiveTool_WhenInvokedOnSafeSurface() {
 		// Arrange
-		RegisterTool("delete-thing", BuildEchoTool(), destructive: true);
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: true);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
 
 		// Act
-		CallToolResult result = await _sut.RunAsync("delete-thing", null, destructiveSurface: false, CallContext(), CancellationToken.None);
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeTrue(because: "the safe surface must refuse destructive tools");
-		ErrorText(result).Should().Contain("clio-run-destructive",
-			because: "the refusal must route the caller to the destructive surface");
+		result.IsError.Should().NotBe(true, because: "a destructive tool must execute, not be refused with a redirect");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "the executor must reach the real tool regardless of the surface");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("clio-run-destructive refuses a non-destructive tool and points to clio-run.")]
-	public async Task RunAsync_ShouldRefuse_WhenNonDestructiveToolRunOnDestructiveSurface() {
+	[Description("clio-run-destructive runs a non-destructive tool directly (no refusal) — either executor works for any tool.")]
+	public async Task RunAsync_ShouldRunNonDestructiveTool_WhenInvokedOnDestructiveSurface() {
 		// Arrange
-		RegisterTool("get-thing", BuildEchoTool(), destructive: false);
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
 
 		// Act
-		CallToolResult result = await _sut.RunAsync("get-thing", null, destructiveSurface: true, CallContext(), CancellationToken.None);
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: true, CallContext(), CancellationToken.None);
 
 		// Assert
-		result.IsError.Should().BeTrue(because: "the destructive surface must refuse safe tools");
-		ErrorText(result).Should().Contain("not destructive",
-			because: "the refusal must explain the tool belongs on clio-run");
+		result.IsError.Should().NotBe(true, because: "either executor must run any tool without a cross-redirect");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "the executor must reach the real tool regardless of the surface");
 	}
 
 	[Test]
@@ -267,8 +274,8 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("clio-run advertises a non-destructive, non-read-only MCP tool so it is never auto-approved.")]
-	public void ClioRunTool_ShouldExposeNonDestructiveNonReadOnlyMetadata() {
+	[Description("clio-run advertises Destructive=true (host-gated) and never ReadOnly, since it can run write/destructive tools.")]
+	public void ClioRunTool_ShouldExposeDestructiveNonReadOnlyMetadata() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ClioRunTool)
 			.GetMethod(nameof(ClioRunTool.Run))!
@@ -280,7 +287,8 @@ public sealed class ClioRunDispatchTests {
 		// Assert
 		attribute.Name.Should().Be(ClioRunTool.ToolName, because: "the tool uses its stable name constant");
 		attribute.ReadOnly.Should().BeFalse(because: "clio-run must never be ReadOnly/auto-approved");
-		attribute.Destructive.Should().BeFalse(because: "the safe surface advertises non-destructive");
+		attribute.Destructive.Should().BeTrue(
+			because: "clio-run can dispatch destructive tools, so the host must gate it (host-level safety replaces the removed executor split)");
 	}
 
 	[Test]
