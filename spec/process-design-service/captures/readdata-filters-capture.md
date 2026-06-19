@@ -119,6 +119,12 @@ Same tree, **stripped** of `className`, `key`, `leftExpressionCaption`, `referen
 - **Signal start** uses the **same wrapper**, stored on the element's `EntityFilters` string property
   (metadata key `DZ13`). `BaseSignalEventPropertiesPage` overrides `get/setDataSourceFiltersValue` to use
   `EntityFilters` and reuses the same `FilterModuleMixin`.
+- **⚠️ `HasEntityFilters` (DZ8, `[MetaTypeProperty]`, defaults `false`) MUST be set `true`** when a signal
+  start carries an `EntityFilters`. The runtime evaluates `EntityFilters` **only** when `HasEntityFilters`
+  is true; otherwise the filter is stored (and renders in the designer) but ignored — the signal fires on
+  every matching change. Confirmed by comparing a clio-built process (no `HasEntityFilters` → fired on any
+  change) against the designer's working version (`HasEntityFilters: true`). `WriteMetaData` omits the key
+  when false, so its absence in serialized metadata = disabled.
 - **Runtime reads only `dataSourceFilters`** — `serializedFilterEditData` is purely for designer re-edit.
   We emit **both** so the generated process is runnable AND re-editable in the designer.
 - **No server builder API** — `Terrasoft.*` exposes no "FilterGroup → JSON" helper we can call (the
