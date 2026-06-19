@@ -225,7 +225,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
 		return new ComponentCatalogState(
-			orderedEntries, lookup, resolvedVersion, source, globalReferences, orderedComposites);
+			orderedEntries, lookup, resolvedVersion, source, globalReferences) {
+			Composites = orderedComposites,
+		};
 	}
 
 	/// <summary>
@@ -335,5 +337,11 @@ public sealed record ComponentCatalogState(
 	IReadOnlyDictionary<string, ComponentRegistryEntry> Lookup,
 	string ResolvedVersion,
 	ComponentRegistrySource Source,
-	RegistryGlobalReferences? GlobalReferences = null,
-	IReadOnlyList<CompositeDefinition>? Composites = null);
+	RegistryGlobalReferences? GlobalReferences = null) {
+	/// <summary>
+	/// Top-level composites parsed from the wrapped envelope. Defaults to an empty list so a state
+	/// constructed directly (bypassing <see cref="ComponentInfoCatalog.BuildState"/>) never yields
+	/// null — call sites iterate this list without a null-guard.
+	/// </summary>
+	public IReadOnlyList<CompositeDefinition> Composites { get; init; } = [];
+}
