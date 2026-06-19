@@ -31,10 +31,16 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return new SourceCodeSchemaCreateResponse {
+				Success = false,
+				Error = "schema-name is required"
+			};
+		}
 		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
 			return new SourceCodeSchemaCreateResponse {
 				Success = false,
-				Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
+				Error = PageSchemaMetadataHelper.SchemaNameFormatError
 			};
 		}
 		return ExecuteWithCleanLog(() => {

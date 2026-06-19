@@ -1362,7 +1362,7 @@ public static class SchemaValidationService
 			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
 			// Freedom UI runtime ignores — controls render but read and write no data.
 			result.Errors.Add(
-				"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
+				"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
 				"which is declared in viewModelConfigDiff without the required nesting. " +
 				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
 				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
