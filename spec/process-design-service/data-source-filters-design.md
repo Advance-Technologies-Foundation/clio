@@ -201,5 +201,10 @@ Nested groups, `between`, `in (multiple)`, and date-relative filters are increme
   fields, but designer re-edit is stricter.
 - **Root-object wiring for Read data** — confirm the minimal set of ReadData params to set so the filter
   applies (`ResultEntity` ref + result-mode) without pulling in all of Task 12.
-- **`HasEntityFilters` / empty-filter** — replicate the designer's "is empty" handling so an empty filter
-  doesn't render as a broken trigger.
+- **`HasEntityFilters` / empty-filter** — DONE: `ApplyFilter` sets `HasEntityFilters = !IsEmptyFilter(filter)`
+  on a signal start (a non-empty filter enables it; an empty one leaves it false), mirroring the designer.
+  Without the flag the runtime ignores the filter (found + fixed in live verify).
+- **Date / DateTime / Time constant format — UNVERIFIED.** `ConvertConstant` passes date constants through
+  as strings; the runtime deserializes a filter date via `Json.DeserializeJsonDate` (JSON-deserialize →
+  `DateTime`), so a bare `"2026-06-19"` likely won't parse. Capture a designer date-filter and confirm the
+  accepted value format before relying on date/time constant filters (numeric/text/boolean are verified).
