@@ -31,7 +31,7 @@ internal static class McpServerInstructions
 		Consent can be withdrawn at any time with `withdraw-telemetry-consent`: it stops all further collection and upload and discards the local outbox. Withdrawal is forward-looking — events already uploaded to Creatio are not deleted (they expire on the server-side retention timer). After withdrawal `get-telemetry-consent` returns `denied`.
 		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
 		Call `get-tool-contract` for `get-telemetry-consent`, `send-telemetry`, and `withdraw-telemetry-consent` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
-		Once consent is granted, stored events are uploaded in the background automatically; no agent action is needed.
+		Recording each event needs a `send-telemetry` call; once consent is granted, clio uploads those stored events in the background — no agent action for delivery.
 
 		### Inspect an environment
 		1. `list-environments` → pick an environment name
@@ -69,6 +69,9 @@ internal static class McpServerInstructions
 		- `uninstall-creatio`, `clear-redis-db-by-environment`, `stop-creatio` are high-impact; confirm with the user first.
 		- Do not call `compile-creatio` or `restart-by-environment-name` "just in case" — see the rules above.
 		- When in doubt, prefer read-only tools (`list-packages`, `get-schema`, `list-environments`).
+
+		## Calling tools
+		- Every tool that takes parameters wraps them in a single top-level `args` object: put all fields inside `args`, never at the top level (a flat top-level payload is rejected with a missing-`args` error). Tools with no parameters take an empty object.
 
 		## Tool naming conventions
 		- Many tools have two variants: `*-by-environment-name` (uses a registered alias)
