@@ -7,8 +7,7 @@ internal static class SandboxEnvironmentResolver {
 	public static SandboxEnvironmentContext Resolve(McpE2ESettings settings) {
 		string environmentName = settings.Sandbox.EnvironmentName!;
 		EnvironmentSettings registeredEnvironment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
-		string environmentPath = Path.GetFullPath(
-			ClioEnvironmentCommandResolver.ResolveEnvironmentPath(settings, environmentName));
+		string environmentPath = ResolveEnvironmentPath(settings, environmentName);
 		Directory.Exists(environmentPath).Should().BeTrue(
 			because: "the registered clio environment path must exist on disk for end-to-end sandbox verification");
 
@@ -32,6 +31,17 @@ internal static class SandboxEnvironmentResolver {
 			connectionStringsPath,
 			redisConnectionString,
 			databaseConnectionString);
+	}
+
+	private static string ResolveEnvironmentPath(McpE2ESettings settings, string environmentName) {
+		if (!string.IsNullOrWhiteSpace(settings.Sandbox.EnvironmentPath)) {
+			return Path.GetFullPath(settings.Sandbox.EnvironmentPath);
+		}
+
+		string resolved = ClioEnvironmentCommandResolver.ResolveEnvironmentPath(settings, environmentName);
+		resolved.Should().NotBeNullOrWhiteSpace(
+			because: $"clio envs must surface EnvironmentPath for '{environmentName}', or set McpE2E__Sandbox__EnvironmentPath in CI");
+		return Path.GetFullPath(resolved);
 	}
 
 	private static string GetRequiredConnectionString(XDocument document, string name, string connectionStringsPath) {
