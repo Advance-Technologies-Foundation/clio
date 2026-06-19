@@ -119,7 +119,7 @@ public sealed class InstallApplicationToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<InstallApplicationCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException("Environment with key 'missing-env' not found."));
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
 		InstallApplicationTool tool = new(
 			new FakeInstallApplicationCommand(),
 			ConsoleLogger.Instance,

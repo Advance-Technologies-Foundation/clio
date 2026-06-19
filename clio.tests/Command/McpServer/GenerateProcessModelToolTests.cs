@@ -125,7 +125,7 @@ public sealed class GenerateProcessModelToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GenerateProcessModelCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException("Environment with key 'missing-env' not found."));
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
 		GenerateProcessModelTool tool = new(
 			new FakeGenerateProcessModelCommand(),
 			ConsoleLogger.Instance,

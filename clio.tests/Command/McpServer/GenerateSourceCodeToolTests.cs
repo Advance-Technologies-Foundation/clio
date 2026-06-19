@@ -134,7 +134,7 @@ public sealed class GenerateSourceCodeToolTests
 	public void GenerateSourceCode_Should_Report_Invalid_Environment_As_Command_Result() {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GenerateSourceCodeCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException("Environment with key 'missing-env' not found."));
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
 		GenerateSourceCodeTool tool = new(new FakeGenerateSourceCodeCommand(), ConsoleLogger.Instance, commandResolver);
 
 		CommandExecutionResult result = tool.GenerateSourceCode(

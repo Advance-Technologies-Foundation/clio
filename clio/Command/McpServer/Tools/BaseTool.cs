@@ -49,8 +49,13 @@ public abstract class BaseTool<T>(
 		TCommand resolvedCommand;
 		try {
 			resolvedCommand = ResolveCommand<TCommand>(options);
-		} catch (Exception e) {
+		} catch (EnvironmentResolutionException e) {
+			// Expected, caller-actionable environment/argument failure → exit code 1.
 			return CommandExecutionResult.FromResolverError(e);
+		} catch (Exception e) {
+			// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
+			// misreported as a routine validation error and stays diagnosable.
+			return CommandExecutionResult.FromException(e);
 		}
 
 		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path
@@ -81,9 +86,11 @@ public abstract class BaseTool<T>(
 			return null;
 		}
 		catch (PackageRequirementException ex) {
-			return CommandExecutionResult.FromError(ex.Message);
+			// Expected, caller-actionable precondition refusal (a required package is absent) → exit code 1.
+			return CommandExecutionResult.FromValidationError(ex.Message);
 		}
 		catch (Exception ex) {
+			// Unexpected failure while verifying requirements (e.g. an HTTP/GetPackages error) → exit code -1.
 			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
 		}
 	}
