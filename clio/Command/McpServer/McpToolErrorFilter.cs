@@ -26,8 +26,32 @@ public static class McpToolErrorFilter
 			if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
 			}
-			return await next(context, cancellationToken);
+			try {
+				return await next(context, cancellationToken);
+			}
+			catch (OperationCanceledException) {
+				// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
+				throw;
+			}
+			catch (Exception ex) {
+				// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
+				// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
+				// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
+				// the real (inner-most) message as a structured error result for EVERY tool uniformly.
+				return CreateJsonErrorResult(
+					$"MCP tool '{context.Params?.Name ?? "<unknown>"}' failed: {GetInnermostMessage(ex)}");
+			}
 		};
+
+	// Unwraps to the inner-most exception message so the surfaced detail is the actual cause rather than a
+	// generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
+	private static string GetInnermostMessage(Exception exception) {
+		Exception current = exception;
+		while (current.InnerException is not null) {
+			current = current.InnerException;
+		}
+		return current.Message;
+	}
 
 	private static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
