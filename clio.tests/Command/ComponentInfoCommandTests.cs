@@ -426,6 +426,28 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("--composite with an unknown caption + --pretty surfaces the actionable not-found message (with known captions) and exits 1 — it is NOT silently empty. Render prints 'Error: <message>' for any unsuccessful response before AppendComposite early-returns, so the JSON path's known-captions hint reaches the pretty surface too.")]
+	public async Task Pretty_Output_Surfaces_Composite_NotFound_Message() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Composite = "Definitely Missing", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(1,
+			because: "an unknown composite caption is a lookup failure on the --pretty surface too, not exit 0");
+		logger.Captured.Should().NotBeNullOrWhiteSpace(
+			because: "the not-found message must not be silently swallowed in --pretty");
+		logger.Captured.Should().Contain("Definitely Missing",
+			because: "the rendered error echoes the requested caption so the caller can correct it");
+		logger.Captured.Should().Contain("known composites",
+			because: "the actionable known-captions hint that the JSON path delivers must also reach the --pretty surface via the error line");
+	}
+
+	[Test]
 	[Description("--composite combined with a positional component-type is rejected as mutually exclusive and exits 1.")]
 	public async Task Returns_Exit_Code_1_When_Composite_And_ComponentType_Both_Provided() {
 		using CapturedLogger logger = new();
