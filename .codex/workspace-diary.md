@@ -4063,3 +4063,10 @@ Decision: merged master (append-only .codex/workspace-diary.md conflict kept bot
 Discovery: post-merge CI red was TurnFarmModeCommandTests flaky (shared Path.GetTempPath()/TestSite Windows-runner race, ENG-91317-documented); passed clean on rerun.
 Files: clio/Command/McpServer/Tools/ComponentRegistryDocsClient.cs, .codex/workspace-diary.md
 Impact: PR MERGEABLE/CLEAN, Sonar 0, CI green. Confirms rerun is the right move for TurnFarmMode flakes, not a code fix.
+
+## 2026-06-19 13:00 – PR #738 (ENG-91825) review-fix round: explicitResources + e2e exit code
+Context: Two human reviewers requested changes on the MCP validation-order/exit-code PR; drove the warranted low-risk subset to a clean state.
+Decision: Threaded parsed `options.Resources` (via SchemaValidationService.TryParseResources) through PageUpdateTool.ValidateBody → ValidateWebPageBody into both pre-resolution field-binding validators, matching PageUpdateOptions/PageSyncTool/PageValidateTool. Flipped InstallApplicationToolE2ETests exit-code assertion -1→1 (shared BaseTool resolver path now returns FromResolverError). Updated the stale "Inserted field…" diagnostic in PageModificationGuidanceResource to the reworded message. Added a tool-level regression test (insert + resources param ⇒ Success=true).
+Discovery: The MCP pre-resolution gate was the ONLY caller passing null explicitResources, so a valid update whose label resource arrives via `resources` was false-rejected with "invalid form field bindings". The dedicated-exception (BaseTool catch-all) and exit-code-contract (FromError vs FromResolverError + AC5 docs) findings are design decisions left to the author.
+Files: clio/Command/McpServer/Tools/PageUpdateTool.cs, clio/Command/McpServer/Resources/PageModificationGuidanceResource.cs, clio.mcp.e2e/InstallApplicationToolE2ETests.cs, clio.tests/Command/McpServer/PageUpdateToolBaselineTests.cs
+Impact: Blocker regression + 2 Major findings resolved; McpServer unit suite green (1215 passed). Architectural findings #2/#3 deferred for human decision.
