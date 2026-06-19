@@ -14,6 +14,29 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ToolContractGetTool {
 	internal const string ToolName = "get-tool-contract";
 
+	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
+
+	/// <summary>
+	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
+	/// still resolve; only registry-derived contracts for uncurated tools are unavailable.
+	/// </summary>
+	public ToolContractGetTool()
+		: this(null) {
+	}
+
+	/// <summary>
+	/// Initializes the tool with the invoker registry so contracts for UNCURATED tools are derived from
+	/// the same MCP tool input schema <c>clio-run</c> / <c>clio-run-destructive</c> dispatch against,
+	/// keeping the advertised contract aligned with the real invokable argument shape.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">
+	/// The MCP invoker registry; resolved from DI by the SDK per call (may be <c>null</c> in tests that
+	/// only exercise curated contracts).
+	/// </param>
+	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		_toolInvokerRegistry = toolInvokerRegistry;
+	}
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
 	public ToolContractGetResponse GetToolContracts(
@@ -27,7 +50,7 @@ public sealed class ToolContractGetTool {
 					false,
 					Error: new ToolContractError("invalid-parameter-alias", aliasError));
 			}
-			return ToolContractCatalog.GetContracts(args.ToolNames);
+			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry);
 		} catch (Exception ex) {
 			return new ToolContractGetResponse(
 				false,
@@ -404,7 +427,9 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
+	internal static ToolContractGetResponse GetContracts(
+		IReadOnlyList<string>? toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry = null) {
 		if (toolNames is null || toolNames.Count == 0) {
 			return new ToolContractGetResponse(
 				true,
@@ -428,13 +453,21 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			// Curated contracts take precedence over any derived contract.
 			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
 				results.Add(contract);
 				continue;
 			}
-			// No curated contract: fall back to a contract synthesized from the tool's own input
-			// schema so that any registered-but-uncurated tool stays discoverable instead of
-			// returning tool-not-found.
+			// No curated contract: derive the contract from the SAME registered MCP tool input schema that
+			// clio-run / clio-run-destructive dispatch against, so the advertised contract matches the real
+			// invokable argument shape (Codex review #1). This captures single-scalar params (e.g.
+			// stop-creatio's environmentName) the lossy reflection fallback drops.
+			if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, normalizedName, out ToolContractDefinition registryContract)) {
+				results.Add(registryContract);
+				continue;
+			}
+			// Last resort: reflection over the options type. Only reached when the registry has no entry
+			// (e.g. registry unavailable), and may be lossy for some tools.
 			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;

@@ -4,7 +4,7 @@
 **FR coverage**: ADR Decision 2 (`get-tool-contract` = lazy schema; curated contracts mandatory for long tail)
 **PRD**: _none — spike-driven feature_
 **ADR**: [adr-mcp-lazy-schema.md](../adr/adr-mcp-lazy-schema.md)
-**Status**: ready-for-dev
+**Status**: review
 **Size**: L (full day) — high-count, mechanical-but-broad
 **Risk**: MEDIUM — volume risk; the lossy fallback makes "skip a few" tempting and wrong
 **Blocked by**: story-mcp-lazy-schema-0
@@ -66,7 +66,14 @@ Test naming + AAA + `because` + `[Description]`.
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-06-19
+- Implementation completed: 2026-06-19
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" -f net10.0` → 1267 passed, 1 skipped, 0 failed.
 - Notes:
+  - Scope delivered = the **proper fix for Codex review #1** (the precise gap, not the full "curate all ~124" sweep AC-01..AC-05 originally framed). Codex #1: in lazy mode the long tail is invoked by name via `clio-run` / `clio-run-destructive`, and `get-tool-contract` is the discovery path for those hidden tools. For UNCURATED tools the contract was synthesized by the lossy `McpToolSchemaCatalog` (reflection over options types), which dropped single-scalar params — `stop-creatio`, `clear-redis-db-by-environment`, `restart-by-environment-name` returned an EMPTY property list even though their real dispatched MCP `inputSchema` carries `environmentName`. The advertised contract therefore did not match what `clio-run` actually accepts.
+  - Fix: `get-tool-contract` now derives uncurated contracts from the SAME registered `McpServerTool.InputSchema` in `IMcpToolInvokerRegistry` that `clio-run` dispatches against. Precedence: **curated `ToolContractCatalog` > registry-derived > lossy `McpToolSchemaCatalog` (last-resort only when the registry has no entry / is unavailable)**.
+  - New `McpToolRegistrySchemaContract.TryBuild(registry, name, out contract)` converts the tool's JSON schema → `ToolInputSchemaContract`: unwraps a single top-level `args` object wrapper to its inner `properties`/`required` (mirrors `ClioRunTool.BuildChildParams`), keeps top-level properties for scalar-param tools, normalizes `["string","null"]` → `"string"`, preserves each property description and the tool's top-level description, and marks destructiveness-aware preferred flow.
+  - `ToolContractGetTool` gained an optional `IMcpToolInvokerRegistry` ctor dependency (SDK resolves it per call via `ActivatorUtilities`, same pattern as `ClioRunTool`); a parameterless ctor is retained so curated-only tests keep working. No `BindingsModule` change needed (registry already registered; greediest ctor wins).
+  - The 3 single-scalar env tools (`stop-creatio`, `clear-redis-db-by-environment`, `restart-by-environment-name`) now expose `environmentName` and were MERGED into the `ReturnNonEmptyProperties` coverage set. `stop-all-creatio` genuinely has no args (only an injected `RequestContext`) so it stays in the contract-resolves-only set (InputSchema present, empty properties allowed). Added `ToolContractGet_Should_ExposeEnvironmentNameProperty_ForStopCreatio` as a focused pin.
+  - EMPIRICAL: live `clio mcp-server` → `get-tool-contract({"tool-names":["stop-creatio"]})` returns `properties:[environmentName:string]`, `required:[environmentName]` (before this change: empty). Gap closed.
+  - Deferred (still open, NOT in this story's delivered scope): AC-01/AC-04 full "every long-tail command has a CURATED entry + coverage guard" — uncurated tools are now schema-faithful via the registry, which removes the urgency, but hand-curated descriptions/enums/examples for the remaining long tail are a separate follow-up.

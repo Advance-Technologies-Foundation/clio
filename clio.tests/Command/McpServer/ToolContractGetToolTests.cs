@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -11,6 +14,19 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+	// Builds the get-tool-contract tool over the REAL invoker registry so contracts for uncurated tools
+	// derive from the same MCP tool input schema clio-run dispatches against (Codex review #1, story-6).
+	private static ToolContractGetTool BuildToolWithRegistry() {
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
+		McpToolInvokerRegistry registry = new(
+			provider,
+			typeof(SchemaSyncTool).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+		return new ToolContractGetTool(registry);
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for get-tool-contract.")]
@@ -49,7 +65,7 @@ public sealed class ToolContractGetToolTests {
 	[Description("Every hidden, clio-run-invokable tool resolves to a contract entry with a schema via get-tool-contract, so a lazy-mode client always has something to inspect before dispatch.")]
 	public void ToolContractGet_Should_ResolveContract_ForHiddenInvokableTool(string toolName) {
 		// Arrange
-		ToolContractGetTool tool = new();
+		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
@@ -65,13 +81,16 @@ public sealed class ToolContractGetToolTests {
 	}
 
 	// Arg-bearing tools must expose a USABLE (non-empty) property schema, not an empty fallback.
-	// NOTE (story-6 follow-up): a few single-scalar env tools (stop-creatio, clear-redis-db-by-environment,
-	// restart-by-environment-name) currently auto-generate an EMPTY property list because McpToolSchemaCatalog
-	// does not capture their lone `environmentName` scalar; their real SDK inputSchema DOES carry it. The
-	// proper fix is to source uncurated contracts from the same MCP tool inputSchema clio-run dispatches
-	// (Codex review #1 recommendation). Until then, this guard covers the richer arg-bearing tools.
+	// story-6 (Codex review #1, gap closed): uncurated contracts are now derived from the SAME registered
+	// MCP tool input schema clio-run dispatches against. The single-scalar env tools (stop-creatio,
+	// clear-redis-db-by-environment, restart-by-environment-name) — which the lossy reflection fallback
+	// dropped to an EMPTY property list — now expose their real `environmentName` property, so they are
+	// merged into this non-empty coverage set alongside the richer arg-bearing tools.
 	[Test]
 	[Category("Unit")]
+	[TestCase("stop-creatio")]
+	[TestCase("clear-redis-db-by-environment")]
+	[TestCase("restart-by-environment-name")]
 	[TestCase("sync-schemas")]
 	[TestCase("sync-pages")]
 	[TestCase("odata-read")]
@@ -81,7 +100,7 @@ public sealed class ToolContractGetToolTests {
 	[Description("An arg-bearing hidden tool exposes a non-empty property schema via get-tool-contract, so the client can build a valid clio-run call.")]
 	public void ToolContractGet_Should_ReturnNonEmptyProperties_ForArgBearingHiddenTool(string toolName) {
 		// Arrange
-		ToolContractGetTool tool = new();
+		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
@@ -90,6 +109,29 @@ public sealed class ToolContractGetToolTests {
 		result.Tools.Should().NotBeNullOrEmpty(because: "a known invokable tool must return a contract entry");
 		result.Tools!.Single().InputSchema.Properties.Should().NotBeEmpty(
 			because: "an arg-bearing tool must expose a usable property schema, not an empty fallback");
+	}
+
+	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
+	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
+	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract derives stop-creatio's contract from the real dispatched MCP input schema and exposes the environmentName property, matching what clio-run actually accepts.")]
+	public void ToolContractGet_Should_ExposeEnvironmentNameProperty_ForStopCreatio() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["stop-creatio"]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "stop-creatio is invokable via clio-run-destructive and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.InputSchema.Properties.Select(property => property.Name).Should().Contain("environmentName",
+			because: "the contract must derive from the real dispatched MCP schema, which carries the environmentName argument clio-run binds");
+		entry.InputSchema.Required.Should().Contain("environmentName",
+			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
 	}
 
 	[Test]

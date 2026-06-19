@@ -619,8 +619,8 @@ stories:
     feature: "mcp-lazy-schema"
     size: L
     risk: medium
-    status: ready-for-dev
-    note: "Unblocked 2026-06-19 (Story 0 resolved). Lossy reflection fallback (McpToolSchemaCatalog.cs:91-178) is NOT acceptable as long-tail schema source. Coverage-guard test fails on uncovered commands."
+    status: review
+    note: "In review 2026-06-19 (Codex review #1 proper fix). get-tool-contract now derives uncurated contracts from the registered McpServerTool.InputSchema clio-run dispatches against (IMcpToolInvokerRegistry); precedence curated > registry-derived > lossy McpToolSchemaCatalog last-resort. stop-creatio / clear-redis-db-by-environment / restart-by-environment-name now expose environmentName (was empty). Full hand-curation + coverage-guard (AC-01/AC-04) deferred."
     file: spec/stories/story-mcp-lazy-schema-6.md
     adr: spec/adr/adr-mcp-lazy-schema.md
     depends_on: [story-mcp-lazy-schema-0]
