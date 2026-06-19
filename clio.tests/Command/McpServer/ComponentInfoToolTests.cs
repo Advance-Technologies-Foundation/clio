@@ -387,6 +387,24 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("List-mode keyword search matches a component by its published @useCase, isolated from the synonym fold: 'cards' appears only inside crt.Gallery.useCases ('Browse an image collection as cards'), so a hit proves the useCases branch — not just the synonym branch — is folded into search.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_UseCase() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "cards" appears ONLY inside crt.Gallery.useCases, isolating the useCases search fold
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "cards"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'cards' is published only in crt.Gallery.useCases")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "useCase search must surface the component whose @useCase matched");
+	}
+
+	[Test]
 	[Description("List-mode search must NOT match a component by its whenNotToUse anti-guidance: a term that appears only in 'do NOT use this when…' must not surface the very component the guidance steers away from (the list response does not even carry whenNotToUse, so such a hit would be misleading).")]
 	public async Task ComponentInfoTool_Should_Not_Match_List_Search_By_WhenNotToUse() {
 		// Arrange
@@ -776,6 +794,41 @@ public sealed class ComponentInfoToolTests {
 			because: "the transient/stable reason must be visible to a human operator too, not only to JSON consumers");
 		matchedText.Should().NotContain("WARNING:",
 			because: "an environment-matched catalog has no superset risk to flag");
+	}
+
+	[Test]
+	[Description("The pretty renderer emits every one of the six selection-metadata lines (whenToUse / whenNotToUse / synonyms with ', ' join / useCases with '; ' join / appliesToCustomEntities 'no' arm / entityCouplingNote) when the producer published them, so the human --pretty detail view reaches full parity with the MCP JSON, not just the whenToUse line.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_All_Selection_Metadata_Lines() {
+		// Arrange
+		ComponentInfoResponse response = new() {
+			Success = true,
+			Mode = "detail",
+			ComponentType = "crt.Gallery",
+			Description = "Gallery with bulk actions.",
+			WhenToUse = "Use for an image or photo gallery.",
+			WhenNotToUse = "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			Synonyms = ["carousel", "photo grid"],
+			UseCases = ["Browse an image collection as cards", "Showcase a product catalog"],
+			AppliesToCustomEntities = false,
+			EntityCouplingNote = "Bind to a list collection, not a single record."
+		};
+
+		// Act
+		string rendered = ComponentInfoPrettyRenderer.Render(response);
+
+		// Assert
+		rendered.Should().Contain("whenToUse:        Use for an image or photo gallery.",
+			because: "the @whenToUse guidance must reach the human --pretty surface");
+		rendered.Should().Contain("whenNotToUse:     Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-guidance must render so a human reader sees the same caveat AI gets");
+		rendered.Should().Contain("synonyms:         carousel, photo grid",
+			because: "synonyms must render as a ', '-joined list");
+		rendered.Should().Contain("useCases:         Browse an image collection as cards; Showcase a product catalog",
+			because: "useCases must render as a '; '-joined list — a different separator from synonyms");
+		rendered.Should().Contain("appliesToCustomEntities: no",
+			because: "the restrictive appliesToCustomEntities=false value (the whole point of the flag) must render its 'no' arm");
+		rendered.Should().Contain("entityCouplingNote: Bind to a list collection, not a single record.",
+			because: "the entityCouplingNote must surface on the human --pretty view like the JSON response carries it");
 	}
 
 	[Test]

@@ -49,6 +49,13 @@ public sealed class ComponentRegistrySnapshotTests {
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
 			because: "any new key under root.references.* must be mapped or explicitly allowlisted");
 
+		// Assert — count floor guarding the de-truncated fixture (ENG-91571 DoD).
+		// Without it the per-component loop below passes vacuously over any count, so a
+		// silent regression of the live fixture back to the old ~5 curated entries would
+		// keep every web snapshot test green — re-opening exactly the gap this PR closed.
+		state.Entries.Count.Should().BeGreaterThan(150,
+			because: "the ~200-component live catalog is the ENG-91571 DoD — a regression to the old ~5-entry curated set must fail this guard");
+
 		// Assert — per-component entries.
 		foreach (ComponentRegistryEntry entry in state.Entries) {
 			UnmappedKeys(entry.UnmappedExtensions).Should().BeEmpty(

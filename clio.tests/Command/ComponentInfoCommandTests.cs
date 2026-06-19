@@ -171,7 +171,7 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
-	[Description("--pretty renders the Solution A selection-metadata (whenToUse) so the human CLI detail view reaches parity with the MCP JSON response.")]
+	[Description("--pretty wires the Solution A selection-metadata through the CLI verb: the whenToUse line reaches the human detail view. Full per-line rendering parity (all six fields, both appliesToCustomEntities arms, the '; ' vs ', ' joins) is covered directly in ComponentInfoPrettyRenderer_Should_Render_All_Selection_Metadata_Lines.")]
 	public async Task Emits_Selection_Metadata_In_Pretty_Detail() {
 		using CapturedLogger logger = new();
 		ComponentInfoCommand command = CreateCommand(logger);
@@ -179,7 +179,8 @@ public sealed class ComponentInfoCommandTests {
 		int exit = await command.ExecuteAsync(
 			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
 
-		exit.Should().Be(0);
+		exit.Should().Be(0,
+			because: "rendering an existing component in --pretty mode is a successful invocation");
 		logger.Captured.Should().Contain("whenToUse:",
 			because: "the --pretty detail view must label the selection guidance like the JSON response surfaces it");
 		logger.Captured.Should().Contain("Use to trigger an action or open a menu.",
