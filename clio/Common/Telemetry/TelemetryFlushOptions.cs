@@ -44,16 +44,19 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 	internal const string EnabledEnvironmentVariable = "CLIO_TELEMETRY_ENABLED";
 
 	/// <summary>
-	/// Production OTLP/HTTP logs endpoint shipped as the built-in default so any clio installation —
-	/// fresh or updated in place — uploads product telemetry once consent is granted, without
-	/// per-machine configuration. It is the lowest-precedence endpoint source:
-	/// <c>CLIO_TELEMETRY_ENDPOINT</c> and the settings <c>telemetry.endpoint</c> still override it,
-	/// and the opt-out (<c>CLIO_TELEMETRY_ENABLED=false</c> or <c>telemetry.enabled: false</c>)
-	/// suppresses uploading entirely. Shipping the endpoint in the binary — rather than seeding the
-	/// persisted settings file, which clio neither ships nor creates with a default — keeps it a
-	/// single source of truth that a normal clio release can relocate.
+	/// TEST DISTRIBUTION BUILD ONLY (branch test/eng-89424-rnd-default): the built-in default is
+	/// pointed at the R&D STAGING collector so a build handed to testers uploads with zero config
+	/// (consent only). It is https with a valid *.creatio.com cert, so it satisfies the normal
+	/// transport guard — no relaxation needed. The host resolves only on the corporate network
+	/// (internal 10.48.x.x), which is fine for internal testers but useless as a production default.
+	/// On master this is the production endpoint (<c>https://caadt-telemetry.creatio.com/v1/logs</c>).
+	/// DO NOT MERGE this value to master.
+	///
+	/// It is the lowest-precedence endpoint source: <c>CLIO_TELEMETRY_ENDPOINT</c> and the settings
+	/// <c>telemetry.endpoint</c> still override it, and the opt-out
+	/// (<c>CLIO_TELEMETRY_ENABLED=false</c> or <c>telemetry.enabled: false</c>) suppresses uploading.
 	/// </summary>
-	internal const string DefaultEndpoint = "https://caadt-telemetry.creatio.com/v1/logs";
+	internal const string DefaultEndpoint = "https://caadt-telemetry-rnd.creatio.com/v1/logs";
 
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger<TelemetryFlushOptionsProvider> _logger;
