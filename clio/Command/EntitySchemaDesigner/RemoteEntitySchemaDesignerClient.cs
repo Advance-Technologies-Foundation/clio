@@ -19,11 +19,33 @@ internal interface IRemoteEntitySchemaDesignerClient
 	DesignerResponse<EntityDesignSchemaDto>? TryGetSchemaDesignItem(GetSchemaDesignItemRequestDto request, RemoteCommandOptions options);
 	SaveDesignItemDesignerResponse SaveSchema(EntityDesignSchemaDto schema, RemoteCommandOptions options);
 	BaseResponse SaveSchemaDbStructure(Guid schemaUId, RemoteCommandOptions options);
+
+	/// <summary>
+	/// Publishes pending configuration changes so saved entity schemas become visible to designer
+	/// surfaces (lookup pickers, sys-setting reference schema lists). Mirrors the platform designer UI:
+	/// sends a <c>SchemaDesignerRequest</c> with <c>buildWorkspace</c> and <c>buildChangedConfiguration</c>
+	/// flags, and the server picks the publication strategy for its runtime generation — a full workspace
+	/// build on legacy instances or an incremental configuration build plus an
+	/// <c>EntitySchemaManager</c> refresh on modern ones.
+	/// </summary>
+	BaseResponse PublishConfigurationChanges(RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
 		string valueTypeName,
 		RemoteCommandOptions options);
+
+	/// <summary>
+	/// Checks whether a record with the given identifier exists in the referenced entity schema, used to
+	/// validate a lookup <c>Const</c> default before it is persisted. Returns
+	/// <see cref="LookupRecordExistence.Unknown"/> when the check cannot be performed (for example the
+	/// current user has no read access to the referenced entity), so an unverifiable check never blocks a write.
+	/// </summary>
+	/// <param name="schemaName">Referenced entity schema name to query.</param>
+	/// <param name="recordId">Record identifier to look up.</param>
+	/// <param name="options">Remote command options identifying the target environment.</param>
+	/// <returns>Whether the record exists, was not found, or could not be verified.</returns>
+	LookupRecordExistence CheckRecordExists(string schemaName, Guid recordId, RemoteCommandOptions options);
 }
 
 internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesignerClient
@@ -32,6 +54,11 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
+
+	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
+	// which is a compile-class operation. Use the same long timeout as compile-configuration
+	// so a slow-but-successful build is not mistaken for a failure.
+	internal static readonly int PublishConfigurationTimeoutMs = (int)TimeSpan.FromMinutes(60).TotalMilliseconds;
 
 	public RemoteEntitySchemaDesignerClient(IApplicationClient applicationClient, IJsonConverter jsonConverter,
 		IServiceUrlBuilder serviceUrlBuilder) {
@@ -101,6 +128,22 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			"SaveSchemaDbStructure");
 	}
 
+	public BaseResponse PublishConfigurationChanges(RemoteCommandOptions options) {
+		// Build POST is non-idempotent: retrying a timed-out build may stack concurrent full compiles.
+		// One attempt, no retries (maxAttempts: 1), regardless of the command-level defaults. The value is
+		// the total attempt count (minimum 1), so 1 issues exactly one request with no retry.
+		return PostToUrl<SchemaDesignerRequestDto, BaseResponse>(
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SchemaDesignerRequest),
+			new SchemaDesignerRequestDto {
+				BuildWorkspace = true,
+				BuildChangedConfiguration = true
+			},
+			PublishConfigurationTimeoutMs,
+			maxAttempts: 1,
+			options.RetryDelay,
+			"PublishConfigurationChanges");
+	}
+
 	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {
 		return PostToUrl<RuntimeEntitySchemaRequestDto, RuntimeEntitySchemaResponse>(
 			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest),
@@ -146,6 +189,39 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		return response.Rows ?? [];
 	}
 
+	public LookupRecordExistence CheckRecordExists(string schemaName, Guid recordId, RemoteCommandOptions options) {
+		if (string.IsNullOrWhiteSpace(schemaName) || recordId == Guid.Empty) {
+			return LookupRecordExistence.Unknown;
+		}
+		object query = SelectQueryHelper.BuildSelectQuery(
+			schemaName,
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition(
+					"Id",
+					recordId.ToString("D"),
+					SelectQueryHelper.GuidDataValueType)
+			],
+			rowCount: 1);
+		try {
+			RecordIdSelectQueryResponse response = PostToUrl<object, RecordIdSelectQueryResponse>(
+				_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+				query,
+				options,
+				$"SelectQuery({schemaName})");
+			return (response.Rows?.Length ?? 0) > 0 ? LookupRecordExistence.Exists : LookupRecordExistence.NotFound;
+		} catch (Exception ex) when (ex is InvalidOperationException
+				or System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or Newtonsoft.Json.JsonException) {
+			// Cannot verify existence (security denial on the referenced entity, or a transport/timeout/parse
+			// fault): degrade to Unknown so a previously-working write is never blocked on a check that could
+			// not be performed (LookupRecordExistence.Unknown contract).
+			return LookupRecordExistence.Unknown;
+		}
+	}
+
 	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)
 		where TRequest : class
 		where TResponse : BaseResponse {
@@ -157,9 +233,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string methodName)
 		where TRequest : class
 		where TResponse : BaseResponse {
+		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.MaxAttempts, options.RetryDelay,
+			methodName);
+	}
+
+	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int maxAttempts,
+		int retryDelay, string methodName)
+		where TRequest : class
+		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
-			options.RetryDelay);
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, maxAttempts, retryDelay);
 		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
@@ -169,7 +252,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.RetryCount,
+		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay);
 		if (IsHtmlResponse(rawResponse)) {
 			return null;

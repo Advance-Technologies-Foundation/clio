@@ -1,117 +1,31 @@
-using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
-using Clio.Workspaces;
 using ModelContextProtocol.Server;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Tools;
-
-/// <summary>
-/// Shared scope-aware execution flow for skill management MCP tools.
-/// </summary>
-public abstract class WorkspaceSkillToolBase<TOptions>(
-	Command<TOptions> command,
-	ILogger logger,
-	IFileSystem fileSystem)
-	: BaseTool<TOptions>(command, logger) {
-	private readonly IFileSystem _fileSystem = fileSystem;
-
-	protected CommandExecutionResult ExecuteForScope(string scopeValue, string workspacePath, Func<CommandExecutionResult> execute) {
-		if (!SkillScopeParser.TryParse(scopeValue, out SkillScope scope, out string errorMessage)) {
-			return CreateFailureResult(errorMessage);
-		}
-
-		return scope == SkillScope.User
-			? execute()
-			: ExecuteInWorkspace(workspacePath, execute);
-	}
-
-	protected CommandExecutionResult ExecuteInWorkspace(string workspacePath, Func<CommandExecutionResult> execute) {
-		if (string.IsNullOrWhiteSpace(workspacePath)) {
-			return CreateFailureResult("Workspace path is required.");
-		}
-
-		if (IsNetworkPath(workspacePath)) {
-			return CreateFailureResult($"Workspace path must be a local absolute path: {workspacePath}");
-		}
-
-		if (!IsAbsolutePath(workspacePath)) {
-			return CreateFailureResult($"Workspace path must be absolute: {workspacePath}");
-		}
-
-		if (!_fileSystem.Directory.Exists(workspacePath)) {
-			return CreateFailureResult($"Workspace path not found: {workspacePath}");
-		}
-
-		string workspaceSettingsPath = _fileSystem.Path.Combine(workspacePath, ".clio", "workspaceSettings.json");
-		if (!_fileSystem.File.Exists(workspaceSettingsPath)) {
-			return CreateFailureResult($"Workspace path is not a clio workspace: {workspacePath}");
-		}
-
-		lock (CommandExecutionSyncRoot) {
-			string originalDirectory = _fileSystem.Directory.GetCurrentDirectory();
-			try {
-				_fileSystem.Directory.SetCurrentDirectory(workspacePath);
-				return execute();
-			}
-			finally {
-				_fileSystem.Directory.SetCurrentDirectory(originalDirectory);
-			}
-		}
-	}
-
-	private static CommandExecutionResult CreateFailureResult(string message) =>
-		new(1, [new ErrorMessage(message)]);
-
-	private bool IsAbsolutePath(string path) {
-		if (string.IsNullOrWhiteSpace(path)) {
-			return false;
-		}
-
-		string root = _fileSystem.Path.GetPathRoot(path);
-		return _fileSystem.Path.IsPathRooted(path) &&
-			!string.IsNullOrWhiteSpace(root) &&
-			(root.EndsWith(_fileSystem.Path.DirectorySeparatorChar) ||
-			 root.EndsWith(_fileSystem.Path.AltDirectorySeparatorChar));
-	}
-
-	private static bool IsNetworkPath(string path) {
-		if (string.IsNullOrWhiteSpace(path)) {
-			return false;
-		}
-
-		return path.StartsWith(@"\\", StringComparison.Ordinal) ||
-			path.StartsWith("//", StringComparison.Ordinal);
-	}
-}
 
 /// <summary>
 /// MCP tool surface for the <c>install-skills</c> command.
 /// </summary>
 [McpServerToolType]
-public sealed class InstallSkillsTool(
-	InstallSkillsCommand command,
-	ILogger logger,
-	IFileSystem fileSystem)
-	: WorkspaceSkillToolBase<InstallSkillsOptions>(command, logger, fileSystem) {
-	internal const string ToolName = "install-skills";
+public sealed class InstallSkillsTool(InstallSkillsCommand command, ILogger logger)
+	: BaseTool<InstallSkillsOptions>(command, logger) {
+	internal const string ToolName = "install-adac";
 
 	/// <summary>
-	/// Installs new managed skills into the selected scope from the selected repository.
+	/// Installs the Creatio toolkit skill globally for detected coding agents.
 	/// </summary>
-		[Description("Installs one or more new managed skills into workspace or user scope from a local repository path or git URL")]
+	[Description("Installs the Creatio AI App Development Toolkit skill for all detected coding agents "
+		+ "(claude, codex, cursor, copilot) using each agent's native plugin mechanism, or one agent via target")]
 	public CommandExecutionResult InstallSkills(
 		[Description("Install-skills parameters")] [Required] InstallSkillsRunArgs args) {
 		InstallSkillsOptions options = new() {
-			Skill = args.SkillName,
-			Repo = args.Repo,
-			Scope = args.Scope
+			Target = args.Target,
+			Repo = args.Repo
 		};
-		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
+		return InternalExecute(options);
 	}
 }
 
@@ -119,25 +33,22 @@ public sealed class InstallSkillsTool(
 /// MCP tool surface for the <c>update-skill</c> command.
 /// </summary>
 [McpServerToolType]
-public sealed class UpdateSkillTool(
-	UpdateSkillCommand command,
-	ILogger logger,
-	IFileSystem fileSystem)
-	: WorkspaceSkillToolBase<UpdateSkillOptions>(command, logger, fileSystem) {
-	internal const string ToolName = "update-skill";
+public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
+	: BaseTool<UpdateSkillOptions>(command, logger) {
+	internal const string ToolName = "update-adac";
 
 	/// <summary>
-	/// Updates managed skills in the selected scope when the source commit hash has changed.
+	/// Updates the Creatio toolkit skill for detected coding agents (Claude included).
 	/// </summary>
-		[Description("Updates one or more managed skills in workspace or user scope from a local repository path or git URL")]
+	[Description("Updates the Creatio AI App Development Toolkit skill for all detected coding agents "
+		+ "(claude, codex, cursor, copilot), or one agent via target")]
 	public CommandExecutionResult UpdateSkill(
 		[Description("Update-skill parameters")] [Required] UpdateSkillRunArgs args) {
 		UpdateSkillOptions options = new() {
-			Skill = args.SkillName,
-			Repo = args.Repo,
-			Scope = args.Scope
+			Target = args.Target,
+			Repo = args.Repo
 		};
-		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
+		return InternalExecute(options);
 	}
 }
 
@@ -145,24 +56,21 @@ public sealed class UpdateSkillTool(
 /// MCP tool surface for the <c>delete-skill</c> command.
 /// </summary>
 [McpServerToolType]
-public sealed class DeleteSkillTool(
-	DeleteSkillCommand command,
-	ILogger logger,
-	IFileSystem fileSystem)
-	: WorkspaceSkillToolBase<DeleteSkillOptions>(command, logger, fileSystem) {
-	internal const string ToolName = "delete-skill";
+public sealed class DeleteSkillTool(DeleteSkillCommand command, ILogger logger)
+	: BaseTool<DeleteSkillOptions>(command, logger) {
+	internal const string ToolName = "delete-adac";
 
 	/// <summary>
-	/// Deletes a managed skill from the selected scope.
+	/// Uninstalls the Creatio toolkit skill from detected coding agents (idempotent).
 	/// </summary>
-		[Description("Deletes a managed skill from workspace or user scope")]
+	[Description("Uninstalls the Creatio AI App Development Toolkit skill from all detected coding agents, "
+		+ "or one agent via target. Leaves the shared clio MCP server entry in place")]
 	public CommandExecutionResult DeleteSkill(
 		[Description("Delete-skill parameters")] [Required] DeleteSkillRunArgs args) {
 		DeleteSkillOptions options = new() {
-			Skill = args.SkillName,
-			Scope = args.Scope
+			Target = args.Target
 		};
-		return ExecuteForScope(args.Scope, args.WorkspacePath, () => InternalExecute(options));
+		return InternalExecute(options);
 	}
 }
 
@@ -170,20 +78,13 @@ public sealed class DeleteSkillTool(
 /// MCP arguments for the <c>install-skills</c> tool.
 /// </summary>
 public sealed record InstallSkillsRunArgs(
-	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
-	string WorkspacePath = null,
-
-	[property: JsonPropertyName("scope")]
-	[property: Description("Skill target scope: workspace or user")]
-	string Scope = SkillScopeParser.Workspace,
-
-	[property: JsonPropertyName("skillName")]
-	[property: Description("Optional specific skill name to install")]
-	string SkillName = null,
+	[property: JsonPropertyName("target")]
+	[property: Description("Optional agent to limit to: claude | codex | cursor | copilot. Default: all detected")]
+	string Target = null,
 
 	[property: JsonPropertyName("repo")]
-	[property: Description("Optional local repository path or git URL. Defaults to the bootstrap skills repository")]
+	[property: Description("Optional source override. Marketplace git URL for claude/codex/copilot; "
+		+ "local path or git URL for cursor. Defaults to the public toolkit marketplace")]
 	string Repo = null
 ) : ClioRunArgs;
 
@@ -191,20 +92,13 @@ public sealed record InstallSkillsRunArgs(
 /// MCP arguments for the <c>update-skill</c> tool.
 /// </summary>
 public sealed record UpdateSkillRunArgs(
-	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
-	string WorkspacePath = null,
-
-	[property: JsonPropertyName("scope")]
-	[property: Description("Skill target scope: workspace or user")]
-	string Scope = SkillScopeParser.Workspace,
-
-	[property: JsonPropertyName("skillName")]
-	[property: Description("Optional specific managed skill name to update")]
-	string SkillName = null,
+	[property: JsonPropertyName("target")]
+	[property: Description("Optional agent to limit to: claude | codex | cursor | copilot. Default: all detected")]
+	string Target = null,
 
 	[property: JsonPropertyName("repo")]
-	[property: Description("Optional local repository path or git URL. Defaults to the bootstrap skills repository")]
+	[property: Description("Optional source override. Marketplace git URL for claude/codex/copilot; "
+		+ "local path or git URL for cursor. Defaults to the public toolkit marketplace")]
 	string Repo = null
 ) : ClioRunArgs;
 
@@ -212,16 +106,7 @@ public sealed record UpdateSkillRunArgs(
 /// MCP arguments for the <c>delete-skill</c> tool.
 /// </summary>
 public sealed record DeleteSkillRunArgs(
-	[property: JsonPropertyName("skillName")]
-	[property: Description("Managed skill name to delete")]
-	[property: Required]
-	string SkillName,
-
-	[property: JsonPropertyName("scope")]
-	[property: Description("Skill target scope: workspace or user")]
-	string Scope = SkillScopeParser.Workspace,
-
-	[property: JsonPropertyName("workspacePath")]
-	[property: Description("Absolute path to the local clio workspace when scope is workspace")]
-	string WorkspacePath = null
+	[property: JsonPropertyName("target")]
+	[property: Description("Optional agent to limit to: claude | codex | cursor | copilot. Default: all detected")]
+	string Target = null
 ) : ClioRunArgs;

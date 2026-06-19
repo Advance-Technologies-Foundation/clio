@@ -41,7 +41,10 @@ internal sealed record ApplicationSectionContextResponseEnvelope(
 	[property: JsonPropertyName("section")] ApplicationSectionEnvelope? Section,
 	[property: JsonPropertyName("entity")] ApplicationEntityEnvelope? Entity,
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
-	[property: JsonPropertyName("error")] string? Error);
+	[property: JsonPropertyName("error")] string? Error,
+	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
+	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
 
 internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,

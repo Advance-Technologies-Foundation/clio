@@ -60,23 +60,7 @@ jobs:
           dotnet build-server shutdown;
           dotnet test .\clio.tests\clio.tests.csproj `
             --filter "Category!=Integration" `
-            --collect:"XPlat Code Coverage" `
             -p:RunAnalyzers=false;
-
-      - name: Publish coverage report
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop';
-          $report = Get-ChildItem -Path .\clio.tests\TestResults -Recurse -Filter coverage.cobertura.xml;
-          if ($report) {
-            Copy-Item $report.FullName -Destination .\TestResults\coverage.opencover.xml -Force;
-            C:\Tools\reportgenerator.exe -reports:TestResults\coverage.opencover.xml `
-              -targetdir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\Html" `
-              -historydir:"D:\Projects\inetpub\wwwroot\Docs\clio\UnitTests\History" `
-              -assemblyfilters:"+Clio;-Terrasoft.*" `
-              -title:"Clio Unit Tests" `
-              -reporttypes:"Html;SonarQube;MarkdownSummaryGithub;Badges";
-          }
 
   # ── Integration tests (run on PRs and master, after unit tests pass) ──
   integration-tests:

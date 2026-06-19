@@ -76,6 +76,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"create-entity-schema should succeed for a valid sandbox environment and prepared package");
 		AssertIncludesInfoMessage(createResult,
 			"successful schema creation should emit progress output");
+		AssertIncludesPublishMessage(createResult,
+			"create-entity-schema must publish the configuration so the schema becomes visible to lookup pickers and sys-setting reference lists (ENG-90403)");
 		AssertSchemaProperties(schemaProperties, arrangeContext);
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
@@ -120,6 +122,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"create-lookup should succeed for a valid sandbox environment and prepared package");
 		AssertIncludesInfoMessage(createResult,
 			"successful lookup creation should emit progress output");
+		AssertIncludesPublishMessage(createResult,
+			"create-lookup must publish the configuration so the lookup becomes usable as a sys-setting Lookup reference (ENG-90403)");
 		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
 			because: "the created lookup should be readable through the structured schema properties tool");
 		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
@@ -229,6 +233,41 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Adds an ImageLookup ('Image link') column through update-entity-schema and verifies it auto-references the SysImage schema so crt.ImageInput can read and write it.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(UpdateToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Update entity schema MCP tool adds an ImageLookup column referencing SysImage")]
+	[AllureDescription("Creates a sandbox entity schema, adds an ImageLookup column through the real MCP server, and verifies the structured readback reports type ImageLookup and the implicit SysImage reference schema for crt.ImageInput compatibility.")]
+	public async Task UpdateEntitySchema_Should_Add_ImageLookup_Column_Referencing_SysImage() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string imageLookupColumnName = "UsrPhoto";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope updateResult = await ActBatchAddImageLookupColumnAsync(arrangeContext, imageLookupColumnName);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo imageLookupColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageLookupColumnName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the batch update can add the ImageLookup column");
+		AssertIncludesInfoMessage(createResult,
+			"successful schema creation should emit progress output before the batch update");
+		AssertCommandSucceeded(updateResult,
+			"update-entity-schema should succeed when adding an ImageLookup column");
+		AssertIncludesInfoMessage(updateResult,
+			"successful batch updates should emit progress output");
+		schemaProperties.Columns.Should().NotBeNullOrEmpty(
+			because: "schema readback after the batch update should expose nested columns for verification");
+		schemaProperties.Columns!.Should().Contain(column => column.Name == imageLookupColumnName && column.Type == "ImageLookup",
+			because: "the batch-added ImageLookup column should be reported with a normalized friendly type name");
+		AssertImageLookupColumnProperties(imageLookupColumnProperties, imageLookupColumnName);
+	}
+
+	[Test]
 	[Description("Adds a column through update-entity-schema with only title-localizations, then applies default-value-config through modify-entity-schema-column and verifies the column remains readable.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(UpdateToolName)]
@@ -334,6 +373,34 @@ public sealed class EntitySchemaToolE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects a lookup Const default whose referenced record does not exist, verified end to end through the real MCP server (DRAFT-AC-06).")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column rejects a lookup Const default for a missing record")]
+	[AllureDescription("Creates a sandbox entity schema, then adds a lookup column referencing Contact with a Const default whose GUID does not exist, and verifies the real MCP server rejects the write before save with a not-found error.")]
+	public async Task ModifyEntitySchemaColumn_Should_Reject_LookupConstDefault_When_RecordMissing() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string lookupColumnName = "UsrOwner";
+		const string missingRecordId = "00000000-0000-0000-0000-0000000000aa";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope addResult =
+			await ActAddLookupColumnWithMissingConstDefaultAsync(arrangeContext, lookupColumnName, missingRecordId);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"the schema must exist before the lookup-column mutation can be attempted");
+		addResult.ExitCode.Should().Be(1,
+			because: "a Const lookup default pointing at a nonexistent record must be rejected before save (DRAFT-AC-06)");
+		addResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("was not found in referenced schema", StringComparison.Ordinal),
+			because: "the rejection must explain that the default record does not exist in the referenced schema");
+	}
+
+	[Test]
 	[Description("Creates a schema through create-entity-schema with masked=true on a Text column and verifies masked is preserved in structured readback.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ReadColumnToolName)]
@@ -396,6 +463,39 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.Output.Should().NotContain(message =>
 				message.Value != null && message.Value.Contains(environmentName, StringComparison.Ordinal),
 			because: "validation should happen before environment resolution");
+	}
+
+	[Test]
+	[Description("Rejects Cyrillic text under the en-US title key before environment resolution so a caption cannot be stored in the wrong language for the profile (ENG-91044).")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Create entity schema rejects non-Latin text under the en-US localization key")]
+	[AllureDescription("Uses the real MCP server to call create-entity-schema with Cyrillic text under the en-US title key and verifies the tool returns a structured validation failure that names en-US before any remote schema creation.")]
+	public async Task CreateEntitySchema_Should_Reject_NonLatin_Text_Under_EnUs_Title() {
+		// Arrange
+		await using InvalidEnvironmentArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["package-name"] = "UsrPkg",
+					["schema-name"] = "UsrCyrillicSchema",
+					["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Заявка" }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the script/culture guard should surface as a structured command failure, not a protocol error");
+		execution.ExitCode.Should().Be(1,
+			because: "create-entity-schema must fail when non-English text is stored under the mandatory en-US key");
+		execution.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("en-US", StringComparison.Ordinal),
+			because: "the failure must name the en-US culture whose value is written in the wrong script");
 	}
 
 	[Test]
@@ -535,6 +635,39 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "schema readback should expose nested columns for follow-up property inspection");
 		properties.Columns!.Should().Contain(column => column.Name == "Name",
 			because: "the built-in Contact schema should expose the Name column in the nested read model");
+	}
+
+	[Test]
+	[Description("Returns the merged effective column set for a built-in schema when package-name is omitted.")]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Get entity schema properties returns merged columns when package is omitted")]
+	[AllureDescription("Uses the real MCP server to call get-entity-schema-properties WITHOUT package-name for the built-in Contact schema and verifies the merged/effective read returns the full column set, so custom columns contributed by other packages are not missed.")]
+	public async Task GetEntitySchemaProperties_Should_Return_Merged_Columns_When_Package_Omitted() {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetSchemaPropertiesAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			null,
+			"Contact",
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaPropertiesInfo properties = EntitySchemaStructuredResultParser.Extract<EntitySchemaPropertiesInfo>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-entity-schema-properties must succeed without a package-name and return the merged effective schema");
+		properties.Name.Should().Be("Contact",
+			because: "the merged readback should identify the requested built-in schema");
+		properties.Columns.Should().NotBeNullOrEmpty(
+			because: "the merged read must expose the full column set even when no package is supplied");
+		properties.Columns!.Should().Contain(column => column.Name == "Name",
+			because: "standard columns must be present in the merged all-packages read");
+		properties.Title.Should().NotBeNullOrWhiteSpace(
+			because: "the merged read must map the schema caption from the runtime payload rather than leaving it null");
+		properties.Columns!.Should().Contain(column => column.Indexed,
+			because: "the merged read must map the per-column indexed flag from the runtime payload, not hardcode it to false");
 	}
 
 	[Test]
@@ -883,6 +1016,27 @@ public sealed class EntitySchemaToolE2ETests {
 		});
 	}
 
+	private static async Task<CommandExecutionEnvelope> ActAddLookupColumnWithMissingConstDefaultAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName,
+		string missingRecordId) {
+		return await AllureApi.Step("Act by invoking modify-entity-schema-column through MCP for a lookup Const default pointing at a missing record", async () => {
+			CallToolResult callResult = await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				columnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Lookup",
+				titleLocalizations: BuildLocalizations("Owner"),
+				referenceSchemaName: "Contact",
+				defaultValueConfig: BuildConstDefaultValueConfig(missingRecordId));
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
 	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string? columnName = null) {
@@ -928,6 +1082,28 @@ public sealed class EntitySchemaToolE2ETests {
 						["column-name"] = fileColumnName,
 						["type"] = "File",
 						["title-localizations"] = BuildLocalizations("Document")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
+	private static async Task<CommandExecutionEnvelope> ActBatchAddImageLookupColumnAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string imageLookupColumnName) {
+		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for an ImageLookup column", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = imageLookupColumnName,
+						["type"] = "ImageLookup",
+						["title-localizations"] = BuildLocalizations("Photo")
 					}
 				]);
 			return McpCommandExecutionParser.Extract(callResult);
@@ -1111,7 +1287,8 @@ public sealed class EntitySchemaToolE2ETests {
 		bool? indexed = null,
 		string? defaultValueSource = null,
 		string? defaultValue = null,
-		Dictionary<string, object?>? defaultValueConfig = null) {
+		Dictionary<string, object?>? defaultValueConfig = null,
+		string? referenceSchemaName = null) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(ClioRunRoutingHelper.ResolveAdvertisedName(ModifyToolName),
 			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
@@ -1125,6 +1302,9 @@ public sealed class EntitySchemaToolE2ETests {
 		};
 		if (!string.IsNullOrWhiteSpace(type)) {
 			args["type"] = type;
+		}
+		if (!string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			args["reference-schema-name"] = referenceSchemaName;
 		}
 		if (titleLocalizations?.Count > 0) {
 			args["title-localizations"] = titleLocalizations;
@@ -1183,6 +1363,16 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.Output.Should().NotBeNullOrEmpty(
 			because: "successful command execution should emit human-readable diagnostics");
 		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+			because: because);
+	}
+
+	[AllureStep("Assert configuration publish progress message")]
+	private static void AssertIncludesPublishMessage(CommandExecutionEnvelope execution, string because) {
+		execution.Output.Should().NotBeNullOrEmpty(
+			because: "successful command execution should emit human-readable diagnostics");
+		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
+				&& message.Value != null
+				&& message.Value.Contains("published", StringComparison.OrdinalIgnoreCase),
 			because: because);
 	}
 
@@ -1381,6 +1571,20 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "structured column readback should normalize binary-like type names into stable friendly values");
 	}
 
+	[AllureStep("Assert structured ImageLookup column properties")]
+	private static void AssertImageLookupColumnProperties(
+		EntitySchemaColumnPropertiesInfo properties,
+		string columnName) {
+		properties.ColumnName.Should().Be(columnName,
+			because: "the structured column readback should identify the requested ImageLookup column");
+		properties.Source.Should().Be("own",
+			because: "columns added through batch update should be reported as own columns");
+		properties.Type.Should().Be("ImageLookup",
+			because: "structured column readback should normalize the 'Image link' type into the friendly ImageLookup name");
+		properties.ReferenceSchemaName.Should().Be("SysImage",
+			because: "an ImageLookup column must reference the platform SysImage schema so crt.ImageInput can bind to it");
+	}
+
 	[AllureStep("Assert schema properties after remove")]
 	private static void AssertSchemaPropertiesAfterRemove(
 		EntitySchemaPropertiesInfo propertiesBeforeAdd,
@@ -1479,6 +1683,13 @@ public sealed class EntitySchemaToolE2ETests {
 		return new Dictionary<string, object?> {
 			["source"] = "Settings",
 			["value-source"] = valueSource
+		};
+	}
+
+	private static Dictionary<string, object?> BuildConstDefaultValueConfig(string value) {
+		return new Dictionary<string, object?> {
+			["source"] = "Const",
+			["value"] = value
 		};
 	}
 

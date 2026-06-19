@@ -21,7 +21,8 @@ public class IISScannerHandlerTests
 			null,
 			new PowerShellFactory(),
 			Substitute.For<ILogger>(),
-			new ProcessExecutor(Substitute.For<ILogger>()));
+			new ProcessExecutor(Substitute.For<ILogger>()),
+			Substitute.For<FluentValidation.IValidator<IISScannerRequest>>());
 
 	[Test]
 	[Description("Verifies that FindAllCreatioSites discovers both top-level sites and nested applications")]

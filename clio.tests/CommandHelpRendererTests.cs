@@ -282,5 +282,5 @@ EXAMPLE
 	}
 
 	private CommandHelpRenderer CreateRenderer(Func<bool> supportsAnsi) =>
-		new(FileSystem, new CommandHelpCatalog(), supportsAnsi);
+		new(FileSystem, new CommandHelpCatalog(), featureToggleService: null, supportsAnsi);
 }

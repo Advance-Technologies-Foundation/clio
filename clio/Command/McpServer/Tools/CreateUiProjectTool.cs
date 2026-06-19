@@ -23,8 +23,6 @@ public class CreateUiProjectTool(
 	/// <summary>
 	/// Creates a new Angular (Freedom UI remote module) project inside the supplied clio workspace.
 	/// </summary>
-	[McpServerTool(Name = CreateUiProjectToolName, ReadOnly = false, Destructive = false, Idempotent = false,
-		OpenWorld = false)]
 	[Description("""
 				 Creates a new Angular (Freedom UI remote module) project inside an existing clio workspace.
 
@@ -37,7 +35,7 @@ public class CreateUiProjectTool(
 				 packageName: UsrCustomPkg, vendorPrefix: usr
 				 """)]
 	public CommandExecutionResult CreateUiProject(
-		[Description("UI project creation parameters")] [Required] CreateUiProjectArgs args
+		[Description("UI project creation parameters")] [Required] CreateUiProjectRunArgs args
 	) {
 		if (args is null) {
 			return new CommandExecutionResult(1, [new ErrorMessage("UI project creation parameters are required.")], null);
@@ -97,7 +95,7 @@ public class CreateUiProjectTool(
 /// <summary>
 /// MCP arguments for the <c>new-ui-project</c> tool.
 /// </summary>
-public sealed record CreateUiProjectArgs(
+public sealed record CreateUiProjectRunArgs(
 	[property: JsonPropertyName("workspaceDirectory")]
 	[property: Description("Absolute path to the existing clio workspace directory (must contain .clio/workspaceSettings.json)")]
 	[property: Required]
@@ -125,4 +123,4 @@ public sealed record CreateUiProjectArgs(
 	[property: JsonPropertyName("creatioVersion")]
 	[property: Description("Optional Creatio version to pick a matching UI project template")]
 	string CreatioVersion = null
-);
+) : ClioRunArgs;

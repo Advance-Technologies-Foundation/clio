@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -30,6 +31,7 @@ public sealed class AppSectionTool(
 	public async Task<object> Apply(
 		[Description("app-section parameters")] [Required] AppSectionRunArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken = default) {
 		switch ((args.Action ?? string.Empty).ToLowerInvariant()) {
 			case ActionCreate:
@@ -47,6 +49,7 @@ public sealed class AppSectionTool(
 						WithMobilePages = args.WithMobilePages ?? true
 					},
 					server,
+					requestContext,
 					cancellationToken);
 			case ActionUpdate:
 				return await updateTool.ApplicationSectionUpdate(
@@ -60,17 +63,24 @@ public sealed class AppSectionTool(
 						IconBackground = args.IconBackground
 					},
 					server,
+					requestContext,
 					cancellationToken);
 			case ActionDelete:
-				return deleteTool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
+				return await deleteTool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
 					args.EnvironmentName!,
 					args.ApplicationCode!,
 					args.SectionCode!,
-					args.DeleteEntitySchema));
+					args.DeleteEntitySchema),
+					server,
+					requestContext,
+					cancellationToken);
 			case ActionList:
-				return listTool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
+				return await listTool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
 					args.EnvironmentName!,
-					args.ApplicationCode!));
+					args.ApplicationCode!),
+					server,
+					requestContext,
+					cancellationToken);
 			default:
 				return CommandExecutionResult.ValidateExactlyOneMode(
 					"action", args.Action, ActionCreate, ActionUpdate, ActionDelete, ActionList)!;

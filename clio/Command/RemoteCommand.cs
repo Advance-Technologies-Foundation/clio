@@ -22,7 +22,7 @@ namespace Clio.Command
             internal set => _timeOut = value;
         }
 
-        public int RetryCount { get; internal set; } = 3;
+        public int MaxAttempts { get; internal set; } = 3;
         public int RetryDelay { get; internal set; } = 1;
 
 
@@ -78,10 +78,6 @@ namespace Clio.Command
         internal IApplicationClient ApplicationClient { get; set; }
         internal EnvironmentSettings EnvironmentSettings { get; set; }
 
-        /// <summary>
-        /// Minimum required cliogate version. Default is "0.0.0.0" (no requirement).
-        /// </summary>
-        protected virtual string ClioGateMinVersion { get; } = "0.0.0.0";
         protected IClioGateway ClioGateWay { get; set; }
 
         protected string RootPath =>
@@ -89,7 +85,7 @@ namespace Clio.Command
                 ? EnvironmentSettings.Uri : EnvironmentSettings.Uri + @"/0";
 
         /// <summary>
-        /// Service path for remote command. If contains "rest/CreatioApiGateway", cliogate is required.
+        /// Service path for remote command.
         /// </summary>
         protected virtual string ServicePath { get; set; }
         protected string ServiceUri => Uri.TryCreate(ServicePath, UriKind.Absolute, out var maybeUri) && (maybeUri.Scheme == Uri.UriSchemeHttp || maybeUri.Scheme == Uri.UriSchemeHttps)
@@ -102,7 +98,7 @@ namespace Clio.Command
 
         public virtual HttpMethod HttpMethod => HttpMethod.Post;
         public int RequestTimeout { get; set; }
-        public int RetryCount { get; set; }
+        public int MaxAttempts { get; set; }
         public int DelaySec { get; set; }
         public ILogger Logger { get; set; } = ConsoleLogger.Instance;
 
@@ -116,8 +112,8 @@ namespace Clio.Command
         protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options)
         {
             string response = HttpMethod == HttpMethod.Post
-                ? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options), RequestTimeout, RetryCount, DelaySec)
-                : ApplicationClient.ExecuteGetRequest(ServiceUri, RequestTimeout, RetryCount, DelaySec);
+                ? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options), RequestTimeout, MaxAttempts, DelaySec)
+                : ApplicationClient.ExecuteGetRequest(ServiceUri, RequestTimeout, MaxAttempts, DelaySec);
             ProceedResponse(response, options);
         }
 
@@ -162,29 +158,18 @@ namespace Clio.Command
         #region Methods: Public
 
         /// <summary>
-        /// Executes the command, checks cliogate requirements and handles errors.
+        /// Executes the command and handles errors. Package requirements declared via
+        /// <see cref="RequiresPackageAttribute"/> on the options type are enforced ahead of dispatch
+        /// at the command chokepoints, so this method no longer performs an inline cliogate check.
         /// </summary>
         /// <param name="options">Command options.</param>
         /// <returns>0 if success, 1 if error.</returns>
         public override int Execute(TEnvironmentOptions options)
         {
-            // Check if cliogate is required
-            bool hasCustomClioGateMinVersion = !string.IsNullOrWhiteSpace(ClioGateMinVersion) && ClioGateMinVersion != "0.0.0.0";
-            bool needsCliogate = (!string.IsNullOrWhiteSpace(ServicePath) && ServicePath.Contains("rest/CreatioApiGateway"))
-                || hasCustomClioGateMinVersion;
-            if (needsCliogate && ClioGateWay == null)
-            {
-                Logger.WriteError("cliogate is not installed on the target system. This command requires cliogate.");
-                return 1;
-            }
-            if (hasCustomClioGateMinVersion && ClioGateWay != null)
-            {
-                ClioGateWay.CheckCompatibleVersion(ClioGateMinVersion);
-            }
             try
             {
                 RequestTimeout = options.TimeOut;
-                RetryCount = options.RetryCount;
+                MaxAttempts = options.MaxAttempts;
                 DelaySec = options.RetryDelay;
                 ExecuteRemoteCommand(options);
                 string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;

@@ -12,6 +12,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
+[NonParallelizable] // mutates Console.Out per test via SetUp/TearDown
 public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 {
 	private ISettingsRepository _settingsRepository;

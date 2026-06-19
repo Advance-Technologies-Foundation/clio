@@ -16,6 +16,7 @@ public sealed class ODataCreateToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, non-read-only, non-destructive, non-idempotent MCP tool name for odata-create.")]
+	[Ignore("ENG-90312 Phase 2: odata-create folded into clio-run; the per-method [McpServerTool] safety flags now live on clio-run itself, so the legacy attribute reflection no longer applies.")]
 	public void Create_Should_Advertise_Stable_Tool_Name() {
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ODataCreateTool)
 			.GetMethod(nameof(ODataCreateTool.Create))!
@@ -42,7 +43,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev",
 			Entity = "Account",
 			Data = Obj("{\"Name\":\"Acme\"}")
@@ -68,7 +69,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
 		ODataCreateTool tool = new(resolver);
 
-		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Data = Obj("{\"Name\":\"A\"}") });
+		tool.Create(new ODataCreateRunArgs { EnvironmentName = "dev", Entity = "Account", Data = Obj("{\"Name\":\"A\"}") });
 
 		resolver.Received(1).Resolve<IApplicationClient>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
 		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
@@ -81,7 +82,7 @@ public sealed class ODataCreateToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev", Entity = " ", Data = Obj("{\"Name\":\"A\"}")
 		});
 
@@ -97,7 +98,7 @@ public sealed class ODataCreateToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev", Entity = "Account", Data = Obj("{}")
 		});
 
@@ -120,7 +121,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev", Entity = "Account", Data = Obj("{\"X\":1}")
 		});
 
@@ -142,7 +143,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
 		});
 
@@ -165,7 +166,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"Name\":\"Office\"}");
 		ODataCreateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Create(new ODataCreateArgs {
+		ODataWriteResponse response = tool.Create(new ODataCreateRunArgs {
 			EnvironmentName = "dev", Entity = "AddressType", Data = Obj("{\"Name\":\"Office\"}")
 		});
 

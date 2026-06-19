@@ -56,6 +56,11 @@ clio create-page [options]
 --entity-schema-name               Optional entity schema to record in the
                                    new page dependencies
 
+--caption-culture                  Override the culture for the generated page
+                                   caption (e.g. en-US, uk-UA). Precedence:
+                                   override > the connected user's profile
+                                   culture (see get-user-culture) > en-US.
+
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -79,6 +84,10 @@ create the Freedom UI page from the BlankPageTemplate parent
 clio create-page --schema-name UsrDemo_Mobile --template BlankMobilePageTemplate --package-name Custom -e dev
 create a mobile Freedom UI page from the BlankMobilePageTemplate parent
 ```
+
+## Notes
+
+- The page caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
 
 ## Reporting Bugs
 

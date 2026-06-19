@@ -112,10 +112,25 @@ public class BindingsModule {
 		// mutable property — see code-review #1 on PR #599).
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
+		// Dedicated forms-auth client for browser-session harvesting. UseCookies=false keeps the
+		// Set-Cookie response headers readable (the cookie jar would otherwise consume them), and
+		// AllowAutoRedirect=false ensures the direct AuthService.svc/Login response is observed
+		// rather than a followed login-page redirect.
+		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
 		
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
-		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService);
+		// RealInteractiveConsole fails closed on redirected stdin (MCP stdio / CI), so this single
+		// composition-root binding is correct for both the interactive CLI and the per-environment
+		// MCP containers that ToolCommandResolver builds from BindingsModule.
+		IInteractiveConsole interactiveConsole = new RealInteractiveConsole();
+		services.AddSingleton<IInteractiveConsole>(interactiveConsole);
+		SettingsRepository settingsRepository = new(_fileSystem, settingsBootstrapService, interactiveConsole);
 		services.AddSingleton<ISettingsBootstrapService>(settingsBootstrapService);
 		services.AddSingleton<ISettingsRepository>(settingsRepository);
 		LogBootstrapDiagnostics(registrationProfile, bootstrapResult.Report);
@@ -136,7 +151,8 @@ public class BindingsModule {
 				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
 					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
 			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(_ => new CreatioClientAdapter(lazyCreatioClient));
+			services.AddSingleton<IApplicationClient>(_ =>
+				new CreatioClientAdapter(lazyCreatioClient));
 			services.AddTransient<SysSettingsManager>();
 		}
 
@@ -183,6 +199,12 @@ public class BindingsModule {
 		}
 
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
+		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService, Clio.Common.BrowserSession.BrowserSessionService>();
+		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()
@@ -200,6 +222,7 @@ public class BindingsModule {
 		services.AddKeyedTransient<IFollowupUpChainItem, DconfChainItem>(nameof(DconfChainItem));
 		services.AddTransient<IFollowUpChain, FollowUpChain>();
 		services.AddTransient<FeatureCommand>();
+		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
@@ -228,6 +251,7 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<CreatePageBusinessRuleCommand>();
+		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
@@ -246,6 +270,10 @@ public class BindingsModule {
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
+		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
+		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
@@ -289,6 +317,12 @@ public class BindingsModule {
 		// singleton bound to the server's startup environment. A singleton resolver would
 		// probe the wrong environment and report a falsely authoritative "environment" tier.
 		services.AddSingleton<IPlatformVersionResolverFactory, PlatformVersionResolverFactory>();
+		// Profile-culture resolution (ENG-91044): the cache is a singleton so a resolved culture
+		// survives across CLI/MCP calls (env-URI-keyed); the factory builds a per-environment
+		// resolver per call, sharing that singleton cache.
+		services.AddSingleton<ICurrentUserCultureCache, CurrentUserCultureCache>();
+		services.AddSingleton<ICurrentUserCultureResolverFactory, CurrentUserCultureResolverFactory>();
+		services.AddTransient<GetUserCultureCommand>();
 		services.AddTransient<ComponentRegistryRefreshCommand>();
 		services.AddTransient<ComponentInfoCommand>();
 		
@@ -321,6 +355,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<SchemaListTool>();
+		services.AddTransient<GetProcessSignatureTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -337,9 +372,12 @@ public class BindingsModule {
 		services.AddTransient<GetEntitySchemaColumnPropertiesTool>();
 		services.AddTransient<ModifyEntitySchemaColumnTool>();
 		services.AddTransient<PageSyncTool>();
+		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
+		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<ClioRunTool>();
@@ -379,6 +417,9 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
+		services.AddTransient<InstallGateTool>();
+		services.AddTransient<ExperimentalTool>();
+		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
@@ -395,6 +436,10 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<PingAppCommand>();
+		services.AddTransient<ReferenceCommand>();
+		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
+		services.AddTransient<Command<ReferenceOptions>, ReferenceCommand>();
+		services.AddTransient<NewPkgCommand>();
 		services.AddTransient<SqlScriptCommand>();
 		services.AddTransient<CompressPackageCommand>();
 		services.AddTransient<PushNuGetPackagesCommand>();
@@ -407,6 +452,7 @@ public class BindingsModule {
 		services.AddHttpClient<INugetPackagesProvider, NugetPackagesProvider>();
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
+		services.AddTransient<ExperimentalCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -457,7 +503,13 @@ public class BindingsModule {
 		services.AddTransient<InfoCommand>();
 		services.AddTransient<QuizCommand>();
 		services.AddTransient<ExtractPackageCommand>();
-		services.AddTransient<ExternalLinkCommand>();
+		// ExternalLinkCommand has an internal constructor (its IExternalLinkHandler dependency is
+		// internal), so wire it via an explicit composition-root factory rather than container
+		// reflection, which only selects public constructors.
+		services.AddTransient(sp => new ExternalLinkCommand(
+			sp.GetServices<IExternalLinkHandler>(),
+			sp.GetRequiredService<IValidator<ExternalLinkOptions>>(),
+			sp.GetRequiredService<ILogger>()));
 		services.AddTransient<PowerShellFactory>();
 		services.AddTransient<IEnvironmentRuntimeDetectionService, EnvironmentRuntimeDetectionService>();
 		services.AddTransient<IIisEnvironmentDiscoveryService, IisEnvironmentDiscoveryService>();
@@ -523,12 +575,17 @@ public class BindingsModule {
 		services.AddTransient<LinkCoreSrcCommand>();
 		services.AddTransient<RfsEnvironment>();
 
-		services.AddMediatR(cfg => {
-			cfg.RegisterServicesFromAssembly(typeof(BindingsModule).Assembly);
-			cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
-		});
 		services.AddTransient<IisScannerHandler>();
 		services.AddTransient<IIisScanner, IisScannerHandler>();
+
+		// ExternalLink deep-link handlers.
+		services.AddTransient<IExternalLinkHandler, RegisterEnvironmentHandler>();
+		services.AddTransient<IExternalLinkHandler, UnregisterEnvironmentHandler>();
+		services.AddTransient<IExternalLinkHandler, RestartHandler>();
+		services.AddTransient<IExternalLinkHandler, OpenUrlHandler>();
+		services.AddTransient<IExternalLinkHandler, GetAppSettingsFilePathHandler>();
+		services.AddTransient<IExternalLinkHandler, RegisterOAuthCredentialsHandler>();
+		services.AddTransient<IExternalLinkHandler, IisScannerHandler>();
 
 		services.AddTransient<ExternalLinkOptionsValidator>();
 		services.AddTransient<SetFsmConfigOptionsValidator>();
@@ -539,13 +596,17 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
 		services.AddTransient<AddItemOptionsValidator>();
 		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
-		services.AddTransient<UnzipRequestValidator>();
+		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
+		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
+		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();
 		services.AddTransient<GitSyncCommand>();
 		services.AddTransient<DeactivatePackageCommand>();
 		services.AddTransient<PublishWorkspaceCommand>();
 		services.AddTransient<ActivatePackageCommand>();
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
+		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
 		services.AddTransient<CloneEnvironmentCommand>();
@@ -559,6 +620,7 @@ public class BindingsModule {
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
+		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
@@ -566,6 +628,7 @@ public class BindingsModule {
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<GetProcessSignatureCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
@@ -576,6 +639,8 @@ public class BindingsModule {
 		services.AddTransient<DotNetDeploymentStrategy>();
 		services.AddTransient<DeploymentStrategyFactory>();
 		services.AddTransient<OpenAppCommand>();
+		services.AddTransient<GetBrowserSessionCommand>();
+		services.AddTransient<ClearBrowserSessionCommand>();
 		services.AddSingleton<ISystemServiceManager>(sp => {
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
 				return new LinuxSystemServiceManager(sp.GetRequiredService<System.IO.Abstractions.IFileSystem>());
@@ -595,29 +660,48 @@ public class BindingsModule {
 				? new Common.IIS.WindowsIISAppPoolManager(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISAppPoolManager());
 		services.AddTransient<ClioGateway>();
+		services.AddTransient<IRequiredPackageChecker, RequiredPackageChecker>();
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();
+		services.AddTransient<GetIdentityAssertionCommand>();
+		services.AddTransient<GetIdentityPublicJwkCommand>();
+		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
+		services.AddTransient<CheckAuthCodeFlowCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
-		services.AddTransient<HelpArtifactExporter>();
+		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
+		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
+		// committed docs never depend on local feature flags. It is therefore not DI-resolved.
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<McpServerCommand>();
 		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
-		services.AddMcpServer(options => {
+		// Gate MCP tools/resources/prompts behind the same feature toggle as the CLI: a type marked
+		// [FeatureToggle("key")] whose flag is off must not be registered with the MCP server, so it
+		// is invisible to MCP clients (the *FromAssembly scanners would otherwise register ALL of
+		// them, bypassing the CLI parser gate). The feature rule is delegated to the shared
+		// IFeatureToggleService.IsEnabled so there is one rule, not two; it is constructed here over
+		// the in-scope settingsRepository because the container is still being built and the service
+		// is not yet resolvable. The enumeration replicates the SDK's discovery exactly, so with
+		// nothing gated the registered set is identical to the previous *FromAssembly behaviour.
+		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
+		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					options.Capabilities.Logging = new();
 					options.ServerInstructions = McpServerInstructions.Text;
 				})
 				.WithStdioServerTransport()
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors))
-				.WithResourcesFromAssembly(Assembly.GetExecutingAssembly())
-				.WithToolsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions)
-				.WithPromptsFromAssembly(Assembly.GetExecutingAssembly(), mcpSerializerOptions);
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+		// Single registration seam shared with the parity regression test: registers the feature-enabled
+		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
+		// hazard is documented on RegisterEnabledPrimitives).
+		McpFeatureToggleFilter.RegisterEnabledPrimitives(
+			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
@@ -714,7 +798,11 @@ public class BindingsModule {
 				if (implementedInterface.Namespace is null
 					|| !implementedInterface.Namespace.StartsWith("Clio", StringComparison.Ordinal)
 					|| !implementedInterface.Name.StartsWith("I", StringComparison.Ordinal)
-					|| implementedInterface == typeof(IDbOperationLogSession)) {
+					|| implementedInterface == typeof(IDbOperationLogSession)
+					|| implementedInterface == typeof(IMessageChannelHubConnection)
+					// ReauthExecutor requires a per-adapter Login closure; it is created by
+					// CreatioClientAdapter rather than resolved from DI.
+					|| implementedInterface == typeof(IReauthExecutor)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

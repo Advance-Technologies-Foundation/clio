@@ -9,8 +9,10 @@ DESCRIPTION
     Output can be formatted as a table, CSV, or XLSX, and saved to a file. 
     Silent mode is supported to suppress console output.
     
-    This command requires cliogate to be installed on the target Creatio environment. 
-    If cliogate is not installed or is an incompatible version, the command will display an error message and exit.
+    This command requires cliogate version 2.0.0.41 or higher to be installed on the
+    target Creatio environment. If cliogate is not installed or is an incompatible
+    version, the command will display an error message and exit. Install or update it with:
+        clio install-gate -e <ENVIRONMENT_NAME>
 
 OPTIONS
     Value (pos. 0)   Sql script to execute
@@ -35,7 +37,9 @@ NOTES
     Output is shown in the console unless --silent is specified.
     Results can be saved to a file in the chosen format.
     
-    cliogate must be installed and compatible on the target environment for this command to work.
+    cliogate version 2.0.0.41 or higher must be installed and compatible on the target
+    environment for this command to work. Install or update it with:
+        clio install-gate -e <ENVIRONMENT_NAME>
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

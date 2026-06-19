@@ -23,8 +23,18 @@ public sealed class McpToolBudgetTests {
 	// Raised to 25: odata-read was added by ENG-88584 (merged after Phase 2 spec was written).
 	// Raised to 29: ENG-88584 also added odata-create, odata-update, odata-delete, and
 	// create-ui-project as standalone flat tools after the Phase 2 spec locked the surface.
-	// Follow-up: route odata-create/update/delete and create-ui-project through clio-run.
-	private const int ToolBudget = 29;
+	// Set to 37 after the origin/master merge:
+	//   - The 6 data/workspace write tools add-package-dependency, install-gate, create-ui-project,
+	//     odata-create, odata-update and odata-delete were FOLDED into clio-run during the merge, so
+	//     they no longer count against the flat surface.
+	//   - master concurrently introduced read-only newcomers that stay flat (find-app, list-creatio-builds,
+	//     assert-infrastructure, show-passing-infrastructure, find-empty-iis-port, get-process-signature,
+	//     dataforge-* reads) which raise the flat count.
+	//   - The auth/session/admin non-read-only tools get-browser-session, clear-browser-session,
+	//     get-identity-assertion, regenerate-identity-signing-key and experimental remain flat by an
+	//     explicit product decision; folding them into clio-run is a deliberate follow-up.
+	// Net result: the flat (still-[McpServerTool]) surface is exactly 37 distinct tools.
+	private const int ToolBudget = 37;
 
 	[Test]
 	[Category("Unit")]

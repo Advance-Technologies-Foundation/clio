@@ -31,7 +31,8 @@ internal static class ApplicationToolResultMapper {
 							column.Name,
 							column.Caption,
 							column.DataValueType,
-							column.ReferenceSchema))
+							column.ReferenceSchema,
+							column.Required))
 						.ToList()))
 				.ToList(),
 			result.Pages?
@@ -76,7 +77,8 @@ internal static class ApplicationToolResultMapper {
 							column.Name,
 							column.Caption,
 							column.DataValueType,
-							column.ReferenceSchema))
+							column.ReferenceSchema,
+							column.Required))
 						.ToList()),
 			result.Pages
 				.Select(page => new PageListItem {
@@ -240,6 +242,27 @@ internal static class ApplicationToolHelper {
 
 	public static ApplicationSectionContextResponse CreateSectionContextErrorResponse(string message) {
 		return new ApplicationSectionContextResponse(false, Error: message);
+	}
+
+	/// <summary>
+	/// Maps a classified section-create failure (ENG-90679) onto the structured error envelope,
+	/// carrying <c>error-class</c>, <c>section-created</c>, and <c>retry-guidance</c> so the calling
+	/// agent can distinguish a transport failure from an in-flight server-side operation.
+	/// </summary>
+	/// <param name="exception">Classified section-create failure.</param>
+	/// <returns>Structured error envelope.</returns>
+	public static ApplicationSectionContextResponse CreateSectionContextErrorResponse(
+		ApplicationSectionCreateException exception) {
+		return new ApplicationSectionContextResponse(
+			false,
+			Error: exception.Message,
+			ErrorClass: exception.FailureClass.ToWireValue(),
+			SectionCreated: exception.SectionCreated switch {
+				true => "true",
+				false => "false",
+				null => "unknown"
+			},
+			RetryGuidance: exception.RetryGuidance);
 	}
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextResponse(ApplicationSectionUpdateContextResponse response) {

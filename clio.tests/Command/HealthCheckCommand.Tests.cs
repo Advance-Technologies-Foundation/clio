@@ -38,7 +38,7 @@ public class HealthCheckCommandTestCase
 		_applicationClient.Received(1).ExecuteGetRequest(
 			_environmentSettings.Uri + "/0/api/HealthCheck/Ping",
 			options.TimeOut,
-			options.RetryCount,
+			options.MaxAttempts,
 			options.RetryDelay);
 	}
 
@@ -51,7 +51,7 @@ public class HealthCheckCommandTestCase
 		_applicationClient.Received(1).ExecuteGetRequest(
 			_environmentSettings.Uri + "/api/HealthCheck/Ping",
 			options.TimeOut,
-			options.RetryCount,
+			options.MaxAttempts,
 			options.RetryDelay);
 	}
 
@@ -63,7 +63,7 @@ public class HealthCheckCommandTestCase
 		_applicationClient.Received(1).ExecuteGetRequest(
 			_environmentSettings.Uri + "/0/api/HealthCheck/Ping",
 			options.TimeOut,
-			options.RetryCount,
+			options.MaxAttempts,
 			options.RetryDelay);
 	}
 
@@ -77,7 +77,7 @@ public class HealthCheckCommandTestCase
 		_applicationClient.Received(1).ExecuteGetRequest(
 			_environmentSettings.Uri + "/api/HealthCheck/Ping",
 			options.TimeOut,
-			options.RetryCount,
+			options.MaxAttempts,
 			options.RetryDelay);
 	}
 

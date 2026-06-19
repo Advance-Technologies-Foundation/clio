@@ -45,7 +45,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 
 		try {
 			// CREATE
-			ODataWriteResponse created = create.Create(new ODataCreateArgs {
+			ODataWriteResponse created = create.Create(new ODataCreateRunArgs {
 				EnvironmentName = "live", Entity = "Contact", Data = Obj($"{{\"Name\":\"{name}\"}}")
 			});
 			created.Success.Should().BeTrue(because: created.Error);
@@ -59,7 +59,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 
 			// UPDATE (PATCH via IApplicationClient.ExecutePatchRequest)
 			string newName = name + "-upd";
-			ODataWriteResponse updated = update.Update(new ODataUpdateArgs {
+			ODataWriteResponse updated = update.Update(new ODataUpdateRunArgs {
 				EnvironmentName = "live", Entity = "Contact", Id = id!, Data = Obj($"{{\"Name\":\"{newName}\"}}"), Confirm = true
 			});
 			updated.Success.Should().BeTrue(because: updated.Error);
@@ -70,7 +70,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			afterUpdate.Value!.Value[0].GetProperty("Name").GetString().Should().Be(newName);
 
 			// DELETE
-			ODataWriteResponse deleted = delete.Delete(new ODataDeleteArgs {
+			ODataWriteResponse deleted = delete.Delete(new ODataDeleteRunArgs {
 				EnvironmentName = "live", Entity = "Contact", Id = id!, Confirm = true
 			});
 			deleted.Success.Should().BeTrue(because: deleted.Error);
@@ -82,7 +82,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			afterDelete.Count.Should().Be(0);
 		} finally {
 			if (id is not null) {
-				delete.Delete(new ODataDeleteArgs { EnvironmentName = "live", Entity = "Contact", Id = id, Confirm = true });
+				delete.Delete(new ODataDeleteRunArgs { EnvironmentName = "live", Entity = "Contact", Id = id, Confirm = true });
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -19,13 +20,17 @@ public sealed class AppsTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Lists installed Creatio applications when no identifier is provided; returns full app info (primary package and runtime entity metadata) when `id` or `code` is supplied. Provide at most one of id/code.")]
-	public object Read(
+	public async System.Threading.Tasks.Task<object> Read(
 		[Description("Parameters: environment-name (required); optional id or code (provide at most one).")] [Required]
-		AppsArgs args) {
+		AppsArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		System.Threading.CancellationToken cancellationToken = default) {
 		bool hasId = !string.IsNullOrWhiteSpace(args.Id);
 		bool hasCode = !string.IsNullOrWhiteSpace(args.Code);
 		if (hasId || hasCode) {
-			return infoTool.ApplicationGetInfo(new ApplicationGetInfoArgs(args.EnvironmentName!, args.Id, args.Code));
+			return await infoTool.ApplicationGetInfo(
+				new ApplicationGetInfoArgs(args.EnvironmentName!, args.Id, args.Code), server, requestContext, cancellationToken);
 		}
 		return listTool.ApplicationGetList(new ApplicationGetListArgs(args.EnvironmentName!));
 	}

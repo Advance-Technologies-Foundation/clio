@@ -278,7 +278,7 @@ public class LinkFromRepositoryToolTests {
 		public FakeLink4RepoCommand()
 			: base(
 				ConsoleLogger.Instance,
-				Substitute.For<MediatR.IMediator>(),
+				Substitute.For<IIisScanner>(),
 				Substitute.For<ISettingsRepository>(),
 				Substitute.For<IFileSystem>(),
 				new RfsEnvironment(

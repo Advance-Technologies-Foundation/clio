@@ -1,16 +1,14 @@
 using System;
-using System.IO;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
-using Clio.Workspaces;
+using Clio.Common.Skills;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
-using System.IO.Abstractions.TestingHelpers;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -19,334 +17,105 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class SkillManagementToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises stable MCP tool names for install-skills, update-skill, and delete-skill so callers and tests share the same identifiers.")]
+	[Description("Advertises stable MCP tool names for install-adac, update-adac, and delete-adac so callers and tests share the same identifiers.")]
 	public void SkillManagementTools_ShouldAdvertiseStableToolNames() {
-		// Arrange
-
-		// Act
+		// Arrange & Act
 		string installToolName = InstallSkillsTool.ToolName;
 		string updateToolName = UpdateSkillTool.ToolName;
 		string deleteToolName = DeleteSkillTool.ToolName;
 
 		// Assert
-		installToolName.Should().Be("install-skills",
-			because: "the install-skills MCP tool name should remain stable for callers and tests");
-		updateToolName.Should().Be("update-skill",
-			because: "the update-skill MCP tool name should remain stable for callers and tests");
-		deleteToolName.Should().Be("delete-skill",
-			because: "the delete-skill MCP tool name should remain stable for callers and tests");
+		installToolName.Should().Be("install-adac", because: "the install MCP tool name must remain stable");
+		updateToolName.Should().Be("update-adac", because: "the update MCP tool name must remain stable");
+		deleteToolName.Should().Be("delete-adac", because: "the delete MCP tool name must remain stable");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps install-skills MCP arguments into install-skills command options and executes from the requested workspace path.")]
-	public void InstallSkills_ShouldMapArguments_AndUseWorkspace() {
+	[Description("Maps install-adac MCP arguments (target, repo) into install-adac command options.")]
+	public void InstallSkills_ShouldMapTargetAndRepoArguments() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = CreateWorkspaceFileSystem();
-		FakeInstallSkillsCommand command = new(fileSystem);
-		InstallSkillsTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "the install-skills MCP tool should forward a valid command payload");
-			command.CapturedOptions.Should().NotBeNull(because: "the install-skills command should receive mapped options");
-			command.CapturedOptions!.Skill.Should().Be("alpha",
-				because: "the requested skill name must be preserved for install-skills");
-			command.CapturedOptions.Repo.Should().Be("repo",
-				because: "the requested repository locator must be preserved for install-skills");
-			command.CapturedOptions.Scope.Should().Be(SkillScopeParser.Workspace,
-				because: "the requested scope must be preserved for install-skills");
-			command.CapturedWorkingDirectory.Should().Be(GetWorkspacePath(),
-				because: "install-skills must execute relative to the requested workspace path");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the MCP wrapper should restore the original working directory after install-skills execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Maps update-skill MCP arguments into update-skill command options and executes from the requested workspace path.")]
-	public void UpdateSkill_ShouldMapArguments_AndUseWorkspace() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = CreateWorkspaceFileSystem();
-		FakeUpdateSkillCommand command = new(fileSystem);
-		UpdateSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(GetWorkspacePath(), SkillScopeParser.Workspace, "alpha", "repo"));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "the update-skill MCP tool should forward a valid command payload");
-			command.CapturedOptions.Should().NotBeNull(because: "the update-skill command should receive mapped options");
-			command.CapturedOptions!.Skill.Should().Be("alpha",
-				because: "the requested skill name must be preserved for update-skill");
-			command.CapturedOptions.Repo.Should().Be("repo",
-				because: "the requested repository locator must be preserved for update-skill");
-			command.CapturedOptions.Scope.Should().Be(SkillScopeParser.Workspace,
-				because: "the requested scope must be preserved for update-skill");
-			command.CapturedWorkingDirectory.Should().Be(GetWorkspacePath(),
-				because: "update-skill must execute relative to the requested workspace path");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the MCP wrapper should restore the original working directory after update-skill execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Maps delete-skill MCP arguments into delete-skill command options and executes from the requested workspace path.")]
-	public void DeleteSkill_ShouldMapArguments_AndUseWorkspace() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = CreateWorkspaceFileSystem();
-		FakeDeleteSkillCommand command = new(fileSystem);
-		DeleteSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillRunArgs("alpha", SkillScopeParser.Workspace, GetWorkspacePath()));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "the delete-skill MCP tool should forward a valid command payload");
-			command.CapturedOptions.Should().NotBeNull(because: "the delete-skill command should receive mapped options");
-			command.CapturedOptions!.Skill.Should().Be("alpha",
-				because: "the requested skill name must be preserved for delete-skill");
-			command.CapturedOptions.Scope.Should().Be(SkillScopeParser.Workspace,
-				because: "the requested scope must be preserved for delete-skill");
-			command.CapturedWorkingDirectory.Should().Be(GetWorkspacePath(),
-				because: "delete-skill must execute relative to the requested workspace path");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the MCP wrapper should restore the original working directory after delete-skill execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects non-workspace paths before install-skills command execution so MCP callers must provide a real local clio workspace.")]
-	public void InstallSkills_ShouldRejectInvalidWorkspacePath() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		MockFileSystem fileSystem = new(new System.Collections.Generic.Dictionary<string, System.IO.Abstractions.TestingHelpers.MockFileData>(), GetCurrentDirectoryPath());
-		FakeInstallSkillsCommand command = new(fileSystem);
-		InstallSkillsTool tool = new(command, ConsoleLogger.Instance, fileSystem);
+		FakeInstallSkillsCommand command = new();
+		InstallSkillsTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(GetWorkspacePath()));
+		CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs("codex", "url"));
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "install-skills should fail fast when the requested workspace directory is not a clio workspace");
-		result.Output.Should().Contain(message =>
-			message.GetType() == typeof(ErrorMessage) &&
-			Equals(message.Value, $"Workspace path not found: {GetWorkspacePath()}"),
-			because: "the failure should explain why the workspace path was rejected");
-		command.CapturedOptions.Should().BeNull(
-			because: "the install-skills command should not run when workspace validation fails");
+		result.ExitCode.Should().Be(0, because: "the tool should forward a valid command payload");
+		command.CapturedOptions.Should().NotBeNull(because: "the command should receive mapped options");
+		command.CapturedOptions!.Target.Should().Be("codex", because: "the requested target must be preserved");
+		command.CapturedOptions.Repo.Should().Be("url", because: "the requested repo must be preserved");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Allows install-skills to execute in user scope without requiring a workspace path.")]
-	public void InstallSkills_ShouldAllowUserScopeWithoutWorkspacePath() {
+	[Description("Maps update-adac MCP arguments (target, repo) into update-adac command options.")]
+	public void UpdateSkill_ShouldMapTargetAndRepoArguments() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = new(new System.Collections.Generic.Dictionary<string, System.IO.Abstractions.TestingHelpers.MockFileData>(), GetCurrentDirectoryPath());
-		FakeInstallSkillsCommand command = new(fileSystem);
-		InstallSkillsTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.InstallSkills(new InstallSkillsRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "user-scope install should bypass workspace validation");
-			command.CapturedOptions.Should().NotBeNull(
-				because: "the install-skills command should still execute when user scope is requested");
-			command.CapturedOptions!.Scope.Should().Be(SkillScopeParser.User,
-				because: "the MCP tool should preserve the requested user scope");
-			command.CapturedWorkingDirectory.Should().Be(GetCurrentDirectoryPath(),
-				because: "the MCP wrapper should not change directories when workspace scope is not used");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the host process working directory should remain unchanged after user-scope execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Rejects UNC workspace paths for update-skill so MCP callers cannot force execution against remote network shares.")]
-	public void UpdateSkill_ShouldRejectNetworkWorkspacePath() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		MockFileSystem fileSystem = CreateWorkspaceFileSystem();
-		FakeUpdateSkillCommand command = new(fileSystem);
-		UpdateSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
+		FakeUpdateSkillCommand command = new();
+		UpdateSkillTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(@"\\server\share\workspace"));
+		CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs("cursor", "url"));
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "update-skill should reject network shares to keep execution local and portable");
-		result.Output.Should().Contain(message =>
-			message.GetType() == typeof(ErrorMessage) &&
-			Equals(message.Value, @"Workspace path must be a local absolute path: \\server\share\workspace"),
-			because: "the failure should explain that only local absolute workspace paths are allowed");
-		command.CapturedOptions.Should().BeNull(
-			because: "the update-skill command should not run when the workspace path targets a network share");
+		result.ExitCode.Should().Be(0, because: "the tool should forward a valid command payload");
+		command.CapturedOptions!.Target.Should().Be("cursor", because: "the requested target must be preserved");
+		command.CapturedOptions.Repo.Should().Be("url", because: "the requested repo must be preserved");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Allows update-skill to execute in user scope without requiring a workspace path.")]
-	public void UpdateSkill_ShouldAllowUserScopeWithoutWorkspacePath() {
+	[Description("Maps delete-adac MCP argument (target) into delete-adac command options.")]
+	public void DeleteSkill_ShouldMapTargetArgument() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = new(new System.Collections.Generic.Dictionary<string, System.IO.Abstractions.TestingHelpers.MockFileData>(), GetCurrentDirectoryPath());
-		FakeUpdateSkillCommand command = new(fileSystem);
-		UpdateSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha", Repo: "repo"));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "user-scope update should bypass workspace validation");
-			command.CapturedOptions.Should().NotBeNull(
-				because: "the update-skill command should still execute when user scope is requested");
-			command.CapturedOptions!.Scope.Should().Be(SkillScopeParser.User,
-				because: "the MCP tool should preserve the requested user scope");
-			command.CapturedWorkingDirectory.Should().Be(GetCurrentDirectoryPath(),
-				because: "the MCP wrapper should not change directories when workspace scope is not used");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the host process working directory should remain unchanged after user-scope execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Allows delete-skill to execute in user scope without requiring a workspace path.")]
-	public void DeleteSkill_ShouldAllowUserScopeWithoutWorkspacePath() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		string originalDirectory = Directory.GetCurrentDirectory();
-		MockFileSystem fileSystem = new(new System.Collections.Generic.Dictionary<string, System.IO.Abstractions.TestingHelpers.MockFileData>(), GetCurrentDirectoryPath());
-		FakeDeleteSkillCommand command = new(fileSystem);
-		DeleteSkillTool tool = new(command, ConsoleLogger.Instance, fileSystem);
-
-		try {
-			// Act
-			CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillRunArgs(Scope: SkillScopeParser.User, SkillName: "alpha"));
-
-			// Assert
-			result.ExitCode.Should().Be(0, because: "user-scope delete should bypass workspace validation");
-			command.CapturedOptions.Should().NotBeNull(
-				because: "the delete-skill command should still execute when user scope is requested");
-			command.CapturedOptions!.Scope.Should().Be(SkillScopeParser.User,
-				because: "the MCP tool should preserve the requested user scope");
-			command.CapturedWorkingDirectory.Should().Be(GetCurrentDirectoryPath(),
-				because: "the MCP wrapper should not change directories when workspace scope is not used");
-			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the host process working directory should remain unchanged after user-scope execution");
-		}
-		finally {
-			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Marks update-skill and delete-skill as destructive while install-skills remains non-destructive for MCP safety policies.")]
-	[Ignore("ENG-90312 Phase 2: tool folded into clio-run; safety flags now reflected on clio-run itself. Polymorphic registry validated by Z7 schema-discovery test.")]
-	public void SkillManagementTools_ShouldAdvertiseExpectedDestructiveFlags() {
-		// Arrange
-		McpServerToolAttribute installAttribute = GetToolAttribute(typeof(InstallSkillsTool), nameof(InstallSkillsTool.InstallSkills));
-		McpServerToolAttribute updateAttribute = GetToolAttribute(typeof(UpdateSkillTool), nameof(UpdateSkillTool.UpdateSkill));
-		McpServerToolAttribute deleteAttribute = GetToolAttribute(typeof(DeleteSkillTool), nameof(DeleteSkillTool.DeleteSkill));
+		FakeDeleteSkillCommand command = new();
+		DeleteSkillTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
+		CommandExecutionResult result = tool.DeleteSkill(new DeleteSkillRunArgs("claude"));
 
 		// Assert
-		installAttribute.Destructive.Should().BeFalse(
-			because: "install-skills adds new workspace files but does not remove or replace existing unmanaged content");
-		updateAttribute.Destructive.Should().BeTrue(
-			because: "update-skill replaces managed skill files when the source commit changed");
-		deleteAttribute.Destructive.Should().BeTrue(
-			because: "delete-skill removes managed skill folders from the workspace");
+		result.ExitCode.Should().Be(0, because: "the tool should forward a valid command payload");
+		command.CapturedOptions!.Target.Should().Be("claude", because: "the requested target must be preserved");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prompt guidance for skill-management tools keeps the workspacePath requirement visible and references the exact production tool names.")]
-	public void SkillManagementPrompt_ShouldMentionWorkspacePath_AndToolNames() {
+	[Description("Install and update are non-destructive and idempotent; delete is destructive and idempotent.")]
+	[Ignore("ENG-90312 Phase 2: skill tools folded into clio-run; per-method [McpServerTool] safety flags now live on clio-run itself, so the legacy attribute reflection no longer applies.")]
+	public void SkillManagementTools_ShouldAdvertiseExpectedSafetyFlags() {
 		// Arrange
-
-		// Act
-		string installPrompt = SkillManagementPrompt.InstallSkills(SkillScopeParser.Workspace, GetWorkspacePath(), "alpha", "repo");
-		string updatePrompt = SkillManagementPrompt.UpdateSkill(SkillScopeParser.Workspace, GetWorkspacePath(), "alpha", "repo");
-		string deletePrompt = SkillManagementPrompt.DeleteSkill("alpha", SkillScopeParser.Workspace, GetWorkspacePath());
-		string userScopeInstallPrompt = SkillManagementPrompt.InstallSkills(SkillScopeParser.User, skillName: "alpha", repo: "repo");
+		McpServerToolAttribute install = GetToolAttribute(typeof(InstallSkillsTool), nameof(InstallSkillsTool.InstallSkills));
+		McpServerToolAttribute update = GetToolAttribute(typeof(UpdateSkillTool), nameof(UpdateSkillTool.UpdateSkill));
+		McpServerToolAttribute delete = GetToolAttribute(typeof(DeleteSkillTool), nameof(DeleteSkillTool.DeleteSkill));
 
 		// Assert
-		installPrompt.Should().Contain("workspacePath",
-			because: "the install-skills prompt should tell agents how to target the correct local workspace");
-		installPrompt.Should().Contain("scope",
-			because: "the install-skills prompt should teach callers how to choose workspace or user scope");
-		installPrompt.Should().Contain(InstallSkillsTool.ToolName,
-			because: "the install-skills prompt should reference the exact MCP tool name");
-		updatePrompt.Should().Contain("workspacePath",
-			because: "the update-skill prompt should tell agents how to target the correct local workspace");
-		updatePrompt.Should().Contain("scope",
-			because: "the update-skill prompt should teach callers how to choose workspace or user scope");
-		updatePrompt.Should().Contain(UpdateSkillTool.ToolName,
-			because: "the update-skill prompt should reference the exact MCP tool name");
-		deletePrompt.Should().Contain("workspacePath",
-			because: "the delete-skill prompt should tell agents how to target the correct local workspace");
-		deletePrompt.Should().Contain("scope",
-			because: "the delete-skill prompt should teach callers how to choose workspace or user scope");
-		deletePrompt.Should().Contain(DeleteSkillTool.ToolName,
-			because: "the delete-skill prompt should reference the exact MCP tool name");
-		userScopeInstallPrompt.Should().Contain("Omit `workspacePath`",
-			because: "the user-scope prompt should explain that workspacePath is not required outside workspace mode");
+		install.Destructive.Should().BeFalse(because: "install adds/refreshes plugins but does not destroy user content");
+		install.Idempotent.Should().BeTrue(because: "re-running install converges to the same installed state");
+		update.Destructive.Should().BeFalse(because: "update refreshes the plugin in place and is no longer marked destructive");
+		update.Idempotent.Should().BeTrue(because: "re-running update converges to the same updated state");
+		delete.Destructive.Should().BeTrue(because: "delete removes plugin/marketplace/rule artifacts");
+		delete.Idempotent.Should().BeTrue(because: "deleting an already-clean agent is a safe no-op");
 	}
 
-	private static MockFileSystem CreateWorkspaceFileSystem() {
-		return new MockFileSystem(new System.Collections.Generic.Dictionary<string, System.IO.Abstractions.TestingHelpers.MockFileData> {
-			[Path.Combine(GetWorkspacePath(), ".clio", "workspaceSettings.json")] = new("{}")
-		}, GetCurrentDirectoryPath());
+	[Test]
+	[Category("Unit")]
+	[Description("Prompt guidance references the exact tool names and the new target option.")]
+	public void SkillManagementPrompt_ShouldMentionTarget_AndToolNames() {
+		// Act
+		string installPrompt = SkillManagementPrompt.InstallSkills("codex", "repo");
+		string updatePrompt = SkillManagementPrompt.UpdateSkill(null, null);
+		string deletePrompt = SkillManagementPrompt.DeleteSkill(null);
+
+		// Assert
+		installPrompt.Should().Contain(InstallSkillsTool.ToolName, because: "the prompt should reference the exact tool name");
+		installPrompt.Should().Contain("target", because: "the prompt should teach callers about the target option");
+		updatePrompt.Should().Contain(UpdateSkillTool.ToolName, because: "the prompt should reference the exact tool name");
+		updatePrompt.Should().Contain("all detected agents", because: "omitting target should mean all detected agents");
+		deletePrompt.Should().Contain(DeleteSkillTool.ToolName, because: "the prompt should reference the exact tool name");
 	}
-
-	private static string GetCurrentDirectoryPath() => OperatingSystem.IsWindows() ? @"C:\" : "/";
-
-	private static string GetWorkspacePath() => OperatingSystem.IsWindows() ? @"C:\workspace" : "/workspace";
 
 	private static McpServerToolAttribute GetToolAttribute(Type toolType, string methodName) {
 		return toolType
@@ -356,56 +125,32 @@ public sealed class SkillManagementToolTests {
 			.Single();
 	}
 
-	private sealed class FakeInstallSkillsCommand : InstallSkillsCommand {
-		private readonly MockFileSystem _fileSystem;
-
+	private sealed class FakeInstallSkillsCommand()
+		: InstallSkillsCommand(Substitute.For<ISkillInstallService>(), Substitute.For<ILogger>()) {
 		public InstallSkillsOptions? CapturedOptions { get; private set; }
-		public string? CapturedWorkingDirectory { get; private set; }
-
-		public FakeInstallSkillsCommand(MockFileSystem fileSystem)
-			: base(Substitute.For<ISkillManagementService>(), Substitute.For<IWorkspacePathBuilder>(), Substitute.For<ILogger>()) {
-			_fileSystem = fileSystem;
-		}
 
 		public override int Execute(InstallSkillsOptions options) {
 			CapturedOptions = options;
-			CapturedWorkingDirectory = _fileSystem.Directory.GetCurrentDirectory();
 			return 0;
 		}
 	}
 
-	private sealed class FakeUpdateSkillCommand : UpdateSkillCommand {
-		private readonly MockFileSystem _fileSystem;
-
+	private sealed class FakeUpdateSkillCommand()
+		: UpdateSkillCommand(Substitute.For<ISkillInstallService>(), Substitute.For<ILogger>()) {
 		public UpdateSkillOptions? CapturedOptions { get; private set; }
-		public string? CapturedWorkingDirectory { get; private set; }
-
-		public FakeUpdateSkillCommand(MockFileSystem fileSystem)
-			: base(Substitute.For<ISkillManagementService>(), Substitute.For<IWorkspacePathBuilder>(), Substitute.For<ILogger>()) {
-			_fileSystem = fileSystem;
-		}
 
 		public override int Execute(UpdateSkillOptions options) {
 			CapturedOptions = options;
-			CapturedWorkingDirectory = _fileSystem.Directory.GetCurrentDirectory();
 			return 0;
 		}
 	}
 
-	private sealed class FakeDeleteSkillCommand : DeleteSkillCommand {
-		private readonly MockFileSystem _fileSystem;
-
+	private sealed class FakeDeleteSkillCommand()
+		: DeleteSkillCommand(Substitute.For<ISkillInstallService>(), Substitute.For<ILogger>()) {
 		public DeleteSkillOptions? CapturedOptions { get; private set; }
-		public string? CapturedWorkingDirectory { get; private set; }
-
-		public FakeDeleteSkillCommand(MockFileSystem fileSystem)
-			: base(Substitute.For<ISkillManagementService>(), Substitute.For<IWorkspacePathBuilder>(), Substitute.For<ILogger>()) {
-			_fileSystem = fileSystem;
-		}
 
 		public override int Execute(DeleteSkillOptions options) {
 			CapturedOptions = options;
-			CapturedWorkingDirectory = _fileSystem.Directory.GetCurrentDirectory();
 			return 0;
 		}
 	}

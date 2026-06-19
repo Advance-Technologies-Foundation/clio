@@ -53,6 +53,7 @@ public sealed class ToolContractGetToolTests {
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				ClioRunTool.ToolName,
 				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
 				SettingsHealthTool.ToolName,
 				AppsTool.ToolName,
 				DataForgeTool.DataForgeContextToolName,
@@ -109,6 +110,38 @@ public sealed class ToolContractGetToolTests {
 			because: "page-body edits applied through update-page must never be followed by compile-creatio");
 		contract.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains(ApplicationCreateTool.ApplicationCreateToolName, StringComparison.Ordinal),
 			because: "create-app never requires a follow-up compilation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical execute-esq contract with its required inputs, rows/count/success output, and the get-guidance preferred flow.")]
+	public void ToolContractGet_Should_Return_ExecuteEsq_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ExecuteEsqTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "execute-esq is part of the executable clio MCP contract surface and must be discoverable by contract lookup");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ExecuteEsqTool.ToolName,
+			because: "the contract name must stay stable for callers that bootstrap from the contract tool");
+		contract.InputSchema.Required.Should().Contain("query",
+			because: "execute-esq cannot run without a SelectQuery");
+		contract.InputSchema.Required.Should().Contain("environment-name",
+			because: "execute-esq must target a registered environment");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rows",
+			because: "a successful query returns the rows array");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "count",
+			because: "a successful query reports the number of returned rows");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
+			because: "the envelope must expose the success flag");
+		contract.Description.Should().Contain("get-guidance",
+			because: "the contract should steer callers to read the esq guidance before composing a query");
 	}
 
 	[Test]
@@ -1096,6 +1129,10 @@ public sealed class ToolContractGetToolTests {
 			because: "canonical-main-entity-name description should guide the agent to use sync-schemas and warn against create-app-section");
 		contract.PreferredFlow.Notes.Should().Contain("create-app-section",
 			because: "the preferred-flow notes should explicitly warn against calling create-app-section for a single-section app");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "with-mobile-pages" &&
+				defaultValue.Value == "true",
+			because: "create-app should document its mobile-enabled default explicitly so the MCP surface stays consistent with create-app-section");
 	}
 
 	[Test]
@@ -1363,5 +1400,169 @@ public sealed class ToolContractGetToolTests {
 			because: "the description must call out Binary exclusion so contract-driven clients understand why those entries are absent");
 		contract.Description.Should().Contain("excluded",
 			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-gate contract so an MCP-only agent can discover the cliogate remediation tool.")]
+	public void ToolContractGet_Should_Return_InstallGate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallGateTool.InstallGateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "install-gate must be discoverable through get-tool-contract so gate-dependent flows are completable from MCP");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(InstallGateTool.InstallGateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "install-gate targets one registered environment");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "install-gate returns the standard command execution result payload");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				InstallGateTool.InstallGateToolName,
+				RestoreWorkspaceTool.RestoreWorkspaceToolName
+			},
+			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]
+	public void ToolContractGet_Should_Return_Curated_Lifecycle_Contracts() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			AssertInfrastructureTool.AssertInfrastructureToolName,
+			ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+			FindEmptyIisPortTool.FindEmptyIisPortToolName,
+			InstallerCommandTool.DeployCreatioToolName,
+			RestoreWorkspaceTool.RestoreWorkspaceToolName,
+			PushWorkspaceTool.PushWorkspaceToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "all six deploy lifecycle tools must be discoverable through get-tool-contract");
+		result.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(requestedTools,
+			because: "the curated lifecycle contract set should be retrievable as one consistent set");
+
+		ToolContractDefinition deploy = result.Tools!.Single(contract =>
+			contract.Name == InstallerCommandTool.DeployCreatioToolName);
+		deploy.InputSchema.Required.Should().Contain(["site-name", "zip-file", "site-port"],
+			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "deploy-creatio returns the standard command execution result payload");
+		deploy.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				AssertInfrastructureTool.AssertInfrastructureToolName,
+				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+				FindEmptyIisPortTool.FindEmptyIisPortToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "deploy-creatio should advertise the canonical deploy preflight order");
+		deploy.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the most consequential tool must spell out its preconditions");
+
+		ToolContractDefinition restore = result.Tools!.Single(contract =>
+			contract.Name == RestoreWorkspaceTool.RestoreWorkspaceToolName);
+		restore.InputSchema.Required.Should().Contain(["environment-name", "workspace-path"],
+			because: "restore-workspace needs the environment and the local workspace path");
+		restore.Preconditions.Should().Contain(precondition =>
+			precondition.Contains("cliogate", StringComparison.Ordinal) &&
+			precondition.Contains("install-gate", StringComparison.Ordinal),
+			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
+
+		ToolContractDefinition assert = result.Tools!.Single(contract =>
+			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);
+		assert.InputSchema.Properties.Should().BeEmpty(
+			because: "assert-infrastructure takes no parameters");
+		assert.OutputContract.Fields.Should().Contain(field => field.Name == "database-candidates",
+			because: "assert-infrastructure should advertise the normalized database candidates it returns");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to a schema-derived contract for a registered tool that has no curated contract instead of returning tool-not-found.")]
+	public void ToolContractGet_Should_Fall_Back_To_Schema_For_Uncurated_Registered_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act — find-app stays a flat [McpServerTool] after the ENG-90312 merge but has no curated
+		// contract, so it exercises the registered-but-uncurated input-schema fallback.
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			FindAppTool.FindAppToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a registered-but-uncurated tool should resolve through the input-schema fallback");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(FindAppTool.FindAppToolName,
+			because: "the fallback should return the requested tool verbatim");
+		contract.Description.Should().Contain("Auto-generated from the tool input schema",
+			because: "the fallback contract should mark itself as schema-derived so callers know it is uncurated");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(["environment-name", "search-pattern"],
+			because: "the fallback should surface the tool's real input fields from its args record");
+		contract.InputSchema.Required.Should().Contain(["environment-name"],
+			because: "the fallback should detect [Required] declared on the args constructor parameters");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Still returns tool-not-found with suggestions for a name that matches no registered tool.")]
+	public void ToolContractGet_Should_Return_NotFound_For_Unknown_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			"definitely-not-a-real-tool"
+		]));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a name that matches no curated and no registered tool must still fail");
+		result.Error!.Code.Should().Be("tool-not-found",
+			because: "the fallback must not mask genuinely unknown tool names");
+		result.Error.Suggestions.Should().NotBeNullOrEmpty(
+			because: "the error should still offer nearest-name suggestions");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical list-creatio-builds contract so an agent can discover the build-discovery tool.")]
+	public void ToolContractGet_Should_Return_ListCreatioBuilds_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ListCreatioBuildsTool.ListCreatioBuildsToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "list-creatio-builds must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ListCreatioBuildsTool.ListCreatioBuildsToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Properties.Should().BeEmpty(
+			because: "list-creatio-builds takes no parameters and reads the configured products folder");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "builds",
+			because: "the contract should advertise the discovered build archives");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "products-folder",
+			because: "the contract should advertise the resolved products folder so a stale configuration is visible");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				ListCreatioBuildsTool.ListCreatioBuildsToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "build discovery should flow into deploy-creatio with the chosen archive");
 	}
 }

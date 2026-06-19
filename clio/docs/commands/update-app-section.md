@@ -75,6 +75,7 @@ update only the icon metadata of the selected section
 - `--section-code` is required.
 - At least one mutable field must be provided: `--caption`, `--description`, `--icon-id`, or `--icon-background`.
 - Caption updates are persisted as plain text.
+- `--caption`/`--description` must be in the connected user's profile language. The caption is localized server-side under the profile, so a value whose script does not match a Latin-script profile (for example Cyrillic under an `en-US` profile) is rejected with an actionable error.
 
 ## Reporting Bugs
 

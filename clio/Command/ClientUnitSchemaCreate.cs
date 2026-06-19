@@ -1,5 +1,6 @@
 namespace Clio.Command {
 	using System;
+	using Clio.Command.EntitySchemaDesigner;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -19,6 +20,9 @@ namespace Clio.Command {
 
 		[Option("description", Required = false, HelpText = "Optional schema description")]
 		public string Description { get; set; }
+
+		[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated schema caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
+		public string? CaptionCulture { get; set; }
 	}
 
 	public class ClientUnitSchemaCreateResponse {
@@ -38,14 +42,17 @@ namespace Clio.Command {
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
+		private readonly ICaptionCultureResolver _captionCultureResolver;
 
 		public ClientUnitSchemaCreateCommand(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
-			ILogger logger) {
+			ILogger logger,
+			ICaptionCultureResolver captionCultureResolver) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
+			_captionCultureResolver = captionCultureResolver;
 		}
 
 		public bool TryCreate(ClientUnitSchemaCreateOptions options, out ClientUnitSchemaCreateResponse response) {
@@ -84,8 +91,13 @@ namespace Clio.Command {
 				string newSchemaUId = Guid.NewGuid().ToString("D");
 
 				LogStep(ref stepNumber, totalSteps, $"Saving schema '{options.SchemaName}' (uId={newSchemaUId})");
+				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
+				// ENG-91044: the schema caption is stored under the effective culture, so reject text whose
+				// script does not match it (e.g. Cyrillic under en-US).
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, caption, "caption");
+				CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(captionCulture, options.Description, "description");
 				JObject payload = BuildSaveSchemaPayload(newSchemaUId, options.SchemaName, caption,
-					options.Description, packageUId, options.PackageName);
+					options.Description, packageUId, options.PackageName, captionCulture);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new ClientUnitSchemaCreateResponse { Success = false, Error = saveError };
 					LogFailure(response.Error);
@@ -150,14 +162,17 @@ namespace Clio.Command {
 		}
 
 		private static JObject BuildSaveSchemaPayload(string newSchemaUId, string schemaName, string caption,
-			string description, string packageUId, string packageName) {
-			var localizableCaption = new JObject { ["cultureName"] = "en-US", ["value"] = caption };
+			string description, string packageUId, string packageName, string cultureName = null) {
+			// Anchor the schema caption/description to the effective culture (override > profile > en-US).
+			// A null cultureName preserves the legacy en-US default; CurrentCulture is never read.
+			string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
+			var localizableCaption = new JObject { ["cultureName"] = effectiveCulture, ["value"] = caption };
 			return new JObject {
 				["uId"] = newSchemaUId,
 				["name"] = schemaName,
 				["caption"] = new JArray { localizableCaption },
 				["description"] = string.IsNullOrWhiteSpace(description) ? new JArray() : new JArray(new JObject {
-					["cultureName"] = "en-US",
+					["cultureName"] = effectiveCulture,
 					["value"] = description
 				}),
 				["package"] = new JObject {

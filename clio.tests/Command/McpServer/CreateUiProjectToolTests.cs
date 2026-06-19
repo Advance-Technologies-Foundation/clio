@@ -22,6 +22,12 @@ public class CreateUiProjectToolTests {
 		_workspaceDirectory = Path.Combine(Path.GetTempPath(), "clio-ui-tool-tests-" + Path.GetRandomFileName());
 		Directory.CreateDirectory(Path.Combine(_workspaceDirectory, ".clio"));
 		File.WriteAllText(Path.Combine(_workspaceDirectory, ".clio", "workspaceSettings.json"), "{}");
+		// Resolve any symlinks (e.g. /var → /private/var on macOS) so path comparisons
+		// that use Directory.GetCurrentDirectory() are stable across platforms.
+		string savedCwd = Directory.GetCurrentDirectory();
+		Directory.SetCurrentDirectory(_workspaceDirectory);
+		_workspaceDirectory = Directory.GetCurrentDirectory();
+		Directory.SetCurrentDirectory(savedCwd);
 	}
 
 	[TearDown]
@@ -45,7 +51,7 @@ public class CreateUiProjectToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateUiProject(
-			new CreateUiProjectArgs(
+			new CreateUiProjectRunArgs(
 				WorkspaceDirectory: _workspaceDirectory,
 				ProjectName: "my_module",
 				PackageName: "UsrCustomPkg",
@@ -89,7 +95,7 @@ public class CreateUiProjectToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateUiProject(
-			new CreateUiProjectArgs(
+			new CreateUiProjectRunArgs(
 				WorkspaceDirectory: _workspaceDirectory,
 				ProjectName: "my_module",
 				PackageName: "UsrCustomPkg",
@@ -121,7 +127,7 @@ public class CreateUiProjectToolTests {
 		try {
 			// Act
 			tool.CreateUiProject(
-				new CreateUiProjectArgs(
+				new CreateUiProjectRunArgs(
 					WorkspaceDirectory: _workspaceDirectory,
 					ProjectName: "my_module",
 					PackageName: "UsrCustomPkg",
@@ -149,7 +155,7 @@ public class CreateUiProjectToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateUiProject(
-			new CreateUiProjectArgs(
+			new CreateUiProjectRunArgs(
 				WorkspaceDirectory: "",
 				ProjectName: "my_module",
 				PackageName: "UsrCustomPkg",
@@ -177,7 +183,7 @@ public class CreateUiProjectToolTests {
 
 			// Act
 			CommandExecutionResult result = tool.CreateUiProject(
-				new CreateUiProjectArgs(
+				new CreateUiProjectRunArgs(
 					WorkspaceDirectory: nonWorkspace,
 					ProjectName: "my_module",
 					PackageName: "UsrCustomPkg",
@@ -206,7 +212,7 @@ public class CreateUiProjectToolTests {
 		// Act — "C:ws" is path-rooted but NOT fully qualified; resolves against the
 		// process's current directory on the named drive, not an absolute location.
 		CommandExecutionResult result = tool.CreateUiProject(
-			new CreateUiProjectArgs(
+			new CreateUiProjectRunArgs(
 				WorkspaceDirectory: "C:ws",
 				ProjectName: "my_module",
 				PackageName: "UsrCustomPkg",
@@ -235,7 +241,7 @@ public class CreateUiProjectToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateUiProject(
-			new CreateUiProjectArgs(
+			new CreateUiProjectRunArgs(
 				WorkspaceDirectory: _workspaceDirectory,
 				ProjectName: "my_module",
 				PackageName: packageName,
@@ -265,7 +271,7 @@ public class CreateUiProjectToolTests {
 		// Assert
 		requiredAttributes.Should().ContainSingle(
 			because: "the new-ui-project MCP tool should require its structured args payload");
-		typeof(CreateUiProjectArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
+		typeof(CreateUiProjectRunArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
 			["WorkspaceDirectory", "ProjectName", "PackageName", "VendorPrefix", "Empty", "CreatioVersion"],
 			because: "the new-ui-project MCP payload should only expose the supported UI project arguments");
 	}

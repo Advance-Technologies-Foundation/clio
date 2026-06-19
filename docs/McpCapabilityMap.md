@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-03-26`
+Snapshot date: `2026-06-10`
 
 ## One-sentence summary
 
@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `60` tools
+- `63` tools
 - `50` prompts
 - `4` resources
-- `53` tools with explicit safety metadata
+- `56` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -128,6 +128,7 @@ Structured domain responses:
 - `component-info`
 - `list-apps`
 - `get-app-info`
+- `find-app`
 - `create-app`
 - `delete-app`
 - `assert-infrastructure`
@@ -193,22 +194,46 @@ This area gives the AI a clean application-level view of the platform.
   Return installed applications as structured JSON.
 - `get-app-info`
   Return application context, packages, and related metadata for a single installed app.
+- `find-app`
+  Find applications and their sections in a single call by name, code, or substring pattern. Maps an imprecise app name to its real code without an N+1 `list-apps` + per-app `list-app-sections` scan.
 - `create-app`
   Create a Creatio application and return its structured context.
+- `create-app-section`
+  Add a section to an existing installed application; returns the created section, entity, and page readback.
+- `update-app-section`
+  Update metadata (caption, description, icon) of an existing section; returns before/after readback.
+- `delete-app-section`
+  Remove a section from an existing application; returns the deleted-section readback.
+- `list-app-sections`
+  List the sections of an existing installed application.
 - `delete-app`
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
+- `add-package-dependency`
+  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op.
 
 What an external AI can practically do here:
 
 - enumerate installed apps
+- map a fuzzy or partial app name to its real code (and see its sections) in a single call
 - inspect one app precisely before modifying or replacing it
 - create new apps from a template
+- add, update, list, and remove sections inside an existing app
 - remove apps
 - install packaged apps into an environment
+- add missing package dependencies to recover a broken schema designer or compile
 
 The AI sees this as a higher abstraction layer than package-level commands.
+
+**Long-running / progress contract.** `create-app`, `create-app-section`,
+`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
+call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
+overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
+clients reset their inactivity timeout. A progress notification means the server is
+still working — the AI must await completion and must not retry or fall back to raw SQL
+or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 
@@ -325,12 +350,19 @@ This part is small but important because many other tools depend on it.
   Return registered local environments and settings as structured JSON.
 - `get-pkg-list`
   Read remote package inventory from the selected environment.
+- `get-user-culture`
+  Resolve the logged-in user's profile culture (e.g. `en-US`, `uk-UA`) from
+  `ApplicationInfoService.svc/GetApplicationInfo` (no cliogate). Read-only, non-destructive.
+  Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
+  entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
+  which language to use instead of silently defaulting.
 
 What an external AI can practically do here:
 
 - onboard a target environment into clio configuration
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
+- detect the profile language to apply to created entity names/labels/captions
 
 Important note:
 
@@ -390,6 +422,27 @@ What an external AI can practically do here:
 Special behavior:
 
 - `start-creatio` and `stop-creatio` are wired for MCP progress notifications
+
+### 10. Browser Session Handoff
+
+These tools let an external AI obtain an authenticated Creatio browser session so it can verify UI
+changes in a real browser without ever seeing the login page.
+
+- `get-browser-session` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`) — authenticates against a forms-auth environment and returns the absolute path to a Playwright-compatible `storageState` file in `session-file-path`. Args: `environment-name` (required), `force-refresh` (optional).
+- `clear-browser-session` (`ReadOnly=false`, `Destructive=true`, `Idempotent=true`) — deletes the cached session so the next call re-authenticates. Args: `environment-name` (required).
+
+What an external AI can practically do here:
+
+- get a `storageState` file path and feed it to Playwright's `storageState` option to open Creatio already logged in
+- force a fresh login or clear a stale session
+
+Important behavior and safety:
+
+- Cookie values are **never** returned over MCP — only the file path. The session file is written owner-only on disk.
+- `output-path` is intentionally CLI-only and not exposed on the MCP surface (an agent cannot redirect the bearer-token file).
+- Forms-auth environments only (login + password). OAuth-only environments return `success=false` with an error — there is no OAuth token-to-cookie exchange.
+- A Safe-flagged environment in the non-interactive MCP context fails closed with a structured error instead of hanging the stdio server.
+- `open-web-app --authenticated` (Mode A — launches a local desktop browser already signed in via CDP cookie injection) is intentionally **CLI-only and not an MCP tool**: it opens a GUI window on the operator's machine, which is meaningless for a headless/remote MCP server. The agent-facing surface for an authenticated session is `get-browser-session` (returns a `storageState` path); Mode A is a human convenience built on the same session machinery.
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

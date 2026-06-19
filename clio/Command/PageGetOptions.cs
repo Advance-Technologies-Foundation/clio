@@ -17,6 +17,15 @@ public class PageGetOptions : EnvironmentOptions {
 	/// </summary>
 	[Option("schema-name", Required = true, HelpText = "Schema name to fetch")]
 	public string SchemaName { get; set; }
+
+	/// <summary>
+	/// Gets or sets the directory that anchors the <c>.clio-pages</c> output tree. When omitted, output
+	/// is anchored at the workspace root (or the managed clio home root when no workspace is found),
+	/// matching the MCP <c>get-page</c> tool. Writing files is what lets a later CLI <c>update-page</c>
+	/// discover the conflict-detection baseline.
+	/// </summary>
+	[Option("output-directory", Required = false, HelpText = "Directory that anchors the .clio-pages output tree (body.js/bundle.json/meta.json). Defaults to the workspace root, or the clio home root when no workspace is found.")]
+	public string OutputDirectory { get; set; }
 }
 
 /// <summary>
@@ -29,6 +38,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
 	private readonly IPageSchemaBodyParser _bodyParser;
 	private readonly IPageBundleBuilder _bundleBuilder;
+	private readonly IPageFileWriter _pageFileWriter;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="PageGetCommand"/> class.
@@ -39,19 +49,26 @@ public class PageGetCommand : Command<PageGetOptions> {
 	/// <param name="hierarchyClient">Hierarchy client for designer schemas.</param>
 	/// <param name="bodyParser">Parser for schema body markers.</param>
 	/// <param name="bundleBuilder">Bundle builder that mirrors frontend merge logic.</param>
+	/// <param name="pageFileWriter">Required shared writer that persists body.js/bundle.json/meta.json
+	/// (incl. the conflict-detection baseline) into <c>.clio-pages/{schema}/</c>, so the CLI verb writes
+	/// the same workspace layout as the MCP tool and a later <c>update-page</c> can find the baseline.
+	/// Injected as a required dependency so a broken DI registration fails loudly at resolve time
+	/// instead of silently disabling the baseline write.</param>
 	public PageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		ILogger logger,
 		IPageDesignerHierarchyClient hierarchyClient,
 		IPageSchemaBodyParser bodyParser,
-		IPageBundleBuilder bundleBuilder) {
+		IPageBundleBuilder bundleBuilder,
+		IPageFileWriter pageFileWriter) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
 		_hierarchyClient = hierarchyClient;
 		_bodyParser = bodyParser;
 		_bundleBuilder = bundleBuilder;
+		_pageFileWriter = pageFileWriter;
 	}
 
 	/// <summary>
@@ -146,6 +163,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(currentSchema.SchemaType);
 			string editableBody = editableSchema?.Body ?? BuildEmptyBody(options.SchemaName, pageSchemaType);
 			PageOwnBodySummary ownBodySummary = BuildOwnBodySummary(editableSchema ?? currentSchema, _bodyParser);
+			PageEditableSchemaInfo editableInfo = BuildEditableSchemaInfo(editableSchema);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -180,6 +198,7 @@ public class PageGetCommand : Command<PageGetOptions> {
 				Raw = new PageRawInfo {
 					Body = editableBody
 				},
+				Editable = editableInfo,
 				Error = null
 			};
 			return true;
@@ -196,6 +215,22 @@ public class PageGetCommand : Command<PageGetOptions> {
 	/// <inheritdoc />
 	public override int Execute(PageGetOptions options) {
 		bool success = TryGetPage(options, out PageGetResponse response);
+		// Persist body.js/bundle.json/meta.json so a later CLI update-page can discover the
+		// conflict-detection baseline — the same workspace layout the MCP get-page tool produces.
+		// The fetched page is the primary deliverable; persisting the baseline is best-effort, so a
+		// write failure (locked body.js, read-only dir, permissions) must NOT discard a page that was
+		// successfully read from the server. Keep the fetched payload and exit 0, warning about the
+		// baseline that could not be written.
+		if (success) {
+			PageGetResponse written = _pageFileWriter.WritePageFiles(
+				response, options.SchemaName, options.Environment, options.Uri, options.OutputDirectory);
+			if (written.Success) {
+				response = written;
+			} else {
+				_logger.WriteWarning(
+					$"Page fetched, but writing the .clio-pages baseline failed: {written.Error}");
+			}
+		}
 		_logger.WriteInfo(JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}
@@ -223,6 +258,36 @@ public class PageGetCommand : Command<PageGetOptions> {
 				_hierarchyClient.GetParentSchemas(replacingUId, designPackageUId);
 			return replacingHierarchy.FirstOrDefault(
 				s => string.Equals(s.UId, replacingUId, StringComparison.OrdinalIgnoreCase));
+		} catch {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Builds the conflict-detection baseline source for the editable schema. Best-effort: when the
+	/// checksum query fails the method returns <c>null</c> so the caller degrades to "no baseline"
+	/// instead of failing the whole <c>get-page</c> call.
+	/// </summary>
+	private PageEditableSchemaInfo BuildEditableSchemaInfo(PageDesignerHierarchySchema editableSchema) {
+		if (editableSchema is null) {
+			return new PageEditableSchemaInfo { EditableSchemaExists = false };
+		}
+		try {
+			(Newtonsoft.Json.Linq.JToken row, _) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				_applicationClient,
+				_serviceUrlBuilder,
+				editableSchema.UId,
+				("Checksum", "Checksum"),
+				("ModifiedOn", "ModifiedOn"));
+			if (row is null) {
+				return null;
+			}
+			return new PageEditableSchemaInfo {
+				EditableSchemaExists = true,
+				EditableSchemaUId = editableSchema.UId,
+				Checksum = row["Checksum"]?.ToString(),
+				ModifiedOn = row["ModifiedOn"]?.ToString()
+			};
 		} catch {
 			return null;
 		}

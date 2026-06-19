@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -49,10 +50,20 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 	/// </summary>
 	internal const string ApplicationGetInfoToolName = "get-app-info";
 
-	public ApplicationContextResponse ApplicationGetInfo(
+	/// <summary>
+	/// Returns primary package and runtime entity metadata for an installed application.
+	/// </summary>
+	[Description("Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context. "
+		+ "Each entity column round-trips into sync-schemas update-entity as-is — send the same column object back and add an 'action' verb (modify/remove); "
+		+ "no field renaming needed, and no separate get-tool-contract call is required to learn the write shape. "
+		+ "Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	public async Task<ApplicationContextResponse> ApplicationGetInfo(
 		[Description("Parameters: environment-name (required), id or code (exactly one required)")]
 		[Required]
-		ApplicationGetInfoArgs args) {
+		ApplicationGetInfoArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
 		try {
 			bool hasId = !string.IsNullOrWhiteSpace(args.Id);
 			bool hasCode = !string.IsNullOrWhiteSpace(args.Code);
@@ -60,10 +71,15 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 				throw new ArgumentException("Provide exactly one identifier: id or code.");
 			}
 
-			ApplicationInfoResult result = applicationInfoService.GetApplicationInfo(
-				args.EnvironmentName,
-				args.Id,
-				args.Code);
+			ApplicationInfoResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationGetInfoToolName,
+				() => applicationInfoService.GetApplicationInfo(
+					args.EnvironmentName,
+					args.Id,
+					args.Code),
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateContextErrorResponse(ex.Message);
@@ -86,30 +102,42 @@ public sealed class ApplicationCreateTool(
 	/// <summary>
 	/// Creates a Creatio application and returns the same structured payload as get-app-info.
 	/// </summary>
-		[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context.")]
+	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id (optional)")]
+		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
 		[Required]
-		ApplicationCreateRunArgs args) {
+		ApplicationCreateRunArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
 		try {
 			ValidateCreateArgs(args);
 			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
 			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
-			ApplicationDataForgeResult dataForge = enrichmentService.Enrich(
-				args,
-				optionalTemplateData,
-				CancellationToken.None);
-			ApplicationInfoResult result = applicationCreateService.CreateApplication(
-				args.EnvironmentName,
-				new ApplicationCreateRequest(
-					args.Name,
-					args.Code,
-					args.Description,
-					effectiveTemplateCode,
-					args.IconId,
-					args.IconBackground,
-					args.ClientTypeId,
-					optionalTemplateData));
+			(ApplicationDataForgeResult dataForge, ApplicationInfoResult result) = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationCreateToolName,
+				() => {
+					ApplicationDataForgeResult forge = enrichmentService.Enrich(
+						args,
+						optionalTemplateData,
+						cancellationToken);
+					ApplicationInfoResult created = applicationCreateService.CreateApplication(
+						args.EnvironmentName,
+						new ApplicationCreateRequest(
+							args.Name,
+							args.Code,
+							args.Description,
+							effectiveTemplateCode,
+							args.IconId,
+							args.IconBackground,
+							args.ClientTypeId,
+							optionalTemplateData,
+							args.WithMobilePages));
+					return (forge, created);
+				},
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(
 				ApplicationToolResultMapper.Map(result),
 				dataForge);
@@ -161,11 +189,16 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionCreateToolName = "create-app-section";
 
+	/// <summary>
+	/// Creates a section in an existing Creatio application and returns structured readback data.
+	/// </summary>
+	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout. On failure the response carries error-class (transport | creatio-timeout | server-error), section-created (true | false | unknown), and retry-guidance — follow that guidance instead of blind retries: on creatio-timeout the operation may still complete server-side, so verify with list-app-sections before retrying.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
-		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, icon-background, with-mobile-pages (optional)")]
+		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, code, icon-background, with-mobile-pages (optional). entity-schema-name must reference an existing object (validated before creation); several sections may target the same object, so reuse is allowed. The section code is generated from the caption; a non-Latin caption (for example 'Контакти') cannot produce a valid Latin code, so pass an explicit code such as code='Contacts'. If the object does not exist, creation fails with a 'does not exist' error; on a detail-less rejection a section with that code may already exist — inspect existing sections with list-app-sections.")]
 		[Required]
 		ApplicationSectionCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionCreateArgs(args);
@@ -174,16 +207,25 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
 			}
-			ApplicationSectionCreateResult result = applicationSectionCreateService.CreateSection(
-				args.EnvironmentName,
-				new ApplicationSectionCreateRequest(
-					args.ApplicationCode,
-					args.Caption,
-					args.Description,
-					args.EntitySchemaName,
-					args.WithMobilePages,
-					resolvedIconBackground));
+			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationSectionCreateToolName,
+				() => applicationSectionCreateService.CreateSection(
+					args.EnvironmentName,
+					new ApplicationSectionCreateRequest(
+						args.ApplicationCode,
+						args.Caption,
+						args.Description,
+						args.EntitySchemaName,
+						args.WithMobilePages,
+						resolvedIconBackground,
+						args.CaptionCulture,
+						args.Code)),
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (ApplicationSectionCreateException ex) {
+			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex);
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
 		}
@@ -215,11 +257,16 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionUpdateToolName = "update-app-section";
 
+	/// <summary>
+	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
+	/// </summary>
+	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
 		[Required]
 		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionUpdateArgs(args);
@@ -228,15 +275,20 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
 			}
-			ApplicationSectionUpdateResult result = applicationSectionUpdateService.UpdateSection(
-				args.EnvironmentName,
-				new ApplicationSectionUpdateRequest(
-					args.ApplicationCode,
-					args.SectionCode,
-					args.Caption,
-					args.Description,
-					args.IconId,
-					resolvedIconBackground));
+			ApplicationSectionUpdateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationSectionUpdateToolName,
+				() => applicationSectionUpdateService.UpdateSection(
+					args.EnvironmentName,
+					new ApplicationSectionUpdateRequest(
+						args.ApplicationCode,
+						args.SectionCode,
+						args.Caption,
+						args.Description,
+						args.IconId,
+						resolvedIconBackground)),
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionUpdateContextErrorResponse(ex.Message);
@@ -277,18 +329,30 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionDeleteToolName = "delete-app-section";
 
-	public ApplicationSectionDeleteContextResponse ApplicationSectionDelete(
+	/// <summary>
+	/// Deletes a section from an existing Creatio application and returns structured readback of the deleted section.
+	/// </summary>
+	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
 		[Description("Parameters: environment-name, application-code, section-code (all required)")]
 		[Required]
-		ApplicationSectionDeleteArgs args) {
+		ApplicationSectionDeleteArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionDeleteArgs(args);
-			ApplicationSectionDeleteResult result = applicationSectionDeleteService.DeleteSection(
-				args.EnvironmentName,
-				new ApplicationSectionDeleteRequest(
-					args.ApplicationCode,
-					args.SectionCode,
-					args.DeleteEntitySchema ?? false));
+			ApplicationSectionDeleteResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationSectionDeleteToolName,
+				() => applicationSectionDeleteService.DeleteSection(
+					args.EnvironmentName,
+					new ApplicationSectionDeleteRequest(
+						args.ApplicationCode,
+						args.SectionCode,
+						args.DeleteEntitySchema ?? false)),
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionDeleteContextErrorResponse(ex.Message);
@@ -313,18 +377,30 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 	/// <summary>Legacy MCP tool name retained for ToolContractGetTool documentation; entry now lives on <see cref="AppSectionTool"/>.</summary>
 	internal const string ApplicationSectionGetListToolName = "list-app-sections";
 
-	public ApplicationSectionListContextResponse ApplicationSectionGetList(
+	/// <summary>
+	/// Returns all sections of an existing Creatio application.
+	/// </summary>
+	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
+	public async Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
 		[Description("Parameters: environment-name, application-code (both required)")]
 		[Required]
-		ApplicationSectionGetListArgs args) {
+		ApplicationSectionGetListArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
 		try {
 			if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
 				throw new ArgumentException("application-code is required.");
 			}
 
-			ApplicationSectionGetListResult result = applicationSectionGetListService.GetSections(
-				args.EnvironmentName,
-				new ApplicationSectionGetListRequest(args.ApplicationCode));
+			ApplicationSectionGetListResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+				server,
+				requestContext?.Params?.ProgressToken,
+				ApplicationSectionGetListToolName,
+				() => applicationSectionGetListService.GetSections(
+					args.EnvironmentName,
+					new ApplicationSectionGetListRequest(args.ApplicationCode)),
+				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionListContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionListContextErrorResponse(ex.Message);

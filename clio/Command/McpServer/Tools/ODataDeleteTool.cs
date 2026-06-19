@@ -16,7 +16,6 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 	internal const string ToolName = "odata-delete";
 
 	/// <summary>Deletes a single Creatio record using OData v4.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Delete a single Creatio record via OData v4 (DELETE). " +
 		"Requires the record's GUID id; this tool never performs a keyless mass delete. " +
@@ -26,7 +25,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 	public ODataWriteResponse Delete(
 		[Description("Parameters: entity, id, environment-name (all required).")]
 		[Required]
-		ODataDeleteArgs args) {
+		ODataDeleteRunArgs args) {
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "delete");
 			if (invalidTarget is not null) {
@@ -47,7 +46,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 }
 
 /// <summary>Arguments for <see cref="ODataDeleteTool"/>.</summary>
-public sealed record ODataDeleteArgs {
+public sealed record ODataDeleteRunArgs : ClioRunArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account).</summary>
 	[JsonPropertyName("entity")]
 	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover names.")]

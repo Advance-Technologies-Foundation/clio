@@ -1,0 +1,8 @@
+﻿{
+  "mcpServers": {
+    "clio": {
+      "command": "clio",
+      "args": ["mcp-server"]
+    }
+  }
+}

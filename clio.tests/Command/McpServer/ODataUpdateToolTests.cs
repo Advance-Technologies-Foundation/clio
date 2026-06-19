@@ -17,6 +17,7 @@ public sealed class ODataUpdateToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-update.")]
+	[Ignore("ENG-90312 Phase 2: odata-update folded into clio-run; the per-method [McpServerTool] safety flags now live on clio-run itself, so the legacy attribute reflection no longer applies.")]
 	public void Update_Should_Advertise_Stable_Tool_Name() {
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ODataUpdateTool)
 			.GetMethod(nameof(ODataUpdateTool.Update))!
@@ -41,7 +42,7 @@ public sealed class ODataUpdateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		ODataUpdateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+		ODataWriteResponse response = tool.Update(new ODataUpdateRunArgs {
 			EnvironmentName = "dev",
 			Entity = "Contact",
 			Id = Guid,
@@ -64,7 +65,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		ODataUpdateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+		ODataWriteResponse response = tool.Update(new ODataUpdateRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = "all", Data = Obj("{\"Name\":\"x\"}"), Confirm = true
 		});
 
@@ -84,7 +85,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		ODataUpdateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+		ODataWriteResponse response = tool.Update(new ODataUpdateRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{\"Name\":\"New\"}")
 		});
 
@@ -102,7 +103,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		ODataUpdateTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
+		ODataWriteResponse response = tool.Update(new ODataUpdateRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj("{}")
 		});
 

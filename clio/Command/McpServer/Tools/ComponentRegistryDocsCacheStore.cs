@@ -15,8 +15,11 @@ namespace Clio.Command.McpServer.Tools;
 /// Stores fetched component documentation (markdown) payloads on disk under the same
 /// cache root as <see cref="ComponentRegistryCacheStore"/>. Per-version, per-doc-path
 /// files plus a sidecar carrying ETag / Last-Modified / SHA-256. The TTL matches the
-/// registry payload (5 minutes), and stale entries are still returned to support the
-/// stale-while-revalidate flow on top of this store.
+/// registry payload (5 minutes). Stale entries are still returned (with
+/// <see cref="ComponentRegistryDocsCacheReadResult.IsFresh"/> = <see langword="false"/>)
+/// so the client can decide what to do with them — the docs client revalidates a stale
+/// entry synchronously against the CDN and only serves the stale bytes as a fallback
+/// (ENG-91135).
 /// </summary>
 public interface IComponentRegistryDocsCacheStore {
 	/// <summary>Reads a cached documentation payload (fresh or stale) when one exists.</summary>
@@ -52,9 +55,9 @@ public sealed record ComponentRegistryDocsCacheReadResult(byte[] Content, bool I
 
 /// <summary>
 /// Disk-backed implementation of <see cref="IComponentRegistryDocsCacheStore"/>. Files
-/// live under <c>~/.clio/cache/component-registry/{version}/{docPath}</c> with a
+/// live under <c><clio-home>/cache/component-registry/{version}/{docPath}</c> with a
 /// <c>.meta.json</c> sidecar of the same name. The cache root and TTL are shared with
-/// the registry-payload store so a single <c>~/.clio/cache/component-registry/</c>
+/// the registry-payload store so a single <c><clio-home>/cache/component-registry/</c>
 /// delete resets every layer in one go.
 /// </summary>
 public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCacheStore {
@@ -246,8 +249,7 @@ public sealed class ComponentRegistryDocsCacheStore : IComponentRegistryDocsCach
 	}
 
 	private static string DefaultRoot(IFileSystem fileSystem) {
-		string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-		return fileSystem.Path.Combine(profile, ".clio", "cache", ComponentRegistryCacheStore.CacheDirectoryName);
+		return fileSystem.Path.Combine(ClioRuntimePaths.CacheRoot, ComponentRegistryCacheStore.CacheDirectoryName);
 	}
 
 	private static readonly JsonSerializerOptions MetadataSerializerOptions = new() {

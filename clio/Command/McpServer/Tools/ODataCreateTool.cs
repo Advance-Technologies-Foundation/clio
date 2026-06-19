@@ -17,7 +17,6 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 	internal const string ToolName = "odata-create";
 
 	/// <summary>Creates a Creatio record using OData v4.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Create a Creatio record via OData v4 (POST). " +
 		"Provide the entity set name and a data object of field/value pairs. " +
@@ -26,7 +25,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 	public ODataWriteResponse Create(
 		[Description("Parameters: entity, data, environment-name (all required).")]
 		[Required]
-		ODataCreateArgs args) {
+		ODataCreateRunArgs args) {
 		try {
 			if (string.IsNullOrWhiteSpace(args.Entity)) {
 				return ODataWriteResponse.Failure("entity is required.");
@@ -85,7 +84,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 }
 
 /// <summary>Arguments for <see cref="ODataCreateTool"/>.</summary>
-public sealed record ODataCreateArgs {
+public sealed record ODataCreateRunArgs : ClioRunArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account).</summary>
 	[JsonPropertyName("entity")]
 	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover names.")]

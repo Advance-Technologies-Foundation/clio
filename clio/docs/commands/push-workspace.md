@@ -8,6 +8,13 @@ push-workspace - Push workspace to selected environment
 
 Packs the current workspace and installs it into the target environment.
 
+## Prerequisites
+
+cliogate package version 2.0.0.0 or higher must be installed on the Creatio
+instance. Install using:
+
+clio install-gate -e <ENVIRONMENT_NAME>
+
 ## Synopsis
 
 ```bash

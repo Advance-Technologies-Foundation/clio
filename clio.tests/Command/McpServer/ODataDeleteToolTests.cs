@@ -15,6 +15,7 @@ public sealed class ODataDeleteToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-delete.")]
+	[Ignore("ENG-90312 Phase 2: odata-delete folded into clio-run; the per-method [McpServerTool] safety flags now live on clio-run itself, so the legacy attribute reflection no longer applies.")]
 	public void Delete_Should_Advertise_Stable_Tool_Name() {
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ODataDeleteTool)
 			.GetMethod(nameof(ODataDeleteTool.Delete))!
@@ -39,7 +40,7 @@ public sealed class ODataDeleteToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		ODataDeleteTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = tool.Delete(new ODataDeleteRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
 		});
 
@@ -60,7 +61,7 @@ public sealed class ODataDeleteToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		ODataDeleteTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = tool.Delete(new ODataDeleteRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid
 		});
 
@@ -78,7 +79,7 @@ public sealed class ODataDeleteToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		ODataDeleteTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = tool.Delete(new ODataDeleteRunArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = " "
 		});
 
@@ -94,7 +95,7 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ODataDeleteTool tool = new(resolver);
 
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = tool.Delete(new ODataDeleteRunArgs {
 			EnvironmentName = "dev", Entity = " ", Id = Guid
 		});
 

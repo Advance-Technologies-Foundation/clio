@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using Clio.Package;
 using Clio.Project.NuGet;
-using Version = System.Version;
 
 namespace Clio.Common;
 
@@ -35,49 +31,48 @@ public interface IClioGateway
 	void CheckCompatibleVersion(string version);
 }
 
+/// <summary>
+/// cliogate-specific facade over <see cref="IRequiredPackageChecker"/>. Kept as the queryable API for
+/// callers that conditionally branch on cliogate availability (for example <c>get-info</c> and
+/// <c>ApplicationDownloader</c>). All package lookups are delegated to the generic checker, whose alias
+/// map already resolves both <c>cliogate</c> and <c>cliogate_netcore</c>.
+/// </summary>
 public class ClioGateway : IClioGateway
 {
 
+	#region Constants: Private
+
+	private const string CliogatePackageName = "cliogate";
+
+	#endregion
+
 	#region Fields: Private
 
-	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
+	private readonly IRequiredPackageChecker _requiredPackageChecker;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ClioGateway(IApplicationPackageListProvider applicationPackageListProvider){
-		_applicationPackageListProvider = applicationPackageListProvider;
+	public ClioGateway(IRequiredPackageChecker requiredPackageChecker){
+		_requiredPackageChecker = requiredPackageChecker;
 	}
 
 	#endregion
 
 	#region Methods: Public
 
-	public PackageVersion GetInstalledVersion(){
-		const string clioPkgNameNetFramework = "cliogate";
-		const string clioPkgNameNetCore = "cliogate_netcore";
+	public PackageVersion GetInstalledVersion()
+		=> _requiredPackageChecker.GetInstalledVersion(CliogatePackageName);
 
-		IEnumerable<PackageInfo> allPackages = _applicationPackageListProvider
-			.GetPackages();
-
-		return allPackages.Where(p =>
-				p.Descriptor.Name is clioPkgNameNetFramework or clioPkgNameNetCore)
-			.MinBy(p => p.Version)
-			?.Version;
-	}
-
-	public bool IsCompatibleWith(string version){
-		PackageVersion installedVersion = GetInstalledVersion();
-		if (installedVersion is null) {
-			return false;
-		}
-		return installedVersion >= new PackageVersion(new Version(version), string.Empty);
-	}
+	public bool IsCompatibleWith(string version)
+		=> _requiredPackageChecker.IsCompatible(CliogatePackageName, version);
 
 	public void CheckCompatibleVersion(string version){
 		if (!IsCompatibleWith(version)) {
-			throw new NotSupportedException($"To use this command, you need to install the cliogate package version {version} or higher.");
+			throw new NotSupportedException(
+				$"To use this command, you need to install the cliogate package version {version} or higher. " +
+				"Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) and retry.");
 		}
 	}
 

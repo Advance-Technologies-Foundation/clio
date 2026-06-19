@@ -76,8 +76,9 @@ When adding or updating an MCP tool, also review:
 clio's MCP tool registry shares the same `tools/list` slot with every other MCP server an agent host has open, and host platforms enforce a fixed cap on the total tool count an agent can see. To keep clio inside that envelope:
 
 - **128 hard limit.** Anthropic and the MCP protocol cap a single host's tool count at 128. clio must never approach this number; every tool we ship competes with other servers the user has installed.
-- **24 budget ratchet.** [`clio.tests/Command/McpServer/McpToolBudgetTests.cs`](../../../clio.tests/Command/McpServer/McpToolBudgetTests.cs) asserts the live count against `ToolBudget`. After every consolidation block, the ratchet must move down — never up — without explicit ticket approval.
-- **The current 24 = 23 read-only flat + 1 `clio-run` meta.** The 23 flat read-only tools (`list-environments`, `get-schema`, `apps`, `sys-setting`, `dataforge-find`, `dataforge-context`, `dataforge-get-relations`, `dataforge-get-table-columns`, `dataforge-status`, `find-empty-iis-port`, `get-component-info`, `get-fsm-mode`, `get-guidance`, `get-schema-name-prefix`, `get-tool-contract`, `list-packages`, `list-page-templates`, `list-pages`, `list-schemas`, `show-passing-infrastructure`, `validate-page`, `assert-infrastructure`, `check-settings-health`) are kept flat so hosts can auto-approve them via `ReadOnly = true`. Every non-read-only operation is reached through `clio-run` — its `args.command` is a discriminator over a `[JsonPolymorphic]` hierarchy ([`ClioRunArgs.cs`](Tools/ClioRunArgs.cs)) and the per-command record carries the operation's fields.
+- **Budget ratchet (live count is the source of truth).** [`clio.tests/Command/McpServer/McpToolBudgetTests.cs`](../../../clio.tests/Command/McpServer/McpToolBudgetTests.cs) asserts the live registered count against `ToolBudget`. After every consolidation block, the ratchet must move down — never up — without explicit ticket approval. The merge of `origin/master` into this branch raised the ratchet because master shipped a batch of new flat tools (see below); the consolidation goal is unchanged — keep moving it back down.
+- **Composition after the master merge: read-only flat + a temporary set of non-read-only flat + 1 `clio-run` meta.** The read-only flat tools (`list-environments`, `get-schema`, `apps`, `sys-setting`, `dataforge-find`, `dataforge-context`, `dataforge-get-relations`, `dataforge-get-table-columns`, `dataforge-status`, `find-app`, `find-empty-iis-port`, `get-component-info`, `get-fsm-mode`, `get-guidance`, `get-process-signature`, `get-schema-name-prefix`, `get-tool-contract`, `list-creatio-builds`, `list-packages`, `list-page-templates`, `list-pages`, `list-schemas`, `show-passing-infrastructure`, `validate-page`, `assert-infrastructure`, `check-settings-health`) are kept flat so hosts can auto-approve them via `ReadOnly = true`. Most non-read-only operations are reached through `clio-run` — its `args.command` is a discriminator over a `[JsonPolymorphic]` hierarchy ([`ClioRunArgs.cs`](Tools/ClioRunArgs.cs)) and the per-command record carries the operation's fields. During the master merge, six master-added write tools (`add-package-dependency`, `install-gate`, `create-ui-project`, `odata-create`, `odata-update`, `odata-delete`) were folded into `clio-run`.
+- **Known temporary exception (follow-up to fold).** A small set of recently-added non-read-only tools is **intentionally still flat**: the auth/session/admin tools `get-browser-session`, `clear-browser-session`, `get-identity-assertion`, `regenerate-identity-signing-key`, and the `experimental` feature-toggle management command. They were added flat for the Identity Service V3 token-exchange flow and are left flat pending a separate decision on whether routing them through the destructive `clio-run` meta-tool is appropriate. Do not treat their flatness as a precedent — new write paths still go through `clio-run`.
 - **Extend before add — for non-read-only.** A new destructive or mutation operation must extend `clio-run` with a new `[JsonDerivedType]` entry on `ClioRunArgs`, a matching `*RunArgs : ClioRunArgs` record, and a switch arm in [`ClioRunTool.Apply`](Tools/ClioRunTool.cs). Do not add a new top-level `[McpServerTool]`. CS8509-as-error in [`clio.csproj`](../../clio.csproj) catches a switch arm that's missing when a new derived type is added.
 - **Extend before add — for read-only.** Prefer extending an existing read-only tool with a `mode` / `action` / `schema-type` / `kind` discriminator argument before registering a new flat `[McpServerTool]`. Only register a new flat top-level tool if `ReadOnly = true` is correct and no existing read-only surface covers the resource. Document the new entry in the table above.
 - **Deprecation = remove, no aliases.** Do not preserve historical MCP tool names as aliases on new tool methods or as new `[JsonDerivedType]` discriminators. When a tool moves to a new contract, the old MCP `[McpServerTool]` registration goes away in the same commit. CLI verbs are unaffected because they live on `[Verb]`-decorated Options classes, not on the MCP wrapper.
@@ -129,8 +130,19 @@ mapped to a 3-part SemVer (`SysInfo.CoreVersion` → `Major.Minor.Patch`), with
 a 5-minute in-process cache. Any failure class (HTTP error, missing CoreVersion,
 non-SemVer string, cliogate < `2.0.0.32`, no active environment) degrades softly
 to `latest`, and the MCP response carries the `resolvedFrom` marker
-(`"environment"` | `"latest-fallback"`) so AI can interpret the result correctly
+(`"environment"` | `"environment-superset"` | `"latest-fallback"`) so AI can interpret the result correctly
 (see `Resources/PageModificationGuidanceResource.cs` for the guidance text).
+
+The soft degrade keeps the tool from erroring, but it does NOT license the agent
+to proceed blindly. On `latest-fallback` the server instructions
+(`McpServerInstructions.cs`), the tool `[Description]`, the `versionWarning`
+(`ComponentInfoResolution.LatestFallbackWarning`), and the page-modification guidance
+all direct the agent to tell the user the platform version could not be determined
+and request explicit confirmation before generating an implementation plan — it must
+not silently assume a component set. The same surfaces direct the agent to list the
+full catalog proactively (list mode, `component-type` omitted) at the start of page
+work, so non-obvious components such as `crt.Gallery` are discovered without an
+explicit user prompt.
 
 To force-refresh the local cache without waiting for the 5min TTL, use the
 `clio component-registry-refresh` verb:
@@ -151,12 +163,21 @@ through a sibling pipeline implemented in
 `Tools/ComponentRegistryDocsClient.cs`:
 
 - **Cache.** `~/.clio/cache/component-registry/{version}/{docPath}` (plus a
-  `.meta.json` sidecar). Same 5-minute TTL + stale-while-revalidate as the
-  registry payload; `~/.clio/cache/component-registry/` delete resets the
-  whole chain in one go.
+  `.meta.json` sidecar). Same 5-minute TTL as the registry payload;
+  `~/.clio/cache/component-registry/` delete resets the whole chain in one go.
+  **Unlike the registry payload, docs do NOT use stale-while-revalidate.** A
+  fresh entry returns immediately; a *stale* entry is revalidated against the
+  CDN **synchronously**, capped by `ComponentRegistryDocsClient.StaleRevalidateBudget`
+  (5 s), and the stale bytes are served only as a fallback when the CDN cannot
+  return a fresh copy in time (stale-if-error). This deliberately trades a few
+  seconds of latency for documentation freshness — an outdated guide silently
+  steers the agent into wrong page schemas (ENG-91135). The registry payload
+  keeps stale-while-revalidate; only the docs tier changed.
 - **CDN.** `https://academy.creatio.com/api/mcp/{version}/{docPath}` — three
   attempts with exponential backoff on 5xx / network errors, immediate
-  fall-through on 4xx.
+  fall-through on 4xx. On a stale-cache revalidation the whole retry sequence is
+  bounded by the 5 s budget above; on a cold-cache miss it runs unbounded
+  (there is no stale copy to fall back to).
 - **No embedded tier for docs.** If the cache misses and the CDN cannot
   serve the file, the docs client returns `null` and the MCP tool **skips
   that file** — partial-failure mode by design. The other docs of the same

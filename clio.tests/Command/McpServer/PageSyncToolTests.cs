@@ -1,6 +1,7 @@
 using System;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -8,6 +9,7 @@ using Clio.Common;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
+using McpServerLib = ModelContextProtocol.Server;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -64,7 +66,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -96,7 +98,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageSyncRunArgs args = new(
 			"dev",
 			[
@@ -131,7 +133,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageSyncRunArgs args = new(
 			"dev",
 			[
@@ -157,16 +159,20 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Client-side validation rejects page body with missing markers")]
+	[Description("Client-side validation rejects a page body whose schema markers are missing — the syntax check passes (the body parses as JS) so the test exercises the markers validator on its own, not the upstream Acornima gate")]
 	public async Task SyncPages_Should_Reject_Invalid_Page_Body_When_Validation_Enabled() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		// Body parses as valid JavaScript so the upstream PageBodySyntaxValidator
+		// gate (ENG-89796) passes; the markers validator then catches the missing
+		// SCHEMA_* envelope and reports the failure.
+		string bodyWithMissingMarkers = "define('BadPage', [], function() { return {}; });";
 		PageSyncRunArgs args = new(
 			"dev",
-			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			[new PageSyncPageInput("UsrBad_FormPage", bodyWithMissingMarkers)],
 			Validate: true,
 			SkipSampling: true);
 
@@ -188,6 +194,189 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
+	public async Task SyncPages_Should_FailFast_WhenBodyHasJavaScriptSyntaxError() {
+		// Arrange — wire a real PageUpdateCommand so the IApplicationClient
+		// substitute behind it can confirm no remote save call was made.
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		// `define('BadPage', {})}` has a stray closing brace at the end → SyntaxError.
+		// The PageBodySyntaxValidator must surface this before the markers validator
+		// runs and no SaveSchema request should ever leave the process.
+		PageSyncRunArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a syntactically broken body must NEVER be persisted — this is the deterministic floor of the syntax gate");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the per-page result must mirror the overall failure");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker/sampling issue");
+		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to read the code");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax-gate short-circuit must run BEFORE PageUpdateCommand.TryUpdatePage — no SaveSchema (or any other) request must have been issued for this batch");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Batch with two pages sharing the same schema-name: a broken first body must not corrupt the second body's pre-pass results — the gates are keyed by input index, not by SchemaName, so last-write-wins on a Dictionary cannot blow away the AST/findings of the first page.")]
+	public async Task SyncPages_Should_Not_CrossContaminate_When_Batch_Contains_Duplicate_SchemaName() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncRunArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrPage_FormPage", "define('Dup', {})}"),
+				new PageSyncPageInput("UsrPage_FormPage", ValidPageBody)
+			],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().HaveCount(2,
+			because: "both inputs must produce an independent per-page result, even when they share a schema-name");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the first entry's body is syntactically broken and must surface its own deterministic failure regardless of what the duplicate-named sibling looks like");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "index-keyed pre-pass guarantees the first entry's diagnosis is not overwritten by the second entry's AST or vice versa");
+		response.Pages[1].Success.Should().BeTrue(
+			because: "the second entry's valid body must still proceed to save, independent of the first entry's failure");
+		int saveSchemaCalls = applicationClient.ReceivedCalls()
+			.Count(c => c.GetArguments().FirstOrDefault() is string url && url.Contains("SaveSchema"));
+		saveSchemaCalls.Should().Be(1,
+			because: "exactly one SaveSchema round-trip must happen — for the valid second entry only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC4: when the body passes the deterministic syntax + lint pre-pass and the caller did not opt out via skip-sampling, the LLM semantic-review (sampling) MUST be invoked with the schema name, body, and resources — proves that the new gates did not displace sampling on the canonical happy path.")]
+	public async Task SyncPages_Should_Invoke_Sampling_For_Valid_Body() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		// Wire a recording sampling service. Returning `null` keeps the
+		// downstream `samplingReview is { Ok: false ... }` check inert so we
+		// observe invocation without forcing a sampling-block outcome.
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		samplingService
+			.TrySamplingReviewAsync(Arg.Any<McpServerLib.McpServer>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+			.Returns((PageSamplingReview)null);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
+		PageSyncRunArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrValid_FormPage", ValidPageBody, Resources: "{\"caption\":\"Hello\"}")],
+			Validate: true,
+			SkipSampling: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the body passes every deterministic gate so the sync must complete successfully when no sampling issues are surfaced");
+		await samplingService.Received(1).TrySamplingReviewAsync(
+			Arg.Any<McpServerLib.McpServer>(),
+			Arg.Is<string>(name => name == "UsrValid_FormPage"),
+			Arg.Is<string>(body => body == ValidPageBody),
+			Arg.Is<string?>(resources => resources == "{\"caption\":\"Hello\"}"),
+			Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC4 negative path: when the body fails the deterministic syntax pre-pass, sampling is NOT invoked — proves the gates short-circuit BEFORE LLM tokens are spent on a doomed body.")]
+	public async Task SyncPages_Should_NotInvoke_Sampling_When_Syntax_Fails() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out _);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
+		PageSyncRunArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			Validate: true,
+			SkipSampling: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the syntax gate must reject the body");
+		await samplingService.DidNotReceive().TrySamplingReviewAsync(
+			Arg.Any<McpServerLib.McpServer>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<string?>(),
+			Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mixed batch: a syntactically broken page is rejected and a valid page is saved in the same call — exactly one save round-trip happens for the valid page, not one per page or none at all. Pins per-page fail-fast semantics that no other test currently covers.")]
+	public async Task SyncPages_Should_Save_Only_Valid_Page_When_Batch_Contains_One_Broken_And_One_Valid() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncRunArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}"),
+				new PageSyncPageInput("UsrGood_FormPage", ValidPageBody)
+			],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages.Should().HaveCount(2,
+			because: "both inputs must produce a per-page result, with order preserved");
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the broken page must fail fast on the syntax gate");
+		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
+			because: "the broken page's failure must name the deterministic problem class");
+		response.Pages[1].Success.Should().BeTrue(
+			because: "fail-fast is per-page; one broken sibling must not block the valid one from being saved");
+		int saveSchemaCalls = applicationClient.ReceivedCalls()
+			.Count(c => c.GetArguments().FirstOrDefault() is string url && url.Contains("SaveSchema"));
+		saveSchemaCalls.Should().Be(1,
+			because: "exactly one SaveSchema round-trip must happen — for the valid page only; the broken page must not be sent");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Skips client-side validation when validate is false")]
 	public async Task SyncPages_Should_Skip_Validation_When_Disabled() {
 		// Arrange
@@ -197,7 +386,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
@@ -224,7 +413,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithHandler = ValidPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
@@ -256,7 +445,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithConverterAndValidator = ValidPageBody
 			.Replace(
 				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
@@ -291,7 +480,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithUndeclaredBindings = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -322,15 +511,15 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithParentMerge = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentMerge)],
@@ -353,15 +542,15 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
@@ -408,21 +597,21 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("resource-page-uid"));
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("resource-page-uid"));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
@@ -498,7 +687,7 @@ public sealed class PageSyncToolTests {
 		MockFileSystem mockFs = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(mockFs));
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -546,7 +735,7 @@ public sealed class PageSyncToolTests {
 			.Returns(getCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageSyncRunArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -564,14 +753,93 @@ public sealed class PageSyncToolTests {
 			because: "the error should indicate that verification failed after save");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Propagates the command's insert->merge downgrade warning onto the per-page sync result (locks AppendCommandWarnings).")]
+	public async Task SyncPages_Should_Surface_InsertDowngradeWarning_PerPage() {
+		// Arrange — the stored schema inserts UsrName; the incoming body downgrades it to a merge.
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithInsertPriorBody();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncRunArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", MergeUsrNameBody)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the downgrade is advisory and must not fail the per-page save");
+		response.Pages[0].Validation.Should().NotBeNull(
+			because: "AppendCommandWarnings must attach the command warning even when client-side validation is skipped");
+		response.Pages[0].Validation!.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "the per-page result must propagate the command's insert->merge downgrade warning");
+	}
+
+	// ENG-89796: every page-body fixture must be syntactically valid JavaScript.
+	// Earlier fixtures dropped the object-literal property keys (`viewConfigDiff:`,
+	// `handlers:`, …) before each SCHEMA_* marker pair because the brace-counter
+	// "syntax" check let them through. Acornima parses these fixtures for real
+	// now, so the keys are required.
+	private const string InsertUsrNamePriorBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private const string MergeUsrNameBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private static PageUpdateCommand CreatePageUpdateCommandWithInsertPriorBody() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "test-uid", ["SchemaType"] = 9 } }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject { ["body"] = InsertUsrNamePriorBody }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
+	}
+
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
@@ -582,8 +850,15 @@ public sealed class PageSyncToolTests {
 		return hierarchyClient;
 	}
 
-	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommand(int schemaType = 9) =>
+		CreateSuccessfulPageUpdateCommandWithClient(out _, schemaType);
+
+	private static PageUpdateCommand CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient, int schemaType = 9) {
+		applicationClient = Substitute.For<IApplicationClient>();
+		return ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType);
+	}
+
+	private static PageUpdateCommand ConfigureSuccessfulPageUpdateCommand(IApplicationClient applicationClient, int schemaType) {
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>())
 			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
@@ -610,7 +885,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithFailureForSchema(string failSchemaName) {
@@ -642,7 +917,7 @@ public sealed class PageSyncToolTests {
 				Arg.Is<string>(url => url.Contains("SaveSchema")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
-		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClientFor("test-uid"));
+		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("test-uid"));
 	}
 
 	private static PageGetCommand CreateSuccessfulPageGetCommand() {
@@ -685,7 +960,8 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			hierarchyClient,
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
 	}
 
 	private static PageGetCommand CreateFailingPageGetCommand() {
@@ -703,21 +979,30 @@ public sealed class PageSyncToolTests {
 			Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
+	}
+
+	private static IPageFileWriter CreatePassthroughPageFileWriter() {
+		IPageFileWriter writer = Substitute.For<IPageFileWriter>();
+		writer.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		return writer;
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("SyncPages succeeds for a mobile page body (plain JSON) and skips AMD marker validation.")]
+	[Description("SyncPages succeeds for a mobile page body (plain JSON), skips AMD marker validation, and DOES issue a real SaveSchema round-trip — proves the mobile bypass reaches the persist step instead of silently passing because of weak NOT-CONTAIN assertions.")]
 	public async Task SyncPages_Should_Succeed_For_Valid_Mobile_Json_Body() {
 		// Arrange
-		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient, schemaType: 10);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -735,10 +1020,16 @@ public sealed class PageSyncToolTests {
 		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
-		response.Pages[0].Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
-			because: "AMD marker validation errors must not appear for mobile JSON bodies");
-		response.Pages[0].Error.Should().NotContain("Mobile page validation failed",
-			because: "a valid mobile body should not produce mobile validation errors");
+		response.Success.Should().BeTrue(
+			because: "the mobile body is a valid JSON page; the sync must end in a success state, not just avoid producing certain error strings");
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the per-page result must mirror the overall success — a NOT-contain assertion alone leaves room for the page to fail for unrelated reasons");
+		response.Pages[0].Error.Should().BeNull(
+			because: "a fully-successful mobile sync should not surface any per-page error message");
+		int saveSchemaCalls = applicationClient.ReceivedCalls()
+			.Count(c => c.GetArguments().FirstOrDefault() is string url && url.Contains("SaveSchema"));
+		saveSchemaCalls.Should().Be(1,
+			because: "the mobile bypass must reach PageUpdateCommand.TryUpdatePage and issue exactly one SaveSchema round-trip — this is the structural proof that the mobile path is not silently short-circuited");
 	}
 
 	[Test]
@@ -752,7 +1043,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string mobileBodyWithConverters = """
 			{
 			  "viewConfigDiff": [],

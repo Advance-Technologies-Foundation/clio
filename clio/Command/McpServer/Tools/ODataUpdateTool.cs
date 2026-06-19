@@ -17,7 +17,6 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 	internal const string ToolName = "odata-update";
 
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
@@ -28,7 +27,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 	public ODataWriteResponse Update(
 		[Description("Parameters: entity, id, data, environment-name (all required).")]
 		[Required]
-		ODataUpdateArgs args) {
+		ODataUpdateRunArgs args) {
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {
@@ -52,7 +51,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 }
 
 /// <summary>Arguments for <see cref="ODataUpdateTool"/>.</summary>
-public sealed record ODataUpdateArgs {
+public sealed record ODataUpdateRunArgs : ClioRunArgs {
 	/// <summary>Creatio OData entity set name (e.g., Contact, Account).</summary>
 	[JsonPropertyName("entity")]
 	[Description("Creatio OData entity set name (e.g., Contact, Account, Activity). Call dataforge-find-tables to discover names.")]

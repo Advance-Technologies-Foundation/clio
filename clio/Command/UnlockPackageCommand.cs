@@ -10,6 +10,7 @@ namespace Clio.Command;
 #region Class: UnlockPackageOptions
 
 [Verb("unlock-package", Aliases = ["up"], HelpText = "Unlock package")]
+[RequiresPackage("cliogate", "2.0.0.42", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 public class UnlockPackageOptions : EnvironmentOptions{
 	#region Properties: Public
 
@@ -25,24 +26,20 @@ public class UnlockPackageOptions : EnvironmentOptions{
 
 public class UnlockPackageCommand : Command<UnlockPackageOptions>{
 
-	private const string ClioGateMinVersion = "2.0.0.42";
-
 	#region Fields: Private
 
 	private readonly ILogger _logger;
 	private readonly IPackageLockManager _packageLockManager;
 	private readonly ISysSettingsManager _sysSettingsManager;
-	private readonly IClioGateway _clioGateway;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public UnlockPackageCommand(IPackageLockManager packageLockManager,
-		ISysSettingsManager sysSettingsManager, IClioGateway clioGateway, ILogger logger) {
+		ISysSettingsManager sysSettingsManager, ILogger logger) {
 		_packageLockManager = packageLockManager;
 		_sysSettingsManager = sysSettingsManager;
-		_clioGateway = clioGateway;
 		_logger = logger;
 	}
 
@@ -62,7 +59,6 @@ public class UnlockPackageCommand : Command<UnlockPackageOptions>{
 
 	public override int Execute(UnlockPackageOptions options) {
 		try {
-			_clioGateway.CheckCompatibleVersion(ClioGateMinVersion);
 			List<string> packageNames = GetPackagesNames(options).ToList();
 			if (!packageNames.Any()) {
 				if (string.IsNullOrWhiteSpace(options.Maintainer)) {

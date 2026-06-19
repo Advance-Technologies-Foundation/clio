@@ -509,6 +509,21 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		msFileSystem.File.WriteAllText(filePath, contents, encoding);
 	}
 
+	public void WriteOwnerOnlyTextToFile(string filePath, string contents) {
+		if (OperatingSystem.IsWindows()) {
+			msFileSystem.File.WriteAllText(filePath, contents, Utf8NoBom);
+			return;
+		}
+		var opts = new System.IO.FileStreamOptions {
+			Mode = System.IO.FileMode.Create,
+			Access = System.IO.FileAccess.Write,
+			UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite
+		};
+		using var fs = new System.IO.FileStream(filePath, opts);
+		using var w = new System.IO.StreamWriter(fs, Utf8NoBom);
+		w.Write(contents);
+	}
+
 	#endregion
 }
 

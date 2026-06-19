@@ -116,6 +116,33 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Maps a null package-name argument to a null package option so the command reads the merged schema.")]
+	public void GetEntitySchemaProperties_Should_Map_Null_Package_For_Merged_Read() {
+		// Arrange
+		IRemoteEntitySchemaColumnManager columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(new EntitySchemaPropertiesInfo("Account", null, null, "(merged: all packages)", null, false,
+				"Id", "Name", 0, 0, 0, false, false, false, false, false, false, false, false, false, false, false, []));
+		GetEntitySchemaPropertiesCommand resolvedCommand = new(columnManager, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		GetEntitySchemaPropertiesTool tool = new(
+			new GetEntitySchemaPropertiesCommand(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()),
+			ConsoleLogger.Instance,
+			commandResolver);
+
+		// Act
+		// Omitting package-name must flow through as a null package so the command returns the merged schema.
+		tool.GetEntitySchemaProperties(new GetEntitySchemaPropertiesArgs("dev", null, "Account"));
+
+		// Assert
+		commandResolver.Received(1).Resolve<GetEntitySchemaPropertiesCommand>(Arg.Is<GetEntitySchemaPropertiesOptions>(
+			options => options.Environment == "dev" && options.Package == null && options.SchemaName == "Account"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns structured column properties from the resolved environment-specific command.")]
 	public void GetEntitySchemaColumnProperties_Should_Return_Structured_Result() {
 		// Arrange
@@ -771,7 +798,7 @@ public sealed class EntitySchemaToolTests {
 		string createPrompt = EntitySchemaPrompt.CreateEntitySchema("UsrPkg", "UsrVehicle", "Vehicle", "dev");
 		string lookupPrompt = EntitySchemaPrompt.CreateLookup("UsrPkg", "UsrOrderStatus", "Order status", "dev");
 		string updatePrompt = EntitySchemaPrompt.UpdateEntitySchema("UsrPkg", "UsrVehicle", "dev");
-		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrPkg", "UsrVehicle", "dev");
+		string schemaPrompt = EntitySchemaPrompt.GetEntitySchemaProperties("UsrVehicle", "dev", "UsrPkg");
 		string columnPrompt = EntitySchemaPrompt.GetEntitySchemaColumnProperties("UsrPkg", "UsrVehicle", "Name", "dev");
 		string modifyPrompt = EntitySchemaPrompt.ModifyEntitySchemaColumn("UsrPkg", "UsrVehicle", "modify", "Name", "dev");
 
@@ -814,6 +841,10 @@ public sealed class EntitySchemaToolTests {
 			because: "schema-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		schemaPrompt.Should().Contain("read step before `modify-entity-schema-column` or `sync-schemas`",
 			because: "schema-read prompt guidance should describe the canonical inspect step before mutation");
+		schemaPrompt.Should().Contain("MERGED/EFFECTIVE",
+			because: "schema-read prompt guidance should steer callers to the merged all-packages view for column discovery");
+		schemaPrompt.Should().Contain("does NOT prove a",
+			because: "schema-read prompt guidance must warn that an empty single-package read is not proof a column is absent");
 		columnPrompt.Should().Contain(GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 			because: "column-read prompt guidance should reference the exact production tool name");
 		columnPrompt.Should().Contain(GuidanceGetTool.ToolName,

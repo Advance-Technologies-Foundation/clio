@@ -16,7 +16,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// Orchestrates the layered fallback chain that backs <c>get-component-info</c>:
-/// CDN → file cache (<c>~/.clio/cache/component-registry/</c>) → embedded snapshot
+/// CDN → file cache (<c><clio-home>/cache/component-registry/</c>) → embedded snapshot
 /// in <c>clio.dll</c>. AI requests never block on the network: stale cache is returned
 /// synchronously while a background refresh runs.
 /// </summary>
@@ -70,7 +70,7 @@ public enum ComponentRegistrySource {
 /// <param name="CdnRegistryFileName">Bare filename served by the academy CDN; e.g. <c>"ComponentRegistry.json"</c>.</param>
 /// <param name="LocalFileEnvironmentVariable">Name of the env var that forces a local override of the entire chain.</param>
 /// <param name="CacheSubdirectoryName">
-/// Optional sub-folder under <c>~/.clio/cache/component-registry/</c> isolating this
+/// Optional sub-folder under <c><clio-home>/cache/component-registry/</c> isolating this
 /// flavor's payloads. Empty for the web flavor (back-compat with cache files written
 /// before the mobile flavor existed).
 /// </param>

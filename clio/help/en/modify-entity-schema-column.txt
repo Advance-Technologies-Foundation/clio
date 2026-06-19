@@ -26,12 +26,16 @@ DESCRIPTION
     - Text, ShortText, MediumText, LongText, MaxSizeText
     - Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText
     - Binary, Image, File, SecureText (Blob is accepted as an alias for Binary; Encrypted and Password are accepted as aliases for SecureText; EmailAddress is accepted as an alias for Email)
+    - ImageLookup (ImageLink is accepted as an alias; references the SysImage schema automatically — no --reference-schema)
     - Integer
     - Float
     - Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, Currency0, Currency1, Currency2, Currency3
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+
+    For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
+    ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
 
 OPTIONS
     --package                      Target package name
@@ -58,6 +62,10 @@ OPTIONS
     --simple-lookup                Set simple-lookup flag (Lookup only)
     --cascade                      Set cascade-connection flag (Lookup only)
     --do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
+    --caption-culture              Override the culture for the written column
+                                   caption/description (e.g. en-US, uk-UA).
+                                   Precedence: override > profile culture > en-US.
+                                   Supplying it skips the profile-culture lookup.
 
     Environment options are also available:
     -e, --Environment              Environment name from the registered configuration
@@ -96,6 +104,10 @@ NOTES
       normalized to setting code before save
     - If Settings or SystemValue lookup is ambiguous, the command fails with a
       validation error and requests explicit code/Guid input
+    - For a lookup column, a Const value is the GUID of a record in the
+      referenced schema; the command validates the record exists before save and
+      rejects an unknown GUID (point-in-time check; skipped when the referenced
+      record cannot be read)
     - Binary, Image, and File columns do not support --default-value or --default-value-source Const
     - After save, the schema is reloaded immediately; save is treated as failed if the mutated column cannot be read back
 

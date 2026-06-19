@@ -58,13 +58,13 @@ internal sealed class LookupValueResolver : ILookupValueResolver {
 			throw new ArgumentException(
 				$"filter: lookup value '{displayName}' was not found on schema '{referenceSchemaName}' (column '{primaryDisplayColumn}'). "
 				+ "The match is exact against the stored display value — a localized or differently-spelled term (e.g. a non-English prompt) will not match. "
-				+ $"Use odata-read on '{referenceSchemaName}' to find the actual stored value or its Id, then pass that exact value or the GUID.");
+				+ $"Use odata-read or execute-esq on '{referenceSchemaName}' to find the actual stored value or its Id, then pass that exact value or the GUID.");
 		}
 
 		if (rows.Count > 1) {
 			throw new ArgumentException(
 				$"filter: lookup value '{displayName}' is ambiguous on schema '{referenceSchemaName}' ({rows.Count} matches found). "
-				+ $"Use odata-read on '{referenceSchemaName}' to pick the intended record and pass its GUID.");
+				+ $"Use odata-read or execute-esq on '{referenceSchemaName}' to pick the intended record and pass its GUID.");
 		}
 
 		if (!Guid.TryParse(rows[0].Id, out Guid id)) {
@@ -96,7 +96,7 @@ internal sealed class LookupValueResolver : ILookupValueResolver {
 			[new SelectQueryHelper.SelectQueryFilterDefinition(
 				"Id",
 				id.ToString("D"),
-				SelectQueryHelper.TextDataValueType,
+				SelectQueryHelper.GuidDataValueType,
 				ComparisonType: 3)]);
 
 		try {

@@ -40,10 +40,10 @@ public sealed class ClioRunTool {
 		return args switch {
 			AddItemModelRunArgs a => _sp.GetRequiredService<AddItemModelTool>().AddItemModel(a),
 			AddPackageRunArgs a => _sp.GetRequiredService<WorkspacePackageTool>().AddPackage(a),
-			AppSectionRunArgs a => await _sp.GetRequiredService<AppSectionTool>().Apply(a, server, cancellationToken),
+			AppSectionRunArgs a => await _sp.GetRequiredService<AppSectionTool>().Apply(a, server, requestContext, cancellationToken),
 			ClearRedisDbRunArgs a => _sp.GetRequiredService<ClearRedisTool>().ClearRedis(a),
 			CompileCreatioRunArgs a => _sp.GetRequiredService<CompileCreatioTool>().CompileCreatio(a),
-			ApplicationCreateRunArgs a => await _sp.GetRequiredService<ApplicationCreateTool>().ApplicationCreate(a),
+			ApplicationCreateRunArgs a => await _sp.GetRequiredService<ApplicationCreateTool>().ApplicationCreate(a, server, requestContext, cancellationToken),
 			CreateDataBindingRunArgs a => _sp.GetRequiredService<CreateDataBindingTool>().CreateDataBinding(a),
 			CreateDataBindingDbRunArgs a => _sp.GetRequiredService<CreateDataBindingDbTool>().CreateDataBindingDb(a),
 			CreateEntityBusinessRuleRunArgs a => _sp.GetRequiredService<CreateEntityBusinessRuleTool>().BusinessRuleCreate(a),
@@ -90,6 +90,12 @@ public sealed class ClioRunTool {
 			SchemaUpdateRunArgs a => await _sp.GetRequiredService<SchemaUpdateTool>().Update(a),
 			UpdateSkillRunArgs a => _sp.GetRequiredService<UpdateSkillTool>().UpdateSkill(a),
 			UpsertSysSettingRunArgs a => _sp.GetRequiredService<SysSettingUpsertTool>().Upsert(a),
+			AddPackageDependencyRunArgs a => _sp.GetRequiredService<AddPackageDependencyTool>().AddPackageDependency(a),
+			InstallGateRunArgs a => _sp.GetRequiredService<InstallGateTool>().InstallGate(a),
+			CreateUiProjectRunArgs a => _sp.GetRequiredService<CreateUiProjectTool>().CreateUiProject(a),
+			ODataCreateRunArgs a => _sp.GetRequiredService<ODataCreateTool>().Create(a),
+			ODataUpdateRunArgs a => _sp.GetRequiredService<ODataUpdateTool>().Update(a),
+			ODataDeleteRunArgs a => _sp.GetRequiredService<ODataDeleteTool>().Delete(a),
 			_ => CommandExecutionResult.FromError(
 				$"clio-run: unhandled ClioRunArgs subtype {args.GetType().Name}. " +
 				"This indicates a [JsonDerivedType] was registered without a matching switch arm — Z7 reflection test should have caught this."),

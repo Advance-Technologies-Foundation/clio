@@ -459,6 +459,118 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Enumerates the accepted update-entity shapes and read-shape aliases when neither update-operations nor columns are supplied (ENG-90313 AC4).")]
+	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_Accepted_Shapes() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		string error = response.Results[0].Error!;
+		error.Should().Contain("columns",
+			because: "the rejection must tell the agent the implicit add-batch 'columns' shape is also accepted");
+		error.Should().Contain("action",
+			because: "the rejection must explain that update-operations require an add|modify|remove action verb");
+		error.Should().Contain("name",
+			because: "the rejection must list the read-shape 'name' alias for column-name");
+		error.Should().Contain("data-value-type",
+			because: "the rejection must list the read-shape 'data-value-type' alias for type");
+		error.Should().Contain("get-app-info",
+			because: "the rejection must point the agent at the read shape it can send back verbatim");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Coerces an update-entity 'columns' payload (read/create shape, no action verbs) into an implicit add-batch (ENG-90313 Option A).")]
+	public async Task SchemaSync_UpdateEntity_Should_Coerce_Columns_To_Add_Batch() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrPriority", "Integer", Localizations("Priority")),
+					new CreateEntitySchemaColumnArgs("UsrOwner", "Lookup", Localizations("Owner"),
+						ReferenceSchemaName: "Contact") { Required = true }
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns-only update-entity should be accepted as an implicit add-batch");
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(
+			because: "the coerced add-batch should be routed to UpdateEntitySchemaCommand");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "each column should become one add operation");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().OnlyContain(
+			operation => operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "columns without action verbs must be coerced to add operations");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrPriority\"", StringComparison.Ordinal),
+			because: "the column identity should be carried into the coerced add operation");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"reference-schema-name\":\"Contact\"", StringComparison.Ordinal),
+			because: "lookup reference metadata should survive the coercion");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts the get-app-info read-shape aliases (name, data-value-type, reference-schema) on update-operations and resolves them to canonical fields (ENG-90313 AC1/AC2).")]
+	public async Task SchemaSync_UpdateEntity_Should_Accept_Read_Shape_Aliases_On_Update_Operations() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					// modify echoes the read shape: identity as 'name', type as 'data-value-type'
+					new UpdateEntitySchemaOperationArgs("modify", null!) {
+						NameAlias = "UsrStatus",
+						DataValueTypeAlias = "Lookup",
+						ReferenceSchemaAlias = "UsrTodoStatus"
+					},
+					// remove echoes only the read-shape 'name'
+					new UpdateEntitySchemaOperationArgs("remove", null!) { NameAlias = "UsrObsolete" }
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the read-shape aliases should be accepted without manual field translation");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrStatus\"", StringComparison.Ordinal),
+			because: "the 'name' read-shape alias must resolve to the canonical column-name");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"type\":\"Lookup\"", StringComparison.Ordinal),
+			because: "the 'data-value-type' read-shape alias must resolve to the canonical type");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"reference-schema-name\":\"UsrTodoStatus\"", StringComparison.Ordinal),
+			because: "the 'reference-schema' read-shape alias must resolve to the canonical reference-schema-name");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrObsolete\"", StringComparison.Ordinal),
+			because: "a remove echoing only the read-shape 'name' must still resolve the target column");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects legacy scalar title fields in sync-schemas create operations even when title-localizations are also provided.")]
 	public async Task SchemaSync_CreateLookup_Should_Reject_Legacy_Title_Field() {
 		// Arrange
@@ -745,6 +857,158 @@ public sealed class SchemaSyncToolTests {
 			because: "the create-lookup result should surface the registration failure");
 		response.Results[0].Error.Should().Contain("Lookup registration failed",
 			because: "the failing registration error should be returned to the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the read-shape column aliases (data-value-type, reference-schema) when coercing update-entity columns into an add-batch (ENG-90313).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_Read_Shape_Column_Aliases() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					// a column copied from the get-app-info read shape: type as 'data-value-type', lookup as 'reference-schema'
+					new CreateEntitySchemaColumnArgs("UsrOwner", null!, Localizations("Owner")) {
+						DataValueTypeAlias = "Lookup",
+						ReferenceSchemaAlias = "Contact"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a read-shape column copied verbatim should coerce into a valid add operation");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"type\":\"Lookup\"", StringComparison.Ordinal),
+			because: "the column 'data-value-type' read-shape alias must resolve to the canonical type");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"reference-schema-name\":\"Contact\"", StringComparison.Ordinal),
+			because: "the column 'reference-schema' read-shape alias must resolve to the canonical reference-schema-name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts the 'is-required' read-shape spelling on update-operations and resolves it to the canonical required flag (ENG-90313).")]
+	public async Task SchemaSync_UpdateEntity_Should_Accept_IsRequired_Alias_On_Update_Operations() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					// modify echoes the read shape and sends the flag as the natural kebab-case 'is-required'
+					new UpdateEntitySchemaOperationArgs("modify", null!) {
+						NameAlias = "UsrStatus",
+						IsRequiredAlias = true
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the 'is-required' alias should be accepted without manual field translation");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"required\":true", StringComparison.Ordinal),
+			because: "the 'is-required' read-shape alias must resolve to the canonical required flag instead of being dropped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Coerces a columns add-batch that uses the 'is-required' alias and resolves it to the canonical required flag (ENG-90313).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Resolve_IsRequired_Alias() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrFlag", "Boolean", Localizations("Flag")) {
+						IsRequiredAlias = true
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a columns add-batch using the 'is-required' alias should be accepted");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrFlag\"", StringComparison.Ordinal)
+				&& operation.Contains("\"required\":true", StringComparison.Ordinal),
+			because: "the column 'is-required' alias must resolve to the canonical required flag on the coerced add");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Promotes the read-shape scalar 'caption' to title-localizations when coercing a columns add-batch so a get-app-info column round-trips into an add (ENG-90313 AC1).")]
+	public async Task SchemaSync_UpdateEntity_Coercion_Should_Promote_Caption_To_TitleLocalizations() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					// a column copied verbatim from get-app-info: caption as a scalar, no title-localizations
+					new CreateEntitySchemaColumnArgs("UsrCaptioned", "Integer", null!) {
+						LegacyCaption = "Captioned"
+					}
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a get-app-info column carrying only a scalar caption must round-trip into an add without manual translation");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrCaptioned\"", StringComparison.Ordinal)
+				&& operation.Contains("Captioned", StringComparison.Ordinal),
+			because: "the read-shape scalar caption must be promoted to the en-US title-localization so the add is accepted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Enumerates the 'is-required' and 'caption' read-shape aliases in the missing-operations rejection (ENG-90313 AC4).")]
+	public async Task SchemaSync_UpdateEntity_Without_Operations_Should_Enumerate_IsRequired_And_Caption_Aliases() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncRunArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList")]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		string error = response.Results[0].Error!;
+		error.Should().Contain("is-required",
+			because: "the rejection must list the 'is-required' alias agents commonly send for the required flag");
+		error.Should().Contain("caption",
+			because: "the rejection must tell the agent the read-shape scalar 'caption' is accepted in place of title-localizations");
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {

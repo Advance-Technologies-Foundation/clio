@@ -19,7 +19,6 @@ using Clio.Command.Update;
 using Clio.Common;
 using Clio.Help;
 using Clio.Package;
-using Clio.Project;
 using Clio.Query;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -57,11 +56,14 @@ internal class Program {
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
 		typeof(FeatureOptions),
+		typeof(SetFileContentStorageConnectionStringOptions),
 		typeof(PingAppOptions),
 		typeof(ShowLocalEnvironmentsOptions),
 		typeof(EnvManageUiOptions),
 		typeof(ClearLocalEnvironmentOptions),
 		typeof(OpenAppOptions),
+		typeof(GetBrowserSessionOptions),
+		typeof(ClearBrowserSessionOptions),
 		// Package development
 		typeof(PkgListOptions),
 		typeof(CompileOptions),
@@ -74,6 +76,7 @@ internal class Program {
 		typeof(CheckNugetUpdateOptions),
 		typeof(UpdateCliOptions),
 		typeof(SetAutoupdateOptions),
+		typeof(ExperimentalOptions),
 		typeof(CreateWorkspaceCommandOptions),
 		typeof(RestoreWorkspaceOptions),
 		typeof(PushWorkspaceCommandOptions),
@@ -83,6 +86,7 @@ internal class Program {
 		typeof(HealthCheckOptions),
 		typeof(ComponentRegistryRefreshOptions),
 		typeof(ComponentInfoCommandOptions),
+		typeof(GetUserCultureCommandOptions),
 		typeof(AddPackageOptions),
 		typeof(CreateDataBindingOptions),
 		typeof(AddDataBindingRowOptions),
@@ -184,6 +188,7 @@ internal class Program {
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
+		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
@@ -204,11 +209,17 @@ internal class Program {
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
+		typeof(GetProcessSignatureOptions),
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
+		typeof(AddPackageDependencyOptions),
+		typeof(GetIdentityAssertionOptions),
+		typeof(GetIdentityPublicJwkOptions),
+		typeof(RegenerateIdentitySigningKeyOptions),
+		typeof(CheckAuthCodeFlowOptions),
 
 
 	];
@@ -242,6 +253,34 @@ internal class Program {
 	}
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
+		// Defense-in-depth feature gate at the single dispatch chokepoint: every path that runs a
+		// command (normal parse, scenario runner, any future caller) flows through here, so a
+		// gated-off command is unreachable on all surfaces — not only the filtered parse array.
+		// IFeatureToggleService is resolved through the same Resolve mechanism the switch uses to get
+		// commands (passing the options so the container bootstraps with the matching profile), so we
+		// never introduce a second container-bootstrap pattern. The decision is delegated entirely to
+		// IsEnabled (the single rule); the [FeatureToggle] attribute is only re-read here to format the
+		// user-facing message, and in the disabled branch it is guaranteed present.
+		IFeatureToggleService featureToggleService = Resolve<IFeatureToggleService>(instance);
+		if (TryGetDisabledFeatureName(instance, featureToggleService, out string disabledFeatureName)) {
+			string verb = instance.GetType().GetCustomAttribute<VerbAttribute>()?.Name ?? "undefined-command";
+			ConsoleLogger.Instance.WriteError(
+				$"Error: command '{verb}' is part of a disabled experimental feature '{disabledFeatureName}'. "
+				+ $"Enable it with: clio experimental --name {disabledFeatureName} --enable");
+			return 1;
+		}
+		// Package-requirement gate at the same single dispatch chokepoint: every path that runs a
+		// command (normal parse, scenario runner, any future caller) flows through here, so a command
+		// whose options class carries [RequiresPackage] is validated against the target environment
+		// before it runs — on all surfaces, not just the CLI parse. IRequiredPackageChecker is
+		// resolved through the same Resolve mechanism (passing the options so the container bootstraps
+		// with the matching environment profile). Commands without [RequiresPackage] early-return inside
+		// EnsureRequirements and incur no extra HTTP call.
+		IRequiredPackageChecker requiredPackageChecker = Resolve<IRequiredPackageChecker>(instance);
+		if (TryGetPackageRequirementError(instance, requiredPackageChecker, out string packageRequirementError)) {
+			ConsoleLogger.Instance.WriteError(packageRequirementError);
+			return 1;
+		}
 		return instance switch {
 			ExecuteAssemblyOptions opts => CreateRemoteCommand<AssemblyCommand>(opts).Execute(opts),
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
@@ -250,7 +289,7 @@ internal class Program {
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
-			UnregAppOptions opts => CreateCommand<UnregAppCommand>(Resolve<ISettingsRepository>(), ConsoleLogger.Instance).Execute(opts),
+			UnregAppOptions opts => Resolve<UnregAppCommand>().Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),
 			PushPkgOptions opts => Resolve<PushPackageCommand>(opts).Execute(opts),
 			InstallApplicationOptions opts => Resolve<InstallApplicationCommand>(opts).Execute(opts),
@@ -270,11 +309,8 @@ internal class Program {
 			GetAppInfoOptions opts => Resolve<GetAppInfoCommand>(opts).Execute(opts),
 			CreateLookupOptions opts => Resolve<CreateLookupCommand>(opts).Execute(opts),
 			DeletePkgOptions opts => Resolve<DeletePackageCommand>(opts).Execute(opts),
-			ReferenceOptions opts => CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>())
-				.Execute(opts),
-			NewPkgOptions opts => CreateCommand<NewPkgCommand>(Resolve<ISettingsRepository>(),
-					CreateCommand<ReferenceCommand>(Resolve<ICreatioPkgProjectCreator>()), ConsoleLogger.Instance)
-				.Execute(opts),
+			ReferenceOptions opts => Resolve<ReferenceCommand>().Execute(opts),
+			NewPkgOptions opts => Resolve<NewPkgCommand>().Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
@@ -285,9 +321,13 @@ internal class Program {
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
 			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
+			SetFileContentStorageConnectionStringOptions opts =>
+				Resolve<SetFileContentStorageConnectionStringCommand>(opts).Execute(opts),
 			UnzipPkgOptions opts => Resolve<ExtractPackageCommand>().Execute(opts),
 			PingAppOptions opts => CreateRemoteCommand<PingAppCommand>(opts).Execute(opts),
 			OpenAppOptions opts => Resolve<OpenAppCommand>(opts).Execute(opts),
+			GetBrowserSessionOptions opts => Resolve<GetBrowserSessionCommand>(opts).Execute(opts),
+			ClearBrowserSessionOptions opts => Resolve<ClearBrowserSessionCommand>(opts).Execute(opts),
 			PkgListOptions opts => Resolve<GetPkgListCommand>(opts).Execute(opts),
 			ShowLocalEnvironmentsOptions opts => Resolve<ShowLocalEnvironmentsCommand>().Execute(opts),
 			EnvManageUiOptions opts => Resolve<EnvManageUiCommand>().Execute(opts),
@@ -302,6 +342,7 @@ internal class Program {
 			CheckNugetUpdateOptions opts => Resolve<CheckNugetUpdateCommand>(opts).Execute(opts),
 			UpdateCliOptions opts => Resolve<UpdateCliCommand>(opts).Execute(opts),
 			SetAutoupdateOptions opts => Resolve<SetAutoupdateCommand>().Execute(opts),
+			ExperimentalOptions opts => Resolve<ExperimentalCommand>().Execute(opts),
 			RestoreWorkspaceOptions opts => Resolve<RestoreWorkspaceCommand>(opts).Execute(opts),
 			CreateWorkspaceCommandOptions opts => Resolve<CreateWorkspaceCommand>(opts).Execute(opts),
 			PushWorkspaceCommandOptions opts => Resolve<PushWorkspaceCommand>(opts).Execute(opts),
@@ -311,6 +352,7 @@ internal class Program {
 			HealthCheckOptions opts => Resolve<HealthCheckCommand>(opts).Execute(opts),
 			ComponentRegistryRefreshOptions opts => Resolve<ComponentRegistryRefreshCommand>().Execute(opts),
 			ComponentInfoCommandOptions opts => Resolve<ComponentInfoCommand>().Execute(opts),
+			GetUserCultureCommandOptions opts => Resolve<GetUserCultureCommand>().Execute(opts),
 			AddPackageOptions opts => Resolve<AddPackageCommand>(opts).Execute(opts),
 			CreateDataBindingOptions opts => Resolve<CreateDataBindingCommand>(opts).Execute(opts),
 			AddDataBindingRowOptions opts => Resolve<AddDataBindingRowCommand>().Execute(opts),
@@ -382,6 +424,7 @@ internal class Program {
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
+			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
@@ -393,6 +436,7 @@ internal class Program {
 			GetAppHashCommandOptions opts => Resolve<GetAppHashCommand>(opts).Execute(opts),
 			MergeWorkspacesCommandOptions opts => Resolve<MergeWorkspacesCommand>(opts).Execute(opts),
 			GenerateProcessModelCommandOptions opts => Resolve<GenerateProcessModelCommand>(opts).Execute(opts),
+			GetProcessSignatureOptions opts => Resolve<GetProcessSignatureCommand>(opts).Execute(opts),
 			StopOptions opts => Resolve<StopCommand>(opts).Execute(opts),
 			HostsOptions opts => Resolve<HostsCommand>(opts).Execute(opts),
 			LinkCoreSrcOptions opts => Resolve<LinkCoreSrcCommand>(opts).Execute(opts),
@@ -416,9 +460,82 @@ internal class Program {
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
+			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
+			GetIdentityAssertionOptions opts => Resolve<GetIdentityAssertionCommand>(opts).Execute(opts),
+			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
+			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
+			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
+
+	/// <summary>
+	/// Determines whether the supplied options object's type is gated behind a feature flag that is
+	/// currently disabled, and if so yields the feature name for messaging.
+	/// </summary>
+	/// <param name="options">The parsed command options object whose type carries the gate.</param>
+	/// <param name="featureToggleService">The service that decides whether the type is enabled.</param>
+	/// <param name="featureName">
+	/// When the method returns <c>true</c>, the disabled feature key; otherwise <c>null</c>.
+	/// </param>
+	/// <returns>
+	/// <c>true</c> when the type is gated and its feature flag is off (dispatch must be refused);
+	/// <c>false</c> when the type is ungated or its flag is on.
+	/// </returns>
+	internal static bool TryGetDisabledFeatureName(
+		object options, IFeatureToggleService featureToggleService, out string featureName) {
+		featureName = null;
+		if (options is null || featureToggleService is null) {
+			return false;
+		}
+		Type optionsType = options.GetType();
+		if (featureToggleService.IsEnabled(optionsType)) {
+			return false;
+		}
+		// IsEnabled returns true for an unattributed type, so reaching here guarantees the attribute.
+		featureName = optionsType.GetCustomAttribute<FeatureToggleAttribute>(inherit: false)?.FeatureName;
+		return true;
+	}
+
+	/// <summary>
+	/// Validates the declarative package requirements (<see cref="RequiresPackageAttribute"/>) of an
+	/// options instance against the target environment at the single dispatch chokepoint.
+	/// </summary>
+	/// <param name="options">The command options instance whose type carries any requirements.</param>
+	/// <param name="checker">The resolved package-requirement checker.</param>
+	/// <param name="errorMessage">The user-facing refusal message when a requirement is unmet.</param>
+	/// <returns>
+	/// <c>true</c> when a requirement is not satisfied (dispatch must be refused);
+	/// <c>false</c> when the options type has no requirement or every requirement is satisfied.
+	/// </returns>
+	/// <remarks>
+	/// The decision is delegated entirely to <see cref="IRequiredPackageChecker.EnsureRequirements"/>,
+	/// which early-returns (no package-list fetch / no HTTP) for an options type without
+	/// <see cref="RequiresPackageAttribute"/> — see
+	/// <c>RequiredPackageCheckerTests.EnsureRequirements_ShouldNotFetchPackages_WhenTypeHasNoAttribute</c>.
+	/// </remarks>
+	internal static bool TryGetPackageRequirementError(
+		object options, IRequiredPackageChecker checker, out string errorMessage) {
+		errorMessage = null;
+		if (options is null || checker is null) {
+			return false;
+		}
+		try {
+			checker.EnsureRequirements(options);
+			return false;
+		}
+		catch (PackageRequirementException ex) {
+			errorMessage = ex.Message;
+			return true;
+		}
+		catch (Exception ex) {
+			// Mirror the MCP gate: a non-PackageRequirementException (e.g. the target environment is
+			// unreachable so GetPackages() throws an HTTP/connection/auth exception) must not escape as a
+			// raw stack trace. Surface a readable message and refuse dispatch (caller maps true to exit 1).
+			errorMessage = ex.GetReadableMessageException(IsDebugMode);
+			return true;
+		}
+	}
 
 	private static string[] OriginalArgs;
 
@@ -539,16 +656,6 @@ internal class Program {
 		return Resolve<IPackageConverter>().Convert(opts);
 	}
 
-	/// <summary>
-	/// Creates a command of the specified type with the provided constructor arguments.
-	/// </summary>
-	/// <typeparam name="TCommand">Type of command to create</typeparam>
-	/// <param name="additionalConstructorArgs">Additional arguments to pass to the constructor</param>
-	/// <returns>Instantiated command</returns>
-	private static TCommand CreateCommand<TCommand>(params object[] additionalConstructorArgs){
-		return (TCommand)Activator.CreateInstance(typeof(TCommand), additionalConstructorArgs);
-	}
-	
 	/// <summary>
 	/// Creates a remote command with a client connection to the Creatio environment.
 	/// </summary>
@@ -1098,7 +1205,12 @@ internal class Program {
 		
 		RunStartupUpdateCheck(args, bm);
 		string[] normalizedArgs = NormalizeCommandLineArgs(args);
-		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, CommandOption);
+		// Feature gate: only enabled command option types reach the parser. A verb whose
+		// [FeatureToggle] flag is off is filtered out here, so the parser treats it as unknown
+		// (indistinguishable from a typo). Types without [FeatureToggle] are always kept.
+		IFeatureToggleService featureToggleService = bm.GetRequiredService<IFeatureToggleService>();
+		Type[] enabledCommandOption = FeatureToggleFilter.GetEnabled(CommandOption, featureToggleService);
+		ParserResult<object> parserResult = Parser.Default.ParseArguments(normalizedArgs, enabledCommandOption);
 		if (parserResult is Parsed<object> parsed) {
 			return ExecuteCommandWithOption(parsed.Value);
 		}
@@ -1201,7 +1313,13 @@ internal class Program {
 		IServiceProvider serviceProvider = bindingsModule.Register();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = serviceProvider.GetRequiredService<IWorkingDirectoriesProvider>();
 		string repositoryRoot = FindRepositoryRoot(workingDirectoriesProvider.ExecutingDirectory);
-		HelpArtifactExporter exporter = serviceProvider.GetRequiredService<HelpArtifactExporter>();
+		// Generate docs with the deterministic export-baseline feature service (gated commands are
+		// treated as off) so committed artifacts never depend on the local appsettings.json flags of
+		// whoever runs the regeneration. The runtime help path keeps the live settings-backed service.
+		System.IO.Abstractions.IFileSystem fileSystem = serviceProvider.GetRequiredService<System.IO.Abstractions.IFileSystem>();
+		CommandHelpCatalog catalog = serviceProvider.GetRequiredService<CommandHelpCatalog>();
+		CommandHelpRenderer renderer = new(fileSystem, catalog, new ExportFeatureToggleService());
+		HelpArtifactExporter exporter = new(fileSystem, catalog, renderer);
 		return exporter.Export(repositoryRoot);
 	}
 

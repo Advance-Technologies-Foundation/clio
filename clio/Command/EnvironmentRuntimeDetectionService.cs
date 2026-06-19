@@ -38,7 +38,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		return successfulServiceProbeCount switch {
 			1 when netCoreProbe.ServiceProbe.Succeeded => true,
 			1 => false,
-			0 => throw new InvalidOperationException(BuildFailureMessage(environmentSettings.Uri, netCoreProbe, netFrameworkProbe)),
+			0 => ResolveByUiMarkersOrThrow(environmentSettings.Uri, netCoreProbe, netFrameworkProbe),
 			_ => ResolveAmbiguousServiceSuccess(netCoreProbe, netFrameworkProbe)
 		};
 	}
@@ -78,6 +78,19 @@ internal sealed class EnvironmentRuntimeDetectionService(
 			1 when netCoreProbe.UiMarkerProbe.Succeeded => true,
 			1 => false,
 			_ => throw new InvalidOperationException(BuildAmbiguousMessage(netCoreProbe, netFrameworkProbe))
+		};
+	}
+
+	private static bool ResolveByUiMarkersOrThrow(
+		string baseUri,
+		RuntimeProbeResult netCoreProbe,
+		RuntimeProbeResult netFrameworkProbe) {
+		int successfulUiMarkerProbeCount = (netCoreProbe.UiMarkerProbe.Succeeded ? 1 : 0)
+			+ (netFrameworkProbe.UiMarkerProbe.Succeeded ? 1 : 0);
+		return successfulUiMarkerProbeCount switch {
+			1 when netCoreProbe.UiMarkerProbe.Succeeded => true,
+			1 => false,
+			_ => throw new InvalidOperationException(BuildFailureMessage(baseUri, netCoreProbe, netFrameworkProbe))
 		};
 	}
 

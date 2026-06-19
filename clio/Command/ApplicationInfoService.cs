@@ -129,7 +129,7 @@ public sealed class ApplicationInfoService(
 
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 
@@ -179,7 +179,7 @@ public sealed class ApplicationInfoService(
 		}
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, null, code);
@@ -336,7 +336,8 @@ public sealed class ApplicationInfoService(
 				: column.DataValueType.ToString(),
 			column.ReferenceSchemaName,
 			defaultValueSource,
-			defaultValue);
+			defaultValue,
+			column.IsRequired);
 	}
 
 	private static DesignSchemaColumnDto? GetDesignColumn(
@@ -807,6 +808,9 @@ public sealed class ApplicationInfoService(
 		[JsonPropertyName("dataValueType")]
 		public int DataValueType { get; set; }
 
+		[JsonPropertyName("isRequired")]
+		public bool IsRequired { get; set; }
+
 		[JsonPropertyName("isInherited")]
 		public bool IsInherited { get; set; }
 
@@ -909,10 +913,12 @@ public sealed record ApplicationEntityInfoResult(
 /// <param name="ReferenceSchema">Optional lookup reference schema.</param>
 /// <param name="DefaultValueSource">Optional default-value source name.</param>
 /// <param name="DefaultValue">Optional default-value payload.</param>
+/// <param name="Required">Whether the runtime column is required.</param>
 public sealed record ApplicationColumnInfoResult(
 	string Name,
 	string Caption,
 	string DataValueType,
 	string? ReferenceSchema = null,
 	object? DefaultValueSource = null,
-	object? DefaultValue = null);
+	object? DefaultValue = null,
+	bool Required = false);

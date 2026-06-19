@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Acornima.Ast;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -46,14 +48,64 @@ public sealed class PageValidateTool(
 	}
 
 	private static PageSyncValidationResult Validate(string body, string? resources) {
+		// Run the deterministic syntax parser first — same gate as PageUpdateTool
+		// / PageSyncTool so the pre-flight tool catches the production-incident
+		// shape (`await X = Y`) instead of letting the regex syntax validator
+		// pass it as syntax-OK.
+		PageBodySyntaxValidationResult parserResult = PageBodySyntaxValidator.ValidateAndParse(body, out Script parsedAst);
+		if (!parserResult.IsValid) {
+			string syntaxError = PageBodySyntaxValidator.FormatError(parserResult);
+			return new PageSyncValidationResult {
+				MarkersOk = false,
+				JsSyntaxOk = false,
+				ContentOk = false,
+				Errors = [syntaxError]
+			};
+		}
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
-		SchemaValidationResult syntaxResult = SchemaValidationService.ValidateJsSyntax(body);
+		// The legacy brace-counter ValidateJsSyntax is intentionally NOT
+		// called here. Reaching this line means Acornima already parsed the
+		// body successfully (PageBodySyntaxValidator above), so JS syntax is
+		// guaranteed valid — the brace-counter would be a dead check.
+		// JsSyntaxOk is reported as true in BuildResult below.
 		SchemaValidationResult contentResult = markerResult.IsValid
 			? SchemaValidationService.ValidateMarkerContent(body)
 			: new SchemaValidationResult { IsValid = true };
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
 		ContentValidationResults content = RunContentValidations(body, contentResult, explicitResources);
-		return BuildResult(markerResult, syntaxResult, contentResult, content);
+		PageSyncValidationResult result = BuildResult(markerResult, contentResult, content);
+		// Fold AST lint findings into the validation envelope — same source of
+		// truth the write-path tools use. Error-severity findings demote
+		// ContentOk to false and join the Errors[] list; Warning-severity
+		// findings join the Warnings[] list.
+		return FoldInLintFindings(result, parsedAst);
+	}
+
+	private static PageSyncValidationResult FoldInLintFindings(PageSyncValidationResult result, Script parsedAst) {
+		if (parsedAst is null) {
+			return result;
+		}
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(parsedAst);
+		if (findings.Count == 0) {
+			return result;
+		}
+		IReadOnlyList<PageBodyLintFinding> errors = findings.Where(f => f.Severity == LintSeverity.Error).ToArray();
+		IReadOnlyList<PageBodyLintFinding> warnings = findings.Where(f => f.Severity == LintSeverity.Warning).ToArray();
+		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
+		List<string> mergedWarnings = result.Warnings is null ? new List<string>() : new List<string>(result.Warnings);
+		if (errors.Count > 0) {
+			mergedErrors.Add(PageBodyAstLinter.FormatErrors(errors));
+		}
+		if (warnings.Count > 0) {
+			mergedWarnings.AddRange(warnings.Select(PageBodyAstLinter.FormatFinding));
+		}
+		return new PageSyncValidationResult {
+			MarkersOk = result.MarkersOk,
+			JsSyntaxOk = result.JsSyntaxOk,
+			ContentOk = result.ContentOk && errors.Count == 0,
+			Errors = mergedErrors.Count > 0 ? mergedErrors : null,
+			Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null
+		};
 	}
 
 	private static ContentValidationResults RunContentValidations(
@@ -65,6 +117,8 @@ public sealed class PageValidateTool(
 				() => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources)),
 			InsertSelfConsistency: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources)),
+			LocalizableText: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateLocalizableTextLiterals(body)),
 			Binding: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateColumnBindings(body)),
 			ConverterDecl: RunContentValidation(contentResult,
@@ -78,16 +132,18 @@ public sealed class PageValidateTool(
 			ValidatorFactoryShape: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateCustomValidatorFactoryShape(body)),
 			SchemaDeps: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)));
+				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)),
+			ContextAwait: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateContextAccessAwait(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
-		SchemaValidationResult syntaxResult,
 		SchemaValidationResult contentResult,
 		ContentValidationResults content) {
 		List<string> errors = CollectErrors(
-			markerResult, syntaxResult, contentResult,
-			content.Field, content.InsertSelfConsistency, content.ConverterDecl, content.ConverterFunctionShape,
+			markerResult, contentResult,
+			content.Field, content.InsertSelfConsistency, content.LocalizableText,
+			content.ConverterDecl, content.ConverterFunctionShape,
 			content.HandlerStructure, content.ValidatorDecl, content.ValidatorFactoryShape);
 		var warnings = new List<string>();
 		warnings.AddRange(content.Field.Warnings);
@@ -95,13 +151,18 @@ public sealed class PageValidateTool(
 			warnings.AddRange(content.Binding.Errors);
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
+		warnings.AddRange(content.ContextAwait.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
+			content.LocalizableText.IsValid &&
 			content.ConverterDecl.IsValid &&
 			content.ConverterFunctionShape.IsValid && content.HandlerStructure.IsValid &&
 			content.ValidatorDecl.IsValid && content.ValidatorFactoryShape.IsValid;
 		return new PageSyncValidationResult {
 			MarkersOk = markerResult.IsValid,
-			JsSyntaxOk = syntaxResult.IsValid,
+			// Acornima already parsed the body successfully upstream, so JS
+			// syntax is true unconditionally on this path. The dead
+			// brace-counter ValidateJsSyntax call was removed.
+			JsSyntaxOk = true,
 			ContentOk = contentOk,
 			Errors = errors.Count > 0 ? errors : null,
 			Warnings = warnings.Count > 0 ? warnings : null
@@ -139,13 +200,15 @@ public sealed class PageValidateTool(
 	private sealed record ContentValidationResults(
 		SchemaValidationResult Field,
 		SchemaValidationResult InsertSelfConsistency,
+		SchemaValidationResult LocalizableText,
 		SchemaValidationResult Binding,
 		SchemaValidationResult ConverterDecl,
 		SchemaValidationResult ConverterFunctionShape,
 		SchemaValidationResult HandlerStructure,
 		SchemaValidationResult ValidatorDecl,
 		SchemaValidationResult ValidatorFactoryShape,
-		SchemaValidationResult SchemaDeps);
+		SchemaValidationResult SchemaDeps,
+		SchemaValidationResult ContextAwait);
 }
 
 public sealed record PageValidateArgs(
@@ -155,7 +218,7 @@ public sealed record PageValidateArgs(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. See `page-schema-resources` guidance for the full check.")]
+	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
 	string? Resources = null
 );
 
