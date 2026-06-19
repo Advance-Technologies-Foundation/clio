@@ -55,6 +55,16 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		}
 		string toolName = command.Trim();
 
+		// Reject dispatch to the executors themselves (self- or cross-dispatch). The registry
+		// contains clio-run / clio-run-destructive, so without this guard a client could nest
+		// clio-run -> clio-run -> ... and recurse until cancellation/resource exhaustion (DoS).
+		if (string.Equals(toolName, ClioRunTool.ToolName, StringComparison.Ordinal) ||
+			string.Equals(toolName, ClioRunDestructiveTool.ToolName, StringComparison.Ordinal)) {
+			return Error(
+				$"Error: '{toolName}' cannot be a clio-run target (self/cross-dispatch is not allowed). " +
+				"Pass a concrete clio MCP tool name as 'command'.");
+		}
+
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			return Error($"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.");
 		}

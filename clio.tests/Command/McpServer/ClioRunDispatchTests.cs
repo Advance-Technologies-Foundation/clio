@@ -80,6 +80,37 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects dispatching clio-run to itself, preventing unbounded recursive self-dispatch (DoS).")]
+	public async Task RunAsync_ShouldRejectSelfDispatch_WhenTargetIsClioRun() {
+		// Arrange
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(ClioRunTool.ToolName, null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "clio-run must not be able to target itself");
+		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
+			because: "the guard must explain that the executors cannot be dispatch targets");
+		_registry.DidNotReceive().TryGetTool(ClioRunTool.ToolName, out Arg.Any<McpServerTool>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects clio-run-destructive cross-dispatching to clio-run (or vice versa), closing the recursion path.")]
+	public async Task RunAsync_ShouldRejectCrossDispatch_WhenTargetIsTheOtherExecutor() {
+		// Arrange
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(ClioRunTool.ToolName, null, destructiveSurface: true, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "one executor must not be able to target the other");
+		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
+			because: "cross-dispatch between the executors is the same recursion hazard as self-dispatch");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a structured error when 'command' is null or whitespace.")]
 	public async Task RunAsync_ShouldReturnError_WhenCommandIsBlank() {
 		// Arrange
