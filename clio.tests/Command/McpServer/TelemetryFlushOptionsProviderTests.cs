@@ -39,14 +39,16 @@ public sealed class TelemetryFlushOptionsProviderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Pins the shipped default endpoint to the production HTTPS collector so an accidental edit is caught.")]
-	public void DefaultEndpoint_Should_Be_The_Production_Https_Collector()
+	[Description("Ships the default endpoint empty (telemetry off by default) until the production collector is live, while pinning the production endpoint to the HTTPS collector for the eventual one-line flip.")]
+	public void DefaultEndpoint_Should_Ship_Empty_Until_Production_Collector_Is_Live()
 	{
 		// Assert
-		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().Be("https://caadt-telemetry.creatio.com/v1/logs",
-			because: "the production OTLP/HTTP collector is the default that installed clients point at");
-		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().StartWith("https://",
-			because: "the shipped default must satisfy the https-only transport guard for a remote host");
+		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().BeEmpty(
+			because: "the production collector is not live yet, so a merged clio must send nothing anywhere by default");
+		TelemetryFlushOptionsProvider.ProductionEndpoint.Should().Be("https://caadt-telemetry.creatio.com/v1/logs",
+			because: "the production endpoint stays compile-pinned so flipping DefaultEndpoint to it is a one-line change");
+		TelemetryFlushOptionsProvider.ProductionEndpoint.Should().StartWith("https://",
+			because: "the production endpoint must satisfy the https-only transport guard for a remote host");
 	}
 
 	[Test]
@@ -88,15 +90,15 @@ public sealed class TelemetryFlushOptionsProviderTests
 		options.IsSendingEnabled.Should().BeTrue(
 			because: "an endpoint configured in the settings file enables uploading");
 		options.Endpoint.Should().Be("https://settings.example.com/v1/logs",
-			because: "an explicitly configured settings endpoint must win over the shipped production default");
+			because: "an explicitly configured settings endpoint must win over the shipped default");
 		options.IngestKey.Should().Be("settings-key",
 			because: "the ingest key is read from the same settings section");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Falls back to the shipped production default endpoint when neither the environment variables nor the settings file configure one.")]
-	public void Resolve_Should_Use_Default_Endpoint_When_Nothing_Configured()
+	[Description("Disables uploading when neither the environment variables nor the settings file configure an endpoint, because the shipped default is empty until the production collector is live.")]
+	public void Resolve_Should_Disable_Sending_When_Nothing_Configured()
 	{
 		// Arrange
 		TelemetryFlushOptionsProvider provider = CreateProvider(new TelemetrySettings());
@@ -105,10 +107,8 @@ public sealed class TelemetryFlushOptionsProviderTests
 		TelemetryFlushOptions options = provider.Resolve();
 
 		// Assert
-		options.IsSendingEnabled.Should().BeTrue(
-			because: "a built-in default endpoint ships so fresh and updated installs upload without manual configuration");
-		options.Endpoint.Should().Be(TelemetryFlushOptionsProvider.DefaultEndpoint,
-			because: "the shipped production default is the lowest-precedence endpoint source");
+		options.IsSendingEnabled.Should().BeFalse(
+			because: "the shipped default endpoint is empty until production is live, so an unconfigured clio sends nothing anywhere");
 	}
 
 	[Test]
@@ -171,6 +171,8 @@ public sealed class TelemetryFlushOptionsProviderTests
 		// Arrange
 		using EnvironmentVariableScope enabledScope = new(
 			TelemetryFlushOptionsProvider.EnabledEnvironmentVariable, "true");
+		using EnvironmentVariableScope endpointScope = new(
+			TelemetryFlushOptionsProvider.EndpointEnvironmentVariable, "https://env.example.com/v1/logs");
 		TelemetryFlushOptionsProvider provider = CreateProvider(new TelemetrySettings { Enabled = false });
 
 		// Act
@@ -179,8 +181,8 @@ public sealed class TelemetryFlushOptionsProviderTests
 		// Assert
 		options.IsSendingEnabled.Should().BeTrue(
 			because: "the CLIO_TELEMETRY_ENABLED environment variable wins over the settings flag, so it can re-enable a fleet");
-		options.Endpoint.Should().Be(TelemetryFlushOptionsProvider.DefaultEndpoint,
-			because: "with uploading re-enabled and nothing else configured, the shipped default endpoint applies");
+		options.Endpoint.Should().Be("https://env.example.com/v1/logs",
+			because: "with uploading re-enabled, the explicitly configured endpoint applies");
 	}
 
 	[Test]

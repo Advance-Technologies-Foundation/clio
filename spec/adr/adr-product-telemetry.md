@@ -50,16 +50,18 @@ home so relocation and cleanup cover it.
 `IsValidEndpoint` accepts `https`, or `http` only for a loopback host. The optional public ingest
 key (`X-Ingest-Key`) therefore never traverses the network in cleartext to a remote host.
 
-A production OTLP/HTTP collector endpoint ships as a built-in default
-(`TelemetryFlushOptionsProvider.DefaultEndpoint`), so a freshly installed or in-place-updated clio
-uploads telemetry once consent is granted, without per-machine configuration. The default is the
-**lowest-precedence** endpoint source: `CLIO_TELEMETRY_ENDPOINT` and the settings
-`telemetry.endpoint` still override it, and a configured-but-invalid endpoint disables uploading
-rather than silently falling back to the default. Shipping the endpoint in the binary — rather than
-seeding the persisted settings file — keeps it a single source of truth that a normal clio release
-can relocate, and is the only delivery vehicle that reaches existing installs on update (clio
-neither ships `appsettings.json` nor creates it with a telemetry default). This reverses the earlier
-"no default endpoint ships" decision now that the production collector is the agreed target.
+The endpoint-default mechanism ships as the **lowest-precedence** source in the binary:
+`CLIO_TELEMETRY_ENDPOINT` and the settings `telemetry.endpoint` override it, and a
+configured-but-invalid endpoint disables uploading rather than silently falling back to the default.
+The production collector is identified (`TelemetryFlushOptionsProvider.ProductionEndpoint`), but
+because it is not live yet the **active default (`DefaultEndpoint`) ships empty**: a freshly
+installed or in-place-updated clio therefore sends nothing anywhere until an endpoint is explicitly
+configured (e.g. a developer pointing `CLIO_TELEMETRY_ENDPOINT` at the stage collector). When the
+collector is provisioned, flipping `DefaultEndpoint` to `ProductionEndpoint` (a one-line change plus
+the pin test) turns every install on without per-machine configuration — the binary is the only
+delivery vehicle that reaches existing installs on update (clio neither ships `appsettings.json` nor
+creates it with a telemetry default). This supersedes the original "no default endpoint ships"
+decision: the mechanism is in place; only the production value is deferred until the endpoint is live.
 
 Uploading is **opt-out** at the operator level: `CLIO_TELEMETRY_ENABLED=false` (environment, wins)
 or `telemetry.enabled: false` (settings) resolves the endpoint to none and hard-disables uploads
