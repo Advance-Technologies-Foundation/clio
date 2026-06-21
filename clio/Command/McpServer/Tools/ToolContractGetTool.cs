@@ -115,10 +115,10 @@ public sealed class ToolContractGetTool {
 			return null;
 		}
 		List<string> recovered = [];
-		foreach (System.Text.Json.JsonElement value in overflow.Values) {
-			if (!TryAppendFlatToolName(value, recovered)) {
-				return null;
-			}
+		// Every overflow value must contribute a valid name; .All short-circuits on the first
+		// malformed value (mirrors the original early-return) so recovery is abandoned wholesale.
+		if (!overflow.Values.All(value => TryAppendFlatToolName(value, recovered))) {
+			return null;
 		}
 		return recovered.Count > 0 ? recovered : null;
 	}
