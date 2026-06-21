@@ -116,30 +116,55 @@ public sealed class ToolContractGetTool {
 		}
 		List<string> recovered = [];
 		foreach (System.Text.Json.JsonElement value in overflow.Values) {
-			switch (value.ValueKind) {
-				case System.Text.Json.JsonValueKind.String:
-					string? single = value.GetString();
-					if (!string.IsNullOrWhiteSpace(single)) {
-						recovered.Add(single.Trim());
-					}
-					break;
-				case System.Text.Json.JsonValueKind.Array:
-					foreach (System.Text.Json.JsonElement item in value.EnumerateArray()) {
-						if (item.ValueKind == System.Text.Json.JsonValueKind.String) {
-							string? name = item.GetString();
-							if (!string.IsNullOrWhiteSpace(name)) {
-								recovered.Add(name.Trim());
-							}
-						}
-					}
-					break;
-				default:
-					// A name-bearing key carrying a non-string/non-array value is malformed; do not
-					// recover — let it fall through to the alias error path with the shape hint.
-					return null;
+			if (!TryAppendFlatToolName(value, recovered)) {
+				return null;
 			}
 		}
 		return recovered.Count > 0 ? recovered : null;
+	}
+
+	/// <summary>
+	/// Appends the tool name(s) carried by a single overflow <paramref name="value"/> to
+	/// <paramref name="recovered"/>. A string value contributes itself; an array value contributes each
+	/// of its string items. Blank entries are skipped. Returns <c>false</c> when the value is neither a
+	/// string nor an array (a malformed name-bearing key), signalling the caller to abandon recovery so
+	/// the request falls through to the alias error path; otherwise returns <c>true</c>.
+	/// </summary>
+	private static bool TryAppendFlatToolName(System.Text.Json.JsonElement value, List<string> recovered) {
+		switch (value.ValueKind) {
+			case System.Text.Json.JsonValueKind.String:
+				AddIfNotBlank(value.GetString(), recovered);
+				return true;
+			case System.Text.Json.JsonValueKind.Array:
+				AppendStringArrayItems(value, recovered);
+				return true;
+			default:
+				// A name-bearing key carrying a non-string/non-array value is malformed; do not
+				// recover — let it fall through to the alias error path with the shape hint.
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Appends every string item of a JSON array <paramref name="array"/> to <paramref name="recovered"/>,
+	/// skipping non-string items and blank values.
+	/// </summary>
+	private static void AppendStringArrayItems(System.Text.Json.JsonElement array, List<string> recovered) {
+		foreach (System.Text.Json.JsonElement item in array.EnumerateArray()) {
+			if (item.ValueKind == System.Text.Json.JsonValueKind.String) {
+				AddIfNotBlank(item.GetString(), recovered);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Adds <paramref name="name"/> (trimmed) to <paramref name="recovered"/> when it is neither
+	/// <c>null</c> nor whitespace.
+	/// </summary>
+	private static void AddIfNotBlank(string? name, List<string> recovered) {
+		if (!string.IsNullOrWhiteSpace(name)) {
+			recovered.Add(name.Trim());
+		}
 	}
 
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {

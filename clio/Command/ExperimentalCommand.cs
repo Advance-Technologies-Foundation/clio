@@ -120,11 +120,11 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 
 		// Standalone feature keys (gating a registration profile, not a single attributed type) are
 		// recognized keys with no attribute carrier, so they are listed explicitly with their current
-		// settings state rather than as orphans.
-		foreach (string key in StandaloneFeatureKeys) {
-			if (catalogKeys.Add(key)) {
-				rows.Add((key, _featureToggleService.IsFeatureEnabled(key), Orphan: false));
-			}
+		// settings state rather than as orphans. catalogKeys.Add doubles as the filter: it adds the key
+		// and yields it only when it was not already present, so each standalone key is listed at most
+		// once. Where enumerates the source exactly once, preserving the original add-then-act order.
+		foreach (string key in StandaloneFeatureKeys.Where(catalogKeys.Add)) {
+			rows.Add((key, _featureToggleService.IsFeatureEnabled(key), Orphan: false));
 		}
 
 		// Settings keys that no attribute references are surfaced as orphans so a leftover/renamed
