@@ -273,6 +273,8 @@ public sealed class ApplicationSectionToolE2ETests {
 		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		string? createdSectionCode = null;
 		try {
 			// Act
@@ -341,6 +343,8 @@ public sealed class ApplicationSectionToolE2ETests {
 		string caption = $"E2E Case {Guid.NewGuid():N}"[..23];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		string? createdSectionCode = null;
 		try {
 			// Act

@@ -268,7 +268,7 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the guide must state that the profile culture governs the caption text language, not just the localization key (ENG-91044)");
 		article.Text.Should().Contain("Cyrillic text under `en-US`",
 			because: "the guide must warn that non-English text under the en-US key is rejected on the write path");
-		article.Text.Should().Contain("must be ENGLISH text",
+		article.Text.Should().Contain("MUST contain ENGLISH text",
 			because: "the guide must require the mandatory en-US localization entry to hold English text");
 	}
 
@@ -406,10 +406,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should include the canonical imperative dispatch shape");
 		article.Text.Should().Contain("API choice rules",
 			because: "the handler guide should explain the page-body request-dispatch choice explicitly");
-		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
-			because: "the handler guide should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
-			because: "the handler guide should keep HandlerChainService out of the default page-body authoring path");
+		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` |",
+			because: "the handler guide should prefer HandlerChainService.instance.process for deployed page-body handlers");
+		article.Text.Should().Contain("Do NOT default to `request.$context.executeRequest(...)` in deployed page-body handlers; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })`.",
+			because: "the handler guide should deprecate executeRequest in favor of the documented HandlerChainService SDK API");
 		article.Text.Should().Contain("Chain-control rules",
 			because: "the handler guide should explain next-placement semantics from the handler chain contract");
 		article.Text.Should().Contain("Call `next` intentionally: place it `before`, `after`, or omit it only for an intentional chain break or full behavior replacement.",
@@ -546,8 +546,8 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should give AI a predictable ordering heuristic for multi-handler arrays");
 		article.Text.Should().Contain("Orchestration patterns",
 			because: "the handler guide should distinguish page-body dispatch, handler-chain dispatch, and direct SDK service orchestration");
-		article.Text.Should().Contain("Use `await request.$context.executeRequest(...)` when a deployed page-body handler forwards into another page-scoped request.",
-			because: "the handler guide should keep executeRequest as the default page-body orchestration path");
+		article.Text.Should().Contain("Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` when a deployed page-body handler forwards into another page-scoped request.",
+			because: "the handler guide should keep HandlerChainService.instance.process as the canonical page-body orchestration path");
 		article.Text.Should().Contain("Use SDK/domain services such as `sdk.ProcessEngineService` when the task is direct service orchestration rather than request forwarding.",
 			because: "the handler guide should mention the direct service-orchestration path seen in product code");
 		article.Text.Should().MatchRegex(@"type: ""crt\.RunBusinessProcessRequest"",\s+processName: ""<ProcessName>"",\s+\$context(: request\.\$context|),\s+scopes: \[\.\.\.request\.scopes\]",
@@ -729,10 +729,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",
 			because: "fragment-only dialog snippets should say they are not standalone schema modules");
-		article.Text.Should().Contain("Inner handler/body snippet only: HandlerChainService from advanced SDK-oriented schema code:",
+		article.Text.Should().Contain("Inner handler/body snippet: canonical HandlerChainService dispatch from page-body handler code (per Creatio Academy SCHEMA_HANDLERS examples):",
 			because: "fragment-only handler-chain snippets should say they are not standalone schema modules");
-		article.Text.Should().Contain("Rule: in deployed page-body handlers, prefer `await request.$context.executeRequest(...)`.",
-			because: "the guide should keep executeRequest as the default dispatch path for schema handlers");
+		article.Text.Should().Contain("Rule: in deployed page-body handlers, use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` for imperative request dispatch.",
+			because: "the guide should use HandlerChainService as the documented dispatch path for schema handlers");
 		article.Text.Should().Contain("Do NOT use `import { ... } from \"@creatio-devkit/common\"` inside deployed page schema body code.",
 			because: "the guide should explicitly block ES-module imports in schema-body code");
 		article.Text.Should().NotContain("BaseRequest",

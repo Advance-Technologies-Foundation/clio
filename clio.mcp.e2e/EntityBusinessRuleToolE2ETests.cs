@@ -48,7 +48,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			.GetProperty("actions")
 			.GetProperty("items");
 		JsonElement anyOf = actionSchema.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(6,
+		anyOf.GetArrayLength().Should().Be(7,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
 			because: "page-only actions should not appear in the entity business-rule runtime schema");

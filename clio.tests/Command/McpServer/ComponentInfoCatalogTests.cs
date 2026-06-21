@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Clio.Command.McpServer.Tools;
@@ -38,6 +39,21 @@ public sealed class ComponentInfoCatalogTests {
 			because: "the wrapper { components: [...] } must yield the same entries as the legacy top-level array");
 		state.Entries[0].ComponentType.Should().Be("crt.Sample");
 		state.Source.Should().Be(ComponentRegistrySource.Local);
+	}
+
+	[Test]
+	[Description("ComponentCatalogState.Composites defaults to an empty list (never null) even when the state is constructed directly, bypassing BuildState — so FilterComposites and the composite-detail iteration cannot NRE on a hand-built state.")]
+	public void ComponentCatalogState_Composites_Defaults_To_Empty_Not_Null() {
+		ComponentCatalogState state = new(
+			[],
+			new Dictionary<string, ComponentRegistryEntry>(),
+			"latest",
+			ComponentRegistrySource.Local);
+
+		state.Composites.Should().NotBeNull(
+			because: "a directly-constructed state must never expose a null Composites — call sites iterate it without a null-guard");
+		state.Composites.Should().BeEmpty(
+			because: "no composites were supplied, so the type-level default is an empty list");
 	}
 
 	[Test]

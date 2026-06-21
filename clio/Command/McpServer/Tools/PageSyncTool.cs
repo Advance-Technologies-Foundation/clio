@@ -167,7 +167,7 @@ public sealed class PageSyncTool(
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
 			if (entry.SyntaxFailureMessage is { } syntaxMsg) {
-				results.Add(BuildPrePassFailureResult(page, syntaxMsg));
+				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
 			}
 			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
@@ -257,6 +257,37 @@ public sealed class PageSyncTool(
 	// syntactic failure means we never ran the markers or content validators
 	// for this body, so the envelope must NOT claim those gates passed. Only
 	// JsSyntaxOk has authoritative state at this point.
+	// A whole-body JS syntax error is frequently a side effect of a more specific,
+	// regex-detectable content problem: broken JSON inside a JSON-backed SCHEMA_*
+	// marker (e.g. a stray double comma in SCHEMA_VIEW_CONFIG_DIFF), a converter /
+	// validator declared with the wrong key shape, a proxy field binding, etc. The
+	// generic Acornima message ("JavaScript syntax error at line X, column Y")
+	// cannot name the offending section. The deterministic content chain (ValidateBody)
+	// can — and it is regex-based, so it runs even on a body that does not parse as
+	// JavaScript. When validation is on and that chain pinpoints a concrete problem,
+	// prefer its specific, actionable error over the generic parser message. A genuine
+	// JS-only syntax error (clean markers + content) leaves the chain with no errors,
+	// so the ENG-89796 generic syntax wording is preserved for that case.
+	private static string ResolvePrePassSyntaxFailureMessage(PageSyncPageInput page, string syntaxMessage, bool validate) {
+		if (!validate) {
+			return syntaxMessage;
+		}
+		// Only override the generic syntax error when the body is still a recognizable
+		// page body — markers present and correctly paired. If marker integrity itself
+		// fails (e.g. missing SCHEMA_DEPS / SCHEMA_ARGS), the body is not a usable page
+		// at all and the generic JS syntax error is the more honest, actionable signal
+		// (ENG-89796). This keeps FailFast-on-pure-syntax-error behaviour intact while
+		// still pinpointing a marker/content problem inside an otherwise well-formed page.
+		if (!SchemaValidationService.ValidateMarkerIntegrity(page.Body).IsValid) {
+			return syntaxMessage;
+		}
+		PageSyncValidationResult content = ValidateBody(page.Body, page.Resources);
+		IReadOnlyList<string> contentErrors = content.Errors ?? Array.Empty<string>();
+		return contentErrors.Count == 0
+			? syntaxMessage
+			: "Client-side validation failed: " + string.Join("; ", contentErrors);
+	}
+
 	private static PageSyncPageResult BuildPrePassFailureResult(PageSyncPageInput page, string failureMessage) =>
 		new() {
 			SchemaName = page.SchemaName,

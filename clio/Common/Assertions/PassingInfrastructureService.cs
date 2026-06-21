@@ -143,6 +143,21 @@ public sealed class PassingInfrastructureService : IPassingInfrastructureService
 
 	private async Task<ShowPassingInfrastructureLocal> DiscoverLocalAsync()
 	{
+		try
+		{
+			return await DiscoverLocalCoreAsync();
+		}
+		catch
+		{
+			// Mirror the Kubernetes discovery branch: a runtime failure on the local
+			// database/Redis path must surface as an empty section, not escape ExecuteAsync
+			// as an McpProtocolException for the show-passing-infrastructure MCP tool.
+			return new ShowPassingInfrastructureLocal([], []);
+		}
+	}
+
+	private async Task<ShowPassingInfrastructureLocal> DiscoverLocalCoreAsync()
+	{
 		List<ShowPassingInfrastructureDatabaseCandidate> databases = [];
 		foreach (string serverName in _settingsRepository.GetLocalDbServerNames())
 		{
@@ -212,6 +227,21 @@ public sealed class PassingInfrastructureService : IPassingInfrastructureService
 	}
 
 	private ShowPassingInfrastructureFilesystem DiscoverFilesystem()
+	{
+		try
+		{
+			return DiscoverFilesystemCore();
+		}
+		catch
+		{
+			// Mirror the Kubernetes discovery branch: a runtime failure on the filesystem
+			// path must surface as an unavailable section, not escape ExecuteAsync as an
+			// McpProtocolException for the show-passing-infrastructure MCP tool.
+			return new ShowPassingInfrastructureFilesystem(false, null, null, null);
+		}
+	}
+
+	private ShowPassingInfrastructureFilesystem DiscoverFilesystemCore()
 	{
 		AssertionResult pathResult = _fsPathAssertion.Execute(DefaultFilesystemPathKey);
 		if (pathResult.Status == "fail" ||

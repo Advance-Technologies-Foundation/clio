@@ -33,12 +33,37 @@ internal static class McpServerInstructions
 		- Do not call `compile-creatio` / `restart-by-environment-name` "just in case". Prefer read-only
 		  tools when unsure. Prefer `*-by-environment-name` variants over `*-by-credentials`.
 
+		## Calling tools
+		Every tool that takes parameters wraps them in a single top-level `args` object — put all fields
+		inside `args`, never at the top level (a flat payload is rejected with a missing-`args` error).
+		Tools with no parameters take an empty object.
+
+		## Product telemetry
+		Three tools (`get-telemetry-consent`, `send-telemetry`, `withdraw-telemetry-consent`) manage local
+		product telemetry for an AI-assisted app-development session driven by a consuming skill/contract.
+		If no such skill is active (ad-hoc clio use, scripts, CI), do not call them or prompt for consent.
+		`get-telemetry-consent` reads the stored consent (`granted` / `denied` / `unknown`) without writing.
+		`send-telemetry` validates and stores one workflow event locally, but ONLY once consent is `granted`
+		(events sent earlier are silently dropped) — so establish consent first (if `unknown`, obtain the
+		user's decision and persist it once via `send-telemetry`). clio uploads stored events in the
+		background; no agent action is needed for delivery. `withdraw-telemetry-consent` sets the decision
+		to `denied`, stops all further collection/upload, and discards the local outbox — call it when the
+		user asks to stop/turn off/opt out of telemetry; it is forward-looking (already-uploaded events are
+		not deleted). The consent wording and per-step event sequence are owned by the skill/contract, not
+		these instructions — call `get-tool-contract` for the authoritative payload shape and emission order.
+		If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
+
 		## Freedom UI page work — version-check first
 		Before planning page work, call `get-component-info` with the target `environment-name` to scope
 		the catalog to that platform version, then list mode (no `component-type`) to discover the full set
 		(including non-obvious types such as `crt.Gallery`) — never author from memory. Branch on the
 		response's `requiresVersionConfirmation` / `resolvedFrom`: when the version is unknown, confirm with
 		the user before proceeding. `schema-type: "mobile"` queries the separate mobile catalog.
+		The list response also returns a `composites` array — pre-built combinations (e.g. "Expanded list",
+		"Attachments", "Approval list") with no `componentType` of their own. Never hand-assemble one from
+		raw components: fetch its recipe with `get-component-info composite: "<caption>"`. A component flagged
+		`compositeOnly: true` has no standalone toolbar presence — build the matching composite instead of
+		inserting it directly.
 		To edit a page from a designer URL `#/PageDesigner/<pageUId>[?packageUId=…]`: `list-pages uid=<pageUId>`
 		→ `get-page schema-name=<matched>` → `update-page` WITHOUT `target-package-uid` (the backend resolves
 		the design package automatically). Call `get-guidance page-modification` before editing the body.

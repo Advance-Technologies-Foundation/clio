@@ -5,6 +5,14 @@ namespace Clio.Command {
 	using Newtonsoft.Json.Linq;
 
 	internal static class PageSchemaMetadataHelper {
+		/// <summary>
+		/// Canonical user-facing error for a syntactically invalid schema name. Shared by every
+		/// call site that pairs with <see cref="IsValidSchemaName"/> so the message stays identical
+		/// across the CLI and MCP surfaces (project-context.md: no hardcoded user-facing strings).
+		/// </summary>
+		internal const string SchemaNameFormatError =
+			"schema-name must start with a letter and contain only letters, digits, or underscores";
+
 		private const string ExpressionTypeKey = "expressionType";
 		private const string ColumnPathKey = "columnPath";
 		private const string SelectQueryUrl = "/DataService/json/SyncReply/SelectQuery";
