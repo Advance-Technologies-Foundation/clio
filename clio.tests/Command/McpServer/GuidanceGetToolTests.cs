@@ -106,6 +106,35 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that delegates to the @creatio-devkit/theming package and routes the agent to the right flow rather than embedding the token catalog.")]
+	public async Task GuidanceGet_Should_Return_Theming_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "theming is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/theming",
+			because: "the guidance tool should preserve the canonical theming guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP custom-theme guide",
+			because: "the guidance tool should return the canonical theming article text");
+		result.Article.Text.Should().Contain("Which flow",
+			because: "theming is the single entry point — the article must help the agent pick the workspace/dev vs no-code/server flow");
+		result.Article.Text.Should().Contain("@creatio-devkit/theming",
+			because: "the Delegate model requires the guide to route theme authoring to the npm package");
+		result.Article.Text.Should().Contain("AI_GUIDES_INDEX.md",
+			because: "the guide must route token lookups to the package catalog (via its index) instead of embedding token names/values");
+		result.Article.Text.Should().Contain("push-workspace",
+			because: "the workspace/dev flow must direct deployment through push-workspace");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical indicator widget guidance article when the caller requests indicator-widget.")]
 	public async Task GuidanceGet_Should_Return_Indicator_Widget_Article() {
 		// Arrange

@@ -121,7 +121,17 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Generates source code for schemas that require it.
 		/// </summary>
-		GenerateRequiredSchemasSources = 41
+		GenerateRequiredSchemasSources = 41,
+
+		/// <summary>
+		///     Lists the custom themes available on the environment via the native ThemeService.
+		/// </summary>
+		GetAvailableThemes = 42,
+
+		/// <summary>
+		///     Refreshes the Creatio theme catalog cache via the native ThemeService.
+		/// </summary>
+		ClearThemesCache = 43
 
 	}
 
@@ -176,6 +186,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
+		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

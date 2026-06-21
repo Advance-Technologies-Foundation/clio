@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `63` tools
+- `65` tools
 - `50` prompts
-- `4` resources
-- `56` tools with explicit safety metadata
+- `5` resources
+- `58` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -80,6 +80,8 @@ Typical examples:
 - `update-page`
 - `delete-app`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache-by-credentials`
+- `list-themes-by-credentials`
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -411,6 +413,10 @@ These tools are operational rather than design-oriented.
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache-by-environment`
+- `clear-themes-cache-by-credentials`
+- `list-themes-by-environment`
+- `list-themes-by-credentials`
 
 What an external AI can practically do here:
 
@@ -475,6 +481,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/theming`
+  Canonical MCP guidance for managing custom Creatio themes with @creatio-devkit/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio
 
 How an external AI should interpret resources:
 
@@ -557,6 +565,10 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache-by-environment`
+- `clear-themes-cache-by-credentials`
+- `list-themes-by-environment`
+- `list-themes-by-credentials`
 
 ### 4. Mixed response shapes
 

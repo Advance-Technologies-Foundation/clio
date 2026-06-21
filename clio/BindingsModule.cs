@@ -471,6 +471,8 @@ public class BindingsModule {
 		services.AddTransient<StopCommand>();
 		services.AddTransient<HostsCommand>();
 		services.AddTransient<RedisCommand>();
+		services.AddTransient<ClearThemesCacheCommand>();
+		services.AddTransient<ListThemesCommand>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();

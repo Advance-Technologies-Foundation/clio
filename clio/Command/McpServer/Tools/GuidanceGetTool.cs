@@ -35,7 +35,7 @@ public sealed class GuidanceGetTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns a named clio MCP guidance article, or lists all available guide names when "
 		+ "the requested name is unknown. Known names include clio guides such as app-modeling, "
-		+ "page-modification, page-schema-handlers, and run-process-button plus composable-app skill "
+		+ "page-modification, theming, page-schema-handlers, and run-process-button plus composable-app skill "
 		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
 		+ "and their test guides.")]
 	public Task<GuidanceGetResponse> GetGuidance(

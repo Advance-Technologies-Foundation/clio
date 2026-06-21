@@ -500,6 +500,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="clear-redis-db"></a>
 <a id="flushdb"></a>
 - [`clear-redis-db`](docs/commands/clear-redis-db.md) - Clear redis database, `flushdb`
+<a id="clear-themes-cache"></a>
+<a id="flush-themes"></a>
+- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache, `flush-themes`
+<a id="list-themes"></a>
+<a id="get-themes"></a>
+- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment, `get-themes`
 <a id="CustomizeDataProtection"></a>
 <a id="cdp"></a>
 - [`CustomizeDataProtection`](docs/commands/CustomizeDataProtection.md) - Toggle CustomizeDataProtection in appsettings.json, `cdp`

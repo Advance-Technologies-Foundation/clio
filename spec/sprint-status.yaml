@@ -508,3 +508,89 @@ stories:
     ac: []
     depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
     blocks: []
+
+  # --- theming-clio-devflow stories (ENG-90636 — Theming with AI, Clio dev flow, Contour A), added 2026-06-18 ---
+  # Delegate ownership model (ADR D1): npm package @creatio-devkit/theming owns template + guides;
+  # clio adds only clear-themes-cache (CLI + env-aware MCP tool), a thin `theming` guidance pointer, and npm wiring.
+  # R2 RESOLVED 2026-06-18 via resolution (a): the platform exposes a NATIVE endpoint ThemeService.svc/ClearThemesCache
+  # (IThemeService). KnownRoute.ClearThemesCache = 43 -> "ServiceModel/ThemeService.svc/ClearThemesCache". No ClioGate
+  # method, NO cliogate bump, NO [RequiresPackage] gate, and the R1 full-flush fallback was not needed.
+  # Implemented + full unit suite green (4213 passed); committed on feature/ENG-90636. MCP/stand E2E is manual (not in CI).
+  - id: story-theming-clio-devflow-1
+    title: "clear-themes-cache route + CLI command"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-1.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [CAP-01]
+    depends_on: []
+    blocks: [story-theming-clio-devflow-3]
+    status_note: "implemented; full unit suite green (4213 passed)"
+    note: "DONE. KnownRoute.ClearThemesCache = 43 -> ServiceModel/ThemeService.svc/ClearThemesCache (native ThemeService, resolution a) in ServiceUrlBuilder.cs; ClearThemesCacheCommand : RemoteCommand<ClearThemesCacheOptions> (verb clear-themes-cache, alias flush-themes) mirroring RedisCommand.cs, with ProceedResponse parsing BaseResponse {success,errorInfo}; NO [RequiresPackage] (native endpoint, runtime auth via CanCustomizeBranding + CanManageThemes); registered in Program.cs + BindingsModule.cs. Full unit suite trigger (BindingsModule/Program/Common touched) — ran green."
+
+  - id: story-theming-clio-devflow-2
+    title: "Theme-cache invalidation endpoint (resolved: native ThemeService, no ClioGate)"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-2.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [CAP-01]
+    depends_on: []
+    blocks: []
+    note: "R2 RESOLVED via resolution (a): native ThemeService.svc/ClearThemesCache (IThemeService) — 'Forces a refresh of the theme catalog'. NO ClioGate method, NO cliogate bump, NO [RequiresPackage]; R1 full-flush fallback not needed. Route wired in Story 1; ProceedResponse parses BaseResponse {success,errorInfo}. Live-stand E2E (deploy theme, push, clear-themes-cache, verify visible-after-reload) is manual (not in CI)."
+
+  - id: story-theming-clio-devflow-3
+    title: "clear-themes-cache env-aware MCP tool"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-3.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [CAP-02]
+    depends_on: [story-theming-clio-devflow-1]
+    blocks: []
+    note: "Independent of the R2 open dependency. ClearThemesCacheTool : BaseTool<ClearThemesCacheOptions> using env-aware InternalExecute<ClearThemesCacheCommand>; flags ReadOnly=false/Destructive=false/Idempotent=true; registered via McpFeatureToggleFilter.RegisterEnabledPrimitives (IEnumerable<Type> — never Type[] / *FromAssembly). Unit (arg/exec mapping) + mandatory clio.mcp.e2e (tool exec) — E2E NOT in CI (manual). Needs the CLI command shell from Story 1."
+
+  - id: story-theming-clio-devflow-4
+    title: "Delegate guidance (theming) + npm wiring"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-4.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [CAP-03, CAP-04]
+    depends_on: []
+    blocks: []
+    note: "Independent of the R2 open dependency. Thin `theming` MCP guidance resource at docs://mcp/guides/theming (mirror WorkspaceUiProjectGuidanceResource) + GuidanceCatalog entry — orchestration pointer only, no token catalog (C1), references AI_GUIDES_INDEX.md (R3); theme authoring is delivered via get-guidance theming (NO bespoke AGENTS.md theme section). @creatio-devkit/theming stays a clio/tpl/ui-project devDependency — it is the design-token catalog @creatio-devkit/common's REMOTE_COMPONENT_STYLING guide points to (needed for component styling) as well as the theme-authoring source (version pinned once package ships — R3); plain packages npm i on demand. Unit (catalog resolves `theming`, URI, no-token-catalog guard) + mandatory clio.mcp.e2e get-guidance theming discovery — E2E NOT in CI (manual)."
+
+  - id: story-theming-clio-devflow-5
+    title: "Prototype removal verification + docs / capability map"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-5.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [C1, C3, C4]
+    depends_on: []
+    blocks: []
+    note: "Independent of the R2 open dependency. Verify-then-document: branch is fresh off master so prototype (ENG-89624/90889) is largely absent — grep + remove any residue (D5: tpl/themes/theme.css.tpl, embedded creatio-theme/design-tokens guidance + DESIGN_TOKENS_AI_GUIDE.md csproj entries, the new-theme stack); run CLIO005 after removal. Docs: help/en/clear-themes-cache.txt, docs/commands/clear-themes-cache.md, Commands.md, Wiki/WikiAnchors.txt, docs/McpCapabilityMap.md (new tool + docs://mcp/guides/theming resource). Per-command docs may co-land with Story 1 if a ReadmeChecker gate requires it."
+
+  - id: story-theming-clio-devflow-6
+    title: "list-themes command + read-only MCP tool"
+    feature: "theming-clio-devflow"
+    size: M
+    status: review
+    file: spec/stories/story-theming-clio-devflow-6.md
+    prd: spec/prd/spec-theming-clio-devflow.md
+    adr: spec/adr/adr-theming-clio-devflow.md
+    cap: [CAP-05]
+    depends_on: []
+    blocks: []
+    note: "Added 2026-06-19. Read-only counterpart to clear-themes-cache. KnownRoute.GetAvailableThemes = 42 -> ServiceModel/ThemeService.svc/GetAvailableThemes (native ThemeService, IThemeService.GetAvailableThemes); ListThemesCommand : RemoteCommand<ListThemesOptions> (verb list-themes, alias get-themes), parses ListResponse<ThemeDescriptorDto> {success,errorInfo,values[]} and prints a table; shared non-logging data method TryGetAvailableThemes. ListThemesTool : BaseTool<ListThemesOptions> with list-themes-by-environment / -by-credentials, ReadOnly=true, returns STRUCTURED JSON {success,themes[]} (divergence from clear-themes-cache log-envelope, mirrors GetPkgListTool). NO ClioGate, NO cliogate bump, NO [RequiresPackage]. Unit (command + tool) + clio.mcp.e2e advertise test (NOT in CI — manual). Docs + theming guidance updated. Full unit suite trigger (Program/BindingsModule/Common touched)."

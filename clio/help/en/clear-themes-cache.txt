@@ -1,0 +1,41 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    clear-themes-cache - refresh only the Creatio theme cache
+
+DESCRIPTION
+    clear-themes-cache refreshes the Creatio theme catalog cache on the target
+    environment. It affects only theme data and does not restart the application.
+
+    Typical use: after pushing a package that contains a theme (push-workspace /
+    push-pkg), run clear-themes-cache.
+
+SYNOPSIS
+    clear-themes-cache [Name] [options]
+
+OPTIONS
+    Name (pos. 0)	Application name
+
+    --uri               -u          Application uri
+
+    --Password			-p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+ALIASES
+    flush-themes
+
+EXAMPLE
+    clio clear-themes-cache
+        clear the theme cache of the current web application(website)
+
+    clio clear-themes-cache -e myapp
+        clear the theme cache of the environment registered as myapp
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

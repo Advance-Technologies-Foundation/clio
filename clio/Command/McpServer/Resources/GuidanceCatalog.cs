@@ -114,6 +114,10 @@ internal static class GuidanceCatalog {
 				"ui-project",
 				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
 				WorkspaceUiProjectGuidanceResource.Guide),
+			["theming"] = Create(
+				"theming",
+				"Canonical MCP guidance for managing custom Creatio themes with @creatio-devkit/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio.",
+				ThemingGuidanceResource.Guide),
 			["run-process-button"] = Create(
 				"run-process-button",
 				"Canonical MCP guidance for adding a Freedom UI button that runs a business process "
