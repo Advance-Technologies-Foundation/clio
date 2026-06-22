@@ -418,6 +418,21 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("get-page prompt routes page design and layout work to the ui-guidelines guide so design guidance is read before composing a body.")]
+	public void PagePrompt_Should_Route_Design_And_Layout_To_Ui_Guidelines() {
+		// Arrange & Act
+		string prompt = PagePrompt.GetPage("UsrTodo_FormPage", "sandbox");
+
+		// Assert
+		prompt.Should().Contain("ui-guidelines",
+			because: "the page prompt must route design/layout work to the ui-guidelines guide, the same guardrail enforced on the page-tool descriptions");
+		prompt.Should().Contain("before composing the body",
+			because: "the prompt must trigger the design-guidance read before body authoring, not after");
+		prompt.Should().Contain("not from memory",
+			because: "the prompt must direct the agent to author layout from the guide rather than from memory");
+	}
+
+	[Test]
 	[Description("Serializes update-page resource registration metadata in the command response.")]
 	public void PageUpdateResponse_Should_Serialize_Resource_Registration_Metadata() {
 		// Arrange

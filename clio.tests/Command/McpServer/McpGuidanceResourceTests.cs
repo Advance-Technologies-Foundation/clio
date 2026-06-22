@@ -1700,6 +1700,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the index must carry the rendered-over-schema review principle");
 		article.Text.Should().Contain("read the current page (`get-page`)",
 			because: "the index must carry the ENG-91403 rule to read the existing page style before editing");
+		article.Text.Should().Contain("append a trailing period",
+			because: "the index most-missed checklist must also anchor the no-trailing-period rule so the ENG-91403 ask is asserted on more than one surface");
 	}
 
 	[Test]
@@ -1796,6 +1798,56 @@ public sealed class McpGuidanceResourceTests {
 			because: "the GATE must keep the trigger that routes page design and layout work to the UI guidance");
 		article.Text.Should().Contain("ui-guidelines",
 			because: "the GATE row must route UI design and review tasks to the ui-guidelines index (ENG-91403)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("page-creation guide routes design quality to ui-guidelines and carries the ENG-91403 read-existing-style rule.")]
+	public void PageCreationGuidanceResource_Should_Route_Design_To_Ui_Guidelines() {
+		// Arrange
+		PageCreationGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the page-creation guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-creation",
+			because: "the page-creation guide should expose its canonical docs:// URI");
+		article.Text.Should().Contain("get-guidance name=ui-guidelines",
+			because: "the create-page flow must route design quality to the ui-guidelines guide so new pages match the base Creatio look (ENG-91403)");
+		article.Text.Should().Contain("read its style first",
+			because: "the create-page guide must carry the ENG-91403 rule to read an analogous page's style before adding inputs");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every guide referenced by name= inside the ui-guidelines index and its leaves resolves in GuidanceCatalog, so the routing tree has no dangling targets (ENG-91403).")]
+	public void UiGuidelinesGuidanceResource_Routed_Guide_Names_Should_All_Resolve() {
+		// Arrange
+		UiGuidelinesGuidanceResource resource = new();
+		string[] articles = [
+			((TextResourceContents)resource.GetGuide()).Text,
+			((TextResourceContents)resource.GetPageLayout()).Text,
+			((TextResourceContents)resource.GetAccessibility()).Text,
+			((TextResourceContents)resource.GetReviewChecklists()).Text
+		];
+		System.Collections.Generic.HashSet<string> routedNames = new(System.StringComparer.OrdinalIgnoreCase);
+		foreach (string text in articles) {
+			foreach (System.Text.RegularExpressions.Match match in
+				System.Text.RegularExpressions.Regex.Matches(text, "name=([a-z][a-z0-9-]*)")) {
+				routedNames.Add(match.Groups[1].Value);
+			}
+		}
+
+		// Act & Assert
+		routedNames.Should().NotBeEmpty(
+			because: "the ui-guidelines guides route to other guides by name, so the scan must find at least one target");
+		foreach (string name in routedNames) {
+			GuidanceCatalog.TryGet(name, out _).Should().BeTrue(
+				because: $"guide referenced as name={name} inside the ui-guidelines guides must resolve in GuidanceCatalog, otherwise get-guidance returns Unknown guidance for a dangling route");
+		}
 	}
 
 	[Test]

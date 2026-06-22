@@ -11,8 +11,9 @@ namespace Clio.Command.McpServer.Resources;
 /// <remarks>
 /// This type ships a thin index <see cref="Guide"/> that orients an agent and routes to three deep leaf guides
 /// (<c>ui-page-layout</c>, <c>ui-accessibility</c>, <c>ui-review-checklists</c>). The detailed component map,
-/// grid/column math, gap rules, contrast values, color palettes, and audit templates intentionally live in those
-/// leaf guides and are not duplicated in the index. The index is reached from the <c>page-modification</c>
+/// grid/column math, gap rules, contrast values, color palettes, and audit templates live in those leaf
+/// guides; the index carries only a deliberately small most-missed checklist that names the highest-impact
+/// rules up front and routes to the leaves for the full mechanics. The index is reached from the <c>page-modification</c>
 /// pre-edit GATE; the leaf names live once, inside this index, so the routing topology stays a clean tree
 /// (page-modification -&gt; ui-guidelines -&gt; {ui-page-layout, ui-accessibility, ui-review-checklists}).
 /// </remarks>
@@ -281,7 +282,7 @@ Jump to the section you need:
 - Use logical field order based on how users fill in data.
 - Use validation, input filtering, lookup filtering, default values, and auto-substitution.
 - Configure fields used when copying records.
-- Use placeholders for examples/format and tooltips for longer instructions (full placeholder/tooltip rules are in the ui-guidelines index — `get-guidance name=ui-guidelines`).
+- Use placeholders for examples/format and tooltips for longer instructions (see the *Text, labels, and messages* section above for the full placeholder/tooltip rules).
 - Do not overload create flows with information needed only later during record processing.
 
 ## Grouping and page flow
@@ -352,7 +353,7 @@ Rule of thumb: the **island/card** carries the white background, radius and padd
 
 ### Layout coordinates and container nesting (avoiding gaps)
 
-Mechanics behind the layout rules in the ui-guidelines index (`get-guidance name=ui-guidelines`) — read this when a page shows empty gaps or drifting fields:
+Mechanics behind the layout rules — read this when a page shows empty gaps or drifting fields:
 
 - **Why a gap appears:** `layoutConfig` is relative to the immediate parent container, and rows/columns restart at `1` in each nested container. A field at `row: 3` while `row: 2` is empty reserves a blank row -> vertical gap; a `column`/`colSpan` beyond the container's column count wraps to a new row and leaves a blank half.
 - **Let containers size to content:** use `rows: "auto"` + `gap`; never a fixed `rows` count or an oversized `rowSpan`. One titled group = one container — stack groups with `gap`, not with empty rows.
