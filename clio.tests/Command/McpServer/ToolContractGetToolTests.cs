@@ -719,6 +719,41 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes get-page, update-page, and sync-pages page DESIGN/LAYOUT work to the ui-page-layout guidance leaf through the contract surface, and surfaces the layout-guidance gate for the two write tools.")]
+	public void ToolContractGet_Should_Route_Page_Tools_To_UiPageLayout_When_Requested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			PageGetTool.ToolName,
+			PageUpdateTool.ToolName,
+			PageSyncTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the page get, update, and sync contracts are all registered by clio MCP");
+		ToolContractDefinition[] contracts = result.Tools!.ToArray();
+		ToolContractDefinition pageGetContract = contracts.Single(contract => contract.Name == PageGetTool.ToolName);
+		ToolContractDefinition pageUpdateContract = contracts.Single(contract => contract.Name == PageUpdateTool.ToolName);
+		ToolContractDefinition pageSyncContract = contracts.Single(contract => contract.Name == PageSyncTool.ToolName);
+		pageGetContract.Description.Should().Contain("ui-page-layout",
+			because: "get-page should route page design/layout work to the ui-page-layout guidance leaf through the contract surface");
+		pageUpdateContract.Description.Should().Contain("ui-page-layout",
+			because: "update-page should route page design/layout work to the ui-page-layout guidance leaf through the contract surface");
+		pageSyncContract.Description.Should().Contain("ui-page-layout",
+			because: "sync-pages should route page design/layout work to the ui-page-layout guidance leaf through the contract surface");
+		pageUpdateContract.Description.Should().Contain("LAYOUT-GUIDANCE GATE",
+			because: "update-page should warn through the contract that a layout body is rejected unless ui-page-layout was fetched this session");
+		pageSyncContract.Description.Should().Contain("LAYOUT-GUIDANCE GATE",
+			because: "sync-pages should warn through the contract that a layout body is rejected unless ui-page-layout was fetched this session");
+		pageGetContract.Description.Should().NotContain("LAYOUT-GUIDANCE GATE",
+			because: "get-page is a read tool and does not enforce the write-path layout-guidance gate");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical existing-app section-create contract with selector rules, scalar validation, defaults, and preferred flow guidance.")]
 	public void ToolContractGet_Should_Return_ApplicationSectionCreate_Contract() {
 		// Arrange
