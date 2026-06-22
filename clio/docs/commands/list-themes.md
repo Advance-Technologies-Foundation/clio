@@ -18,10 +18,6 @@ The command requires the `CanCustomizeBranding` license; a caller without it
 receives an empty list rather than an error. It is read-only and does not change
 the environment.
 
-Note: a theme pushed in a package appears here only after the theme cache is
-refreshed — run [`clear-themes-cache`](clear-themes-cache.md) if a just-pushed
-theme is missing from the list.
-
 ## Synopsis
 
 ```bash
@@ -59,6 +55,11 @@ list the themes of the current web application(website)
 clio list-themes -e myapp
 list the themes of the environment registered as myapp
 ```
+
+## Notes
+
+- A theme deployed by a clio push appears here automatically; run [`clear-themes-cache`](clear-themes-cache.md) only if a theme changed on the environment outside a clio install is missing.
+- Call `clio get-guidance --name theming` for the theme workflow.
 
 ## Reporting Bugs
 

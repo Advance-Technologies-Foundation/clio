@@ -21,7 +21,7 @@ public class ListThemesToolTests {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IReadOnlyList<ThemeDescriptor> themes = new List<ThemeDescriptor> {
-			new() { Id = "dark", Caption = "Dark", CssClassName = "theme-dark", CssFilePath = "a/theme.css" }
+			new() { Id = "ocean-theme", Caption = "Ocean", CssClassName = "ocean-theme", CssFilePath = "a/theme.css" }
 		};
 		FakeListThemesCommand defaultCommand = new();
 		FakeListThemesCommand resolvedCommand = new(themes);
@@ -35,7 +35,7 @@ public class ListThemesToolTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "a successful catalog read must report success");
 		result.Themes.Should().ContainSingle(because: "the single theme from the resolved command must be surfaced")
-			.Which.Id.Should().Be("dark", because: "the descriptor fields must be mapped into the structured result");
+			.Which.Id.Should().Be("ocean-theme", because: "the descriptor fields must be mapped into the structured result");
 		commandResolver.Received(1).Resolve<ListThemesCommand>(Arg.Is<ListThemesOptions>(options =>
 			options.Environment == "docker_fix2" &&
 			options.TimeOut == 30_000));

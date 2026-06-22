@@ -6,9 +6,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool that refreshes the Creatio theme catalog cache on a target environment.
-/// Environment-sensitive: the command is resolved for the per-call environment via
-/// <see cref="BaseTool{T}.InternalExecute{TCommand}"/>.
+/// MCP tool that refreshes the Creatio theme catalog cache on a target environment via the native <c>ThemeService</c>.
 /// </summary>
 public class ClearThemesCacheTool(
 	ClearThemesCacheCommand command,

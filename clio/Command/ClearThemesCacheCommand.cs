@@ -40,9 +40,6 @@ namespace Clio.Command
 
 		/// <inheritdoc />
 		protected override void ProceedResponse(string response, ClearThemesCacheOptions options) {
-			// ThemeService.ClearThemesCache returns a BaseResponse: { "success": bool, "errorInfo": {...} }.
-			// Treat an explicit success=false as a failure (and surface the message); tolerate an empty or
-			// non-JSON body as success so the command does not report a false negative if the contract evolves.
 			if (string.IsNullOrWhiteSpace(response)) {
 				return;
 			}

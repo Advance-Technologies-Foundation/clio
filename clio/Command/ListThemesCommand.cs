@@ -47,8 +47,7 @@ namespace Clio.Command
 		public IReadOnlyList<ThemeDescriptor> Themes { get; private set; } = Array.Empty<ThemeDescriptor>();
 
 		/// <summary>
-		/// Fetches the available themes from the target environment without writing to the logger. Used by
-		/// the MCP tool surface so command console output never leaks into the JSON-RPC channel.
+		/// Fetches the available themes from the target environment.
 		/// </summary>
 		/// <param name="options">Command options carrying the connection and timeout settings.</param>
 		/// <param name="themes">On success, the themes returned by the environment (possibly empty).</param>
@@ -63,10 +62,6 @@ namespace Clio.Command
 
 		/// <inheritdoc />
 		protected override void ExecuteRemoteCommand(ListThemesOptions options) {
-			// ThemeService.GetAvailableThemes returns a ListResponse: { "success": bool, "errorInfo": {...},
-			// "values": [ {id, caption, cssClassName, cssFilePath} ] }. Treat an explicit success=false as a
-			// failure (and surface the message); tolerate an empty or non-JSON body as an empty catalog so a
-			// contract drift does not surface as a false negative.
 			if (TryGetAvailableThemes(options, out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage)) {
 				Themes = themes;
 				PrintThemes(themes);

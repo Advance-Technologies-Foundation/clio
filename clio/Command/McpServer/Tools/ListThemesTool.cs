@@ -10,10 +10,8 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Read-only MCP tool that lists the custom Creatio themes available on a target environment.
-/// Environment-sensitive: the command is resolved for the per-call environment via
-/// <see cref="BaseTool{T}.ResolveCommand{TCommand}"/> and read through its non-logging data method,
-/// so the structured response carries the theme catalog rather than command log output.
+/// Read-only MCP tool that lists the custom Creatio themes available on a target environment, returning them
+/// as a structured result.
 /// </summary>
 public class ListThemesTool(
 	ListThemesCommand command,
