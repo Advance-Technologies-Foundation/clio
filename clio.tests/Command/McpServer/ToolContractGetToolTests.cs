@@ -136,21 +136,23 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical clio MCP contract set when the request omits tool names.")]
-	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty() {
+	[Description("Returns the canonical clio MCP full contract set when the request omits tool names and asks for detail=full (legacy back-compat behavior).")]
+	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty_And_DetailIsFull() {
 		// Arrange
 		ToolContractGetTool tool = new();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(Detail: "full"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "an empty request should be a valid bootstrap entry point for canonical contract discovery");
+			because: "an empty request with detail=full should still be a valid bootstrap entry point for canonical full-contract discovery");
 		result.Error.Should().BeNull(
 			because: "a successful bootstrap lookup should not return a structured error");
+		result.Index.Should().BeNull(
+			because: "detail=full preserves the legacy behavior and must not emit the compact index alongside the full contracts");
 		result.Tools.Should().NotBeNull(
-			because: "the bootstrap response should include the canonical contract set");
+			because: "the detail=full bootstrap response should include the canonical full contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				GuidanceGetTool.ToolName,
 				ExecuteEsqTool.ToolName,
@@ -175,6 +177,86 @@ public sealed class ToolContractGetToolTests {
 			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a compact index of all canonical tools (names + one-line purpose, Tools null) when the request omits tool names and detail.")]
+	public void ToolContractGet_Should_Return_Compact_Index_When_Request_Is_Empty() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a no-args request is the default compact-discovery entry point");
+		result.Error.Should().BeNull(
+			because: "a successful index lookup should not return a structured error");
+		result.Tools.Should().BeNull(
+			because: "the compact index must NOT pay for the heavy full contracts — that is the whole point of defer_loading");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index so an agent can see what tools exist");
+		result.Index!.Select(entry => entry.Name).Should().Contain([
+				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
+				SettingsHealthTool.ToolName,
+				ApplicationGetListTool.ApplicationGetListToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+				PageSyncTool.ToolName,
+				PageUpdateTool.ToolName,
+				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+				SchemaNamePrefixTool.GetSchemaNamePrefixToolName
+			],
+			because: "the compact index must cover the same canonical tool surface the full default used to expose");
+		result.Index!.Select(entry => entry.Name).Should().NotContain(ToolContractGetTool.ToolName,
+			because: "get-tool-contract should not index itself in the default discovery set");
+		result.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry must carry a non-empty one-line purpose so the agent can choose a tool without the full schema");
+		result.Index!.Should().OnlyContain(entry => entry.Purpose.Length <= 120,
+			because: "the purpose must be truncated to a single short line to keep the index cheap");
+		result.Index!.Should().OnlyContain(entry => entry.ContractAvailable,
+			because: "every canonical index entry has a full curated contract reachable by naming the tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Populates the destructive safety flag in the compact index from the MCP tool annotation when an invoker registry is available.")]
+	public void ToolContractGet_Should_Populate_Destructive_Flag_In_Index_When_Registry_Available() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Should().OnlyContain(entry => entry.Destructive != null,
+			because: "with an invoker registry the destructive hint is cheaply available for every indexed tool");
+		ToolContractIndexEntry executeEsq = result.Index!.Single(entry => entry.Name == ExecuteEsqTool.ToolName);
+		executeEsq.Destructive.Should().BeFalse(
+			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes the compact index to materially fewer bytes than the full contract dump, proving the token win.")]
+	public void ToolContractGet_Should_Serialize_Index_Much_Smaller_Than_Full_Contracts() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
+
+		// Act
+		ToolContractGetResponse indexResult = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse fullResult = tool.GetToolContracts(new ToolContractGetArgs(Detail: "full"));
+		int indexLength = JsonSerializer.Serialize(indexResult, options).Length;
+		int fullLength = JsonSerializer.Serialize(fullResult, options).Length;
+
+		// Assert
+		indexLength.Should().BeLessThan(fullLength / 5,
+			because: "the compact index must be a fraction of the full contract payload to justify the defer_loading default");
 	}
 
 	[Test]
@@ -1500,6 +1582,33 @@ public sealed class ToolContractGetToolTests {
 			because: "a flat top-level 'tool-names' (no nested 'args' wrapper) must resolve contracts instead of failing");
 		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
 			because: "the flat-shape tool name must resolve to its contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves named contracts from a flat 'tool-names' sent alongside a co-key 'detail' (no nested 'args' wrapper) instead of mis-reporting 'tool-names' as an unknown arg.")]
+	public void ToolContractGet_Should_Resolve_Contracts_From_Flat_ToolNames_When_Detail_CoKey_Present() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flatNames = JsonDocument.Parse("[\"get-tool-contract\"]").RootElement;
+		JsonElement flatDetail = JsonDocument.Parse("\"full\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["tool-names"] = flatNames,
+				["detail"] = flatDetail
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a co-present flat 'detail' key must not block recovery of flat 'tool-names'");
+		result.Error.Should().BeNull(
+			because: "the canonical 'tool-names' key must never be reported as an unknown arg when a 'detail' co-key is present");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "named tool-names must resolve their full contract even when 'detail' is also supplied");
 	}
 
 	[Test]

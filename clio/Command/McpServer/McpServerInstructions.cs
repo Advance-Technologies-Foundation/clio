@@ -82,6 +82,11 @@ internal static class McpServerInstructions
 		environment changes. Pass `caption-culture` to force a language for a single creation.
 		On `get-user-culture` failure, ASK the user which language to use; never fall back to host locale.
 
+		## Discovering tools
+		To learn what tools exist, call `get-tool-contract` with NO args for a compact index of every tool
+		(names + one-line purpose + safety flags) — cheap discovery without full schemas. Then call it again
+		with specific `tool-names` to load only the full contracts you need (pass `detail=full` to expand all).
+
 		## Error handling
 		Every response carries a `correlation-id`. Errors include the full exception chain — inspect inner
 		exceptions for root cause. Server logs arrive as `notifications/message` (set log level to debug for
