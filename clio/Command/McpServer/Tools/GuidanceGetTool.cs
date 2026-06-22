@@ -33,9 +33,13 @@ public sealed class GuidanceGetTool {
 	/// Resolves one named guidance article and returns its plain-text content.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns a named clio MCP guidance article, or lists all available guide names when the requested name is unknown. Known names include clio guides such as app-modeling, page-modification, and page-schema-handlers plus composable-app skill guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, and their test guides.")]
+	[Description("Returns a named clio MCP guidance article, or lists all available guide names when "
+		+ "the requested name is unknown. Known names include clio guides such as app-modeling, "
+		+ "page-modification, page-schema-handlers, and run-process-button plus composable-app skill "
+		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
+		+ "and their test guides.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, or existing-app-maintenance.")]
+		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
@@ -89,7 +93,7 @@ public sealed class GuidanceGetTool {
 /// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, or existing-app-maintenance.")]
+	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
 	string? Name = null
 ) {
 	[JsonExtensionData]

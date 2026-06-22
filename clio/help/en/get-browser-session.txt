@@ -1,0 +1,31 @@
+NAME
+    get-browser-session - Obtain an authenticated Creatio browser session
+
+DESCRIPTION
+    Authenticates against a registered Creatio environment using its stored
+    forms-auth credentials (login + password) and writes a Playwright-compatible
+    storageState JSON file, printing its absolute path. AI agents and Playwright
+    scripts use the file to open Creatio already authenticated — no login page.
+
+    A valid session is cached per environment and reused on subsequent calls.
+    Cookie values are never printed or logged — only the file path. Environments
+    without forms-auth credentials (OAuth-only) are not supported.
+
+SYNOPSIS
+    clio get-browser-session [-e <environment>] [--output-path <file>] [--force-refresh]
+
+OPTIONS
+    -e, --environment   Target environment name (defaults to the active environment).
+    --output-path       File path to write the storageState JSON. When omitted, a
+                        cached file under ~/.clio/sessions is used and its path printed.
+    --force-refresh     Bypass the cached session and authenticate again.
+
+EXAMPLES
+    clio get-browser-session -e MyEnv
+        Print the path to a (possibly cached) storageState for MyEnv.
+
+    clio get-browser-session -e MyEnv --force-refresh
+        Force a fresh login and refresh the cached session.
+
+    clio get-browser-session -e MyEnv --output-path ./session.json
+        Write the storageState to ./session.json.

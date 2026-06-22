@@ -176,6 +176,10 @@ public class PageToolsTests
 			because: "page guidance should keep direct connection args in a fallback-only role");
 		prompt.Should().Contain($"`{ComponentInfoTool.ToolName}`",
 			because: "get-page prompt guidance should direct callers to get-component-info for unfamiliar Freedom UI types");
+		prompt.Should().Contain("Before inserting ANY new component",
+			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
+		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
+			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
@@ -265,6 +269,10 @@ public class PageToolsTests
 			because: "get-page description should leave specialized guide selection to the general page modification guide");
 		description.Should().NotContain("page-schema-resources",
 			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
+		description.Should().Contain("classify the mechanism, not the wording",
+			because: "get-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
+		description.Should().Contain("not crt.InitRequest",
+			because: "get-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
 	}
 
 	[Test]
@@ -311,6 +319,10 @@ public class PageToolsTests
 			because: "update-page description should surface the handler section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-handlers` first",
 			because: "update-page description should make handler guidance a mandatory precondition before handler authoring");
+		description.Should().Contain("Designer Presence",
+			because: "update-page should disclose the best-effort live designer notification behaviour in its MCP description");
+		description.Should().Contain("forms-auth",
+			because: "update-page should disclose the forms-auth prerequisite for the live notification path");
 		description.Should().Contain("SCHEMA_VALIDATORS",
 			because: "update-page description should surface the validator section name as part of body authoring rules");
 		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
@@ -325,6 +337,10 @@ public class PageToolsTests
 			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
 		description.Should().Contain("do NOT register localizable strings",
 			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
+		description.Should().Contain("classify the mechanism, not the wording",
+			because: "update-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
+		description.Should().Contain("not crt.InitRequest",
+			because: "update-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
 	}
 
 	[Test]
@@ -446,7 +462,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
 			.Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
@@ -1194,7 +1210,7 @@ public class PageToolsTests
 					}
 				}
 			}.ToString());
-		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
+		PageUpdateCommand updateCommand = new(updateApplicationClient, updateServiceUrlBuilder, updateLogger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("roundtrip-page-uid", "roundtrip-pkg-uid"));
 
 		// Act
 		bool getResult = getCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
@@ -1255,7 +1271,7 @@ public class PageToolsTests
 				if (callIndex == 2) return getSchemaResponse.ToString();
 				return saveResponse.ToString();
 			});
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1287,7 +1303,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClientFor("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
 		var options = new PageUpdateOptions {
 			SchemaName = "Test_FormPage",
 			Body = validBody,
@@ -1331,7 +1347,7 @@ public class PageToolsTests
 				SchemaType = 9
 			}
 		]);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrWeb_FormPage",
 			Body = """
@@ -1392,7 +1408,7 @@ public class PageToolsTests
 				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [
@@ -1433,6 +1449,138 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage surfaces an advisory warning (without blocking) when a replace body downgrades an own-body insert to a merge")]
+	public void TryUpdatePage_WhenInsertDowngradedToMerge_ReturnsWarningAndSaves() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDowngrade_FormPage",
+				"downgrade-schema-uid",
+				"downgrade-package-uid",
+				"UsrDowngradePackage",
+				"BasePage").ToString());
+		// The schema currently stored on the server inserts UsrName in its own body.
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		// The incoming replace body changes that same UsrName from insert to merge.
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDowngrade_FormPage",
+			Body = CreatePageBody("""[{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "the downgrade is advisory only and must not block the save");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "demoting an own-body insert to a merge orphans the component and must surface as a warning");
+	}
+
+	[Test]
+	[Description("PageUpdateTool merges the command's downgrade warning with body-only validation warnings instead of overwriting either (locks MergeWarnings).")]
+	public async System.Threading.Tasks.Task UpdatePage_WhenDowngradeAndAwaitWarningsBothApply_MergesBothIntoResponse() {
+		// Arrange — the stored schema inserts UsrName (so the incoming merge is a downgrade), and the
+		// incoming body also reads $context without await (a body-only validation warning).
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMerge_FormPage", "merge-schema-uid", "merge-package-uid", "UsrMergePackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		string body = CreatePageBody(
+			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "$Resources.Strings.UsrName" } }]""",
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, "dev", null, null, null, SkipSampling: true);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "both findings are advisory, so the save must still succeed");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("merge"),
+			because: "the command-side insert->merge downgrade warning must be preserved");
+		response.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "the body-only un-awaited $context warning must coexist rather than being overwritten");
+	}
+
+	[Test]
+	[Description("validate-page surfaces the un-awaited $context warning at the tool level without marking the body invalid (locks PageValidateTool ContextAwait wiring).")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenUnAwaitedContextRead_ReturnsWarningAndStaysValid() {
+		// Arrange
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		string body = CreatePageBody(
+			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
+		PageValidateArgs args = new(body);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "an un-awaited $context read is advisory and must not invalidate the body");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
+			because: "validate-page must surface the ValidateContextAccessAwait warning through its tool-level wiring");
+	}
+
+	[Test]
 	[Description("TryUpdatePage rejects a mobile JSON body that contains a 'validators' section.")]
 	[Category("Unit")]
 	public void TryUpdatePage_WhenMobileBodyHasValidators_ReturnsValidationError() {
@@ -1441,7 +1589,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -1472,7 +1620,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMobile_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMobile_FormPage",
 			Body = """
@@ -1509,7 +1657,7 @@ public class PageToolsTests
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
 		string validBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		var options = new PageUpdateOptions {
 			SchemaName = "MissingPage",
 			Body = validBody,
@@ -1528,7 +1676,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrEmptyBody_FormPage",
 			Body = string.Empty,
@@ -1555,7 +1703,7 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageDesignerHierarchyClient>());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), Substitute.For<IPageDesignerHierarchyClient>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrInvalidResources_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1582,7 +1730,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrProxyBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrProxyBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1608,7 +1756,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrMergeBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrMergeBinding_FormPage",
 			Body = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });",
@@ -1630,7 +1778,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrHandlerDrivenBinding_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrHandlerDrivenBinding_FormPage",
 			Body = CreatePageBody(
@@ -1662,7 +1810,7 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		SetupSchemaMetadata(applicationClient, serviceUrlBuilder, "UsrValidatorPlacement_FormPage");
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		PageUpdateOptions options = new() {
 			SchemaName = "UsrValidatorPlacement_FormPage",
 			Body = CreatePageBody(
@@ -1687,7 +1835,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON")]
+	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON — the upstream ENG-89796 syntax gate catches this as a JavaScript syntax error and surfaces the exact line/column, which is more actionable than the legacy markers-only message")]
 	[Category("Unit")]
 	public void PageUpdateTool_UpdatePage_Rejects_Body_With_Malformed_Json_Marker() {
 		// Arrange
@@ -1695,11 +1843,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
 
@@ -1709,10 +1857,55 @@ public class PageToolsTests
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "update-page must reject page bodies where JSON marker sections contain malformed JSON");
-		response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
-			because: "the error message should identify which marker section is malformed");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the upstream syntax validator catches malformed marker content as a JS parse failure — this is the deterministic ENG-89796 gate that surfaces the exact line/column to the operator");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know that the broken body did not reach the server, without needing to inspect logs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "validation must fail before any remote call is made to Creatio");
+	}
+
+	[Test]
+	[Description("ENG-89796: update-page fails fast on the canonical incident body (`await request.$context.X = Y`) — pins the dedicated syntax gate symmetrically with the equivalent test on sync-pages")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_ShouldFailFast_WhenBodyHasJavaScriptSyntaxError() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		// The actual broken body from the ENG-89796 production incident: `await X = Y`
+		// — `await` is an expression and cannot be an assignment target.
+		string incidentBody = "define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+		PageUpdateArgs args = new("UsrTest_FormPage", incidentBody, null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the exact incident body that triggered ENG-89796 must NEVER pass — letting it through is a regression to the pre-fix behaviour update-page silently writing a broken page");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker / sampling issue when the parser rejected the body");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to inspect logs");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax gate must short-circuit BEFORE any remote call — the entire point of the validator is to keep broken bodies off the wire");
 	}
 
 	[Test]
@@ -1723,11 +1916,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1755,14 +1948,14 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -1784,11 +1977,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1815,11 +2008,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
@@ -1845,11 +2038,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
@@ -1877,11 +2070,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
@@ -1945,13 +2138,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -1991,13 +2184,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2036,13 +2229,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2085,13 +2278,13 @@ public class PageToolsTests
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
-		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog);
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(fileSystem));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -2118,6 +2311,143 @@ public class PageToolsTests
 	}
 
 
+	[Test]
+	[Description("get-page persists a conflict-detection baseline (UId + checksum + environment identity) into meta.json when the editable schema exists")]
+	public void PageGetTool_ShouldWriteBaselineIntoMetaJson_WhenEditableSchemaExists() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": [{"Checksum": "chk-001", "ModifiedOn": "2026-06-12T09:00:00"}]}""");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => !body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the baseline capture must not affect a successful get-page");
+		string metaContent = mockFs.GetFile(response.Files.MetaFile).TextContents;
+		PageMetaFileModel meta = System.Text.Json.JsonSerializer.Deserialize<PageMetaFileModel>(metaContent);
+		meta.Baseline.Should().NotBeNull(because: "an existing editable schema must produce a conflict-detection baseline");
+		meta.Baseline.EditableSchemaExists.Should().BeTrue(because: "the editable schema was found in the design package");
+		meta.Baseline.EditableSchemaUId.Should().Be("uid-1", because: "the baseline must pin the editable schema identity");
+		meta.Baseline.Checksum.Should().Be("chk-001", because: "the baseline must capture the SysSchema checksum at fetch time");
+		meta.Baseline.EnvironmentName.Should().Be("sandbox", because: "the baseline must record which environment it was captured against");
+	}
+
+	[Test]
+	[Description("get-page records editableSchemaExists=false in the baseline when no replacing schema exists yet (willCreateReplacing)")]
+	public void PageGetTool_ShouldWriteAbsentBaseline_WhenWillCreateReplacing() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("byPackage")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => !body.Contains("byPackage")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("design-pkg");
+		hierarchyClient.GetParentSchemas("uid-1", "design-pkg")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the baseline capture must not affect a successful get-page");
+		PageMetaFileModel meta = System.Text.Json.JsonSerializer.Deserialize<PageMetaFileModel>(
+			mockFs.GetFile(response.Files.MetaFile).TextContents);
+		meta.Baseline.Should().NotBeNull(because: "absence of the editable schema is itself baseline information");
+		meta.Baseline.EditableSchemaExists.Should().BeFalse(
+			because: "no replacing schema exists yet, so an externally created one must be detectable later");
+		meta.Baseline.Checksum.Should().BeNull(because: "a non-existent schema has no checksum");
+	}
+
+	[Test]
+	[Description("get-page degrades to a meta.json without baseline when the checksum query fails, and still succeeds")]
+	public void PageGetTool_ShouldOmitBaseline_WhenChecksumQueryFails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery")
+			.Returns("http://test/DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false}""");
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => !body.Contains("byUId")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse("UsrMcp_FormPage", "uid-1", "pkg-1", "UsrMcp", "BasePage").ToString());
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas("uid-1", "pkg-1")
+			.Returns([new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = "UsrMcp_FormPage",
+				PackageUId = "pkg-1", PackageName = "UsrMcp",
+				SchemaVersion = 1, Body = CreatePageBody()
+			}]);
+		PageGetCommand command = CreatePageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
+		MockFileSystem mockFs = new();
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
+
+		// Act
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a failed checksum capture must never fail get-page (best-effort, FR-10)");
+		PageMetaFileModel meta = System.Text.Json.JsonSerializer.Deserialize<PageMetaFileModel>(
+			mockFs.GetFile(response.Files.MetaFile).TextContents);
+		meta.Baseline.Should().BeNull(because: "without a checksum the consumer must skip the conflict check rather than compare garbage");
+		meta.FetchedAt.Should().NotBeNullOrEmpty(because: "the legacy meta.json contract must stay intact");
+	}
+
 	private static PageGetCommand CreatePageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -2129,7 +2459,16 @@ public class PageToolsTests
 			logger,
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
-			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()));
+			new PageBundleBuilder(new PageJsonDiffApplier(), new PageJsonPathDiffApplier()),
+			CreatePassthroughPageFileWriter());
+	}
+
+	private static IPageFileWriter CreatePassthroughPageFileWriter() {
+		IPageFileWriter writer = Substitute.For<IPageFileWriter>();
+		writer.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		return writer;
 	}
 
 	private static (PageGetTool tool, MockFileSystem mockFs) CreatePageGetToolWithBody(string body) {
@@ -2153,7 +2492,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		return (new PageGetTool(command, logger, commandResolver, mockFs), mockFs);
+		return (new PageGetTool(command, logger, commandResolver, new PageFileWriter(mockFs)), mockFs);
 	}
 
 	private static JObject CreateMetadataResponse(
@@ -2251,7 +2590,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2297,7 +2636,7 @@ public class PageToolsTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		MockFileSystem mockFs = new();
-		PageGetTool tool = new(command, logger, commandResolver, mockFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2495,10 +2834,19 @@ public class PageToolsTests
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1)));
 		failingFs.Path.Combine(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
 			.Returns(ci => System.IO.Path.Combine(ci.ArgAt<string>(0), ci.ArgAt<string>(1), ci.ArgAt<string>(2)));
+		failingFs.Path.GetFullPath(Arg.Any<string>()).Returns(ci => ci.ArgAt<string>(0));
 		failingFs.Directory.GetCurrentDirectory().Returns("/workspace");
+		// Configure the workspace-root walk-up so it terminates: a bare IDirectoryInfo substitute
+		// returns a non-null recursive substitute for .Parent, so PageOutputDirectoryResolver
+		// would loop forever and exhaust memory. A single directory whose Parent is null models a
+		// filesystem root and lets the resolver fall through to the current directory.
+		System.IO.Abstractions.IDirectoryInfo workspaceDir = Substitute.For<System.IO.Abstractions.IDirectoryInfo>();
+		workspaceDir.FullName.Returns("/workspace");
+		workspaceDir.Parent.Returns((System.IO.Abstractions.IDirectoryInfo)null);
+		failingFs.DirectoryInfo.New(Arg.Any<string>()).Returns(workspaceDir);
 		failingFs.Directory.When(d => d.CreateDirectory(Arg.Any<string>()))
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
-		PageGetTool tool = new(command, logger, commandResolver, failingFs);
+		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(failingFs));
 
 		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
 
@@ -2579,7 +2927,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue(because: "expected success; error: " + response.Error);
@@ -2650,7 +2998,7 @@ public class PageToolsTests
 				return new JObject { ["success"] = true }.ToString();
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -2704,7 +3052,7 @@ public class PageToolsTests
 				};
 			});
 
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
 		ok.Should().BeTrue();
@@ -2826,7 +3174,7 @@ public class PageToolsTests
 				};
 			});
 		string validBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Test_FormPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
 
@@ -2873,7 +3221,7 @@ public class PageToolsTests
 		};
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder);
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder, CreatePassthroughPageFileWriter());
 
 		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = "Leads_ListPage" }, out PageGetResponse response);
 
@@ -2950,7 +3298,7 @@ public class PageToolsTests
 				};
 			});
 		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
-		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient);
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {
 			SchemaName = "Opportunities_ListPage",
@@ -3648,7 +3996,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage accepts a valid mobile JSON body (plain JSON starting with '{') and skips AMD validation.")]
+	[Description("PageUpdateTool.UpdatePage accepts a valid mobile JSON body (plain JSON starting with '{'), skips AMD validation, AND reaches the save path so the schema lookup is attempted — proves the mobile bypass is not silently short-circuited at any upstream gate (a regression that swallowed the mobile body before TryUpdatePage would now fail the SelectQuery assertion below, where the old NOT-CONTAIN form would still pass on a null Error).")]
 	[Category("Unit")]
 	public void PageUpdateTool_UpdatePage_Accepts_Valid_Mobile_Json_Body() {
 		// Arrange
@@ -3656,14 +4004,14 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		applicationClient
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -3676,11 +4024,93 @@ public class PageToolsTests
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
 
-		// Assert
+		// Assert — the mobile body must reach the save path. The mock here
+		// intentionally does NOT wire the full SelectQuery / SaveSchema chain
+		// (that's exercised by other tests), so the response surfaces a
+		// downstream "Schema 'UsrMobile_FormPage' not found" once schema
+		// lookup runs. Asserting on that downstream error string is the
+		// strongest available "no upstream short-circuit happened" signal in
+		// this fixture: any regression that swallowed the mobile body before
+		// TryUpdatePage would surface a different error (or none at all) and
+		// the test would fail. The old NOT-CONTAIN form passed on a null
+		// Error too, which is exactly why the reviewer flagged it as
+		// structurally unable to fail.
+		response.Error.Should().Contain("not found",
+			because: "TryUpdatePage must reach the SelectQuery step and surface the lookup failure from the deliberately-thin mock — proves the mobile body got past every upstream validation gate");
 		response.Error.Should().NotContain("AMD",
-			because: "mobile JSON bodies should not trigger AMD marker validation");
+			because: "mobile JSON bodies must NOT trigger AMD marker validation");
 		response.Error.Should().NotContain("SCHEMA_VIEW_CONFIG_DIFF",
-			because: "AMD marker validation errors must not appear for mobile bodies");
+			because: "AMD marker validation errors must NOT appear for mobile bodies");
+		response.Error.Should().NotContain("Mobile page validation failed",
+			because: "the body is well-formed mobile JSON; the mobile validator must accept it");
+	}
+
+	[Test]
+	[Description("AC4 positive: a valid web body that passes the deterministic syntax + lint pre-pass MUST invoke the LLM sampling service via the injected IPageBodySamplingService seam. The downstream save path is exercised by other tests — this one focuses only on the sampling-call observability.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Should_Invoke_Sampling_For_Valid_Body() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		samplingService
+			.TrySamplingReviewAsync(Arg.Any<ModelContextProtocol.Server.McpServer>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+			.Returns((PageSamplingReview)null);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
+		string body = CreatePageBody();
+		PageUpdateArgs args = new("UsrValid_FormPage", body, "{\"caption\":\"Hello\"}", null, null, null, null, null);
+
+		// Act
+		_ = tool.UpdatePage(args, null).Result;
+
+		// Assert — focus on AC4 only. The body's deterministic gates passed,
+		// so sampling MUST be invoked with the exact schemaName / body /
+		// resources triple the caller submitted. Whether the downstream
+		// TryUpdatePage call eventually persists or fails is exercised by
+		// other PageUpdateTool save-path tests in this file.
+		samplingService.Received(1).TrySamplingReviewAsync(
+			Arg.Any<ModelContextProtocol.Server.McpServer>(),
+			Arg.Is<string>(n => n == "UsrValid_FormPage"),
+			Arg.Is<string>(b => b == body),
+			Arg.Is<string>(r => r == "{\"caption\":\"Hello\"}"),
+			Arg.Any<System.Threading.CancellationToken>());
+	}
+
+	[Test]
+	[Description("AC4 negative: when the body fails the deterministic syntax gate, sampling is NOT invoked — proves the gate short-circuits BEFORE LLM tokens are spent on a doomed body.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_Should_NotInvoke_Sampling_When_Syntax_Fails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
+		PageUpdateArgs args = new("UsrBad_FormPage", "define('BadPage', {})}", null, null, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the syntax gate must reject the body");
+		samplingService.DidNotReceive().TrySamplingReviewAsync(
+			Arg.Any<ModelContextProtocol.Server.McpServer>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<System.Threading.CancellationToken>());
 	}
 
 	[Test]
@@ -3692,11 +4122,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
 
 		// Act
@@ -3719,11 +4149,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, bodyWithBadJson);
@@ -3736,8 +4166,8 @@ public class PageToolsTests
 			// Assert
 			response.Success.Should().BeFalse(
 				because: "validation must run against the body loaded from BodyFile, not be skipped because inline body is empty");
-			response.Error.Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
-				because: "the marker that contains malformed JSON in the file must be reported");
+			response.Error.Should().Contain("JavaScript syntax error",
+				because: "the malformed marker JSON is caught by the upstream ENG-89796 syntax gate as a JS parse failure with the exact line/column from the resolved file content");
 			applicationClient.ReceivedCalls().Should().BeEmpty(
 				because: "no save attempt may be made when validation fails");
 		}
@@ -3757,11 +4187,11 @@ public class PageToolsTests
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog);
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
 		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
 

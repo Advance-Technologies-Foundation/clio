@@ -1,12 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using FluentAssertions;
-using NSubstitute;
+using Newtonsoft.Json;
 using NUnit.Framework;
-using ILogger = Clio.Common.ILogger;
 
 namespace Clio.Tests.Common;
 
@@ -36,8 +34,8 @@ internal class ReauthExecutorTests {
 	// readable of the two.
 	private const string LoginPageBody = NetFrameworkLoginPageBody;
 
-	private static ReauthExecutor CreateExecutor(Action login, ILogger logger = null) {
-		return new ReauthExecutor(login, logger);
+	private static ReauthExecutor CreateExecutor(Action login) {
+		return new ReauthExecutor(login);
 	}
 
 	#endregion
@@ -140,30 +138,6 @@ internal class ReauthExecutorTests {
 			because: "a single successful Login must bump the version by exactly one so concurrent stale-session callers observing the bumped value correctly skip their own Login — bumping by more or less would either let extra Logins through (login storm) or starve genuine retries");
 		loginCount.Should().Be(1,
 			because: "the executor must invoke the login callback exactly once for the observed expiry");
-	}
-
-	[Test]
-	[Description("Execute writes a single warning when a re-authentication is performed")]
-	public void Execute_ShouldLogSingleWarning_WhenReauthIsPerformed() {
-		// Arrange
-		ILogger logger = Substitute.For<ILogger>();
-		List<string> warnings = [];
-		logger.When(l => l.WriteWarning(Arg.Any<string>()))
-			.Do(ci => warnings.Add(ci.Arg<string>()));
-		ReauthExecutor sut = CreateExecutor(() => { }, logger);
-		int callCount = 0;
-		string[] responses = { LoginPageBody, "{}" };
-
-		// Act
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
-
-		// Assert — capture+inspect pattern (instead of logger.Received(1)) so the
-		// FluentAssertions `because:` rationale is recorded on the assertion itself,
-		// per AGENTS.md test-style policy.
-		warnings.Should().ContainSingle(
-			because: "the reauth path must emit exactly one operator-facing warning so a session refresh is visible without flooding the log on serial kick-outs");
-		warnings[0].Should().Contain("re-authenticated",
-			because: "the warning text must name the action that was performed so the operator can correlate it with the response delay");
 	}
 
 	[Test]
@@ -295,6 +269,44 @@ internal class ReauthExecutorTests {
 		// Assert
 		act.Should().Throw<ArgumentNullException>(
 			because: "Execute cannot decide whether to retry without an unauthorized predicate");
+	}
+
+	[Test]
+	[Description("Execute retries after reauth when the first call throws JsonException — Creatio.Client throws instead of returning HTML when the server responds with a login page during file upload")]
+	public void Execute_ShouldReauthAndRetry_WhenFirstCallThrowsJsonException() {
+		// Arrange
+		int loginCallCount = 0;
+		int callCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCallCount++);
+
+		// Act — first call throws JsonException (server returned HTML), second call succeeds
+		string result = sut.Execute(() => {
+			callCount++;
+			if (callCount == 1) {
+				throw new JsonReaderException("'<' is an invalid start of a value.");
+			}
+			return "ok";
+		}, _ => false);
+
+		// Assert
+		result.Should().Be("ok", because: "after reauth the retry must return the successful response");
+		loginCallCount.Should().Be(1, because: "exactly one Login must be issued for the JsonException path");
+	}
+
+	[Test]
+	[Description("Execute propagates JsonException when both the first call and the retry throw — the server is genuinely broken, not just returning a login page")]
+	public void Execute_ShouldPropagateJsonException_WhenRetryAlsoThrows() {
+		// Arrange
+		ReauthExecutor sut = CreateExecutor(() => { });
+
+		// Act — both calls throw JsonException
+		Action act = () => sut.Execute<string>(
+			() => throw new JsonReaderException("'<' is an invalid start of a value."),
+			_ => false);
+
+		// Assert
+		act.Should().Throw<JsonReaderException>(
+			because: "a retry that also fails must not be swallowed — the caller needs to see the error");
 	}
 
 	#endregion

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -30,6 +32,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
 	private readonly ILogger _logger;
 	private readonly ISysSettingsManager _sysSettingsManager;
+	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 
 	#endregion
 
@@ -87,12 +90,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		ILogger logger,
-		ISysSettingsManager sysSettingsManager) {
+		ISysSettingsManager sysSettingsManager,
+		IEntitySchemaCaptionCultureResolver captionCultureResolver) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_logger = logger;
 		_sysSettingsManager = sysSettingsManager;
+		_captionCultureResolver = captionCultureResolver;
+	}
+
+	/// <summary>
+	/// Resolves the effective caption culture for a create-entity run via
+	/// <see cref="IEntitySchemaCaptionCultureResolver"/>: an explicit <c>--caption-culture</c> override
+	/// wins; otherwise the connected user's profile culture; otherwise the <c>en-US</c> fallback.
+	/// </summary>
+	private string ResolveEffectiveCultureName(CreateEntitySchemaOptions options) {
+		return _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture);
 	}
 
 	#endregion
@@ -103,17 +117,19 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		EntityDesignSchemaDto schema,
 		CreateEntitySchemaOptions options,
 		IReadOnlyCollection<ParsedColumn> parsedColumns,
-		PackageInfo package) {
-		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
+		PackageInfo package,
+		string cultureName) {
 		TitleLocalizationNormalizationResult schemaTitleNormalization =
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				options.TitleLocalizations,
 				options.Title,
-				TitleLocalizationsArgumentName);
+				TitleLocalizationsArgumentName,
+				cultureName);
 		schema.Name = options.SchemaName;
 		schema.Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 			schemaTitleNormalization.Localizations,
-			schemaTitleNormalization.EffectiveTitle);
+			schemaTitleNormalization.EffectiveTitle,
+			cultureName);
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
@@ -202,7 +218,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			defaultValueConfig,
 			column.DataValueType ?? 0,
 			$"Column '{parsedColumn.Name}'",
-			options);
+			options,
+			column.ReferenceSchema?.Name);
 		column.DefValue = EntitySchemaDesignerSupport.CreateDefaultValueDto(defaultValueConfig,
 			$"Column '{parsedColumn.Name}'");
 	}
@@ -231,7 +248,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				parsedColumn.TitleLocalizations,
 				parsedColumn.Title,
-				TitleLocalizationsArgumentName);
+				TitleLocalizationsArgumentName,
+				cultureName);
 
 		EntitySchemaColumnDto column = new() {
 			UId = Guid.NewGuid(),
@@ -239,7 +257,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			DataValueType = dataValueType,
 			Caption = EntitySchemaDesignerSupport.CreateLocalizableStrings(
 				titleNormalization.Localizations,
-				titleNormalization.EffectiveTitle),
+				titleNormalization.EffectiveTitle,
+				cultureName),
 			RequirementType = parsedColumn.Required == true
 				? (int)EntitySchemaColumnRequirementType.ApplicationLevel
 				: (int)EntitySchemaColumnRequirementType.None,
@@ -266,6 +285,11 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 					}
 				]
 			};
+		} else if (EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+			// ImageLookup ("Image link") is the column type crt.ImageInput binds to. It always references the
+			// platform SysImage schema and is indexed; the reference is implicit, never user-supplied.
+			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
+			column.Indexed = true;
 		}
 
 		return column;
@@ -431,6 +455,12 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		if (!isLookup && !string.IsNullOrWhiteSpace(referenceSchemaName)) {
+			if (EntitySchemaDesignerSupport.TryResolveDataValueType(type, out int dataValueType)
+				&& EntitySchemaDesignerSupport.IsImageLookupDataValueType(dataValueType)) {
+				throw new InvalidOperationException(
+					$"ImageLookup ('Image link') column '{columnSpec}' references the SysImage schema automatically; " +
+					"do not specify a reference schema name.");
+			}
 			throw new InvalidOperationException(
 				$"Column '{columnSpec}' can specify a reference schema name only for lookup columns.");
 		}
@@ -478,6 +508,25 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return fallbackName;
 	}
 
+	private void PublishSchema(CreateEntitySchemaOptions options) {
+		// Saving + DDL alone leave the schema invisible to lookup pickers and sys-setting reference
+		// lists: those surfaces read the web app's runtime EntitySchemaManager, which only picks the
+		// schema up after the configuration is built (ENG-90403).
+		Stopwatch stopwatch = Stopwatch.StartNew();
+		try {
+			_entitySchemaDesignerClient.PublishConfigurationChanges(options);
+		} catch (Exception exception) {
+			throw new InvalidOperationException(
+				$"Schema '{options.SchemaName}' was created and saved, but publishing the configuration failed: " +
+				$"{exception.Message} Until the configuration is built (for example via compile-creatio), the schema " +
+				"stays invisible to lookup pickers and sys-setting reference schema lists.",
+				exception);
+		}
+		stopwatch.Stop();
+		_logger.WriteInfo(
+			$"Schema '{options.SchemaName}' published in {stopwatch.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s.");
+	}
+
 	private PackageInfo ResolvePackage(string packageName) {
 		PackageInfo package = _applicationPackageListProvider
 							  .GetPackages()
@@ -514,7 +563,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			schema = AssignParentSchema(schema, options.ParentSchemaName, package.Descriptor.UId, options);
 		}
 
-		ApplySchemaMetadata(schema, options, parsedColumns, package);
+		string effectiveCultureName = ResolveEffectiveCultureName(options);
+		ApplySchemaMetadata(schema, options, parsedColumns, package, effectiveCultureName);
 		SaveDesignItemDesignerResponse saveResponse = _entitySchemaDesignerClient.SaveSchema(schema, options);
 		Guid schemaUId = saveResponse.SchemaUId != Guid.Empty ? saveResponse.SchemaUId : schema.UId;
 		if (schemaUId == Guid.Empty) {
@@ -522,6 +572,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				$"Schema '{options.SchemaName}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
+		PublishSchema(options);
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
 			options);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
@@ -533,7 +584,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				Name = options.SchemaName,
 				PackageUId = package.Descriptor.UId,
 				UseFullHierarchy = false,
-				Cultures = [EntitySchemaDesignerSupport.GetCurrentCultureName()]
+				// Verification-only read (checks the reloaded schema name). Mi-2: this is a
+				// schema-level culture ARRAY, not a caption cultureName; use the effective creation
+				// culture rather than the host CultureInfo.CurrentCulture.
+				Cultures = [effectiveCultureName]
 			}, options);
 		if (designItemResponse != null) {
 			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema

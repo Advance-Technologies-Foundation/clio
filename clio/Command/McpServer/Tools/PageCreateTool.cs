@@ -32,8 +32,21 @@ public sealed class PageCreateTool(
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
-			Password = args.Password
+			Password = args.Password,
+			CaptionCulture = args.CaptionCulture
 		};
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = "schema-name is required"
+			};
+		}
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			PageCreateCommand resolvedCommand;
 			try {
@@ -93,5 +106,9 @@ public sealed record PageCreateArgs(
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password
+	string? Password,
+
+	[property: JsonPropertyName("caption-culture")]
+	[property: Description("Optional culture override for the page caption (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
+	string? CaptionCulture = null
 );

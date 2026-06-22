@@ -27,7 +27,7 @@ namespace Clio.Command
 		}
 
 		private int ExecuteGetRequest() {
-			ApplicationClient.ExecuteGetRequest(RootPath, RequestTimeout, RetryCount, DelaySec);
+			ApplicationClient.ExecuteGetRequest(RootPath, RequestTimeout, MaxAttempts, DelaySec);
 			Logger.WriteInfo("Done");
 			return 0;
 		}
@@ -35,7 +35,7 @@ namespace Clio.Command
 		public override int Execute(PingAppOptions options) {
 			ServicePath = options.Endpoint;
 			RequestTimeout = options.TimeOut;
-			RetryCount = options.RetryCount;
+			MaxAttempts = options.MaxAttempts;
 			DelaySec = options.RetryDelay;
 			Logger.WriteInfo($"Ping {ServiceUri} ...");
 			return EnvironmentSettings.IsNetCore ? ExecuteGetRequest() : base.Execute(options);

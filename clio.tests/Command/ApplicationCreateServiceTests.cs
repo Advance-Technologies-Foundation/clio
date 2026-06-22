@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -59,13 +60,38 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
+		ICaptionCultureResolver captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			_applicationInfoService,
 			_ => _sysSettingsManager,
-			_logger);
+			_logger,
+			captionCultureResolver);
+	}
+
+	[Test]
+	[Description("Rejects a Cyrillic application name when the profile culture is the Latin-script en-US, before the CreateApp call.")]
+	public void CreateApplication_Should_Throw_WhenNameScriptDoesNotMatchProfileCulture() {
+		// Arrange — the fixture resolver returns en-US for the profile; the application name is
+		// localized server-side under the profile, so Cyrillic text would render foreign-language labels.
+		ApplicationCreateRequest request = new(
+			Name: "Замовлення",
+			Code: "UsrCyrillicApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI");
+
+		// Act
+		Action action = () => _sut.CreateApplication("sandbox", request);
+
+		// Assert
+		action.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Cyrillic application name must not be stored under the Latin-script en-US profile (ENG-91044)")
+			.Which.Message.Should().Contain("en-US",
+				because: "the error must name the profile culture so the caller can fix the language");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 	}
 
 	[Test]
@@ -747,6 +773,80 @@ public sealed class ApplicationCreateServiceTests {
 			.WithMessage("*SysSettings unavailable*",
 				because: "a read failure must propagate so the caller knows the prefix could not be determined rather than receiving silently wrong schema names");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+	}
+
+	[Test]
+	[Description("Pins the web client type so Creatio skips the main entity mobile pages when with-mobile-pages is false and no explicit client type is supplied.")]
+	public void CreateApplication_Should_Send_WebClientTypeId_When_WithMobilePages_Is_False() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = null,
+			WithMobilePages = false,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// with-mobile-pages=false must send the web client type so the backend creates web pages only
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"clientTypeId\":\"195785B4-F55A-4E72-ACE3-6480B54C8FA5\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Omits the client type entirely when with-mobile-pages is true and no explicit client type is supplied, preserving the default full page set.")]
+	public void CreateApplication_Should_Not_Send_ClientTypeId_When_WithMobilePages_Is_True_And_None_Provided() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = null,
+			WithMobilePages = true,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// the default with-mobile-pages=true must leave clientTypeId unset so Creatio generates the full five-page set as before
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body => !body.Contains("clientTypeId", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Prefers an explicit client type over the with-mobile-pages=false mapping so callers can target a specific Creatio client type.")]
+	public void CreateApplication_Should_Prefer_Explicit_ClientTypeId_Over_WithMobilePages_False() {
+		// Arrange
+		ApplicationCreateRequest request = _fullRequest with {
+			ClientTypeId = "22222222-2222-2222-2222-222222222222",
+			WithMobilePages = false,
+			IconId = "11111111-1111-1111-1111-111111111111",
+			IconBackground = "#0058EF"
+		};
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", request);
+
+		// Assert
+		// an explicit client-type-id must take precedence over the with-mobile-pages web-client mapping
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+			Arg.Is<string>(body =>
+				body.Contains("\"clientTypeId\":\"22222222-2222-2222-2222-222222222222\"", StringComparison.Ordinal) &&
+				!body.Contains("195785B4-F55A-4E72-ACE3-6480B54C8FA5", StringComparison.Ordinal)));
 	}
 
 	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")

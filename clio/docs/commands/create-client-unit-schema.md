@@ -36,6 +36,11 @@ clio create-client-unit-schema [options]
 
 --description                      Optional schema description
 
+--caption-culture                  Override the culture for the generated schema
+                                   caption (e.g. en-US, uk-UA). Precedence:
+                                   override > the connected user's profile
+                                   culture (see get-user-culture) > en-US.
+
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -56,6 +61,10 @@ clio create-client-unit-schema --schema-name UsrHelperModule --package-name Cust
 clio create-client-unit-schema --schema-name UsrHelperModule --package-name Custom --caption "Helper Module" -e dev
 # Create with a display caption
 ```
+
+## Notes
+
+- The schema caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
 
 ## Reporting Bugs
 

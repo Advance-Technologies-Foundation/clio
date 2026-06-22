@@ -342,6 +342,55 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 	[Test]
+	[Description("Starts the real clio MCP server, invokes create-app with with-mobile-pages=false, and verifies the created application has no main entity mobile pages while keeping its web pages.")]
+	[AllureFeature(CreateToolName)]
+	[AllureTag(CreateToolName)]
+	[AllureName("Application create skips mobile pages for a web-only app")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with with-mobile-pages=false and verifies the structured page manifest excludes the main entity _MobileFormPage and _MobileListPage while still containing the web pages.")]
+	public async Task ApplicationCreate_Should_Skip_Mobile_Pages_When_WithMobilePages_Is_False() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app web-only end-to-end tests.");
+		}
+
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		string createdApplicationCode = $"UsrWeb{suffix}";
+		string applicationName = $"Web Only E2E {suffix}";
+
+		// Act
+		ApplicationInfoActResult actResult = await ActCreateAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			arrangeContext.EnvironmentName,
+			applicationName,
+			createdApplicationCode,
+			description: null,
+			ApplicationTemplateCode,
+			ApplicationIconId,
+			ApplicationIconBackground,
+			optionalTemplateDataJson: null,
+			withMobilePages: false);
+
+		// Assert
+		actResult.CallResult.IsError.Should().NotBeTrue(
+			because: $"a web-only create-app request should return structured application metadata. Actual result: {DescribeCallResult(actResult.CallResult)}");
+		actResult.Result.Success.Should().BeTrue(
+			because: "successful web-only create calls should return the core-style success envelope");
+		IReadOnlyList<ApplicationPageEnvelope> pages = actResult.Result.Pages ?? [];
+		pages.Should().NotBeEmpty(
+			because: "a web-only app still creates its web pages");
+		pages.Should().NotContain(page => page.SchemaName.EndsWith("_MobileFormPage", StringComparison.OrdinalIgnoreCase),
+			because: "with-mobile-pages=false must suppress the main entity mobile form page");
+		pages.Should().NotContain(page => page.SchemaName.EndsWith("_MobileListPage", StringComparison.OrdinalIgnoreCase),
+			because: "with-mobile-pages=false must suppress the main entity mobile list page");
+		pages.Should().Contain(page => page.SchemaName.EndsWith("_FormPage", StringComparison.OrdinalIgnoreCase),
+			because: "a web-only app should still expose its web form page");
+	}
+
+	[Test]
 	[Description("Creates an application, mutates the canonical main entity through sync-schemas, and verifies get-app-info still returns the application display name instead of Base object.")]
 	[AllureFeature(CreateToolName)]
 	[AllureFeature(SchemaSyncToolName)]
@@ -779,7 +828,8 @@ public sealed class ApplicationToolE2ETests {
 		string templateCode,
 		string? iconId,
 		string? iconBackground,
-		string? optionalTemplateDataJson) {
+		string? optionalTemplateDataJson,
+		bool withMobilePages = true) {
 		CallToolResult callResult = await CallCreateAsync(
 			session,
 			cancellationToken,
@@ -790,7 +840,8 @@ public sealed class ApplicationToolE2ETests {
 			templateCode,
 			iconId,
 			iconBackground,
-			optionalTemplateDataJson);
+			optionalTemplateDataJson,
+			withMobilePages);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);
@@ -891,7 +942,8 @@ public sealed class ApplicationToolE2ETests {
 		string templateCode,
 		string? iconId,
 		string? iconBackground,
-		string? optionalTemplateDataJson) {
+		string? optionalTemplateDataJson,
+		bool withMobilePages = true) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
 		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
 			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
@@ -907,7 +959,8 @@ public sealed class ApplicationToolE2ETests {
 					templateCode,
 					iconId,
 					iconBackground,
-					optionalTemplateDataJson)
+					optionalTemplateDataJson,
+					withMobilePages)
 			},
 			cancellationToken);
 	}
@@ -958,12 +1011,14 @@ public sealed class ApplicationToolE2ETests {
 		string templateCode,
 		string? iconId,
 		string? iconBackground,
-		string? optionalTemplateDataJson) {
+		string? optionalTemplateDataJson,
+		bool withMobilePages = true) {
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName,
 			["name"] = name,
 			["code"] = code,
 			["template-code"] = templateCode,
+			["with-mobile-pages"] = withMobilePages,
 		};
 		if (!string.IsNullOrWhiteSpace(description)) {
 			args["description"] = description;

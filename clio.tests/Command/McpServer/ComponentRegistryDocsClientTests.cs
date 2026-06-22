@@ -35,17 +35,48 @@ public sealed class ComponentRegistryDocsClientTests {
 	}
 
 	[Test]
-	[Description("A stale cache entry is returned synchronously while a background refresh runs.")]
-	public async Task GetDocAsync_Returns_Stale_Cache_Without_Blocking() {
+	[Description("A stale cache entry is revalidated synchronously: when the CDN serves a fresher doc, the fresh bytes are returned (not the stale copy) and the cache is refreshed.")]
+	public async Task GetDocAsync_Revalidates_Stale_From_Cdn_When_Available() {
+		// Arrange
+		const string staleContent = "# Stale doc\n\nold.";
+		const string freshContent = "# Fresh doc\n\nnew.";
 		FakeDocsCacheStore cache = new();
-		cache.Seed("8.2.1", "docs/sample.md", SamplePayload, isFresh: false);
+		cache.Seed("8.2.1", "docs/sample.md", staleContent, isFresh: false);
 		FakeHttpHandler handler = new();
+		handler.Enqueue("8.2.1/docs/sample.md", HttpStatusCode.OK, freshContent);
 		ComponentRegistryDocsClient client = CreateClient(cache, handler);
 
+		// Act
 		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
 
-		content.Should().Be(SamplePayload,
-			because: "stale-while-revalidate must keep AI latency low even when the cache TTL has passed");
+		// Assert
+		content.Should().Be(freshContent,
+			because: "a stale doc must be revalidated against the CDN so the agent gets the current guide, not an outdated cached copy (ENG-91135)");
+		handler.Requests.Should().ContainSingle(
+			because: "exactly one synchronous CDN fetch is issued to refresh the stale entry");
+		cache.Written.Should().ContainKey(("8.2.1", "docs/sample.md"),
+			because: "a successful revalidation must repopulate the cache with the fresh payload");
+	}
+
+	[Test]
+	[Description("When the CDN cannot serve a fresh doc, a stale cache entry is returned as a fallback rather than failing the request (stale-if-error).")]
+	public async Task GetDocAsync_Serves_Stale_When_Cdn_Cannot_Revalidate() {
+		// Arrange
+		const string staleContent = "# Stale doc\n\nold but usable.";
+		FakeDocsCacheStore cache = new();
+		cache.Seed("8.2.1", "docs/sample.md", staleContent, isFresh: false);
+		FakeHttpHandler handler = new();
+		handler.EnqueueAlways(HttpStatusCode.NotFound, body: null);
+		ComponentRegistryDocsClient client = CreateClient(cache, handler);
+
+		// Act
+		string? content = await client.GetDocAsync("8.2.1", "docs/sample.md");
+
+		// Assert
+		content.Should().Be(staleContent,
+			because: "when revalidation fails the stale copy is still more useful to the agent than no documentation at all");
+		handler.Requests.Should().ContainSingle(
+			because: "a 4xx revalidation result is permanent — the stale fallback kicks in without retrying");
 	}
 
 	[Test]

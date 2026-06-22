@@ -31,7 +31,6 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Fields: Private
 
 	private readonly Action _login;
-	private readonly ILogger _logger;
 	private readonly object _reauthLock = new();
 	private int _loginVersion;
 
@@ -57,10 +56,8 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// Creates a new <see cref="ReauthExecutor"/>.
 	/// </summary>
 	/// <param name="login">Callback that re-authenticates the underlying client. Required.</param>
-	/// <param name="logger">Optional logger; a single warning is written each time a re-auth is performed.</param>
-	public ReauthExecutor(Action login, ILogger logger = null) {
+	public ReauthExecutor(Action login) {
 		_login = login ?? throw new ArgumentNullException(nameof(login));
-		_logger = logger;
 	}
 
 	#endregion
@@ -75,7 +72,20 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		if (isUnauthorized is null) {
 			throw new ArgumentNullException(nameof(isUnauthorized));
 		}
-		T result = call();
+		T result;
+		try {
+			result = call();
+		} catch (JsonException) {
+			// Creatio.Client deserializes the HTTP response body inline inside its upload
+			// methods. When the server returns an HTML login page instead of JSON (stale
+			// session / OAuth token expired), a JsonException is thrown before the response
+			// string ever reaches our IsSessionExpiredResponse check. Treat any JsonException
+			// on the first attempt as a potential auth failure: reauth and retry once. If
+			// the retry also throws, the exception propagates to the caller unchanged.
+			int observedVersion = Volatile.Read(ref _loginVersion);
+			TryReauthenticate(observedVersion);
+			return call();
+		}
 		if (!isUnauthorized(result)) {
 			return result;
 		}
@@ -86,8 +96,8 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		// the one whose response now needs a fresh session. Reading after the failure
 		// narrows the "someone else logged in for me" window to the gap before we acquire
 		// the reauth lock — exactly the parallel-burst case the dedupe is designed for.
-		int observedVersion = Volatile.Read(ref _loginVersion);
-		TryReauthenticate(observedVersion);
+		int sessionObservedVersion = Volatile.Read(ref _loginVersion);
+		TryReauthenticate(sessionObservedVersion);
 		// At most one retry, regardless of the retry's outcome. The caller observes the
 		// second response as-is; if it is still the login page (Login failed, or the
 		// session was invalidated again between Login and retry) the caller decides.
@@ -202,7 +212,6 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	}
 
 	private void TryReauthenticate(int observedVersion) {
-		bool reauthPerformed = false;
 		lock (_reauthLock) {
 			// If the version has advanced while we waited on the lock, another caller has
 			// already re-authenticated for us; skip our own Login and proceed to retry.
@@ -212,11 +221,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 				// observable on weak memory models (ARM, AArch64) without depending on
 				// the lock's release fence to publish it to lock-free readers.
 				Volatile.Write(ref _loginVersion, unchecked(_loginVersion + 1));
-				reauthPerformed = true;
 			}
-		}
-		if (reauthPerformed) {
-			_logger?.WriteWarning("Detected expired Creatio session; re-authenticated and retrying the request.");
 		}
 	}
 

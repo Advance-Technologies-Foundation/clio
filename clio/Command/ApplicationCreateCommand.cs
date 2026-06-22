@@ -27,6 +27,28 @@ public sealed class CreateAppOptions : EnvironmentOptions
 
 	[Option("icon-id", Required = false, HelpText = "Application icon GUID or 'auto' to pick a random icon")]
 	public string? IconId { get; set; }
+
+	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages (default: true). Pass false for a web-only application.")]
+	public string? WithMobilePagesValue { get; set; }
+
+	/// <summary>
+	/// Gets a value indicating whether mobile pages should be generated for the main entity.
+	/// </summary>
+	public bool WithMobilePages {
+		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
+		set => WithMobilePagesValue = value ? "true" : "false";
+	}
+
+	internal static void ValidateMobilePagesOption(string? value) {
+		if (value is null) {
+			return;
+		}
+
+		if (!string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) &&
+			!string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)) {
+			throw new ArgumentException($"Invalid value '{value}' for --with-mobile-pages. Allowed values: true, false.");
+		}
+	}
 }
 
 /// <summary>
@@ -45,6 +67,7 @@ public sealed class CreateAppCommand(
 			if (string.IsNullOrWhiteSpace(options.Environment)) {
 				throw new InvalidOperationException("Environment name is required.");
 			}
+			CreateAppOptions.ValidateMobilePagesOption(options.WithMobilePagesValue);
 
 			ApplicationCreateRequest request = new(
 				options.Name,
@@ -52,7 +75,8 @@ public sealed class CreateAppCommand(
 				options.Description,
 				options.TemplateCode,
 				options.IconId,
-				options.IconBackground);
+				options.IconBackground,
+				WithMobilePages: options.WithMobilePages);
 
 			ApplicationInfoResult result = applicationCreateService.CreateApplication(options.Environment, request);
 

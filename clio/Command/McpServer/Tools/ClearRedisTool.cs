@@ -19,7 +19,7 @@ public class ClearRedisTool(
 		[Description("Target Environment name")] [Required] string environmentName
 	) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		ClearRedisOptions options = new() {
 			Environment = environmentName,

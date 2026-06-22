@@ -501,7 +501,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "full-creatio-config.yaml";
 		IEnvironmentManager environmentManager = Container.GetRequiredService<IEnvironmentManager>();
-		string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
+		// Resolve against the mock file system's own current directory (where MockExamplesFolder
+		// stored the file) rather than the real process drive root. The latter is C:\ on dev
+		// machines but F:\ on the CI runner, which made this test drive-dependent.
+		string manifestFilePath = FileSystem.Path.Combine(FileSystem.Directory.GetCurrentDirectory(), manifestFileName);
 		EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 		FileSystem commonFileSystem = new(FileSystem);
 		EnvironmentOptions environmentOptionsFromManifestFile
@@ -516,7 +519,10 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		FileSystem.MockExamplesFolder("deployments-manifest");
 		string manifestFileName = "only-settings.yaml";
 		IEnvironmentManager environmentManager = Container.GetRequiredService<IEnvironmentManager>();
-		string manifestFilePath = Path.Combine(Path.GetPathRoot(Environment.CurrentDirectory), manifestFileName);
+		// Resolve against the mock file system's own current directory (where MockExamplesFolder
+		// stored the file) rather than the real process drive root, which is C:\ on dev machines
+		// but F:\ on the CI runner.
+		string manifestFilePath = FileSystem.Path.Combine(FileSystem.Directory.GetCurrentDirectory(), manifestFileName);
 		EnvironmentSettings envSettingsFromFile = environmentManager.GetEnvironmentFromManifest(manifestFilePath);
 		FileSystem commonFileSystem = new(FileSystem);
 		EnvironmentOptions environmentOptionsFromManifestFile

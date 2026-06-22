@@ -256,16 +256,20 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should show the canonical imperative request shape");
 		article.Text.Should().Contain("API choice rules",
 			because: "handler guidance should explain the page-body request-dispatch choice explicitly");
-		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` |",
-			because: "handler guidance should prefer executeRequest for deployed page-body handlers");
-		article.Text.Should().Contain("Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.",
-			because: "handler guidance should keep HandlerChainService out of the default page-body authoring path");
+		article.Text.Should().Contain("| deployed page-body handler in `SCHEMA_HANDLERS` | `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` |",
+			because: "handler guidance must point page-body authors at the documented @creatio-devkit/common dispatcher used by Creatio Academy SCHEMA_HANDLERS examples");
+		article.Text.Should().Contain("Do NOT default to `request.$context.executeRequest(...)` in deployed page-body handlers",
+			because: "handler guidance must call out executeRequest as the non-public form so agents stop reaching for it when they have the documented HandlerChainService alternative");
 		article.Text.Should().Contain("Else if the handler must read or write data, syssettings, processes, or backend services, stop and read `page-schema-creatio-devkit-common` before authoring the handler body.",
 			because: "the handler decision tree should have an explicit sdk common branch for data and service work");
 		article.Text.Should().Contain("| open a related page or mini page | `crt.OpenPageRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should keep simple navigation on direct request wiring instead of custom handlers");
 		article.Text.Should().Contain("| create a related record from current context | `crt.CreateRecordRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should keep simple create flows on direct request wiring instead of custom handlers");
+		article.Text.Should().Contain("crt.CreateRecordRequest page-resolution note",
+			because: "handler guidance must carry the page-resolution note so callers know a CreateRecordRequest Add button needs a registered or explicit page");
+		article.Text.Should().Contain("There is no page for new or existing record",
+			because: "handler guidance must name the exact runtime error a section-less detail entity raises when CreateRecordRequest cannot resolve a page");
 		article.Text.Should().Contain("| cancel unsaved edits on the current page | `crt.CancelRecordChangesRequest` | button/menu `clicked.request` | no |",
 			because: "handler guidance should cover the built-in cancel-edits trigger directly in the decision table");
 		article.Text.Should().Contain("| delete the current or selected record | `crt.DeleteRecordRequest` | button/menu `clicked.request` | no |",
@@ -400,8 +404,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "custom action templates should preserve and return the downstream result instead of introducing a second non-returning next pattern");
 		article.Text.Should().Contain("Orchestration patterns",
 			because: "handler guidance should distinguish page-body dispatch from direct SDK service orchestration");
-		article.Text.Should().Contain("Use `await request.$context.executeRequest(...)` when a deployed page-body handler forwards into another page-scoped request.",
-			because: "the handler guide should keep executeRequest as the default page-body orchestration path");
+		article.Text.Should().Contain("Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` when a deployed page-body handler forwards into another page-scoped request.",
+			because: "the handler guide should keep HandlerChainService.instance.process as the canonical page-body orchestration path per Creatio Academy SCHEMA_HANDLERS examples");
 		article.Text.Should().Contain("Use SDK/domain services such as `sdk.ProcessEngineService` when the task is direct service orchestration rather than request forwarding.",
 			because: "the handler guide should mention the direct service-orchestration path seen in product code");
 		article.Text.Should().MatchRegex(@"type: ""crt\.RunBusinessProcessRequest"",\s+processName: ""<ProcessName>"",\s+\$context(: request\.\$context|),\s+scopes: \[\.\.\.request\.scopes\]",
@@ -478,8 +482,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
 			because: "handler guidance should expose the cancel-edits request contract");
-		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` required, `processParameters`, `recordIdProcessParameterName?`, `resultParameterNames?`, `processRunType?`, `dataSourceName?`, `filters?`, `sorting?`, `parameterMappings?`, `showNotification?`, `notificationText?`, `selectionStateAttributeName?`, `saveAtProcessStart?` | `processRunType`: `ForTheSelectedPage`, `RegardlessOfThePage`, `ForTheSelectedRecords` |",
-			because: "handler guidance should keep the process request in the parameter catalog");
+		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |",
+			because: "the handler catalog should point to the single-source-of-truth run-process-button guide and carry the CODE-not-caption rule instead of restating the full param list");
 		article.Text.Should().Contain("| `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |",
 			because: "handler guidance should expose the create-email request contract");
 		article.Text.Should().Contain("| `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |",
@@ -607,8 +611,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should expose the collection-oriented sdk surface used in schema body code");
 		article.Text.Should().Contain("| `sdk.ViewModelCollectionActionType` | filter collection change callbacks by action such as `Add` or `Remove` |",
 			because: "the guide should expose the collection action enum through the sdk contract");
-		article.Text.Should().Contain("| low-level request-chain dispatch in SDK-oriented schema code | `sdk.HandlerChainService.instance.process(...)` | `process({ type, $context, scopes })` |",
-			because: "the guide should keep HandlerChainService available only as an advanced schema-body pattern");
+		article.Text.Should().Contain("| imperative request dispatch inside SCHEMA_HANDLERS | `sdk.HandlerChainService.instance.process(...)` | `process({ type, $context, scopes })` |",
+			because: "the guide should mark HandlerChainService.instance.process as the canonical page-body dispatcher (per Creatio Academy SCHEMA_HANDLERS examples), not as an advanced fallback");
 		article.Text.Should().NotContain("BaseRequest",
 			because: "the schema-only sdk common guide should not teach frontend-source request classes");
 		article.Text.Should().NotContain("@CrtValidator",
@@ -705,10 +709,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",
 			because: "fragment-only dialog snippets should say they are not standalone schema modules");
-		article.Text.Should().Contain("Inner handler/body snippet only: HandlerChainService from advanced SDK-oriented schema code:",
-			because: "fragment-only handler-chain snippets should say they are not standalone schema modules");
-		article.Text.Should().Contain("Rule: in deployed page-body handlers, prefer `await request.$context.executeRequest(...)`.",
-			because: "the guide should keep executeRequest as the default dispatch path for schema handlers");
+		article.Text.Should().Contain("Inner handler/body snippet: canonical HandlerChainService dispatch from page-body handler code (per Creatio Academy SCHEMA_HANDLERS examples):",
+			because: "fragment-only handler-chain snippets should say they are not standalone schema modules and that HandlerChainService.instance.process is the canonical dispatch surface");
+		article.Text.Should().Contain("Rule: in deployed page-body handlers, use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` for imperative request dispatch.",
+			because: "the guide should pin HandlerChainService.instance.process as the canonical schema-handler dispatch path per Creatio Academy");
 		article.Text.Should().Contain("Do NOT use `import { ... } from \"@creatio-devkit/common\"` inside deployed page schema body code.",
 			because: "the guide should explicitly block ES-module imports inside schema-body code");
 		article.Text.Should().Contain("Do NOT use decorator/class-based frontend-source APIs inside deployed page schema body code.",
@@ -766,6 +770,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document the macro syntax");
 		article.Text.Should().Contain("`resources` parameter",
 			because: "the guide should document how explicit resource entries are passed to page tools");
+		article.Text.Should().Contain("HARD REJECT",
+			because: "the guide should state that inline text literals are rejected, not merely discouraged");
+		article.Text.Should().Contain("placeholder",
+			because: "placeholders are the headline case the enforcement guidance must call out");
+		article.Text.Should().Contain("default-language",
+			because: "the creation rule must tell the agent to seed the default-language value via the resources parameter");
 	}
 
 	[Test]
@@ -1108,8 +1118,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should publish branching rules between new-app and existing-app flows");
 		article.Text.Should().Contain("Schema sync recovery patterns",
 			because: "the guide should cover schema-sync recovery patterns owned by clio");
-		article.Text.Should().Contain("InsertQuery failed",
-			because: "the guide should describe the wiring-failure recovery rule for reuse decisions");
+		article.Text.Should().Contain("Failed to create section",
+			because: "the guide should describe the wiring-failure recovery rule for reuse decisions using the current section-create error marker");
 		article.Text.Should().Contain("metadata readback timeout",
 			because: "the guide should describe the section readback timeout recovery path");
 		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
@@ -1410,6 +1420,159 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should instruct AI callers to model reversible state with an inverse rule");
 		article.Text.Should().Contain("prefer `populateValue=true` by default",
 			because: "the guide should steer AI callers toward the UI-like default for standard dependent lookup scenarios");
+		article.Text.Should().Contain("classify the requirement into one mechanism",
+			because: "the guide must teach lookup-restriction routing as a mechanism taxonomy, not a list of memorized business phrases");
+		article.Text.Should().Contain("never a handler/crt.InitRequest",
+			because: "the guide must steer every lookup-restriction mechanism away from handlers/crt.InitRequest");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI indicator widgets so AI callers can translate Copilot metric intent into runtime widget config.")]
+	public void IndicatorWidgetGuidanceResource_Should_Return_Canonical_Indicator_Widget_Guide() {
+		// Arrange
+		IndicatorWidgetGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the indicator widget guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the resource should expose a stable MCP URI for indicator widget guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the indicator widget guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP indicator widget guide",
+			because: "the article should identify itself as the dedicated indicator-widget guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point callers to get-component-info as the single source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for adding and filtering a Freedom UI related/child list (detail) so AI callers can scope a list by the current page record.")]
+	public void RelatedListGuidanceResource_Should_Return_Canonical_Related_List_Guide() {
+		// Arrange
+		RelatedListGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the related-list guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the resource should expose a stable MCP URI for related-list guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the related-list guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP related list guide",
+			because: "the article should identify itself as the dedicated related-list guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the guide should point callers to get-component-info as the source of truth for crt.DataGrid and crt.ExpansionPanel");
+		article.Text.Should().Contain("isCollection",
+			because: "the guide must teach the collection attribute that backs the child list");
+		article.Text.Should().Contain("modelConfig.dependencies",
+			because: "the guide must teach the declarative dependencies entry that scopes the list by the open record");
+		article.Text.Should().Contain("attributePath",
+			because: "the guide must name the child foreign-key column field of the dependency");
+		article.Text.Should().Contain("relationPath",
+			because: "the guide must name the master-id path field of the dependency");
+		article.Text.Should().Contain("\"relationPath\": \"PDS.Id\"",
+			because: "the guide must show the canonical relationPath pointing at the page primary data source id");
+		article.Text.Should().Contain("handlers: []",
+			because: "the guide must emphasize that the declarative dependency needs no handler");
+		article.Text.Should().Contain("Use `modelConfig.dependencies` instead",
+			because: "the guide must warn against the init-handler scoping anti-pattern and redirect to dependencies");
+		article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must warn that an inserted container without an initialized items slot fails at runtime and the page does not render");
+		article.Text.Should().Contain("\"items\": []",
+			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
+		article.Text.Should().Contain("There is no page for new or existing record",
+			because: "the guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this exact runtime error on click");
+		article.Text.Should().Contain("features.editable.itemsCreation",
+			because: "the guide must steer callers to inline grid add as the safe default add affordance for a related list");
+		article.Text.Should().Contain("entityPageName",
+			because: "the guide must offer the explicit-page escape hatch for a header Add button when inline add is not wanted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
+	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
+		// Arrange
+		EsqFiltersGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the ESQ filters guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the ESQ filters guide should be discoverable as plain text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes indicator-widget so AI callers can retrieve indicator widget authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Indicator_Widget_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("indicator-widget", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose indicator-widget so get-guidance can return it by name");
+		entry.Name.Should().Be("indicator-widget",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("indicator widgets",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes related-list so AI callers can retrieve detail/master-detail filter guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Related_List_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("related-list", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose related-list so get-guidance can return it by name");
+		entry.Name.Should().Be("related-list",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("related/child list",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/related-list",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose esq-filters so get-guidance can return it by name");
+		entry.Name.Should().Be("esq-filters",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("filter authoring",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+			because: "the article URI in the catalog must match the resource URI");
 	}
 
 	[Test]
@@ -1488,6 +1651,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should document COUNT/SUM/AVG/MIN/MAX aggregations");
 		article.Text.Should().Contain("discovery flow",
 			because: "the guide should keep the no-assumptions discovery flow");
+		article.Text.Should().Contain("validate before create (MANDATORY)",
+			because: "the guide must require an execute-esq dry-run of the filter before the rule is created");
+		article.Text.Should().Contain("DRY-RUN the same filter as an `execute-esq` SelectQuery",
+			because: "the guide must spell out the pre-save execute-esq validation discipline borrowed from the component widget recipe");
+		article.Text.Should().Contain("before-create checklist",
+			because: "the guide should end with a compact before-create checklist of the hard-won filter invariants");
 	}
 
 	[Test]

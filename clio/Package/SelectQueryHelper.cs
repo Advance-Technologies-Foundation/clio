@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.Package;
@@ -24,12 +25,14 @@ internal static class SelectQueryHelper
 	internal static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
 		IServiceUrlBuilder serviceUrlBuilder,
-		object query)
+		object query,
+		int requestTimeout = Timeout.Infinite)
 		where T : SelectQueryResponseBaseDto
 	{
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
-			JsonSerializer.Serialize(query));
+			JsonSerializer.Serialize(query),
+			requestTimeout);
 		if (string.IsNullOrWhiteSpace(responseJson))
 		{
 			throw new InvalidOperationException("SelectQuery returned an empty response.");
@@ -47,7 +50,8 @@ internal static class SelectQueryHelper
 	internal static object BuildSelectQuery(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
-		IReadOnlyList<SelectQueryFilterDefinition> filters)
+		IReadOnlyList<SelectQueryFilterDefinition> filters,
+		int rowCount = 10000)
 	{
 		Dictionary<string, object> columnItems = columns
 			.ToDictionary(
@@ -99,7 +103,7 @@ internal static class SelectQueryHelper
 			allColumns = false,
 			isDistinct = false,
 			ignoreDisplayValues = false,
-			rowCount = 10000,
+			rowCount,
 			rowsOffset = -1,
 			isPageable = false,
 			columns = new
@@ -112,6 +116,86 @@ internal static class SelectQueryHelper
 				isEnabled = true,
 				trimDateTimeParameterToDate = false,
 				logicalOperation = 0,
+				items = filterItems
+			}
+		};
+	}
+
+	/// <summary>
+	/// Builds a SelectQuery where all <paramref name="filterValues"/> for <paramref name="filterColumn"/>
+	/// are combined with an OR logical operator, producing an IN-style batch filter in a single request.
+	/// </summary>
+	internal static object BuildSelectQueryWithOrFilter(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		string filterColumn,
+		IReadOnlyList<string> filterValues,
+		int dataValueType,
+		int rowCount = 10000)
+	{
+		Dictionary<string, object> columnItems = columns
+			.ToDictionary(
+				column => column.Alias,
+				column => (object)new
+				{
+					expression = new
+					{
+						expressionType = 0,
+						columnPath = column.Path
+					},
+					orderDirection = 0,
+					orderPosition = -1,
+					isVisible = true
+				},
+				StringComparer.Ordinal);
+
+		Dictionary<string, object> filterItems = filterValues
+			.Select((value, index) => new { value, index })
+			.ToDictionary(
+				item => $"filter{item.index}",
+				item => (object)new
+				{
+					filterType = 1,
+					comparisonType = 3,
+					isEnabled = true,
+					trimDateTimeParameterToDate = false,
+					leftExpression = new
+					{
+						expressionType = 0,
+						columnPath = filterColumn
+					},
+					rightExpression = new
+					{
+						expressionType = 2,
+						parameter = new
+						{
+							value = item.value,
+							dataValueType
+						}
+					}
+				},
+				StringComparer.Ordinal);
+
+		return new
+		{
+			rootSchemaName,
+			operationType = 0,
+			allColumns = false,
+			isDistinct = false,
+			ignoreDisplayValues = false,
+			rowCount,
+			rowsOffset = -1,
+			isPageable = false,
+			columns = new
+			{
+				items = columnItems
+			},
+			filters = new
+			{
+				filterType = 6,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				logicalOperation = 1,
 				items = filterItems
 			}
 		};

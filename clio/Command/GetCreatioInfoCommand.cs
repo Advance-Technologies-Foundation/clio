@@ -22,6 +22,17 @@ namespace Clio.Command
 	public sealed class GetCreatioInfoCommand : RemoteCommand<GetCreatioInfoCommandOptions>
 	{
 
+		#region Constants: Private
+
+		/// <summary>
+		/// Minimum cliogate version that exposes the full <c>GetSysInfo</c> report. When the installed
+		/// cliogate is absent or older than this, the command degrades gracefully to
+		/// <c>ApplicationInfoService</c> instead of failing.
+		/// </summary>
+		private const string ClioGateMinVersion = "2.0.0.32";
+
+		#endregion
+
 		#region Constructors: Public
 
 		public GetCreatioInfoCommand(IApplicationClient applicationClient, 
@@ -35,8 +46,6 @@ namespace Clio.Command
 		#region Properties: Protected
 
 		protected override string ServicePath => CreatioServicePaths.GetSysInfo;
-
-		protected override string ClioGateMinVersion { get; } = "2.0.0.32";
 
 		#endregion
 
@@ -88,7 +97,7 @@ namespace Clio.Command
 			try {
 				string url = RootPath + CreatioServicePaths.GetApplicationInfo;
 				string response = ApplicationClient.ExecutePostRequest(
-					url, "{}", options.TimeOut, options.RetryCount, options.RetryDelay);
+					url, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
 				JToken sysValues = JObject.Parse(response)["applicationInfo"]?["sysValues"];
 				if (sysValues is null){
 					Logger.WriteError(

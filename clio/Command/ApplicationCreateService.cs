@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 
@@ -35,10 +36,16 @@ public sealed class ApplicationCreateService(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IApplicationInfoService applicationInfoService,
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
-	ILogger logger)
+	ILogger logger,
+	ICaptionCultureResolver captionCultureResolver)
 	: IApplicationCreateService
 {
 	private const string CreateApplicationRoute = "ServiceModel/AppInstallerService.svc/CreateApp";
+
+	// Web-only Creatio client type. Pinning clientTypeId to this value suppresses mobile page
+	// generation for the main entity, mirroring the create-app-section flow
+	// (ApplicationSectionCreateService.WebClientTypeId / spec/mobile-pages/mobile-pages-reference.md §9).
+	private const string WebClientTypeId = "195785B4-F55A-4E72-ACE3-6480B54C8FA5";
 
 	private const string SelectQueryRoute = "DataService/json/SyncReply/SelectQuery";
 	private const int PollAttempts = 15;
@@ -68,12 +75,20 @@ public sealed class ApplicationCreateService(
 
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		if (!IsConfiguredEnvironment(environmentSettings))
 		{
 			throw new InvalidOperationException(
-				$"Environment with key '{environmentName}' not found. Check your clio configuration.");
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
+
+		// ENG-91044: the application name/description are localized server-side under the connected
+		// user's profile culture (create-app is scalar-only with no caption-culture knob), so reject
+		// text whose script does not match the profile culture (e.g. Cyrillic under an en-US profile).
+		string profileCultureForCaption = captionCultureResolver.Resolve(
+			new EnvironmentOptions { Environment = environmentName }, null);
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Name, "name");
+		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
@@ -192,9 +207,7 @@ public sealed class ApplicationCreateService(
 		string resolvedIconId = needsIconResolution
 			? ResolveRandomIconId(client, environmentSettings, serviceUrlBuilder)
 			: Guid.Parse(request.IconId!).ToString();
-		string? resolvedClientTypeId = string.IsNullOrWhiteSpace(request.ClientTypeId)
-			? null
-			: Guid.Parse(request.ClientTypeId).ToString();
+		string? resolvedClientTypeId = ResolveClientTypeId(request);
 
 		return new ResolvedApplicationCreateRequest(
 			resolvedName,
@@ -205,6 +218,19 @@ public sealed class ApplicationCreateService(
 			resolvedIconBackground,
 			resolvedClientTypeId,
 			request.OptionalTemplateData);
+	}
+
+	private static string? ResolveClientTypeId(ApplicationCreateRequest request)
+	{
+		// An explicit client-type-id always wins. Otherwise with-mobile-pages:false pins the web
+		// client type so Creatio skips the main entity mobile pages, while the default (true) leaves
+		// clientTypeId null so the full five-page set is generated as before.
+		if (!string.IsNullOrWhiteSpace(request.ClientTypeId))
+		{
+			return Guid.Parse(request.ClientTypeId).ToString();
+		}
+
+		return request.WithMobilePages ? null : WebClientTypeId;
 	}
 
 	private static string GenerateCodeFromName(string name, string schemaPrefix)
@@ -734,6 +760,11 @@ public sealed class ApplicationCreateService(
 /// <param name="IconBackground">Optional application icon background color.</param>
 /// <param name="ClientTypeId">Optional client type identifier.</param>
 /// <param name="OptionalTemplateData">Optional CreateApp template payload.</param>
+/// <param name="WithMobilePages">
+/// When <c>true</c> (default) Creatio generates the full page set, including the main entity
+/// <c>_MobileFormPage</c> and <c>_MobileListPage</c>. When <c>false</c> mobile pages are suppressed
+/// (web-only) unless an explicit <paramref name="ClientTypeId"/> is supplied, which always takes precedence.
+/// </param>
 [SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global", Justification = "MCP request contract")]
 public sealed record ApplicationCreateRequest(
 	string? Name,
@@ -743,7 +774,8 @@ public sealed record ApplicationCreateRequest(
 	string? IconId = null,
 	string? IconBackground = null,
 	string? ClientTypeId = null,
-	ApplicationOptionalTemplateData? OptionalTemplateData = null);
+	ApplicationOptionalTemplateData? OptionalTemplateData = null,
+	bool WithMobilePages = true);
 
 /// <summary>
 /// Optional template data forwarded to the CreateApp endpoint.

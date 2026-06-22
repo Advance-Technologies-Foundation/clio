@@ -1,239 +1,158 @@
-using System;
 using Clio.Common;
-using Clio.Workspaces;
+using Clio.Common.Skills;
 using CommandLine;
 
 namespace Clio.Command;
 
 /// <summary>
-/// Shared defaults for workspace skill management commands.
-/// </summary>
-public static class WorkspaceSkillDefaults {
-	/// <summary>
-	/// Default repository used when callers omit <c>--repo</c>.
-	/// </summary>
-	public const string DefaultRepository = "https://creatio.ghe.com/engineering/bootstrap-composable-app-starter-kit";
-}
-
-/// <summary>
-/// Supported install targets for managed skills.
-/// </summary>
-public enum SkillScope {
-	/// <summary>
-	/// Installs skills into the current clio workspace.
-	/// </summary>
-	Workspace,
-
-	/// <summary>
-	/// Installs skills into the user-level agent home.
-	/// </summary>
-	User
-}
-
-internal static class SkillScopeParser {
-	internal const string Workspace = "workspace";
-	internal const string User = "user";
-
-	internal static bool TryParse(string scopeValue, out SkillScope scope, out string errorMessage) {
-		string normalizedScope = scopeValue?.Trim();
-		if (string.IsNullOrWhiteSpace(normalizedScope) ||
-			string.Equals(normalizedScope, Workspace, StringComparison.OrdinalIgnoreCase)) {
-			scope = SkillScope.Workspace;
-			errorMessage = string.Empty;
-			return true;
-		}
-
-		if (string.Equals(normalizedScope, User, StringComparison.OrdinalIgnoreCase)) {
-			scope = SkillScope.User;
-			errorMessage = string.Empty;
-			return true;
-		}
-
-		scope = SkillScope.Workspace;
-		errorMessage = $"Unsupported scope '{scopeValue}'. Supported values: {Workspace}, {User}.";
-		return false;
-	}
-
-	internal static string ToOptionValue(SkillScope scope) => scope == SkillScope.User ? User : Workspace;
-}
-
-/// <summary>
-/// Base options for commands that manage clio-managed skills.
+/// Base options for the multi-agent skill lifecycle commands.
 /// </summary>
 public abstract class SkillCommandOptions {
 	/// <summary>
-	/// Optional skill name used to limit the operation to a single skill.
+	/// Optional agent to limit the operation to. When omitted, all detected agents are processed.
 	/// </summary>
-	[Option("skill", Required = false, HelpText = "Specific skill name to process")]
+	[Option("target", Required = false,
+		HelpText = "Limit the operation to one agent: claude | codex | cursor | copilot. Default: all detected agents.")]
+	public string Target { get; set; }
+
+	/// <summary>
+	/// Optional source override. Marketplace git URL for claude/codex/copilot; local path or git URL for cursor.
+	/// </summary>
+	[Option("repo", Required = false,
+		HelpText = "Override the install source. Marketplace git URL for claude/codex/copilot; local path or git URL for cursor.")]
+	public string Repo { get; set; }
+
+	// Deprecation shims: hidden, present only so a caller passing a removed option
+	// receives an actionable error rather than CommandLineParser's generic message.
+	[Option("scope", Hidden = true)]
+	public string Scope { get; set; }
+
+	[Option("skill", Hidden = true)]
 	public string Skill { get; set; }
 
 	/// <summary>
-	/// Optional local repository path or git URL used as the source of skills.
+	/// Returns an actionable error when a removed option (<c>--scope</c>/<c>--skill</c>) was supplied.
 	/// </summary>
-	[Option("repo", Required = false,
-		HelpText = "Optional local repository path or git URL. Defaults to the bootstrap workspace skills repository.")]
-	public string Repo { get; set; }
+	/// <param name="error">The error message to surface, when one applies.</param>
+	/// <returns><c>true</c> when a removed option was used; otherwise <c>false</c>.</returns>
+	public bool TryGetRemovedOptionError(out string error) {
+		if (!string.IsNullOrWhiteSpace(Scope)) {
+			error = "The --scope option has been removed. Skills now install globally for all detected coding agents. "
+				+ "Use --target <claude|codex|cursor|copilot> to limit to one agent.";
+			return true;
+		}
 
-	/// <summary>
-	/// Skill target scope.
-	/// </summary>
-	[Option("scope", Required = false, HelpText = "Skill target scope: workspace or user. Defaults to workspace.")]
-	public string Scope { get; set; } = SkillScopeParser.Workspace;
+		if (!string.IsNullOrWhiteSpace(Skill)) {
+			error = "The --skill option has been removed. The whole Creatio toolkit bundle is installed per agent; "
+				+ "per-skill selection is no longer supported.";
+			return true;
+		}
+
+		error = null;
+		return false;
+	}
 }
 
 /// <summary>
 /// Options for the <c>install-skills</c> command.
 /// </summary>
-[Verb("install-skills", HelpText = "Install managed skills from a repository")]
+[Verb("install-adac", Aliases = ["install-skills"],
+	HelpText = "Install the Creatio AI App Development Toolkit (ADAC) for all detected coding agents")]
 public class InstallSkillsOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>update-skill</c> command.
 /// </summary>
-[Verb("update-skill", HelpText = "Update managed skills from a repository")]
+[Verb("update-adac", Aliases = ["update-skill"],
+	HelpText = "Update the Creatio AI App Development Toolkit (ADAC) for all detected coding agents")]
 public class UpdateSkillOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>delete-skill</c> command.
 /// </summary>
-[Verb("delete-skill", HelpText = "Delete a managed skill")]
-public class DeleteSkillOptions {
-	/// <summary>
-	/// Skill name to delete from the current workspace.
-	/// </summary>
-	[Option("skill", Required = true, HelpText = "Managed skill name to delete")]
-	public string Skill { get; set; }
-
-	/// <summary>
-	/// Skill target scope.
-	/// </summary>
-	[Option("scope", Required = false, HelpText = "Skill target scope: workspace or user. Defaults to workspace.")]
-	public string Scope { get; set; } = SkillScopeParser.Workspace;
+[Verb("delete-adac", Aliases = ["delete-skill"],
+	HelpText = "Uninstall the Creatio AI App Development Toolkit (ADAC) from coding agents")]
+public class DeleteSkillOptions : SkillCommandOptions {
 }
 
 /// <summary>
-/// Installs workspace-local skills into the current clio workspace.
+/// Reports an aggregated skill operation result through the logger.
 /// </summary>
-public class InstallSkillsCommand(
-	ISkillManagementService skillManagementService,
-	IWorkspacePathBuilder workspacePathBuilder,
-	ILogger logger)
-	: Command<InstallSkillsOptions> {
+internal static class SkillCommandReporting {
+	/// <summary>
+	/// Writes per-agent outcomes and the summary, returning the result's exit code.
+	/// </summary>
+	public static int Report(ILogger logger, SkillCommandResult result) {
+		foreach (AgentOutcome outcome in result.Outcomes) {
+			if (outcome.Status == AgentOutcomeStatus.Failed) {
+				logger.WriteError(outcome.Message);
+			}
+			else {
+				logger.WriteInfo(outcome.Message);
+			}
+		}
 
+		// A non-zero result with no per-agent outcomes is a validation failure
+		// (unknown target / invalid --repo) whose explanation lives in the summary —
+		// surface it as an error. Otherwise the summary lists what succeeded and is
+		// informational (per-agent failures above already drive the non-zero exit).
+		if (result.ExitCode != 0 && result.Outcomes.Count == 0) {
+			logger.WriteError(result.Summary);
+		}
+		else {
+			logger.WriteInfo(result.Summary);
+		}
+
+		return result.ExitCode;
+	}
+}
+
+/// <summary>
+/// Installs the Creatio toolkit skill globally for detected coding agents.
+/// </summary>
+public class InstallSkillsCommand(ISkillInstallService skillInstallService, ILogger logger)
+	: Command<InstallSkillsOptions> {
 	/// <inheritdoc />
 	public override int Execute(InstallSkillsOptions options) {
-		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
-			logger.WriteError(errorMessage);
+		if (options.TryGetRemovedOptionError(out string error)) {
+			logger.WriteError(error);
 			return 1;
 		}
 
-		string workspacePath = workspacePathBuilder.RootPath;
-		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
-			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
-			return 1;
-		}
-
-		SkillOperationResult result = skillManagementService.Install(new InstallSkillsRequest(
-			workspacePath,
-			options.Skill,
-			options.Repo,
-			scope));
-		WriteResult(result);
-		return result.ExitCode;
-	}
-
-	private void WriteResult(SkillOperationResult result) {
-		foreach (string message in result.InfoMessages) {
-			logger.WriteInfo(message);
-		}
-
-		foreach (string message in result.ErrorMessages) {
-			logger.WriteError(message);
-		}
+		return SkillCommandReporting.Report(logger, skillInstallService.Install(options.Target, options.Repo));
 	}
 }
 
 /// <summary>
-/// Updates managed workspace-local skills in the current clio workspace.
+/// Updates the Creatio toolkit skill for detected coding agents.
 /// </summary>
-public class UpdateSkillCommand(
-	ISkillManagementService skillManagementService,
-	IWorkspacePathBuilder workspacePathBuilder,
-	ILogger logger)
+public class UpdateSkillCommand(ISkillInstallService skillInstallService, ILogger logger)
 	: Command<UpdateSkillOptions> {
-
 	/// <inheritdoc />
 	public override int Execute(UpdateSkillOptions options) {
-		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
-			logger.WriteError(errorMessage);
+		if (options.TryGetRemovedOptionError(out string error)) {
+			logger.WriteError(error);
 			return 1;
 		}
 
-		string workspacePath = workspacePathBuilder.RootPath;
-		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
-			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
-			return 1;
-		}
-
-		SkillOperationResult result = skillManagementService.Update(new UpdateSkillsRequest(
-			workspacePath,
-			options.Skill,
-			options.Repo,
-			scope));
-		WriteResult(result);
-		return result.ExitCode;
-	}
-
-	private void WriteResult(SkillOperationResult result) {
-		foreach (string message in result.InfoMessages) {
-			logger.WriteInfo(message);
-		}
-
-		foreach (string message in result.ErrorMessages) {
-			logger.WriteError(message);
-		}
+		return SkillCommandReporting.Report(logger, skillInstallService.Update(options.Target, options.Repo));
 	}
 }
 
 /// <summary>
-/// Deletes a managed workspace-local skill from the current clio workspace.
+/// Uninstalls the Creatio toolkit skill from detected coding agents.
 /// </summary>
-public class DeleteSkillCommand(
-	ISkillManagementService skillManagementService,
-	IWorkspacePathBuilder workspacePathBuilder,
-	ILogger logger)
+public class DeleteSkillCommand(ISkillInstallService skillInstallService, ILogger logger)
 	: Command<DeleteSkillOptions> {
-
 	/// <inheritdoc />
 	public override int Execute(DeleteSkillOptions options) {
-		if (!SkillScopeParser.TryParse(options.Scope, out SkillScope scope, out string errorMessage)) {
-			logger.WriteError(errorMessage);
+		if (options.TryGetRemovedOptionError(out string error)) {
+			logger.WriteError(error);
 			return 1;
 		}
 
-		string workspacePath = workspacePathBuilder.RootPath;
-		if (scope == SkillScope.Workspace && !workspacePathBuilder.IsWorkspace) {
-			logger.WriteError($"Current directory is not inside a clio workspace: {workspacePath}");
-			return 1;
-		}
-
-		SkillOperationResult result = skillManagementService.Delete(new DeleteSkillRequest(
-			workspacePath,
-			options.Skill,
-			scope));
-		WriteResult(result);
-		return result.ExitCode;
-	}
-
-	private void WriteResult(SkillOperationResult result) {
-		foreach (string message in result.InfoMessages) {
-			logger.WriteInfo(message);
-		}
-
-		foreach (string message in result.ErrorMessages) {
-			logger.WriteError(message);
-		}
+		return SkillCommandReporting.Report(logger, skillInstallService.Delete(options.Target));
 	}
 }

@@ -12,7 +12,6 @@ using Clio.UserEnvironment;
 using CommandLine;
 using FluentValidation;
 using FluentValidation.Results;
-using MediatR;
 
 namespace Clio.Command;
 
@@ -291,7 +290,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IValidator<LinkCoreSrcOptions> _validator;
 	private readonly ISystemServiceManager _systemServiceManager;
-	private readonly IMediator _mediator;
+	private readonly IUpdateIISSitePhysicalPathHandler _updateIISSitePhysicalPathHandler;
 
 	#endregion
 
@@ -303,14 +302,14 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 		ISettingsRepository settingsRepository,
 		IValidator<LinkCoreSrcOptions> validator,
 		ISystemServiceManager systemServiceManager,
-		IMediator mediator)
+		IUpdateIISSitePhysicalPathHandler updateIISSitePhysicalPathHandler)
 	{
 		_logger = logger;
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_validator = validator;
 		_systemServiceManager = systemServiceManager;
-		_mediator = mediator;
+		_updateIISSitePhysicalPathHandler = updateIISSitePhysicalPathHandler;
 	}
 
 	#endregion
@@ -395,7 +394,7 @@ public class LinkCoreSrcCommand : Command<LinkCoreSrcOptions>
 			coreWebHostPath = Path.GetDirectoryName(coreWebHostPath);
 		}
 
-		(int code, string message) = _mediator.Send(new UpdateIISSitePhysicalPathRequest()
+		(int code, string message) = _updateIISSitePhysicalPathHandler.Handle(new UpdateIISSitePhysicalPathRequest()
 			{
 				Arguments = new Dictionary<string, string>()
 				{

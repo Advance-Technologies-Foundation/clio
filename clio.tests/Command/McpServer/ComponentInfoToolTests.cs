@@ -84,6 +84,11 @@ public sealed class ComponentInfoToolTests {
 	    "componentType": "crt.Gallery",
 	    "category": "interactive",
 	    "description": "Gallery with bulk actions.",
+	    "synonyms": ["carousel", "photo grid"],
+	    "useCases": ["Browse an image collection as cards"],
+	    "whenToUse": "Use for an image or photo gallery.",
+	    "whenNotToUse": "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+	    "appliesToCustomEntities": true,
 	    "container": false,
 	    "parentTypes": ["crt.GridContainer"],
 	    "properties": {
@@ -217,13 +222,41 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Binds the get-component-info argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag. This is the exact JSON->record binding the MCP host performs (the layer the camelCase-vs-kebab bug lived in); direct method calls in the other tests bypass it.")]
+	public void ComponentInfoArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+		// Arrange — the very options the MCP host feeds WithToolsFromAssembly for argument binding.
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act — canonical kebab payload (what get-tool-contract advertises and the schema now emits)
+		// vs the camelCase payload an LLM trusting the old flat schema would send.
+		ComponentInfoArgs kebab = JsonSerializer.Deserialize<ComponentInfoArgs>(
+			"""{"component-type":"crt.NumberInput","schema-type":"mobile","environment-name":"local"}""", options)!;
+		ComponentInfoArgs camel = JsonSerializer.Deserialize<ComponentInfoArgs>(
+			"""{"componentType":"crt.NumberInput"}""", options)!;
+
+		// Assert — kebab binds to the typed parameters; nothing overflows.
+		kebab.ComponentType.Should().Be("crt.NumberInput",
+			because: "the kebab 'component-type' field must bind so detail mode engages — the bug was this never happening");
+		kebab.SchemaType.Should().Be("mobile");
+		kebab.EnvironmentName.Should().Be("local");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+
+		// camelCase does NOT bind to ComponentType; it lands in ExtensionData where GetLegacyAliasError rejects it.
+		camel.ComponentType.Should().BeNull(
+			because: "componentType is not a declared parameter name, so it must not bind — silently binding it is exactly what produced the 199-item list");
+		camel.ExtensionData.Should().ContainKey("componentType",
+			because: "the unbound camelCase spelling must surface in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
 	[Description("Returns grouped component summaries when component-type is omitted.")]
 	public async Task ComponentInfoTool_Should_Return_Grouped_List_When_Component_Type_Is_Omitted() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -249,7 +282,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -275,7 +308,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "tab");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "tab"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -296,7 +329,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "bulkActions");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "bulkActions"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -311,13 +344,90 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Detail mode surfaces the Solution A selection-metadata (synonyms/useCases/whenToUse/whenNotToUse/appliesToCustomEntities) the producer publishes on a component, so the agent can choose between visually similar components instead of guessing.")]
+	public async Task ComponentInfoTool_Should_Surface_Selection_Metadata_In_Detail() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Gallery"));
+
+		// Assert
+		response.Mode.Should().Be("detail",
+			because: "a known component type resolves to a detail response");
+		response.WhenToUse.Should().Be("Use for an image or photo gallery.",
+			because: "the @whenToUse selection guidance must reach the AI consumer (Solution A, ENG-91571)");
+		response.WhenNotToUse.Should().Be("Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-pattern guidance must surface so the agent avoids the wrong component");
+		response.Synonyms.Should().BeEquivalentTo(new[] { "carousel", "photo grid" },
+			because: "published @synonym tags must round-trip onto the detail response");
+		response.UseCases.Should().ContainSingle()
+			.Which.Should().Be("Browse an image collection as cards",
+				because: "published @useCase tags must round-trip onto the detail response");
+		response.AppliesToCustomEntities.Should().BeTrue(
+			because: "the applicability flag must round-trip so the agent knows the component is custom-entity-safe");
+	}
+
+	[Test]
+	[Description("List-mode keyword search matches a component by its published @synonym so an informal prompt term (e.g. 'carousel') discovers crt.Gallery even though neither the type name nor the description contains the word.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_Synonym() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "carousel"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'carousel' is a synonym only crt.Gallery publishes")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "synonym search must surface the component whose @synonym matched");
+	}
+
+	[Test]
+	[Description("List-mode keyword search matches a component by its published @useCase, isolated from the synonym fold: 'cards' appears only inside crt.Gallery.useCases ('Browse an image collection as cards'), so a hit proves the useCases branch — not just the synonym branch — is folded into search.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_UseCase() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "cards" appears ONLY inside crt.Gallery.useCases, isolating the useCases search fold
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "cards"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'cards' is published only in crt.Gallery.useCases")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "useCase search must surface the component whose @useCase matched");
+	}
+
+	[Test]
+	[Description("List-mode search must NOT match a component by its whenNotToUse anti-guidance: a term that appears only in 'do NOT use this when…' must not surface the very component the guidance steers away from (the list response does not even carry whenNotToUse, so such a hit would be misleading).")]
+	public async Task ComponentInfoTool_Should_Not_Match_List_Search_By_WhenNotToUse() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "spreadsheet" appears ONLY inside crt.Gallery.whenNotToUse ("Avoid for spreadsheet rows…")
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "spreadsheet"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		(response.Items ?? []).Select(item => item.ComponentType).Should().NotContain("crt.Gallery",
+			because: "whenNotToUse is anti-guidance — matching it would surface the component its own metadata steers away from");
+	}
+
+	[Test]
 	[Description("Returns nested menu component details so action collections can be expanded safely.")]
 	public async Task ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
 		// Arrange
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.MenuItem");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.MenuItem"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -341,7 +451,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Unknown");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Unknown"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -349,11 +459,77 @@ public sealed class ComponentInfoToolTests {
 		response.Error.Should().Contain("crt.Unknown",
 			because: "the failure should identify the missing component type");
 		response.Items.Should().NotBeNull(
-			because: "the tool should still return available types for discovery");
-		response.Count.Should().Be(6,
-			because: "the fallback list should expose the full catalog when no search filter is applied");
+			because: "the tool should still return closest available types for discovery");
+		response.Count.Should().BeLessThanOrEqualTo(6,
+			because: "a not-found response returns a bounded closest-match shortlist, never more than the catalog holds");
 		response.ResolvedFrom.Should().Be("latest-fallback",
 			because: "the resolver tier marker should still ship with error responses to help diagnosis");
+	}
+
+	[Test]
+	[Description("An unknown component-type returns a bounded closest-match shortlist, never the full catalog — even against a registry much larger than the suggestion cap with no search filter applied.")]
+	public async Task ComponentInfoTool_Should_Return_Bounded_Suggestions_For_Unknown_Type() {
+		// Arrange — a registry far larger than MaxNotFoundSuggestions so the bound is observable
+		// (the shared TestRegistryJson has only 6 entries, fewer than the cap, so it cannot prove it).
+		const string largeRegistryJson = """
+		[
+		  {"componentType":"crt.Widget01","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget02","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget03","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget04","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget05","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget06","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget07","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget08","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget09","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget10","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget11","category":"c","description":"d","container":false,"properties":{}},
+		  {"componentType":"crt.Widget12","category":"c","description":"d","container":false,"properties":{}}
+		]
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(largeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.DoesNotExist"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown component type must not pretend a detail lookup succeeded");
+		response.Error.Should().Contain("crt.DoesNotExist",
+			because: "the failure should identify the missing component type");
+		response.Count.Should().BeGreaterThan(0,
+			because: "a not-found response should still offer the closest known types for discovery");
+		response.Count.Should().BeLessThan(12,
+			because: "suggestions must be a bounded shortlist, never the entire 12-entry catalog (acceptance #2)");
+		response.Items.Should().NotBeNull();
+		response.Items!.Count.Should().Be(response.Count,
+			because: "the item list and the reported count must agree");
+	}
+
+	[Test]
+	[Description("A camelCase parameter spelling captured by the args overflow bag is rejected with a rename hint, instead of silently dropping the value and degrading a detail request into the full catalog — this is the exact failure get-tool-contract advertises as a rejected alias.")]
+	public async Task ComponentInfoTool_Should_Reject_CamelCase_Parameter_Alias() {
+		// Arrange — simulate the deserializer routing a camelCase field into ExtensionData
+		// (the canonical bound parameter is the kebab-case 'component-type').
+		ComponentInfoTool tool = CreateTool();
+		ComponentInfoArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["componentType"] = JsonSerializer.SerializeToElement("crt.TabContainer")
+			}
+		};
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a mis-spelled componentType must not silently fall through to list mode");
+		response.Error.Should().Contain("componentType",
+			because: "the rename hint must name the offending field");
+		response.Error.Should().Contain("component-type",
+			because: "the rename hint must point at the canonical kebab-case parameter");
 	}
 
 	[Test]
@@ -365,7 +541,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act — passing environment-name routes resolution through the cliogate probe stub.
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -377,8 +553,8 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("When the registry client falls back to a different version, the response reports latest-fallback even if the resolver succeeded.")]
-	public async Task ComponentInfoTool_Should_Report_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the platform version is KNOWN but its exact catalog is not published, the response reports 'environment-superset' with a soft caveat — the version is not a mystery but the catalog may be wider than the target.")]
+	public async Task ComponentInfoTool_Should_Report_EnvironmentSuperset_When_Version_Known_But_Catalog_Falls_Back() {
 		// Arrange — resolver says "8.1.5" (environment probe succeeded) but the client falls
 		// back to "latest" because 8.1.5 is not yet published on the CDN.
 		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
@@ -387,15 +563,17 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act — probe resolves 8.1.5 but the client only has "latest" published.
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "the catalog still loads through the fallback chain");
 		response.ResolvedTargetVersion.Should().Be("latest",
-			because: "the response must echo the version actually loaded by the client, not the requested one");
-		response.ResolvedFrom.Should().Be("latest-fallback",
-			because: "AI must see latest-fallback whenever the loaded catalog does not match the target environment");
+			because: "the response must echo the catalog version actually loaded by the client");
+		response.ResolvedFrom.Should().Be("environment-superset",
+			because: "the platform version was known but the exact catalog was absent — the 'environment-superset' tier signals a known-version approximation rather than blind-latest");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "'latest' is a superset of older GA versions and the soft caveat must be surfaced so the agent checks critical components against the actual environment");
 	}
 
 	[Test]
@@ -405,13 +583,28 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.ResolvedFrom.Should().Be("latest-fallback",
 			because: "the fixture resolver reports latest-fallback");
 		response.VersionWarning.Should().Be(ComponentInfoResolution.LatestFallbackWarning,
 			because: "every latest-fallback response must surface the superset caveat so AI verifies the component exists in the target version");
+	}
+
+	[Test]
+	[Description("The latest-fallback warning directs the agent NOT to silently assume the component set, but to inform the user the version is unknown and request confirmation before proceeding (ENG-91134).")]
+	public void LatestFallbackWarning_Should_Direct_Agent_To_Confirm_Unknown_Version_With_User() {
+		string warning = ComponentInfoResolution.LatestFallbackWarning;
+
+		warning.Should().Contain("could not be determined",
+			because: "the agent must learn the target platform version is unknown, not silently assume one");
+		warning.Should().Contain("do NOT silently assume",
+			because: "the AC forbids silently assuming a default component set when the version is unknown");
+		warning.Should().Contain("request explicit",
+			because: "the agent must request the user's confirmation before proceeding against the 'latest' catalog");
+		warning.Should().Contain("superset",
+			because: "the original superset caveat must remain so existing renderer/consumer expectations hold");
 	}
 
 	[Test]
@@ -423,7 +616,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "test-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
 
 		// Assert
 		response.ResolvedFrom.Should().Be("environment",
@@ -433,12 +626,153 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
-	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses and omits it for environment-matched responses.")]
+	[Description("On latest-fallback (version unknown) the response sets the machine-readable requiresVersionConfirmation flag so the client can branch on it instead of parsing the prose warning (ENG-91583 AC#1).")]
+	public async Task ComponentInfoTool_Should_Set_RequiresVersionConfirmation_True_On_Latest_Fallback() {
+		// Arrange — a bare call (no environment, no version) degrades to latest-fallback.
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "a version-less, environment-less call cannot determine the platform version");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "latest-fallback is the hard stop — the machine-readable flag must force the client to confirm the unknown version with the user (AC#1)");
+		response.ResolvedFromReason.Should().Be("no-active-environment",
+			because: "with nothing to probe the reason must classify the gap as no-active-environment, not a transient probe error (AC#3)");
+	}
+
+	[Test]
+	[Description("On the environment tier (version known and catalog matched) requiresVersionConfirmation and resolvedFromReason are omitted — there is no confirmation gate (ENG-91583 AC#4).")]
+	public async Task ComponentInfoTool_Should_Omit_RequiresVersionConfirmation_When_Version_Known() {
+		// Arrange — resolver succeeds and the catalog matches exactly.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment",
+			because: "the probe resolved the version and the catalog matched it");
+		response.RequiresVersionConfirmation.Should().BeNull(
+			because: "a known version carries no confirmation gate, so the flag must be omitted from the wire shape (AC#4)");
+		response.ResolvedFromReason.Should().BeNull(
+			because: "resolvedFromReason is a latest-fallback-only marker and must be absent on the environment tier");
+	}
+
+	[Test]
+	[Description("On environment-superset (version known, catalog approximate) requiresVersionConfirmation stays omitted — it is a soft caveat, not the hard stop (ENG-91583 AC#4).")]
+	public async Task ComponentInfoTool_Should_Omit_RequiresVersionConfirmation_On_Environment_Superset() {
+		// Arrange — probe resolves 8.1.5 but the CDN only has "latest" published.
+		FallbackRegistryClient client = new(TestRegistryJson, fallbackVersion: "latest");
+		ComponentInfoCatalog catalog = new(client);
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog, environmentVersion: "8.1.5");
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("environment-superset",
+			because: "the version was known but the exact catalog was absent");
+		response.RequiresVersionConfirmation.Should().BeNull(
+			because: "environment-superset is a soft caveat — the version is known, so no hard-stop confirmation flag applies (AC#4)");
+		response.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "the soft caveat is still surfaced as prose so the agent verifies critical types");
+	}
+
+	[Test]
+	[Description("A transient probe failure degrades to latest-fallback with resolvedFromReason=probe-error so the agent learns a retry / reachable environment may resolve the version (ENG-91583 AC#3).")]
+	public async Task ComponentInfoTool_Should_Report_Probe_Error_Reason_On_Transient_Failure() {
+		// Arrange — environment supplied, but the resolver reports a transient probe error.
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog,
+			resolver: StubPlatformVersionResolver.LatestFallback(VersionFallbackReason.ProbeError));
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "test-stand"));
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "a probe error still degrades to the latest superset");
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "the hard stop is unchanged regardless of why the version is unknown (AC#4)");
+		response.ResolvedFromReason.Should().Be("probe-error",
+			because: "a thrown probe is transient — the agent must be able to tell it apart from a genuinely undeterminable version and consider a retry (AC#3)");
+	}
+
+	[Test]
+	[Description("LABELLED CASE (version unknown → agent must communicate + request confirmation): end-to-end through the tool, a latest-fallback response carries BOTH the machine-readable hard-stop flag AND the prose directive to inform the user and request confirmation (ENG-91583 AC#5).")]
+	public async Task ComponentInfoTool_VersionUnknown_Should_Force_Communicate_And_Confirm_Signal() {
+		// Arrange — version cannot be determined.
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		// Assert — the enforced (machine-readable) signal …
+		response.RequiresVersionConfirmation.Should().BeTrue(
+			because: "the version-unknown case must raise the enforced confirmation flag the client branches on, not rely on the agent reading prose");
+		// … and the prose directive that spells out the required user communication.
+		response.VersionWarning.Should().NotBeNull(
+			because: "the version-unknown case must also carry the human-readable caveat");
+		response.VersionWarning.Should().Contain("request explicit",
+			because: "the labelled case asserts the agent is told to request the user's explicit confirmation before proceeding");
+		response.VersionWarning.Should().Contain("do NOT silently assume",
+			because: "the labelled case asserts the agent is told not to silently assume a component set when the version is unknown");
+	}
+
+	[Test]
+	[Description("ComponentInfoResolution.RequiresVersionConfirmation is true only on latest-fallback, and GetFallbackReason emits the kebab reason only on that tier (ENG-91583 AC#1/AC#3).")]
+	public void ComponentInfoResolution_Should_Gate_Confirmation_And_Reason_On_Latest_Fallback_Only() {
+		// Arrange / Act / Assert — confirmation gate.
+		ComponentInfoResolution.RequiresVersionConfirmation("latest-fallback").Should().BeTrue(
+			because: "latest-fallback is the only tier where the version is unknown");
+		ComponentInfoResolution.RequiresVersionConfirmation("environment").Should().BeFalse(
+			because: "the environment tier has a known, exact version");
+		ComponentInfoResolution.RequiresVersionConfirmation("environment-superset").Should().BeFalse(
+			because: "environment-superset still has a known version — only a soft caveat applies");
+		ComponentInfoResolution.RequiresVersionConfirmation(null).Should().BeFalse(
+			because: "a missing tier (e.g. mobile with no markers) carries no confirmation gate");
+
+		// reason is emitted only on latest-fallback …
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.ProbeError)
+			.Should().Be("probe-error", because: "transient probe failures must surface as the probe-error token");
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.NoActiveEnvironment)
+			.Should().Be("no-active-environment", because: "a missing environment is a stable, undeterminable reason");
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.CoreVersionUnparseable)
+			.Should().Be("core-version-unparseable", because: "an unparseable core version is a stable reason");
+		// … and suppressed everywhere else (including None on the fallback tier).
+		ComponentInfoResolution.GetFallbackReason("latest-fallback", VersionFallbackReason.None)
+			.Should().BeNull(because: "None carries no diagnostic value and must be omitted even on the fallback tier");
+		ComponentInfoResolution.GetFallbackReason("environment", VersionFallbackReason.ProbeError)
+			.Should().BeNull(because: "resolvedFromReason is a latest-fallback-only marker");
+	}
+
+	[Test]
+	[Description("GetFallbackReason has an explicit arm for every declared VersionFallbackReason, so adding a new reason without a wire-token mapping fails here (via the guard) instead of silently surfacing as resolvedFromReason: null (ENG-91583 AC#3).")]
+	public void GetFallbackReason_Should_Map_Every_Declared_Reason_Without_Throwing() {
+		// Arrange / Act / Assert — every value the enum declares must be handled explicitly; the day a new
+		// reason is added without a token, this iteration trips the _ => throw guard and fails the build.
+		foreach (VersionFallbackReason reason in Enum.GetValues<VersionFallbackReason>()) {
+			Action act = () => ComponentInfoResolution.GetFallbackReason("latest-fallback", reason);
+			act.Should().NotThrow(
+				because: $"every declared VersionFallbackReason needs an explicit GetFallbackReason arm; {reason} fell through to the guard");
+		}
+	}
+
+	[Test]
+	[Description("The pretty renderer prints the versionWarning on a WARNING line for latest-fallback responses, carries the machine-readable markers (requiresVersionConfirmation / resolvedFromReason) for human parity, and omits the warning for environment-matched responses.")]
 	public void ComponentInfoPrettyRenderer_Should_Render_Version_Warning_Only_On_Latest_Fallback() {
 		// Arrange
 		ComponentInfoResponse fallback = new() {
 			Success = true, Mode = "list", Count = 0, Items = [],
-			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback"
+			ResolvedTargetVersion = "latest", ResolvedFrom = "latest-fallback",
+			ResolvedFromReason = "probe-error"
 		};
 		ComponentInfoResponse matched = new() {
 			Success = true, Mode = "list", Count = 0, Items = [],
@@ -454,8 +788,47 @@ public sealed class ComponentInfoToolTests {
 			because: "the pretty surface must flag the latest superset so a human operator sees the same caveat AI gets");
 		fallbackText.Should().Contain("superset",
 			because: "the rendered warning must carry the LatestFallbackWarning text");
+		fallbackText.Should().Contain("requiresVersionConfirmation=true",
+			because: "the pretty WARNING line must reach parity with the JSON hard-stop marker, not only the prose caveat");
+		fallbackText.Should().Contain("resolvedFromReason=probe-error",
+			because: "the transient/stable reason must be visible to a human operator too, not only to JSON consumers");
 		matchedText.Should().NotContain("WARNING:",
 			because: "an environment-matched catalog has no superset risk to flag");
+	}
+
+	[Test]
+	[Description("The pretty renderer emits every one of the six selection-metadata lines (whenToUse / whenNotToUse / synonyms with ', ' join / useCases with '; ' join / appliesToCustomEntities 'no' arm / entityCouplingNote) when the producer published them, so the human --pretty detail view reaches full parity with the MCP JSON, not just the whenToUse line.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_All_Selection_Metadata_Lines() {
+		// Arrange
+		ComponentInfoResponse response = new() {
+			Success = true,
+			Mode = "detail",
+			ComponentType = "crt.Gallery",
+			Description = "Gallery with bulk actions.",
+			WhenToUse = "Use for an image or photo gallery.",
+			WhenNotToUse = "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			Synonyms = ["carousel", "photo grid"],
+			UseCases = ["Browse an image collection as cards", "Showcase a product catalog"],
+			AppliesToCustomEntities = false,
+			EntityCouplingNote = "Bind to a list collection, not a single record."
+		};
+
+		// Act
+		string rendered = ComponentInfoPrettyRenderer.Render(response);
+
+		// Assert
+		rendered.Should().Contain("whenToUse:        Use for an image or photo gallery.",
+			because: "the @whenToUse guidance must reach the human --pretty surface");
+		rendered.Should().Contain("whenNotToUse:     Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-guidance must render so a human reader sees the same caveat AI gets");
+		rendered.Should().Contain("synonyms:         carousel, photo grid",
+			because: "synonyms must render as a ', '-joined list");
+		rendered.Should().Contain("useCases:         Browse an image collection as cards; Showcase a product catalog",
+			because: "useCases must render as a '; '-joined list — a different separator from synonyms");
+		rendered.Should().Contain("appliesToCustomEntities: no",
+			because: "the restrictive appliesToCustomEntities=false value (the whole point of the flag) must render its 'no' arm");
+		rendered.Should().Contain("entityCouplingNote: Bind to a list collection, not a single record.",
+			because: "the entityCouplingNote must surface on the human --pretty view like the JSON response carries it");
 	}
 
 	[Test]
@@ -473,7 +846,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, settingsRepository);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(environmentName: "prod-stand");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "prod-stand"));
 
 		// Assert
 		response.ResolvedTargetVersion.Should().Be("8.2.1",
@@ -491,7 +864,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = CreateTool();
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(version: "not-a-version");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Version: "not-a-version"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -508,7 +881,7 @@ public sealed class ComponentInfoToolTests {
 
 		// Act
 		ComponentInfoResponse response = await tool.GetComponentInfo(
-			environmentName: "test-stand", version: "8.3.3");
+			new ComponentInfoArgs(EnvironmentName: "test-stand", Version: "8.3.3"));
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -548,7 +921,7 @@ public sealed class ComponentInfoToolTests {
 		ComponentInfoTool tool = BuildTool(catalog, mobileCatalog);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo();
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -556,6 +929,368 @@ public sealed class ComponentInfoToolTests {
 		response.Error.Should().NotBeNull();
 		response.Error.Should().Contain("CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
 			because: "the error must point operators at the documented offline override");
+	}
+
+	/// <summary>
+	/// Wrapped registry with a composite-only component (<c>crt.NextSteps</c>), a normal
+	/// component (<c>crt.ExpansionPanel</c>), and a top-level <c>composites</c> array.
+	/// Backs the composites/compositeOnly tool-surface tests.
+	/// </summary>
+	private const string CompositeRegistryJson = """
+	{
+	  "components": [
+	    {
+	      "componentType": "crt.ExpansionPanel",
+	      "category": "containers",
+	      "description": "Collapsible panel.",
+	      "container": true,
+	      "properties": {}
+	    },
+	    {
+	      "componentType": "crt.NextSteps",
+	      "category": "interactive",
+	      "description": "Next steps widget.",
+	      "compositeOnly": true,
+	      "container": false,
+	      "properties": {}
+	    }
+	  ],
+	  "composites": [
+	    {
+	      "caption": "Next steps",
+	      "description": "Expansion panel wrapping a crt.NextSteps list.",
+	      "docs": ["docs/expansion-panel-next-steps.component.md"]
+	    },
+	    {
+	      "caption": "Expanded list",
+	      "description": "Expansion panel pre-filled with a crt.DataGrid and a toolbar.",
+	      "docs": ["docs/expansion-panel-expanded-list.component.md"]
+	    }
+	  ]
+	}
+	""";
+
+	[Test]
+	[Description("List mode surfaces the top-level composites (sorted by caption) alongside components, and flags composite-only components with compositeOnly on their list item.")]
+	public async Task ComponentInfoTool_List_Should_Surface_Composites_And_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		response.Success.Should().BeTrue(because: "a list request against a well-formed registry succeeds");
+		response.Composites.Should().NotBeNull(because: "the registry declares a top-level composites array");
+		// Composites are surfaced sorted by caption.
+		response.Composites!.Select(c => c.Caption).Should().BeEquivalentTo(
+			new[] { "Expanded list", "Next steps" },
+			options => options.WithStrictOrdering(),
+			because: "composites are emitted sorted by caption, so 'Expanded list' precedes 'Next steps'");
+		ComponentInfoListItem nextSteps = response.Items!.Single(i => i.ComponentType == "crt.NextSteps");
+		nextSteps.CompositeOnly.Should().BeTrue(because: "crt.NextSteps has no standalone toolbar presence");
+		response.Items!.Single(i => i.ComponentType == "crt.ExpansionPanel").CompositeOnly.Should().BeNull(
+			because: "a normal standalone component must not carry the flag");
+	}
+
+	[Test]
+	[Description("composite='<caption>' returns a mode:composite detail with the composite's concatenated assembly docs.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Return_Docs() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\n\nAssemble the panel.");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue(because: "the composite caption resolves to a known composite");
+		response.Mode.Should().Be("composite", because: "a composite lookup returns the dedicated composite mode");
+		response.Caption.Should().Be("Next steps", because: "the response echoes the matched composite caption");
+		response.Description.Should().Be("Expansion panel wrapping a crt.NextSteps list.",
+			because: "the composite's registry description is surfaced verbatim");
+		response.Documentation.Should().Be("# Next steps\n\nAssemble the panel.",
+			because: "the composite's declared docs are fetched and concatenated into documentation");
+	}
+
+	[Test]
+	[Description("composite lookup is case-insensitive against the caption.")]
+	public async Task ComponentInfoTool_Composite_Detail_Lookup_Should_Be_Case_Insensitive() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-expanded-list.component.md", "# Expanded list");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "expanded LIST"));
+
+		response.Success.Should().BeTrue(because: "composite lookup is case-insensitive, so 'expanded LIST' matches");
+		response.Caption.Should().Be("Expanded list",
+			because: "the response echoes the canonical caption, not the caller's casing");
+	}
+
+	[Test]
+	[Description("An unknown composite caption returns a failure that lists the known captions and points back to list mode.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Fail_With_Known_Captions_When_Unknown() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Does Not Exist"));
+
+		response.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		response.Mode.Should().Be("composite", because: "the failure stays in composite mode so callers branch on one shape");
+		response.Error.Should().Contain("Next steps").And.Contain("Expanded list",
+			because: "the not-found error must list the known composite captions");
+	}
+
+	[TestCase(true, "composites are a web-only Designer feature",
+		TestName = "CompositeNotFound: mobile empty catalog → web-only hint")]
+	[TestCase(false, "this catalog declares no composites",
+		TestName = "CompositeNotFound: web empty catalog → no-composites message")]
+	[Description("CreateCompositeNotFoundResponse emits flavor-correct empty-catalog guidance: the mobile path gets the web-only hint, the web path gets the no-composites message. Pins each branch of the flattened web/mobile/empty selector so a future refactor can't silently swap or drop one.")]
+	public void ComponentInfoTool_CompositeNotFound_EmptyCatalog_Message_Matches_Flavor(bool isMobile, string expectedFragment) {
+		ComponentInfoResponse response = ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
+			composites: [],
+			caption: "Anything",
+			isMobile: isMobile,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			resolvedFromReason: null);
+
+		response.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		response.Mode.Should().Be("composite", because: "the not-found response stays in composite mode");
+		response.Error.Should().Contain(expectedFragment,
+			because: $"an empty catalog with isMobile={isMobile} must emit the matching guidance");
+	}
+
+	[Test]
+	[Description("Detail of a composite-only component surfaces compositeOnly:true plus the actionable hint steering to the composite. Calls CreateDetailResponse directly (like the snapshot test) so the assertion targets the projection, not the version-resolution pipeline.")]
+	public void ComponentInfoTool_Detail_Should_Surface_CompositeOnly_And_Hint() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.NextSteps",
+			Description = "Next steps widget.",
+			CompositeOnly = true
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeTrue(because: "crt.NextSteps is declared compositeOnly in the registry");
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty(
+			because: "a composite-only component must tell the agent not to insert it standalone");
+		response.CompositeOnlyHint.Should().Contain("composite=",
+			because: "the hint must steer the agent to the composite lookup that assembles this component");
+	}
+
+	[Test]
+	[Description("CreateDetailResponse omits compositeOnly/compositeOnlyHint for a normal standalone component.")]
+	public void ComponentInfoTool_Detail_Should_Omit_CompositeOnly_For_Standalone_Component() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.ExpansionPanel",
+			Description = "Collapsible panel."
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeNull(because: "a normal standalone component must not carry the compositeOnly flag");
+		response.CompositeOnlyHint.Should().BeNull(because: "no hint is emitted when the component is not composite-only");
+	}
+
+	[Test]
+	[Description("Passing both composite and component-type is rejected as mutually exclusive.")]
+	public async Task ComponentInfoTool_Should_Reject_Both_Composite_And_ComponentType() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			new ComponentInfoArgs("crt.NextSteps", Composite: "Next steps"));
+
+		response.Success.Should().BeFalse(because: "composite and component-type cannot be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the guard must name the conflict so the caller knows to pass only one");
+	}
+
+	[Test]
+	[Description("The registry envelope deserialises composites and compositeOnly without leaving any field on an UnmappedExtensions bucket (snapshot-safety for the new producer fields).")]
+	public void ComponentRegistry_Should_Map_Composites_And_CompositeOnly_With_No_Unmapped_Fields() {
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(CompositeRegistryJson));
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		state.Composites.Should().NotBeNull(because: "the envelope declares a top-level composites array");
+		state.Composites!.Select(c => c.Caption).Should().BeEquivalentTo(
+			new[] { "Expanded list", "Next steps" },
+			options => options.WithStrictOrdering(),
+			because: "BuildState orders composites by caption");
+		state.Composites!.Single(c => c.Caption == "Next steps").Docs.Should()
+			.ContainSingle(because: "the 'Next steps' composite declares exactly one doc")
+			.Which.Should().Be("docs/expansion-panel-next-steps.component.md");
+		state.Lookup["crt.NextSteps"].CompositeOnly.Should().BeTrue(
+			because: "crt.NextSteps carries compositeOnly:true in the registry");
+		state.Lookup["crt.ExpansionPanel"].CompositeOnly.Should().BeNull(
+			because: "a standalone component must not carry the flag");
+		foreach (ComponentRegistryEntry entry in state.Entries) {
+			(entry.UnmappedExtensions is null || entry.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"entry '{entry.ComponentType}' must not leave fields unmapped");
+		}
+		foreach (CompositeDefinition composite in state.Composites!) {
+			(composite.UnmappedExtensions is null || composite.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"composite '{composite.Caption}' must not leave fields unmapped");
+		}
+	}
+
+	[Test]
+	[Description("List-mode search filters composites: a non-matching composite is excluded while matching components are still returned.")]
+	public async Task ComponentInfoTool_List_Search_Should_Exclude_NonMatching_Composites() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "next steps"));
+
+		response.Success.Should().BeTrue(because: "a filtered list request still succeeds");
+		response.Composites.Should().NotBeNull(because: "at least one composite matches the search term");
+		response.Composites!.Select(c => c.Caption).Should().Contain("Next steps")
+			.And.NotContain("Expanded list", because: "the search term matches only the 'Next steps' composite");
+		response.Items!.Select(i => i.ComponentType).Should().Contain("crt.NextSteps",
+			because: "matching components must still surface alongside the filtered composites");
+	}
+
+	[Test]
+	[Description("A composite that declares docs which all fail to load yields documentationUnavailable:true — a fetch failure must be distinguishable from a genuine no-docs composite.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Flag_DocumentationUnavailable_When_Docs_Fail() {
+		// The FakeDocsClient is left unseeded, so every doc fetch returns null (all-failed).
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue(because: "a docs fetch failure does not fail the composite lookup itself");
+		response.Mode.Should().Be("composite", because: "the response stays in composite mode");
+		response.Documentation.Should().BeNull(because: "no doc loaded, so there is no concatenated documentation");
+		response.DocumentationUnavailable.Should().BeTrue(
+			because: "the composite declares docs but none loaded — the agent must see a fetch failure, not a no-docs composite");
+	}
+
+	[Test]
+	[Description("Two composites with the same caption fail the catalog build loudly, mirroring the duplicate-componentType guard, instead of silently shadowing one via the caption lookup.")]
+	public void ComponentRegistry_Should_Reject_Duplicate_Composite_Captions() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Dup", "docs": ["docs/a.md"] },
+		    { "caption": "Dup", "docs": ["docs/b.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(json));
+		Action act = () => ComponentInfoCatalog.LoadFromStream(stream);
+		act.Should().Throw<InvalidOperationException>(
+				because: "a duplicate caption would silently shadow one composite, so the build must fail loudly")
+			.WithMessage("*duplicate composite captions*Dup*");
+	}
+
+	[Test]
+	[Description("A composite with a blank caption fails the catalog build loudly — a blank caption has no lookup key, so it must not be silently dropped.")]
+	public void ComponentRegistry_Should_Reject_Blank_Composite_Caption() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "  ", "docs": ["docs/a.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(json));
+		Action act = () => ComponentInfoCatalog.LoadFromStream(stream);
+		act.Should().Throw<InvalidOperationException>(
+				because: "a blank composite caption has no usable lookup key and must surface as a build failure")
+			.WithMessage("*blank caption*");
+	}
+
+	[Test]
+	[Description("compositeOnly and compositeOnlyHint are reachable through the PUBLIC GetComponentInfo detail path, not only via a direct CreateDetailResponse call.")]
+	public async Task ComponentInfoTool_GetComponentInfo_Detail_Should_Surface_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.NextSteps"));
+
+		response.Success.Should().BeTrue(because: "a detail lookup of a known component succeeds");
+		response.Mode.Should().Be("detail", because: "a component-type lookup returns detail mode");
+		response.CompositeOnly.Should().BeTrue(because: "crt.NextSteps is composite-only and the public path must surface it");
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty(because: "the actionable hint must reach the public GetComponentInfo path");
+	}
+
+	[Test]
+	[Description("A composite that declares NO docs yields Documentation null AND documentationUnavailable omitted — the no-docs case must be distinguishable from the docs-declared-but-failed case (documentationUnavailable:true).")]
+	public async Task ComponentInfoTool_Composite_Detail_With_No_Docs_Should_Omit_DocumentationUnavailable() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "No docs", "description": "A composite that ships no docs." }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "No docs"));
+
+		response.Success.Should().BeTrue(because: "a composite with no docs is still a valid composite");
+		response.Mode.Should().Be("composite", because: "the lookup resolved to a known composite");
+		response.Documentation.Should().BeNull(because: "the composite declares no docs, so there is nothing to concatenate");
+		response.DocumentationUnavailable.Should().BeNull(
+			because: "documentationUnavailable flags only a fetch failure on declared docs, not a genuine no-docs composite");
+	}
+
+	[Test]
+	[Description("A composite that declares multiple docs concatenates every successfully-fetched block with the canonical separator, same as component documentation.")]
+	public async Task ComponentInfoTool_Composite_Detail_With_Multiple_Docs_Should_Concatenate() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Multi", "description": "Multi-doc composite.", "docs": ["docs/multi.a.md", "docs/multi.b.md"] }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/multi.a.md", "# Part A")
+			.Seed("latest", "docs/multi.b.md", "# Part B");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Multi"));
+
+		response.Success.Should().BeTrue(because: "both declared docs resolve");
+		response.Documentation.Should().NotBeNullOrEmpty(because: "a multi-doc composite surfaces concatenated documentation");
+		response.Documentation!.Should().Contain("# Part A").And.Contain("# Part B",
+			because: "every successfully-fetched doc block must appear in the concatenation");
+		response.Documentation.Should().Contain("\n\n---\n\n",
+			because: "multiple doc blocks are joined with the canonical separator, same as component docs");
+		response.DocumentationUnavailable.Should().BeNull(
+			because: "all declared docs loaded, so no fetch-failure flag is emitted");
 	}
 
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {
@@ -574,9 +1309,14 @@ public sealed class ComponentInfoToolTests {
 		IComponentInfoCatalog catalog,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentRegistryDocsClient? docsClient = null,
-		string? environmentVersion = null) {
+		string? environmentVersion = null,
+		IPlatformVersionResolver? resolver = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
-		if (environmentVersion is not null) {
+		if (resolver is not null) {
+			// Explicit resolver override — wins over environmentVersion so a test can inject a
+			// specific latest-fallback reason (e.g. probe-error) carried on the resolution.
+			factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		} else if (environmentVersion is not null) {
 			factory.Create(Arg.Any<EnvironmentSettings>())
 				.Returns(StubPlatformVersionResolver.Environment(environmentVersion));
 		}
@@ -596,7 +1336,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(SchemaType: "mobile"));
 
 		response.Success.Should().BeTrue(
 			because: "listing mobile components should succeed when the mobile registry is available");
@@ -615,7 +1355,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Mobile_Detail_When_SchemaType_Is_Mobile_And_Type_Is_Known() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Toggle", schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Toggle", SchemaType: "mobile"));
 
 		response.Success.Should().BeTrue(
 			because: "crt.Toggle exists in the mobile registry");
@@ -630,7 +1370,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Return_Error_When_Web_Only_Type_Is_Requested_From_Mobile_Catalog() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Label", schemaType: "mobile");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Label", SchemaType: "mobile"));
 
 		response.Success.Should().BeFalse(
 			because: "crt.Label is a web component and should not appear in the mobile catalog");
@@ -671,7 +1411,7 @@ public sealed class ComponentInfoToolTests {
 			docs);
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithDocs");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithDocs"));
 
 		// Assert
 		response.Success.Should().BeTrue();
@@ -689,7 +1429,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Omit_Documentation_When_No_Docs_Are_Listed() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.Documentation.Should().BeNull(
 			because: "the curated registry entry has no references.docs[] so the docs client must not be called");
@@ -700,7 +1440,7 @@ public sealed class ComponentInfoToolTests {
 	public async Task ComponentInfoTool_Should_Default_To_Web_Catalog_When_SchemaType_Is_Omitted() {
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.Success.Should().BeTrue(
 			because: "crt.TabContainer exists in the web registry — omitting schema-type should use the web catalog");
@@ -747,7 +1487,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.SimpleButton");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.SimpleButton"));
 
 		// Assert
 		response.Success.Should().BeTrue();
@@ -788,7 +1528,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.Persistent");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Persistent"));
 		GC.Collect();
 		GC.WaitForPendingFinalizers();
 
@@ -834,7 +1574,7 @@ public sealed class ComponentInfoToolTests {
 			new ComponentInfoCatalog(new InMemoryRegistryClient(registryJson)),
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.WithTypes");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.WithTypes"));
 
 		response.Success.Should().BeTrue();
 		response.Mode.Should().Be("detail");
@@ -859,7 +1599,7 @@ public sealed class ComponentInfoToolTests {
 		// crt.TabContainer in TestRegistryJson has no content block at all.
 		ComponentInfoTool tool = CreateTool();
 
-		ComponentInfoResponse response = await tool.GetComponentInfo(componentType: "crt.TabContainer");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TabContainer"));
 
 		response.References.Should().BeNull(
 			because: "components without producer-side type definitions must not carry an empty content node");
@@ -894,7 +1634,7 @@ public sealed class ComponentInfoToolTests {
 			new InMemoryMobileCatalog(TestMobileRegistryJson));
 
 		// Act
-		ComponentInfoResponse response = await tool.GetComponentInfo(search: "selection");
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "selection"));
 
 		// Assert
 		response.Success.Should().BeTrue();
@@ -951,6 +1691,9 @@ public sealed class ComponentInfoToolTests {
 	private sealed class StubPlatformVersionResolver(PlatformVersionResolution resolution) : IPlatformVersionResolver {
 		public static StubPlatformVersionResolver LatestFallback() =>
 			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback));
+
+		public static StubPlatformVersionResolver LatestFallback(VersionFallbackReason reason) =>
+			new(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback) { Reason = reason });
 
 		public static StubPlatformVersionResolver Environment(string semver) =>
 			new(new PlatformVersionResolution(semver, VersionResolutionSource.Environment));

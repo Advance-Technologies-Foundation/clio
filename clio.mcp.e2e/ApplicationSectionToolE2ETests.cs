@@ -10,6 +10,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -80,6 +81,66 @@ public sealed class ApplicationSectionToolE2ETests {
 		response.Error.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
 			because: "the failure should explain that the requested environment is missing");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server with an isolated settings file pointing at an unreachable Creatio URI and verifies that create-app-section returns the classified transport error envelope.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create classifies unreachable environments as transport failures")]
+	[AllureDescription("Registers an environment whose URI cannot be reached, invokes create-app-section, and verifies the structured error-class/section-created/retry-guidance diagnostic fields from ENG-90679.")]
+	public async Task ApplicationSectionCreate_Should_Return_Transport_Classified_Error_For_Unreachable_Environment() {
+		// Arrange
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-transport-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "unreachable-e2e",
+			  "Environments": {
+			    "unreachable-e2e": {
+			      "Uri": "http://127.0.0.1:9",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "unreachable-e2e",
+					["application-code"] = "UsrMissingApp",
+					["caption"] = "Orders",
+					["entity-schema-name"] = "UsrOrders"
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "classified failures must stay inside the structured payload instead of becoming MCP invocation errors");
+		response.Success.Should().BeFalse(
+			because: "create-app-section cannot succeed against an unreachable environment");
+		response.ErrorClass.Should().Be("transport",
+			because: "an unreachable URI means the request never reached Creatio (ENG-90679 classification)");
+		response.SectionCreated.Should().Be("false",
+			because: "no side effect is possible when the server is unreachable");
+		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "the agent needs an actionable next step instead of blind retries");
 	}
 
 	[Test]
@@ -212,6 +273,8 @@ public sealed class ApplicationSectionToolE2ETests {
 		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		string? createdSectionCode = null;
 		try {
 			// Act
@@ -280,6 +343,8 @@ public sealed class ApplicationSectionToolE2ETests {
 		string caption = $"E2E Case {Guid.NewGuid():N}"[..23];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		string? createdSectionCode = null;
 		try {
 			// Act
@@ -328,6 +393,145 @@ public sealed class ApplicationSectionToolE2ETests {
 				}
 			}
 		}
+	}
+
+	[Test]
+	[Description("Creates a section with a non-Latin caption and no explicit code, and verifies create-app-section returns an actionable failure that asks for an explicit code instead of the opaque 'InsertQuery failed.' message. Reproduces ENG-91212: a Cyrillic caption (\"Контакти\") produced an invalid non-ASCII section code that Creatio silently rejected.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create reports an actionable failure for a non-Latin caption without an explicit code")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with a non-Latin caption and no code, and verifies the failure points the caller at an explicit code instead of returning the opaque InsertQuery fallback.")]
+	public async Task ApplicationSectionCreate_WithNonLatinCaptionAndNoCode_Should_Report_Actionable_Failure() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		const string nonLatinCaption = "Контакти";
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["caption"] = nonLatinCaption
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"structured create-app-section failures should stay in the payload, not surface as MCP-level errors. Actual: {DescribeCallResult(callResult)}");
+		response.Success.Should().BeFalse(
+			because: "a non-Latin caption cannot produce a valid section code and must fail when no explicit code is supplied");
+		response.Error.Should().NotBe("InsertQuery failed.",
+			because: "the opaque legacy fallback must be replaced with a diagnostic message");
+		response.Error.Should().MatchRegex(
+			"(?is)(--code|explicit code|no Latin|Latin letters)",
+			because: "the failure should tell the caller to supply an explicit Latin code");
+	}
+
+	[Test]
+	[Description("Reuses a non-existent entity schema and verifies create-app-section returns a descriptive 'does not exist' failure before any insert, instead of the opaque 'InsertQuery failed.' message. Covers ENG-91212: a missing existing-object target must be reported clearly.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create reports a descriptive failure when the existing object does not exist")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with an entity-schema-name that does not exist and verifies the failure explains that the object was not found instead of returning the opaque InsertQuery fallback.")]
+	public async Task ApplicationSectionCreate_WithNonExistentEntity_Should_Report_Descriptive_Failure() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		string missingEntitySchemaName = $"UsrMissing{Guid.NewGuid():N}"[..24];
+		string caption = $"E2E Missing {Guid.NewGuid():N}"[..22];
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["caption"] = caption,
+					["entity-schema-name"] = missingEntitySchemaName
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"structured create-app-section failures should stay in the payload, not surface as MCP-level errors. Actual: {DescribeCallResult(callResult)}");
+		response.Success.Should().BeFalse(
+			because: "create-app-section must fail when the requested existing object does not exist");
+		response.Error.Should().NotBe("InsertQuery failed.",
+			because: "the opaque legacy fallback must be replaced with a diagnostic message");
+		response.Error.Should().MatchRegex(
+			$"(?is)(does not exist|{missingEntitySchemaName})",
+			because: "the failure should explain that the requested object was not found");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server with a small heartbeat interval and verifies that a long-running application tool streams at least one notifications/progress message, so MCP clients reset their inactivity timeout instead of timing out mid-operation (ENG-91274).")]
+	[AllureFeature("mcp-progress-heartbeat")]
+	[AllureTag("mcp-progress-heartbeat")]
+	[AllureName("Application tools stream progress notifications for long-running calls")]
+	[AllureDescription("Forces a tiny CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS, calls list-app-sections through the real clio MCP server with an IProgress sink, and asserts the client observed at least one progress notification — proving the keep-alive path is wired end to end.")]
+	public async Task ApplicationTool_Should_Stream_Progress_For_LongRunning_Call() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		// Force a tiny heartbeat interval so a single backend round-trip deterministically yields a beat.
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		CollectingProgress progress = new();
+
+		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
+		// heartbeat fires while it works even when the application does not exist.
+		CallToolResult callResult = await session.CallToolAsync(
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode
+				}
+			},
+			progress,
+			cancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"a structured list-app-sections result should not surface as an MCP-level error. Actual: {DescribeCallResult(callResult)}");
+		progress.Count.Should().BeGreaterThanOrEqualTo(1,
+			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
+	}
+
+	/// <summary>
+	/// Thread-safe <see cref="IProgress{T}"/> sink that records progress notifications synchronously
+	/// as the SDK delivers them, so the count is deterministic by the time the tool call returns.
+	/// </summary>
+	private sealed class CollectingProgress : IProgress<ProgressNotificationValue> {
+		private int _count;
+
+		public int Count => Volatile.Read(ref _count);
+
+		public void Report(ProgressNotificationValue value) => Interlocked.Increment(ref _count);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

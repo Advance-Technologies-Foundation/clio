@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
+using Clio.Common;
 using Clio.UserEnvironment;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,7 +31,8 @@ public interface IToolCommandResolver {
 /// </summary>
 public class ToolCommandResolver(
 	ISettingsRepository settingsRepository,
-	ISettingsBootstrapService settingsBootstrapService) : IToolCommandResolver {
+	ISettingsBootstrapService settingsBootstrapService,
+	IInteractiveConsole interactiveConsole) : IToolCommandResolver {
 
 	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -46,26 +46,31 @@ public class ToolCommandResolver(
 		ArgumentNullException.ThrowIfNull(options);
 		SettingsBootstrapReport bootstrapReport = settingsBootstrapService.GetReport();
 		EnvironmentSettings settings;
+		// These four throws are EXPECTED, caller-actionable resolution failures (unknown environment,
+		// missing URI, broken settings bootstrap) → EnvironmentResolutionException, which BaseTool maps
+		// to exit code 1. Unexpected failures below (settings.Fill, BindingsModule.Register,
+		// GetRequiredService) stay plain exceptions → exit code -1, so a real DI/wiring bug remains
+		// distinguishable from a bad environment name.
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
-				throw new InvalidOperationException(
+				throw new EnvironmentResolutionException(
 					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
-				throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
+				throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
 			}
 			settings = settingsRepository.FindEnvironment(options.Environment)
-				?? throw new InvalidOperationException(BuildEnvironmentNotFoundError(options.Environment));
-			settings = settings.Fill(options);
-		} 
+				?? throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
+			settings = settings.Fill(options, interactiveConsole);
+		}
 		else {
-			settings = new EnvironmentSettings().Fill(options);
+			settings = new EnvironmentSettings().Fill(options, interactiveConsole);
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
-					throw new InvalidOperationException(
+					throw new EnvironmentResolutionException(
 						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
 				}
-				throw new InvalidOperationException(
+				throw new EnvironmentResolutionException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}
@@ -85,7 +90,7 @@ public class ToolCommandResolver(
 				?? new EnvironmentSettings {
 					Login = "default"
 				};
-		settings = settings.Fill(options);
+		settings = settings.Fill(options, interactiveConsole);
 		IServiceProvider container = new BindingsModule().Register(settings);
 		return container.GetRequiredService<TCommand>();
 	}
@@ -103,20 +108,6 @@ public class ToolCommandResolver(
 		return $"{identity}:{Convert.ToHexString(hash)[..16]}";
 	}
 
-	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) {
-		string availableHint;
-		try {
-			var all = settingsRepository.GetAllEnvironments();
-			var names = all?.Keys?
-				.Where(name => !string.IsNullOrWhiteSpace(name))
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-				.ToList() ?? [];
-			availableHint = names.Count == 0
-				? " No environments are registered. Use `list-environments` or `reg-web-app` to configure one."
-				: $" Available environments: {string.Join(", ", names)}. Call `list-environments` to inspect them.";
-		} catch {
-			availableHint = " Use `list-environments` to see available environments.";
-		}
-		return $"Environment with key '{missingEnvironmentName}' not found." + availableHint;
-	}
+	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) =>
+		EnvironmentNotFoundError.Build(missingEnvironmentName, settingsRepository);
 }

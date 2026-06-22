@@ -13,6 +13,7 @@ namespace Clio.Command;
 #region Class: ListenOptions
 
 [Verb("listen", HelpText = "Subscribe to a websocket")]
+[RequiresPackage("cliogate", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 public class ListenOptions : EnvironmentOptions
 {
 

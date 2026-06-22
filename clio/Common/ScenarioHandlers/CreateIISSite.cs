@@ -1,11 +1,8 @@
 ﻿using System;
 using FluentValidation;
-using MediatR;
 using OneOf;
 using System.IO;
-using System.Net;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 
@@ -81,23 +78,51 @@ namespace Clio.Common.ScenarioHandlers {
         }
     }
     
-    internal class CreateIISSiteRequestHandler : IRequestHandler<CreateIISSiteRequest, OneOf<BaseHandlerResponse, HandlerError>> {
+    /// <summary>
+    /// Handles <see cref="CreateIISSiteRequest"/> scenario steps by creating an IIS
+    /// application pool, website and bindings for a Creatio deployment.
+    /// </summary>
+    public interface ICreateIISSiteHandler {
+
+        /// <summary>
+        /// Validates the request and, when valid, creates the IIS application pool and
+        /// website described by the request <c>Arguments</c> (site name, port, source and
+        /// destination directories, and the .NET Framework flag).
+        /// </summary>
+        /// <param name="request">The request carrying the IIS site creation arguments.</param>
+        /// <returns>
+        /// A <see cref="OneOf{T0, T1}"/> containing a <see cref="BaseHandlerResponse"/>
+        /// (a <see cref="CreateIISSiteResponse"/>) on success or a <see cref="HandlerError"/> on failure.
+        /// </returns>
+        /// <exception cref="FluentValidation.ValidationException">
+        /// Thrown when the request fails validation (for example, missing required arguments
+        /// or non-existent source/destination directories).
+        /// </exception>
+        Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request);
+    }
+
+    internal class CreateIISSiteRequestHandler : ICreateIISSiteHandler {
         private readonly IProcessExecutor _processExecutor;
         private readonly ILogger _logger;
+        private readonly IValidator<CreateIISSiteRequest> _validator;
 
-        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger) {
+        public CreateIISSiteRequestHandler(IProcessExecutor processExecutor, ILogger logger, IValidator<CreateIISSiteRequest> validator) {
             _processExecutor = processExecutor;
             _logger = logger;
+            _validator = validator;
         }
 
 
-        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request, CancellationToken cancellationToken) {
-            
-            string siteName = request.Arguments["siteName"].Trim();
-            int sitePort = int.Parse(request.Arguments["port"].Trim());
-            string sourceDirectory = request.Arguments["sourceDirectory"];
-            string destinationFolder = Path.Combine(request.Arguments["destinationDirectory"].Trim(), siteName);
-            bool isNetFramework = bool.Parse(request.Arguments["isNetFramework"]);
+        /// <inheritdoc />
+        public async Task<OneOf<BaseHandlerResponse, HandlerError>> Handle(CreateIISSiteRequest request) {
+
+            _validator.ValidateAndThrow(request);
+
+            string siteName = request.GetRequired("siteName").Trim();
+            int sitePort = request.GetRequired<int>("port");
+            string sourceDirectory = request.GetRequired("sourceDirectory");
+            string destinationFolder = Path.Combine(request.GetRequired("destinationDirectory").Trim(), siteName);
+            bool isNetFramework = request.GetRequired<bool>("isNetFramework");
             
             StringBuilder sb = new();
 

@@ -329,9 +329,84 @@ public sealed class DataForgeToolE2ETests {
 	}
 
 	private static TResponse DeserializeStructuredContent<TResponse>(CallToolResult callResult) {
-		string structuredContentJson = JsonSerializer.Serialize(callResult.StructuredContent);
-		return JsonSerializer.Deserialize<TResponse>(structuredContentJson)
-			?? throw new InvalidOperationException("MCP tool did not return a structured response payload.");
+		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredElement) &&
+			TryParseDataForgeResponse<TResponse>(structuredElement, out TResponse? structuredResult)) {
+			return structuredResult!;
+		}
+
+		if (TrySerializeToJsonElement(callResult.Content, out JsonElement contentElement) &&
+			TryParseDataForgeResponse<TResponse>(contentElement, out TResponse? contentResult)) {
+			return contentResult!;
+		}
+
+		if (callResult.IsError == true) {
+			string errorText = string.Join(
+				Environment.NewLine,
+				(callResult.Content ?? []).Select(c => c.ToString()));
+			throw new InvalidOperationException(
+				$"MCP tool returned an invocation error: {errorText}");
+		}
+
+		throw new InvalidOperationException("MCP tool did not return a structured response payload.");
+	}
+
+	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {
+		if (value is null) {
+			element = default;
+			return false;
+		}
+		element = JsonSerializer.SerializeToElement(value);
+		return true;
+	}
+
+	private static bool TryParseDataForgeResponse<TResponse>(JsonElement element, out TResponse? result) {
+		if (element.ValueKind == JsonValueKind.Array) {
+			foreach (JsonElement item in element.EnumerateArray()) {
+				if (TryGetTextPayload(item, out string? text) &&
+					!string.IsNullOrWhiteSpace(text) &&
+					TryDeserializeJson<TResponse>(text, out result)) {
+					return true;
+				}
+			}
+		}
+
+		if (element.ValueKind == JsonValueKind.String) {
+			string? textPayload = element.GetString();
+			if (!string.IsNullOrWhiteSpace(textPayload) &&
+				TryDeserializeJson<TResponse>(textPayload, out result)) {
+				return true;
+			}
+		}
+
+		if (TryDeserializeJson<TResponse>(element.GetRawText(), out result)) {
+			return true;
+		}
+
+		result = default;
+		return false;
+	}
+
+	private static bool TryGetTextPayload(JsonElement element, out string? textPayload) {
+		textPayload = null;
+		if (element.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (element.TryGetProperty("text", out JsonElement textElement) &&
+			textElement.ValueKind == JsonValueKind.String) {
+			textPayload = textElement.GetString();
+			return true;
+		}
+		return false;
+	}
+
+	private static bool TryDeserializeJson<TResponse>(string json, out TResponse? result) {
+		try {
+			result = JsonSerializer.Deserialize<TResponse>(json);
+			return result is not null;
+		} catch (JsonException) {
+			result = default;
+			return false;
+		}
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(

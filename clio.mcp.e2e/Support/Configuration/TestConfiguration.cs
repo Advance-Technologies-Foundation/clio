@@ -111,7 +111,8 @@ internal static class TestConfiguration {
 	}
 
 	private static string? ResolveRepositoryProcessPath(string repositoryRoot) {
-		string repositoryOutputDirectory = Path.Combine(repositoryRoot, "clio", "bin", "Debug", "net10.0");
+		(string configuration, string targetFramework) = ResolveCurrentBuildOutputLayout();
+		string repositoryOutputDirectory = Path.Combine(repositoryRoot, "clio", "bin", configuration, targetFramework);
 		string repositoryExecutablePath = Path.Combine(
 			repositoryOutputDirectory,
 			OperatingSystem.IsWindows() ? "clio.exe" : "clio.dll");
@@ -121,6 +122,23 @@ internal static class TestConfiguration {
 
 		string repositoryAssemblyPath = Path.Combine(repositoryOutputDirectory, "clio.dll");
 		return File.Exists(repositoryAssemblyPath) ? repositoryAssemblyPath : null;
+	}
+
+	/// <summary>
+	/// Derives the build configuration and target framework moniker from the running test
+	/// assembly directory (for example <c>.../clio.mcp.e2e/bin/Debug/net8.0</c>) so the sibling
+	/// clio output directory is resolved for the framework actually under test. Hardcoding a single
+	/// moniker (previously <c>net10.0</c>) broke the multi-targeted suite when CI runs net8.0.
+	/// </summary>
+	private static (string Configuration, string TargetFramework) ResolveCurrentBuildOutputLayout() {
+		string assemblyDirectory = Path.GetDirectoryName(typeof(TestConfiguration).Assembly.Location) ?? string.Empty;
+		DirectoryInfo? targetFrameworkDirectory = string.IsNullOrWhiteSpace(assemblyDirectory)
+			? null
+			: new DirectoryInfo(assemblyDirectory);
+
+		string targetFramework = targetFrameworkDirectory?.Name is { Length: > 0 } tfm ? tfm : "net8.0";
+		string configuration = targetFrameworkDirectory?.Parent?.Name is { Length: > 0 } cfg ? cfg : "Debug";
+		return (configuration, targetFramework);
 	}
 
 	private static bool IsRepositoryRoot(string directoryPath) {

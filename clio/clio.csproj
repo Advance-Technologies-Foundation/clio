@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFrameworks>net10.0;net8.0</TargetFrameworks>
+		<!-- net10.0 is only restored/built when the SDK supports it; SDK 9.x agents (CI) restore net8.0 only. -->
+		<TargetFrameworks>net8.0</TargetFrameworks>
+		<TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(NETCoreSdkVersion)', '10.0'))">net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
@@ -9,7 +11,7 @@
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
 		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.46</AssemblyVersion>
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.58</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -131,7 +133,6 @@
 	<ItemGroup Label="Centrally Managed Package Versions">
 		<PackageReference Include="creatio.client" />
 		<PackageReference Include="ATF.Repository" />
-		<PackageReference Include="MediatR" />
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
@@ -144,6 +145,7 @@
 		<PackageReference Include="JsonhCs" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
 		<PackageReference Include="Newtonsoft.Json" />
+		<PackageReference Include="Acornima" />
 		<PackageReference Include="FluentValidation" />
 		<PackageReference Include="ConsoleTables" />
 		<PackageReference Include="Spectre.Console" />
@@ -159,6 +161,7 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
 		<PackageReference Include="Microsoft.Data.SqlClient" />
 	</ItemGroup>
 

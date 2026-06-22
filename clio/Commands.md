@@ -31,6 +31,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apps-list"></a>
 <a id="lia"></a>
 - [`list-apps`](docs/commands/list-apps.md) - List installed applications, `get-app-list`, `app-list`, `apps`, `apps-list`, `lia`
+<a id="find-app"></a>
+- [`find-app`](docs/commands/find-app.md) - Find installed applications and their sections by name, code, or pattern
 <a id="create-app-section"></a>
 - [`create-app-section`](docs/commands/create-app-section.md) - Create a section inside an existing installed application
 <a id="update-app-section"></a>
@@ -69,7 +71,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`install-application`](docs/commands/install-application.md) - Install an application package into Creatio, `install-app`, `push-app`
 <a id="open-web-app"></a>
 <a id="open"></a>
-- [`open-web-app`](docs/commands/open-web-app.md) - Open a registered Creatio environment in the browser, `open`
+- [`open-web-app`](docs/commands/open-web-app.md) - Open a registered Creatio environment in the browser (use `--authenticated` to land already signed in, no login form), `open`
+<a id="get-browser-session"></a>
+<a id="get-session"></a>
+- [`get-browser-session`](docs/commands/get-browser-session.md) - Obtain an authenticated Creatio browser session (Playwright storageState), `get-session`
+<a id="clear-browser-session"></a>
+<a id="clear-session"></a>
+- [`clear-browser-session`](docs/commands/clear-browser-session.md) - Delete the cached Creatio browser session, `clear-session`
 <a id="ping-app"></a>
 <a id="ping"></a>
 - [`ping-app`](docs/commands/ping-app.md) - Verify connectivity to a Creatio environment, `ping`
@@ -84,6 +92,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-feature"></a>
 <a id="feature"></a>
 - [`set-feature`](docs/commands/set-feature.md) - Set feature state, `feature`
+<a id="set-file-content-storage-connection-string"></a>
+<a id="set-fcs-connection-string"></a>
+- [`set-file-content-storage-connection-string`](docs/commands/set-file-content-storage-connection-string.md) - Set the connection string of a file content storage, `set-fcs-connection-string`
 <a id="set-syssetting"></a>
 <a id="get-syssetting"></a>
 <a id="ss"></a>
@@ -116,6 +127,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Package Management
 
+<a id="add-package-dependency"></a>
+<a id="add-pkg-dependency"></a>
+<a id="add-pkg-dep"></a>
+- [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>
@@ -207,6 +222,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
 - [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic updates on startup
+<a id="experimental"></a>
+<a id="exp"></a>
+- [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
 
 <a id="update-cli"></a>
 <a id="update"></a>
@@ -340,7 +358,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
-- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema
+- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (omit `--package` for the merged all-packages view, including custom columns from other packages)
+<a id="get-process-signature"></a>
+<a id="gps"></a>
+- [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
 <a id="get-schema"></a>
 <a id="schema-get"></a>
 - [`get-schema`](docs/commands/get-schema.md) - Read body and metadata of a C# source-code schema on a remote Creatio environment, `schema-get`
@@ -396,7 +417,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
@@ -522,8 +543,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
-<a id="delete-skill"></a>
-- [`delete-skill`](docs/commands/delete-skill.md) - Delete a managed skill
+<a id="delete-adac"></a>
+- [`delete-adac`](docs/commands/delete-adac.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
 <a id="far"></a>
 <a id="gui"></a>
@@ -533,16 +554,31 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
-<a id="install-skills"></a>
-- [`install-skills`](docs/commands/install-skills.md) - Install managed skills from a repository
+<a id="install-adac"></a>
+- [`install-adac`](docs/commands/install-adac.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
-<a id="update-skill"></a>
-- [`update-skill`](docs/commands/update-skill.md) - Update managed skills from a repository
+<a id="update-adac"></a>
+- [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
+
+## Identity & Authentication
+
+<a id="get-identity-assertion"></a>
+<a id="identity-assertion"></a>
+- [`get-identity-assertion`](docs/commands/get-identity-assertion.md) - Issue a short-lived signed identity assertion (JWT) for the current user, `identity-assertion`
+<a id="get-identity-public-jwk"></a>
+<a id="identity-public-jwk"></a>
+- [`get-identity-public-jwk`](docs/commands/get-identity-public-jwk.md) - Get the instance public key (JWK) for Identity Service V3, `identity-public-jwk`
+<a id="regenerate-identity-signing-key"></a>
+<a id="identity-regenerate-key"></a>
+- [`regenerate-identity-signing-key`](docs/commands/regenerate-identity-signing-key.md) - Regenerate the instance identity-assertion signing key pair, `identity-regenerate-key`
+<a id="check-auth-code-flow"></a>
+<a id="auth-code-flow"></a>
+- [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
 
 ## General
 
@@ -554,6 +590,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-component-info"></a>
 <a id="component-info"></a>
 - [`get-component-info`](docs/commands/get-component-info.md) - Get curated Freedom UI component metadata by component type or list the catalog, `component-info`
+<a id="get-user-culture"></a>
+<a id="profile-language"></a>
+- [`get-user-culture`](docs/commands/get-user-culture.md) - Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, `profile-language`
 <a id="healthcheck"></a>
 <a id="hc"></a>
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`

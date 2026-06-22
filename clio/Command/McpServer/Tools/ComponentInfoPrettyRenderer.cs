@@ -23,7 +23,9 @@ public static class ComponentInfoPrettyRenderer {
 
 		AppendHeader(sb, response);
 
-		if (string.Equals(response.Mode, "detail", System.StringComparison.OrdinalIgnoreCase)
+		if (string.Equals(response.Mode, "composite", System.StringComparison.OrdinalIgnoreCase)) {
+			AppendComposite(sb, response);
+		} else if (string.Equals(response.Mode, "detail", System.StringComparison.OrdinalIgnoreCase)
 			&& !string.IsNullOrWhiteSpace(response.ComponentType)) {
 			AppendDetail(sb, response);
 		} else {
@@ -41,25 +43,90 @@ public static class ComponentInfoPrettyRenderer {
 			.Append(")")
 			.AppendLine();
 		if (!string.IsNullOrWhiteSpace(response.VersionWarning)) {
-			sb.Append("WARNING: ").AppendLine(response.VersionWarning);
+			sb.Append("WARNING: ").Append(response.VersionWarning);
+			// Surface the machine-readable markers the JSON consumers receive so the human --pretty view
+			// reaches parity: on latest-fallback the version is unknown (hard stop), and resolvedFromReason
+			// tells the operator whether it is worth a retry. Omitted on environment-superset (soft caveat,
+			// version known) and environment (exact match), exactly like the wire shape.
+			if (response.RequiresVersionConfirmation == true) {
+				sb.Append(" [requiresVersionConfirmation=true");
+				if (!string.IsNullOrWhiteSpace(response.ResolvedFromReason)) {
+					sb.Append("; resolvedFromReason=").Append(response.ResolvedFromReason);
+				}
+				sb.Append(']');
+			}
+			sb.AppendLine();
 		}
 	}
 
 	private static void AppendList(StringBuilder sb, ComponentInfoResponse response) {
-		if (response.Items is null || response.Items.Count == 0) {
+		bool hasItems = response.Items is { Count: > 0 };
+		bool hasComposites = response.Composites is { Count: > 0 };
+		if (!hasItems && !hasComposites) {
 			sb.AppendLine().AppendLine("(no components)");
 			return;
 		}
 
-		sb.AppendLine();
-		int width = response.Items.Max(item => item.ComponentType.Length);
-		foreach (ComponentInfoListItem item in response.Items) {
-			sb.Append("  ").Append(item.ComponentType.PadRight(width));
-			if (!string.IsNullOrWhiteSpace(item.Description)) {
-				sb.Append("  ").Append(item.Description);
+		if (hasItems) {
+			sb.AppendLine();
+			int width = response.Items!.Max(item => item.ComponentType.Length);
+			foreach (ComponentInfoListItem item in response.Items) {
+				sb.Append("  ").Append(item.ComponentType.PadRight(width));
+				if (!string.IsNullOrWhiteSpace(item.Description)) {
+					sb.Append("  ").Append(item.Description);
+				}
+				if (item.CompositeOnly == true) {
+					sb.Append("  (composite-only)");
+				}
+				sb.AppendLine();
+			}
+		}
+
+		AppendComposites(sb, response.Composites);
+	}
+
+	/// <summary>
+	/// Renders the list-mode <c>composites:</c> section — the pre-built Designer elements
+	/// (e.g. "Expanded list", "Next steps") that have no <c>componentType</c> of their own.
+	/// Without this, list-mode <c>--pretty</c> would silently hide every composite the JSON
+	/// surface returns. Fetch a composite's assembly docs with <c>--composite "&lt;caption&gt;"</c>.
+	/// </summary>
+	private static void AppendComposites(StringBuilder sb, IReadOnlyList<CompositeSummary>? composites) {
+		if (composites is null || composites.Count == 0) {
+			return;
+		}
+		sb.AppendLine().AppendLine("composites:");
+		int width = composites.Max(composite => composite.Caption.Length);
+		foreach (CompositeSummary composite in composites) {
+			sb.Append("  ").Append(composite.Caption.PadRight(width));
+			if (!string.IsNullOrWhiteSpace(composite.Description)) {
+				sb.Append("  ").Append(composite.Description);
 			}
 			sb.AppendLine();
 		}
+	}
+
+	/// <summary>
+	/// Renders a <c>mode: "composite"</c> detail response: the composite's caption,
+	/// description, and concatenated assembly documentation. When the composite declares
+	/// docs but none could be loaded (transient CDN/cache failure) the response carries
+	/// <c>documentationUnavailable</c>; surface that here so the human view reaches parity
+	/// with the JSON consumers. On a not-found composite the caption is empty (the error
+	/// line is already printed by <see cref="Render"/>), so nothing is emitted here.
+	/// </summary>
+	private static void AppendComposite(StringBuilder sb, ComponentInfoResponse response) {
+		if (string.IsNullOrWhiteSpace(response.Caption)) {
+			return;
+		}
+		sb.AppendLine();
+		sb.Append("composite:        ").AppendLine(response.Caption);
+		if (!string.IsNullOrWhiteSpace(response.Description)) {
+			sb.Append("description:      ").AppendLine(response.Description);
+		}
+		if (response.DocumentationUnavailable == true) {
+			sb.AppendLine().AppendLine("(documentation is declared for this composite but could not be loaded)");
+		}
+		AppendDocumentation(sb, response.Documentation);
 	}
 
 	private static void AppendDetail(StringBuilder sb, ComponentInfoResponse response) {
@@ -67,6 +134,13 @@ public static class ComponentInfoPrettyRenderer {
 		sb.Append("componentType:    ").AppendLine(response.ComponentType);
 		if (!string.IsNullOrWhiteSpace(response.Description)) {
 			sb.Append("description:      ").AppendLine(response.Description);
+		}
+		AppendSelectionMetadata(sb, response);
+		if (response.CompositeOnly == true) {
+			sb.Append("compositeOnly:    ").AppendLine("yes");
+			if (!string.IsNullOrWhiteSpace(response.CompositeOnlyHint)) {
+				sb.Append("compositeOnlyHint: ").AppendLine(response.CompositeOnlyHint);
+			}
 		}
 		if (response.Container is { } container) {
 			sb.Append("container:        ").AppendLine(container ? "yes" : "no");
@@ -83,6 +157,33 @@ public static class ComponentInfoPrettyRenderer {
 		AppendTypeDefinitions(sb, response.References?.TypeDefinitions);
 		AppendExample(sb, response.Example);
 		AppendDocumentation(sb, response.Documentation);
+	}
+
+	/// <summary>
+	/// Renders the Solution A selection-metadata block (whenToUse / whenNotToUse /
+	/// synonyms / useCases / applicability) directly under the description so the human
+	/// <c>--pretty</c> view reaches parity with the MCP JSON. Each line is omitted when
+	/// the producer published no value for that field.
+	/// </summary>
+	private static void AppendSelectionMetadata(StringBuilder sb, ComponentInfoResponse response) {
+		if (!string.IsNullOrWhiteSpace(response.WhenToUse)) {
+			sb.Append("whenToUse:        ").AppendLine(response.WhenToUse);
+		}
+		if (!string.IsNullOrWhiteSpace(response.WhenNotToUse)) {
+			sb.Append("whenNotToUse:     ").AppendLine(response.WhenNotToUse);
+		}
+		if (response.Synonyms is { Count: > 0 } synonyms) {
+			sb.Append("synonyms:         ").AppendLine(string.Join(", ", synonyms));
+		}
+		if (response.UseCases is { Count: > 0 } useCases) {
+			sb.Append("useCases:         ").AppendLine(string.Join("; ", useCases));
+		}
+		if (response.AppliesToCustomEntities is { } appliesToCustomEntities) {
+			sb.Append("appliesToCustomEntities: ").AppendLine(appliesToCustomEntities ? "yes" : "no");
+		}
+		if (!string.IsNullOrWhiteSpace(response.EntityCouplingNote)) {
+			sb.Append("entityCouplingNote: ").AppendLine(response.EntityCouplingNote);
+		}
 	}
 
 	/// <summary>

@@ -171,7 +171,7 @@ namespace Clio
 		//[Newtonsoft.Json.JsonIgnore]
 		public string EnvironmentPath { get; set; } = string.Empty;
 
-		public EnvironmentSettings Fill(EnvironmentOptions options) {
+		public EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
@@ -183,57 +183,72 @@ namespace Clio
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
-			if (this.Safe.HasValue && this.Safe.Value) {
-				Console.WriteLine($"You try to apply the action on the production site {this.Uri}");
-				Console.Write($"Do you want to continue? [Y/N]:");
-				var answer = Console.ReadKey();
-				Console.WriteLine();
-				if (answer.KeyChar != 'y' && answer.KeyChar != 'Y') {
-					Console.WriteLine("Operation was canceled by user");
-					System.Environment.Exit(1);
-				}
+			if (this.Safe.HasValue && this.Safe.Value
+				&& !interactiveConsole.Prompt($"You try to apply the action on the production site {this.Uri}")) {
+				// Non-interactive hosts (MCP stdio / CI) fail closed here instead of blocking on
+				// Console.ReadKey() or killing the process via Environment.Exit(). A dedicated
+				// exception lets the MCP BaseTool convert this into a structured error.
+				throw new SafeEnvironmentConfirmationRequiredException(this.Uri);
 			}
 			result.WorkspacePathes = string.IsNullOrEmpty(options.WorkspacePathes) ? this.WorkspacePathes : options.WorkspacePathes;
 
-			bool isUri = System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri);
-			if (isUri) {
+			ApplyDbServerOptions(result, options);
+			return result;
+		}
 
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+		private static void ApplyDbServerOptions(EnvironmentSettings result, EnvironmentOptions options) {
+			if (System.Uri.TryCreate(options.DbServerUri, UriKind.Absolute, out Uri uri)) {
+				result.DbServer ??= new DbServer();
 				result.DbServer.Uri = uri;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbWorknigFolder)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.WorkingFolder = options.DbWorknigFolder;
-
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbUser)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Login = options.DbUser;
 			}
-
 			if (!string.IsNullOrWhiteSpace(options.DbPassword)) {
-				if (result.DbServer == null) {
-					result.DbServer = new DbServer();
-				}
+				result.DbServer ??= new DbServer();
 				result.DbServer.Password = options.DbPassword;
 			}
-
 			if (!string.IsNullOrEmpty(options.BackUpFilePath)) {
 				result.BackupFilePath = options.BackUpFilePath;
 			}
 			if (!string.IsNullOrEmpty(options.DbName)) {
 				result.DbName = options.DbName;
 			}
-			return result;
 		}
+	}
+
+	/// <summary>
+	/// Product telemetry upload configuration stored under the "telemetry" settings key.
+	/// </summary>
+	public class TelemetrySettings
+	{
+		/// <summary>
+		/// Master switch for product telemetry uploads. <c>false</c> disables uploading entirely —
+		/// even with the shipped default endpoint and granted consent; <c>null</c> (the key absent,
+		/// the default) leaves uploading enabled. Overridden by the <c>CLIO_TELEMETRY_ENABLED</c>
+		/// environment variable.
+		/// </summary>
+		[JsonProperty("enabled")]
+		public bool? Enabled { get; set; }
+
+		/// <summary>
+		/// Full OTLP/HTTP logs endpoint URL (for example https://telemetry.example.com/v1/logs);
+		/// must be https, or http only for a loopback host. Overrides the shipped production default;
+		/// when empty the default endpoint is used unless uploading is disabled via <see cref="Enabled"/>.
+		/// </summary>
+		[JsonProperty("endpoint")]
+		public string Endpoint { get; set; }
+
+		/// <summary>
+		/// Optional public ingest key sent as the X-Ingest-Key request header.
+		/// </summary>
+		[JsonProperty("ingest-key")]
+		public string IngestKey { get; set; }
 	}
 
 	public class Settings
@@ -248,6 +263,7 @@ namespace Clio
 
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
+			Features = new Dictionary<string, bool>();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -318,7 +334,13 @@ namespace Clio
 
 		[JsonProperty("defaultRedis")]
 		public string DefaultRedisServerName { get; set; }
-		
+
+		/// <summary>
+		/// Gets or sets the product telemetry upload configuration.
+		/// </summary>
+		[JsonProperty("telemetry")]
+		public TelemetrySettings Telemetry { get; set; }
+
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
@@ -344,6 +366,17 @@ namespace Clio
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
 		}
+
+		/// <summary>
+		/// Feature flags keyed by feature name. A missing key or a <c>false</c> value means the
+		/// feature is disabled. Defaults to an empty dictionary so a missing "features" key in the
+		/// settings file deserializes to an empty collection rather than <c>null</c>.
+		/// </summary>
+		[JsonProperty("features")]
+		public Dictionary<string, bool> Features {
+			get; set;
+		}
+
 		public string RemoteArtefactServerPath
 		{
 			get;
@@ -358,6 +391,10 @@ namespace Clio
 		private static readonly object SchemaFileLock = new ();
 
 		private Settings _settings = new ();
+		// Used by GetEnvironment to confirm Safe-environment operations without deadlocking a
+		// non-interactive host. Null only for the internal/direct (non-DI) construction sites that
+		// never call GetEnvironment; those fall back to RealInteractiveConsole.Shared.
+		private readonly IInteractiveConsole _interactiveConsole;
 		public static string AppSettingsFolderPath {
 			get {
 				// CLIO_HOME, when set, overrides the entire root verbatim. This is the single
@@ -389,7 +426,8 @@ namespace Clio
 
 		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
-		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null) {
+		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null, IInteractiveConsole interactiveConsole = null) {
+	_interactiveConsole = interactiveConsole;
 	if (fileSystem != null) {
 		FileSystem = fileSystem;
 	}
@@ -463,6 +501,29 @@ namespace Clio
 		private void EnsureSettingsCollections() {
 			_settings ??= new Settings();
 			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
+			_settings.Features ??= new Dictionary<string, bool>();
+			EnsureFeaturesComparer();
+		}
+
+		// Feature keys are compared case-insensitively (see ISettingsRepository.IsFeatureEnabled).
+		// JSON deserialization hands back an ordinal-comparer dictionary, so rebuild it once with an
+		// OrdinalIgnoreCase comparer. This makes IsFeatureEnabled/SetFeature/GetFeatures all
+		// case-insensitive in one place; the convention is: the command writes the key as-given and
+		// lookups never depend on casing. The rebuild is idempotent and skipped once applied.
+		private void EnsureFeaturesComparer() {
+			if (ReferenceEquals(_settings.Features.Comparer, StringComparer.OrdinalIgnoreCase)) {
+				return;
+			}
+			// Rebuild manually rather than via the Dictionary(IDictionary, IEqualityComparer) copy-constructor:
+			// that constructor THROWS ArgumentException if the source (e.g. a hand-edited appsettings.json)
+			// contains two keys differing only by case. A manual last-wins assignment never throws.
+			Dictionary<string, bool> rebuilt = new(StringComparer.OrdinalIgnoreCase);
+			// On a case-collision the last-enumerated value wins; this is acceptable because such a
+			// state only arises from a manual appsettings.json edit (the command never writes colliding keys).
+			foreach (KeyValuePair<string, bool> kvp in _settings.Features) {
+				rebuilt[kvp.Key] = kvp.Value;
+			}
+			_settings.Features = rebuilt;
 		}
 
 		private void Save() {
@@ -553,22 +614,25 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-			var settingsRepository = new SettingsRepository();
+			// Resolve against this repository's own settings (loaded from the filesystem it was
+			// constructed with). Earlier this method built a new SettingsRepository(), which re-reads
+			// the shared static FileSystem and made the result depend on global state — a race that
+			// broke parallel unit tests.
 			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
 			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
 			EnvironmentSettings envSettings;
 			if (hasExplicitEnvironment) {
-				envSettings = settingsRepository.FindEnvironment(options.Environment);
+				envSettings = FindEnvironment(options.Environment);
 			} else if (hasDirectUri) {
 				envSettings = null;
 			} else {
-				envSettings = settingsRepository.FindEnvironment(null);
+				envSettings = FindEnvironment(null);
 			}
 			if (envSettings == null) {
-				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
+				var envName = options.Environment ?? GetDefaultEnvironmentName();
+				if (!IsEnvironmentExists(envName) && !hasDirectUri) {
 					if (string.IsNullOrWhiteSpace(envName)) {
-						var allEnvs = settingsRepository.GetAllEnvironments();
+						var allEnvs = GetAllEnvironments();
 						if (allEnvs.Count > 0) {
 							string envList = string.Join(", ", allEnvs.Keys);
 							throw new Exception(
@@ -584,7 +648,7 @@ namespace Clio
 					envSettings = new EnvironmentSettings();
 				}
 			}
-			EnvironmentSettings result = envSettings.Fill(options);
+			EnvironmentSettings result = envSettings.Fill(options, _interactiveConsole ?? RealInteractiveConsole.Shared);
 			return result;
 		}
 
@@ -619,6 +683,28 @@ namespace Clio
 		public void SetAutoupdate(bool value) {
 			_settings.Autoupdate = value;
 			Save();
+		}
+
+		public bool IsFeatureEnabled(string featureName) {
+			if (string.IsNullOrWhiteSpace(featureName)) {
+				return false;
+			}
+			EnsureSettingsCollections();
+			return _settings.Features.TryGetValue(featureName, out bool enabled) && enabled;
+		}
+
+		public void SetFeature(string featureName, bool enabled) {
+			if (string.IsNullOrWhiteSpace(featureName)) {
+				throw new ArgumentException("Feature name must be a non-empty value.", nameof(featureName));
+			}
+			EnsureSettingsCollections();
+			_settings.Features[featureName] = enabled;
+			Save();
+		}
+
+		public IReadOnlyDictionary<string, bool> GetFeatures() {
+			EnsureSettingsCollections();
+			return new Dictionary<string, bool>(_settings.Features, StringComparer.OrdinalIgnoreCase);
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
@@ -699,6 +785,14 @@ namespace Clio
 		/// <returns>The configured container image CLI name.</returns>
 		public string GetContainerImageCli() {
 			return _settings.ContainerImageCli;
+		}
+
+		/// <summary>
+		/// Gets the product telemetry upload configuration.
+		/// </summary>
+		/// <returns>The configured telemetry settings; never <c>null</c>.</returns>
+		public TelemetrySettings GetTelemetrySettings() {
+			return _settings.Telemetry ?? new TelemetrySettings();
 		}
 
 		public LocalDbServerConfiguration GetLocalDbServer(string name) {

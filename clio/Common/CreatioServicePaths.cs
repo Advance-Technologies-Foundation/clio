@@ -13,6 +13,12 @@ public static class CreatioServicePaths {
 	public const string GetApplicationInfo = "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo";
 
 	/// <summary>
+	/// Standard Creatio service that returns the authenticated user's runtime profile details,
+	/// including the message-channel session id used by Designer Presence.
+	/// </summary>
+	public const string GetCurrentUserInfo = "/ServiceModel/UserInfoService.svc/GetCurrentUserInfo";
+
+	/// <summary>
 	/// cliogate API gateway endpoint that returns <c>SysInfo</c> (incl. <c>CoreVersion</c>, runtime,
 	/// db engine, license). Requires the cliogate package to be installed.
 	/// </summary>

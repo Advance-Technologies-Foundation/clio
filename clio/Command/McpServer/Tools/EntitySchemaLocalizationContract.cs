@@ -120,7 +120,12 @@ internal static class EntitySchemaLocalizationContract {
 		}
 
 		try {
-			return EntitySchemaDesignerSupport.NormalizeLocalizationMap(localizations, fieldName);
+			IReadOnlyDictionary<string, string>? normalized =
+				EntitySchemaDesignerSupport.NormalizeLocalizationMap(localizations, fieldName);
+			// ENG-91044: reject text whose script does not match its culture key (e.g. Cyrillic under
+			// 'en-US'), so a caption can never be stored in the wrong language for the resolved profile.
+			CaptionCultureScriptGuard.EnsureLocalizationMapMatchesCulture(normalized, fieldName);
+			return normalized;
 		} catch (Exception exception) {
 			throw new InvalidOperationException($"{context}: {exception.Message}", exception);
 		}

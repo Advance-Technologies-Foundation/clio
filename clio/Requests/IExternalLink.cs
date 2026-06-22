@@ -1,8 +1,6 @@
-﻿using MediatR;
-
 namespace Clio.Requests
 {
-	internal interface IExternalLink : IRequest
+	internal interface IExternalLink
 	{
 		public string Content
 		{

@@ -126,11 +126,62 @@ public sealed class PageGetResponse {
 	public PageGetFilesInfo Files { get; init; }
 
 	/// <summary>
+	/// Gets or sets the editable (own) schema state captured at fetch time — the conflict-detection
+	/// baseline source for subsequent <c>update-page</c> / <c>sync-pages</c> calls. <c>null</c> when
+	/// the checksum query failed (best-effort capture, FR-10).
+	/// </summary>
+	[JsonProperty("editable", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("editable")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageEditableSchemaInfo Editable { get; init; }
+
+	/// <summary>
 	/// Gets or sets the error message for failed requests.
 	/// </summary>
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; init; }
+}
+
+/// <summary>
+/// Describes the editable (own) schema state at fetch time: whether a replacing schema already
+/// exists in the design package and, when it does, its identity and change signal.
+/// </summary>
+public sealed class PageEditableSchemaInfo {
+	/// <summary>
+	/// Gets or sets a value indicating whether the editable schema exists in the design package.
+	/// <c>false</c> means a subsequent write will create a new replacing schema.
+	/// </summary>
+	[JsonProperty("editableSchemaExists")]
+	[JsonPropertyName("editableSchemaExists")]
+	public bool EditableSchemaExists { get; init; }
+
+	/// <summary>
+	/// Gets or sets the editable schema identifier. <c>null</c> when the schema does not exist yet.
+	/// </summary>
+	[JsonProperty("editableSchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("editableSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EditableSchemaUId { get; init; }
+
+	/// <summary>
+	/// Gets or sets the <c>SysSchema.Checksum</c> value at fetch time. <c>null</c> when the schema
+	/// does not exist yet.
+	/// </summary>
+	[JsonProperty("checksum", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("checksum")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Checksum { get; init; }
+
+	/// <summary>
+	/// Gets or sets the raw <c>SysSchema.ModifiedOn</c> value at fetch time. Opaque informational
+	/// string — its serialization format varies between Creatio versions, so it never participates
+	/// in conflict comparison.
+	/// </summary>
+	[JsonProperty("modifiedOn", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("modifiedOn")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ModifiedOn { get; init; }
 }
 
 /// <summary>
@@ -687,6 +738,194 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("page")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo? Page { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the save was blocked because the schema was
+	/// modified outside the current agent session (external-modification conflict).
+	/// </summary>
+	[DataMember(Name = "conflict")]
+	[JsonProperty("conflict", DefaultValueHandling = DefaultValueHandling.Ignore)]
+	[JsonPropertyName("conflict")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+	public bool Conflict { get; set; }
+
+	/// <summary>
+	/// Gets or sets the conflict details when <see cref="Conflict"/> is <c>true</c>.
+	/// </summary>
+	[JsonProperty("conflictDetails", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("conflictDetails")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageConflictDetails ConflictDetails { get; set; }
+
+	/// <summary>
+	/// Gets or sets the fresh <c>SysSchema.Checksum</c> queried after a successful save.
+	/// Best-effort: <c>null</c> when the post-save query failed — callers holding a baseline
+	/// must then discard it rather than keep a stale value.
+	/// </summary>
+	[JsonProperty("newChecksum", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("newChecksum")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string NewChecksum { get; set; }
+
+	/// <summary>
+	/// Gets or sets the raw <c>SysSchema.ModifiedOn</c> queried after a successful save.
+	/// Opaque informational string; never used for comparison.
+	/// </summary>
+	[JsonProperty("newModifiedOn", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("newModifiedOn")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string NewModifiedOn { get; set; }
+
+	/// <summary>
+	/// Gets or sets the identifier of the schema the save actually wrote to (the existing editable
+	/// schema, or the newly materialized replacing schema).
+	/// </summary>
+	[JsonProperty("savedSchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("savedSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string SavedSchemaUId { get; set; }
+}
+
+/// <summary>
+/// Machine-readable reason codes for external-modification conflicts. Serialized verbatim in
+/// <see cref="PageConflictDetails.Reason"/>.
+/// </summary>
+public static class PageConflictReasons {
+	/// <summary>The server-side checksum differs from the baseline captured at fetch time.</summary>
+	public const string ChecksumMismatch = "checksum-mismatch";
+
+	/// <summary>The baseline recorded no editable schema, but one now exists in the design package.</summary>
+	public const string SchemaCreatedExternally = "schema-created-externally";
+
+	/// <summary>The baseline recorded an editable schema, but it no longer exists.</summary>
+	public const string SchemaDeletedExternally = "schema-deleted-externally";
+
+	/// <summary>The editable schema resolved to a different UId than the baseline recorded.</summary>
+	public const string SchemaUIdMismatch = "schema-uid-mismatch";
+}
+
+/// <summary>
+/// Describes an external-modification conflict detected before saving a page schema.
+/// </summary>
+public sealed class PageConflictDetails {
+	/// <summary>Gets or sets the conflict reason — one of <see cref="PageConflictReasons"/>.</summary>
+	[JsonProperty("reason")]
+	[JsonPropertyName("reason")]
+	public string Reason { get; init; }
+
+	/// <summary>Gets or sets the checksum the caller expected (from the baseline).</summary>
+	[JsonProperty("expectedChecksum", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("expectedChecksum")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ExpectedChecksum { get; init; }
+
+	/// <summary>Gets or sets the checksum currently stored on the server.</summary>
+	[JsonProperty("actualChecksum", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("actualChecksum")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ActualChecksum { get; init; }
+
+	/// <summary>Gets or sets the editable schema UId the caller expected (from the baseline).</summary>
+	[JsonProperty("expectedSchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("expectedSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ExpectedSchemaUId { get; init; }
+
+	/// <summary>Gets or sets the editable schema UId resolved on the server.</summary>
+	[JsonProperty("actualSchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("actualSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ActualSchemaUId { get; init; }
+
+	/// <summary>Gets or sets the raw server-side <c>ModifiedOn</c> value. Informational only.</summary>
+	[JsonProperty("modifiedOn", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("modifiedOn")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ModifiedOn { get; init; }
+}
+
+/// <summary>
+/// Typed model of the <c>meta.json</c> file written by <c>get-page</c> into
+/// <c>.clio-pages/{schema-name}/</c>. Property names <c>fetchedAt</c> and <c>page</c> are part of
+/// the legacy on-disk contract and must not change.
+/// </summary>
+public sealed class PageMetaFileModel {
+	/// <summary>Gets or sets the ISO-8601 UTC timestamp when the page files were written.</summary>
+	[JsonProperty("fetchedAt")]
+	[JsonPropertyName("fetchedAt")]
+	public string FetchedAt { get; init; }
+
+	/// <summary>Gets or sets the page metadata captured at fetch time.</summary>
+	[JsonProperty("page")]
+	[JsonPropertyName("page")]
+	public PageMetadataInfo Page { get; init; }
+
+	/// <summary>
+	/// Gets or sets the conflict-detection baseline. Absent on legacy files and when the checksum
+	/// capture failed at fetch time — consumers must skip the conflict check in that case.
+	/// </summary>
+	[JsonProperty("baseline", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("baseline")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageBaselineInfo Baseline { get; init; }
+}
+
+/// <summary>
+/// Conflict-detection baseline persisted in <c>meta.json</c>: the editable schema state observed
+/// by the last <c>get-page</c> (or refreshed after a successful write) plus the environment
+/// identity it was captured against.
+/// </summary>
+public sealed class PageBaselineInfo {
+	/// <summary>Gets or sets the page schema name the baseline belongs to.</summary>
+	[JsonProperty("schemaName")]
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; init; }
+
+	/// <summary>
+	/// Gets or sets the registered environment name the baseline was captured against.
+	/// <c>null</c> when the call used a direct URI.
+	/// </summary>
+	[JsonProperty("environmentName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("environmentName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EnvironmentName { get; init; }
+
+	/// <summary>
+	/// Gets or sets the direct Creatio URI the baseline was captured against.
+	/// <c>null</c> when the call used a registered environment name.
+	/// </summary>
+	[JsonProperty("environmentUri", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("environmentUri")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EnvironmentUri { get; init; }
+
+	/// <summary>Gets or sets a value indicating whether the editable schema existed at capture time.</summary>
+	[JsonProperty("editableSchemaExists")]
+	[JsonPropertyName("editableSchemaExists")]
+	public bool EditableSchemaExists { get; init; }
+
+	/// <summary>Gets or sets the editable schema UId. <c>null</c> when it did not exist.</summary>
+	[JsonProperty("editableSchemaUId", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("editableSchemaUId")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string EditableSchemaUId { get; init; }
+
+	/// <summary>Gets or sets the <c>SysSchema.Checksum</c> at capture time. <c>null</c> when the schema did not exist.</summary>
+	[JsonProperty("checksum", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("checksum")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Checksum { get; init; }
+
+	/// <summary>Gets or sets the raw <c>SysSchema.ModifiedOn</c> at capture time. Opaque informational string.</summary>
+	[JsonProperty("modifiedOn", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("modifiedOn")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ModifiedOn { get; init; }
+
+	/// <summary>Gets or sets the ISO-8601 UTC timestamp when the baseline was captured or refreshed.</summary>
+	[JsonProperty("capturedAt")]
+	[JsonPropertyName("capturedAt")]
+	public string CapturedAt { get; init; }
 }
 
 /// <summary>

@@ -36,18 +36,23 @@ New column name for rename operations
 Column type. Supported values:
 Guid, Integer, Float, Boolean, Date, DateTime,
 Time, Lookup,
+Binary, Image, ImageLookup, File, SecureText,
 Text, ShortText, MediumText, LongText, MaxSizeText,
 Text50,
 Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
 Currency0,
-Currency1, Currency2, Currency3
+Currency1, Currency2, Currency3.
+ImageLink is accepted as an alias for ImageLookup.
+For image/photo fields rendered with the `crt.ImageInput` Freedom UI component, use
+`ImageLookup` ("Image link") — the binary `Image` type does not work with `crt.ImageInput`.
+`ImageLookup` references the `SysImage` schema automatically (no `--reference-schema`).
 --title <VALUE>
 Column title/caption
 --description <VALUE>
 Column description
 --reference-schema <VALUE>
-Lookup reference schema name
+Lookup reference schema name (not used for ImageLookup)
 --required
 Set required flag
 --indexed
@@ -143,10 +148,14 @@ cliogate must be installed on the target Creatio environment.
 - MCP structured `default-value-config` also supports `Settings` and `SystemValue`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
+- For a **lookup** column, a `Const` value is the GUID of a record in the referenced schema. clio validates the record exists before save and rejects an unknown GUID with `Error: ... default value record '<guid>' was not found in referenced schema '<schema>'.` (non-zero exit, schema not saved). The check is point-in-time (TOCTOU) and is skipped when the referenced record cannot be read (e.g. no access), so a write is never blocked on an unverifiable check.
+- `--caption-culture <VALUE>` overrides the culture for the written column caption/description (e.g. `en-US`, `uk-UA`). Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved. Column READ/display (`get-entity-schema-column-properties`) keeps using the host locale.
+- For `add`/`modify`, each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.
 
 ## See also
 
 - `get-entity-schema-column-properties`
+- `get-user-culture`
 - `get-entity-schema-properties`
 
 - [Clio Command Reference](../../Commands.md#modify-entity-schema-column)

@@ -5,6 +5,14 @@ namespace Clio.Command {
 	using Newtonsoft.Json.Linq;
 
 	internal static class PageSchemaMetadataHelper {
+		/// <summary>
+		/// Canonical user-facing error for a syntactically invalid schema name. Shared by every
+		/// call site that pairs with <see cref="IsValidSchemaName"/> so the message stays identical
+		/// across the CLI and MCP surfaces (project-context.md: no hardcoded user-facing strings).
+		/// </summary>
+		internal const string SchemaNameFormatError =
+			"schema-name must start with a letter and contain only letters, digits, or underscores";
+
 		private const string ExpressionTypeKey = "expressionType";
 		private const string ColumnPathKey = "columnPath";
 		private const string SelectQueryUrl = "/DataService/json/SyncReply/SelectQuery";
@@ -16,6 +24,10 @@ namespace Clio.Command {
 		private const string FiltersKey = "filters";
 		private const string ColumnsKey = "columns";
 		private const string RowCountKey = "rowCount";
+		private const string ExpressionKey = "expression";
+		private const string SysSchemaName = "SysSchema";
+		private const string ManagerNameColumnPath = "ManagerName";
+		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 
 		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
@@ -54,7 +66,7 @@ namespace Clio.Command {
 			new JObject {
 				[ItemsKey] = new JObject {
 					["UId"] = new JObject {
-						["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
+						[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "UId" }
 					}
 				}
 			};
@@ -94,10 +106,10 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(schemaName) || string.IsNullOrWhiteSpace(packageUId))
 				return (null, null);
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, schemaName)),
-					("byManager", BuildEqFilter("ManagerName", 1, "ClientUnitSchemaManager")),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName)),
 					("byPackage", BuildEqFilter("SysPackage.UId", 0, packageUId))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
@@ -119,7 +131,7 @@ namespace Clio.Command {
 				[FiltersKey] = BuildFilterGroup(("byUId", BuildEqFilter("UId", 0, packageUId))),
 				[ColumnsKey] = new JObject {
 					[ItemsKey] = new JObject {
-						["Name"] = new JObject { ["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" } }
+						["Name"] = new JObject { [ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" } }
 					}
 				},
 				[RowCountKey] = 1
@@ -154,10 +166,10 @@ namespace Clio.Command {
 			IServiceUrlBuilder serviceUrlBuilder,
 			string entitySchemaName) {
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, entitySchemaName)),
-					("byManager", BuildEqFilter("ManagerName", 1, "EntitySchemaManager"))),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, "EntitySchemaManager"))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
@@ -187,6 +199,41 @@ namespace Clio.Command {
 			return errorMessage;
 		}
 
+		/// <summary>
+		/// Queries a single <c>SysSchema</c> row by schema <c>UId</c> via the DataService SelectQuery endpoint.
+		/// </summary>
+		/// <param name="applicationClient">Authenticated Creatio HTTP client.</param>
+		/// <param name="serviceUrlBuilder">Environment-aware URL builder.</param>
+		/// <param name="schemaUId">Schema identifier (GUID string) used as the filter value.</param>
+		/// <param name="columns">Column projections as (alias, columnPath) pairs, e.g. ("Checksum", "Checksum").</param>
+		/// <returns>The first matching row, or <c>null</c> with a non-empty error when the query fails or no row matches.</returns>
+		internal static (JToken row, string error) QuerySysSchemaRowByUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaUId,
+			params (string alias, string path)[] columns) {
+			var columnsItems = new JObject();
+			foreach ((string alias, string path) in columns) {
+				columnsItems[alias] = new JObject {
+					[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+				};
+			}
+			var query = new JObject {
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byUId", BuildEqFilter("UId", 0, schemaUId)),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName))),
+				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
+				[RowCountKey] = 1
+			};
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query schema metadata");
+			if (rows.Count == 0)
+				return (null, $"Schema '{schemaUId}' not found");
+			return (rows[0], null);
+		}
+
 		internal static (JToken row, string error) QuerySysSchemaRow(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -195,11 +242,11 @@ namespace Clio.Command {
 			var columnsItems = new JObject();
 			foreach ((string alias, string path) in columns) {
 				columnsItems[alias] = new JObject {
-					["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+					[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
 				};
 			}
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysSchema", [OperationTypeKey] = 0,
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = new JObject {
 					[FilterTypeKey] = 6, ["logicalOperation"] = 0, [IsEnabledKey] = true,
 					["trimDateTimeParameterToDate"] = false,
@@ -214,9 +261,9 @@ namespace Clio.Command {
 						["filter1"] = new JObject {
 							[FilterTypeKey] = 1, ["comparisonType"] = 3, [IsEnabledKey] = true,
 							["trimDateTimeParameterToDate"] = false,
-							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = "ManagerName"},
+							["leftExpression"] = new JObject {[ExpressionTypeKey] = 0, [ColumnPathKey] = ManagerNameColumnPath},
 							["rightExpression"] = new JObject {[ExpressionTypeKey] = 2,
-								["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = "ClientUnitSchemaManager"}}
+								["parameter"] = new JObject {["dataValueType"] = 1, ["value"] = ClientUnitSchemaManagerName}}
 						}
 					}
 				},

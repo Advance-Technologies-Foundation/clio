@@ -1,7 +1,6 @@
 ﻿using Clio.Common;
 using Clio.UserEnvironment;
-using MediatR;
-using System.Threading;
+using System;
 using System.Threading.Tasks;
 
 namespace Clio.Requests
@@ -20,7 +19,7 @@ namespace Clio.Requests
 	/// Handles extenral link requests
 	/// <example><code>clio externalLink clio://GetAppSettingsFilePath</code></example>
 	/// </remarks>
-	internal class GetAppSettingsFilePathHandler : BaseExternalLinkHandler, IRequestHandler<GetAppSettingsFilePath>
+	internal class GetAppSettingsFilePathHandler : BaseExternalLinkHandler, IExternalLinkHandler
 	{
 		private readonly ISettingsRepository _settingsRepository;
 		private readonly ILogger _logger;
@@ -31,10 +30,12 @@ namespace Clio.Requests
 			_logger = logger;
 		}
 
-		public Task Handle(GetAppSettingsFilePath request, CancellationToken cancellationToken)
+		public Type RequestType => typeof(GetAppSettingsFilePath);
+
+		public Task Handle(IExternalLink request)
 		{
 			_logger.WriteInfo(_settingsRepository.AppSettingsFilePath);
-			return Unit.Task;
+			return Task.CompletedTask;
 		}
 	}
 }

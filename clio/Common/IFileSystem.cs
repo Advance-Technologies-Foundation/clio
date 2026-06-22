@@ -150,6 +150,15 @@ namespace Clio.Common
 		/// <inheritdoc cref="System.IO.Abstractions.IFile.WriteAllText(string, string, Encoding)"/>
 		void WriteAllTextToFile(string filePath, string contents, Encoding encoding);
 
+		/// <summary>
+		/// Writes <paramref name="contents"/> to <paramref name="filePath"/> with owner-read/write
+		/// permissions set at creation time (Unix mode <c>0600</c>), eliminating the race window that
+		/// exists when creating a world-readable file and then hardening it in a second step.
+		/// On Windows the call falls back to a standard write (the per-user profile ACL is the security
+		/// boundary there, mirroring <see cref="FileSecurityHardening"/>).
+		/// </summary>
+		void WriteOwnerOnlyTextToFile(string filePath, string contents);
+
 		void ClearOrCreateDirectory(string directoryPath);
 
 		void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite);

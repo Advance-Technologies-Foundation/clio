@@ -31,6 +31,18 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return new SourceCodeSchemaCreateResponse {
+				Success = false,
+				Error = "schema-name is required"
+			};
+		}
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new SourceCodeSchemaCreateResponse {
+				Success = false,
+				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			SourceCodeSchemaCreateCommand resolvedCommand;
 			try {

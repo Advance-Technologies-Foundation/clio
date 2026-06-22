@@ -22,6 +22,13 @@ internal sealed class StaticFilterLeaf {
 	public string? ValueMacros { get; init; }
 	/// <summary>Integer argument for N-style macros (e.g. NextNDays); required only for those.</summary>
 	public int? ValueMacrosArgument { get; init; }
+	/// <summary>
+	/// Friendly date-part name (Day/Week/Month/Year/Weekday/Hour/HourMinute) that extracts a calendar/clock
+	/// part from a Date/DateTime/Time column on the left side and compares it to a constant <see cref="Value"/>
+	/// (Integer for calendar/clock parts, an HH:mm[:ss] string for HourMinute). Mutually exclusive with
+	/// <see cref="ValueMacros"/>. Used for "created at 11:06 AM", "in calendar year 2021", "each 14th", etc.
+	/// </summary>
+	public string? DatePart { get; init; }
 }
 
 internal sealed class StaticFilterBackwardReference {

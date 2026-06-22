@@ -19,8 +19,12 @@ public sealed class ComponentInfoCommandOptions : EnvironmentOptions {
 		HelpText = "Freedom UI component type (e.g. crt.TabContainer). Omit or pass 'list' to list the catalog.")]
 	public string ComponentType { get; set; }
 
+	[Option("composite", Required = false,
+		HelpText = "Composite Designer-element caption (e.g. 'Expanded list'). Returns the composite's assembly docs. Mutually exclusive with component-type.")]
+	public string Composite { get; set; }
+
 	[Option("search", Required = false,
-		HelpText = "Keyword filter applied in list mode and in not-found suggestions.")]
+		HelpText = "Keyword filter applied in list mode (components AND composites) and in not-found suggestions.")]
 	public string Search { get; set; }
 
 	[Option("version", Required = false,
@@ -127,9 +131,10 @@ public sealed class ComponentInfoCommand {
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
 		string? documentation,
-		RegistryGlobalReferences globalReferences) =>
+		RegistryGlobalReferences globalReferences,
+		string? resolvedFromReason) =>
 		ComponentInfoTool.CreateDetailResponse(
-			entry, resolvedTargetVersion, resolvedFrom, documentation, globalReferences);
+			entry, resolvedTargetVersion, resolvedFrom, documentation, globalReferences, resolvedFromReason);
 
 	private void Emit(ComponentInfoResponse response, bool pretty) {
 		string payload = pretty
@@ -144,9 +149,9 @@ public sealed class ComponentInfoCommand {
 		bool hasEnvironment,
 		CancellationToken cancellationToken) {
 		if (hasExplicitVersion) {
-			// Explicit user choice — treat as authoritative. MapResolvedFrom will downgrade
-			// to "latest-fallback" automatically if the catalog ends up loading a different
-			// version (CDN 404 → latest, etc.).
+			// Explicit user choice — treat as authoritative. MapResolvedFrom maps to
+			// "environment-superset" (soft caveat) if the CDN has no catalog for this version
+			// and falls back to latest; it does NOT downgrade to "latest-fallback".
 			return Task.FromResult(new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment));
 		}
 
@@ -157,10 +162,10 @@ public sealed class ComponentInfoCommand {
 		}
 
 		// No flags — default to latest with a non-authoritative source so the response carries
-		// "latest-fallback" regardless of what the catalog returns.
-		return Task.FromResult(new PlatformVersionResolution(
-			PlatformVersionResolver.LatestVersion,
-			VersionResolutionSource.LatestFallback));
+		// "latest-fallback" regardless of what the catalog returns. Nothing to probe, so the reason
+		// is the input gap (no-active-environment), not a probe error. Built via the shared factory so
+		// this CLI verb and the MCP tool stay byte-identical on the no-flags fallback.
+		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
 	}
 
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoCommandOptions options) {
@@ -180,20 +185,52 @@ public sealed class ComponentInfoCommand {
 		CancellationToken cancellationToken) {
 		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
 			resolution.Source, resolution.ResolvedVersion, state.ResolvedVersion);
+		string? resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, resolution.Reason);
 
 		string componentType = options.ComponentType?.Trim();
+		string composite = options.Composite?.Trim();
+		bool hasComposite = !string.IsNullOrWhiteSpace(composite);
+		bool hasComponentType = !string.IsNullOrWhiteSpace(componentType)
+			&& !string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
+
+		// Keep the CLI verb and the MCP tool in lockstep on composites (shared catalog +
+		// shared response builders), so `get-component-info` is consistent across surfaces.
+		if (hasComposite && hasComponentType) {
+			return ComponentInfoResponseFactory.CreateMutualExclusivityError(
+				"get-component-info: --composite and component-type are mutually exclusive. "
+					+ "Pass --composite for a composite Designer element, or component-type for a single component.",
+				state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+		}
+		if (hasComposite) {
+			CompositeDefinition? definition = ComponentInfoResponseFactory.FindComposite(state.Composites, composite!);
+			if (definition is null) {
+				return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
+					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+			}
+			string? compositeDocs = await ComponentDocumentationLoader
+				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
+				.ConfigureAwait(false);
+			return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
+				definition, compositeDocs, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+		}
+
 		bool listMode = string.IsNullOrWhiteSpace(componentType)
 			|| string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
 
 		if (listMode) {
 			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+			IReadOnlyList<CompositeDefinition> filteredComposites =
+				ComponentInfoGrouping.FilterComposites(state.Composites, options.Search);
+			IReadOnlyList<CompositeSummary> compositeItems = ComponentInfoGrouping.CreateCompositeItems(filteredComposites);
 			return new ComponentInfoResponse {
 				Success = true,
 				Mode = "list",
 				Count = filtered.Count,
 				Items = ComponentInfoGrouping.CreateItems(filtered),
+				Composites = compositeItems.Count == 0 ? null : compositeItems,
 				ResolvedTargetVersion = state.ResolvedVersion,
-				ResolvedFrom = resolvedFrom
+				ResolvedFrom = resolvedFrom,
+				ResolvedFromReason = resolvedFromReason
 			};
 		}
 
@@ -201,18 +238,26 @@ public sealed class ComponentInfoCommand {
 			string? documentation = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
-			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences);
+			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
 		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+		// Carry composites on the not-found response too, so both mode:"list" shapes
+		// (normal list and component-not-found suggestions) surface composites uniformly.
+		IReadOnlyList<CompositeDefinition> notFoundComposites =
+			ComponentInfoGrouping.FilterComposites(state.Composites, options.Search);
+		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
+			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
 		return new ComponentInfoResponse {
 			Success = false,
 			Mode = "list",
 			Error = $"Component type '{componentType}' was not found.",
 			Count = suggestions.Count,
 			Items = ComponentInfoGrouping.CreateItems(suggestions),
+			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
 			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
 		};
 	}
 
