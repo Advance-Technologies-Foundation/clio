@@ -361,6 +361,10 @@ public class BindingsModule {
 		// guidance articles get-guidance has fetched this session. Singleton so every tool invocation
 		// shares one ledger.
 		services.AddSingleton<IGuidanceAccessLedger, GuidanceAccessLedger>();
+		// Stateless detector for the write-path layout-guidance gate (update-page / sync-pages):
+		// reports whether an incoming body inserts crt.* view components, so the gate can require
+		// ui-page-layout guidance before the agent composes a layout. Singleton — no mutable state.
+		services.AddSingleton<IPageLayoutCompositionDetector, PageLayoutCompositionDetector>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<GetUserCultureTool>();

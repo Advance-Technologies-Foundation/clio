@@ -21,11 +21,15 @@ public sealed class PageUpdateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard)
+	IPageBaselineGuard pageBaselineGuard,
+	IGuidanceAccessLedger guidanceAccessLedger,
+	IPageLayoutCompositionDetector layoutCompositionDetector)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
 	private readonly IPageBodySamplingService _samplingService = samplingService;
+	private readonly IGuidanceAccessLedger _guidanceAccessLedger = guidanceAccessLedger;
+	private readonly IPageLayoutCompositionDetector _layoutCompositionDetector = layoutCompositionDetector;
 
 	internal const string ToolName = "update-page";
 
@@ -50,6 +54,7 @@ public sealed class PageUpdateTool(
 			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
 			"unknown ones. " +
 			"if the body adds or lays out components — designing or laying out the page UI/UX (choosing a component for a concept, placing or ordering fields, grid columns/colSpan, container nesting, grouping into tabs/groups, captions/tooltips/placeholders) — call get-guidance with name `ui-guidelines` first (it routes to `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`); author from it, not from memory, and match the existing page style (read the page with get-page first). " +
+			"LAYOUT-GUIDANCE GATE: a body that adds or lays out components (a crt.* `insert` in viewConfigDiff) is REJECTED unless get-guidance name=`ui-page-layout` was already called this session — the `ui-guidelines` index alone does NOT satisfy the gate; fetch the `ui-page-layout` leaf. force=true overrides the gate. " +
 			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -123,7 +128,37 @@ public sealed class PageUpdateTool(
 			return (lintFailure, null, null, null);
 		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
-		return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
+		if (samplingFailure != null)
+			return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
+		// LAST pre-execution check (after every body/syntax/sampling validation, so genuine body
+		// errors surface first): block layout composition authored without first reading the
+		// ui-page-layout guidance leaf. Force overrides, mirroring the checksum-conflict override.
+		PageUpdateResponse layoutGuidanceFailure = TryCreateLayoutGuidanceFailure(options);
+		if (layoutGuidanceFailure != null)
+			return (layoutGuidanceFailure, validationWarnings, lintWarnings, samplingReview);
+		return (null, validationWarnings, lintWarnings, samplingReview);
+	}
+
+	// Fail-closed layout-guidance gate: a body that adds/lays out crt.* view components must be
+	// authored from the ui-page-layout guidance leaf (the article carrying the layout mechanics),
+	// NOT from memory. Satisfied ONLY by ui-page-layout — the thin ui-guidelines index is not
+	// enough, because reading only the index is exactly the failure this gate fixes. Reading force
+	// the same way TryCheckForExternalModification reads it (options.Force) keeps the override
+	// semantics consistent with the checksum-conflict path.
+	private PageUpdateResponse TryCreateLayoutGuidanceFailure(PageUpdateOptions options) {
+		if (options.Force) {
+			return null;
+		}
+		if (!_layoutCompositionDetector.BodyAddsOrLaysOutComponents(options.Body)) {
+			return null;
+		}
+		if (_guidanceAccessLedger.WasFetched(PageLayoutGuidanceGate.RequiredGuidanceName)) {
+			return null;
+		}
+		return new PageUpdateResponse {
+			Success = false,
+			Error = PageLayoutGuidanceGate.RejectionMessage
+		};
 	}
 
 	private static PageUpdateResponse TryValidateBodySyntax(PageUpdateOptions options, out Script parsedAst) {

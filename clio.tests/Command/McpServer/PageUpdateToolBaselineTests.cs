@@ -67,7 +67,9 @@ public sealed class PageUpdateToolBaselineTests
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(_fileSystem));
+			new PageBaselineGuard(_fileSystem),
+			PageLayoutGuidanceGateTestSupport.SatisfiedLedger(),
+			PageLayoutGuidanceGateTestSupport.Detector());
 	}
 
 	private void StubChecksumByUId(params string[] responses) {

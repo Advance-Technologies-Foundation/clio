@@ -25,7 +25,9 @@ public sealed class PageSyncTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard) {
+	IPageBaselineGuard pageBaselineGuard,
+	IGuidanceAccessLedger guidanceAccessLedger,
+	IPageLayoutCompositionDetector layoutCompositionDetector) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -45,7 +47,8 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
-	             "if the body adds or lays out components — designing or laying out the page UI/UX (choosing a component for a concept, placing or ordering fields, grid columns/colSpan, container nesting, grouping into tabs/groups, captions/tooltips/placeholders) — call get-guidance with name `ui-guidelines` first (it routes to `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`); author from it, not from memory, and match the existing page style.")]
+	             "if the body adds or lays out components — designing or laying out the page UI/UX (choosing a component for a concept, placing or ordering fields, grid columns/colSpan, container nesting, grouping into tabs/groups, captions/tooltips/placeholders) — call get-guidance with name `ui-guidelines` first (it routes to `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`); author from it, not from memory, and match the existing page style. " +
+	             "LAYOUT-GUIDANCE GATE: a page whose body adds or lays out components (a crt.* `insert` in viewConfigDiff) is REJECTED per-page unless get-guidance name=`ui-page-layout` was already called this session — the `ui-guidelines` index alone does NOT satisfy the gate; fetch the `ui-page-layout` leaf. The per-page `force: true` overrides the gate (other pages continue).")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
@@ -453,6 +456,11 @@ public sealed class PageSyncTool(
 			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
 			if (samplingFailure != null)
 				return samplingFailure;
+			// LAST pre-execution check (after validation + sampling, before the save), surfaced
+			// per-page exactly like the checksum conflict so other pages in the batch continue.
+			PageSyncPageResult layoutGuidanceFailure = CreateLayoutGuidanceFailure(page, validationResult);
+			if (layoutGuidanceFailure != null)
+				return layoutGuidanceFailure;
 			(string metaFilePath, bool baselineArmed, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
@@ -487,6 +495,32 @@ public sealed class PageSyncTool(
 				Error = ex.Message
 			};
 		}
+	}
+
+	// Fail-closed layout-guidance gate for sync-pages — the per-page analogue of
+	// PageUpdateTool.TryCreateLayoutGuidanceFailure. A page whose body adds/lays out crt.* view
+	// components must be authored from the ui-page-layout guidance leaf, not from memory; the thin
+	// ui-guidelines index does NOT satisfy it. The per-page `force` (page.Force) overrides, mirroring
+	// the per-page checksum-conflict override (see BuildUpdateRequest). Surfaced as a per-page result
+	// so other pages in the batch are unaffected.
+	private PageSyncPageResult CreateLayoutGuidanceFailure(
+		PageSyncPageInput page,
+		PageSyncValidationResult validationResult) {
+		if (page.Force ?? false) {
+			return null;
+		}
+		if (!layoutCompositionDetector.BodyAddsOrLaysOutComponents(page.Body)) {
+			return null;
+		}
+		if (guidanceAccessLedger.WasFetched(PageLayoutGuidanceGate.RequiredGuidanceName)) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = validationResult,
+			Error = PageLayoutGuidanceGate.RejectionMessage
+		};
 	}
 
 	private PageSyncPageResult CreateSamplingFailure(
