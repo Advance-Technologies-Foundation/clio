@@ -1290,6 +1290,43 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts paths/URIs out of the degraded dataforge: warning before it surfaces, so a data-layer failure carrying an absolute path or target host never leaks into the MCP transcript.")]
+	public async Task SchemaSync_Should_Redact_Sensitive_Tokens_In_Degraded_Enrichment_Warning() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new InvalidOperationException("dataforge call to https://target.creatio.com/0/rest failed: /Users/dev/secret/appsettings.json missing"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.DataForge.Should().NotBeNull(
+			because: "the degraded enrichment result must still be attached so the warning surfaces");
+		string warning = response.DataForge!.Warnings.Single();
+		warning.Should().StartWith("dataforge:",
+			because: "the operational failure must still be reported as a dataforge: warning");
+		warning.Should().NotContain("https://target.creatio.com",
+			because: "the target host/URI must be redacted before surfacing to the MCP transcript");
+		warning.Should().NotContain("/Users/dev/secret/appsettings.json",
+			because: "the absolute path must be redacted before surfacing to the MCP transcript");
+		warning.Should().Contain("[redacted",
+			because: "redaction replaces the sensitive tokens with a stable placeholder rather than dropping them");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Does NOT mask an unrecoverable exception (programming defect) from enrichment as a warning — it propagates so the real bug is not hidden as a recoverable degradation.")]
 	public async Task SchemaSync_Should_Propagate_Unrecoverable_Enrichment_Exception() {
 		// Arrange

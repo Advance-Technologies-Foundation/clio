@@ -67,7 +67,11 @@ public sealed class SchemaSyncTool(
 					Health: null,
 					Status: null,
 					Coverage: new DataForgeCoverage(false, false, false, false, false),
-					Warnings: [$"dataforge:{ex.Message}"],
+					// Redact before surfacing: a dataforge/HTTP/data-layer failure routinely carries
+					// absolute paths, target URIs, and connection-string hosts (e.g. the 'baseUri: …'
+					// case named above), and this warning is copied verbatim into the MCP client/
+					// transcript — the same information-disclosure class the throw paths already redact.
+					Warnings: [$"dataforge:{SensitiveErrorTextRedactor.Redact(ex.Message)}"],
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}

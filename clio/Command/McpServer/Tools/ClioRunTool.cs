@@ -123,6 +123,17 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		if (result is null) {
 			return result;
 		}
+		// Many clio tools catch internally and RETURN a structured error result (IsError = true) with
+		// raw text rather than throwing. The catch block above only redacts the throw path, so a
+		// returned error result carrying absolute paths/URIs/credentials would reach the transcript
+		// unredacted. clio-run is now the primary surfacing path for the long tail hidden from
+		// tools/list, so redact surfaced error-result text here too — closing the gap left by the
+		// throw-only redaction (SensitiveErrorTextRedactor is the single redaction rule).
+		if (result.IsError == true && result.Content is not null) {
+			foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
+				textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
+			}
+		}
 		result.Meta ??= new JsonObject();
 		result.Meta["clio-run"] = new JsonObject {
 			["dispatchedTool"] = toolName,

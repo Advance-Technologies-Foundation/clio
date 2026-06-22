@@ -62,6 +62,25 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// A real SDK-built tool that catches internally and RETURNS a structured error result with raw
+	// sensitive text (path + URI), rather than throwing — the return-path redaction guard.
+	[McpServerToolType]
+	private static class ErrorResultToolType {
+		internal const string SensitiveErrorMessage =
+			"Error: push to https://target.creatio.com/0/rest failed; see /Users/dev/secret/appsettings.json";
+
+		[McpServerTool(Name = "error-result-tool", Destructive = false)]
+		[System.ComponentModel.Description("Returns a structured error result with raw text.")]
+		public static CallToolResult ReturnError([System.ComponentModel.Description("payload")] string value) =>
+			new() { IsError = true, Content = [new TextContentBlock { Text = SensitiveErrorMessage }] };
+	}
+
+	private static McpServerTool BuildErrorResultTool() =>
+		McpServerTool.Create(
+			typeof(ErrorResultToolType).GetMethod(nameof(ErrorResultToolType.ReturnError))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
 	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
@@ -254,6 +273,29 @@ public sealed class ClioRunDispatchTests {
 			because: "a failing dispatched tool must yield a structured error result, not escape to the generic outer filter");
 		ErrorText(result).Should().Contain(ThrowingToolType.FailureMessage,
 			because: "the real (inner-most) failure message must be surfaced so the agent can self-correct instead of seeing a generic 'An error occurred' message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts paths/URIs out of a RETURNED error result (IsError = true) — many clio tools catch internally and return a structured error rather than throwing, so the return path must be redacted too, not just the catch block.")]
+	public async Task RunAsync_ShouldRedactSensitiveTokens_WhenDispatchedToolReturnsErrorResult() {
+		// Arrange
+		RegisterTool("error-result-tool", BuildErrorResultTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("error-result-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "a tool that returns a structured error result must keep IsError set after the audit pass");
+		string text = ErrorText(result);
+		text.Should().NotContain("https://target.creatio.com",
+			because: "the target host/URI in a returned error result must be redacted, not just on the throw path");
+		text.Should().NotContain("/Users/dev/secret/appsettings.json",
+			because: "the absolute path in a returned error result must be redacted before reaching the transcript");
+		text.Should().Contain("[redacted",
+			because: "redaction replaces the sensitive tokens with a stable placeholder rather than dropping them");
 	}
 
 	[Test]
