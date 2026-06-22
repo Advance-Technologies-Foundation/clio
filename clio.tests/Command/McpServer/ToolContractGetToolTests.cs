@@ -1861,4 +1861,85 @@ public sealed class ToolContractGetToolTests {
 			},
 			because: "build discovery should flow into deploy-creatio with the chosen archive");
 	}
+
+	// Codex review #2 (PR #743): the no-args compact index was built ONLY from the curated canonical set,
+	// so a lazy-mode client following the "compact index of every tool" guidance could not discover the
+	// hidden long tail (stop-creatio, add-package-dependency, ...) it must reach through clio-run. The
+	// index now spans EVERY invokable tool (curated core + registry-invokable hidden tools). This guard
+	// pins the union behavior and refutes the "hidden tools omitted from the index" regression.
+	[Test]
+	[Category("Unit")]
+	[Description("The no-args compact index includes hidden long-tail tools (stop-creatio, add-package-dependency) alongside the curated core, so a lazy-mode client can discover every invokable tool from the index.")]
+	public void ToolContractGet_Should_Include_HiddenInvokableTools_In_Compact_Index() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the no-args request is the default compact-discovery entry point");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		IReadOnlyList<ToolContractIndexEntry> index = result.Index!;
+		index.Select(entry => entry.Name).Should().Contain([
+				"stop-creatio",
+				AddPackageDependencyTool.AddPackageDependencyToolName
+			],
+			because: "the compact index must list hidden, clio-run-invokable tools so a lazy-mode client can discover them without already knowing the exact name");
+		index.Select(entry => entry.Name).Should().Contain([
+				GuidanceGetTool.ToolName,
+				PageUpdateTool.ToolName
+			],
+			because: "extending the index to the long tail must not drop the curated core tools");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The hidden long-tail entries in the no-args compact index carry a non-empty purpose and the correct destructive flag derived from the tool annotation.")]
+	public void ToolContractGet_Should_Populate_Purpose_And_Destructive_For_HiddenIndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		IReadOnlyList<ToolContractIndexEntry> index = result.Index!;
+		ToolContractIndexEntry stopCreatio = index.Single(entry => entry.Name == "stop-creatio");
+		stopCreatio.Purpose.Should().NotBeNullOrWhiteSpace(
+			because: "a hidden tool must carry a non-empty one-line purpose so the agent can choose it without the full schema");
+		stopCreatio.Destructive.Should().BeTrue(
+			because: "stop-creatio is annotated Destructive = true on its MCP tool method");
+		stopCreatio.ContractAvailable.Should().BeTrue(
+			because: "stop-creatio resolves a registry-derived contract, so its index entry is expandable");
+		ToolContractIndexEntry addDependency = index.Single(entry =>
+			entry.Name == AddPackageDependencyTool.AddPackageDependencyToolName);
+		addDependency.Purpose.Should().NotBeNullOrWhiteSpace(
+			because: "add-package-dependency must carry a non-empty one-line purpose distilled from its description");
+		addDependency.Destructive.Should().BeFalse(
+			because: "add-package-dependency is annotated Destructive = false on its MCP tool method");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every no-args compact index entry built over the real registry keeps a one-line purpose under the length cap, even after extending the index to the hidden long tail.")]
+	public void ToolContractGet_Should_Keep_Index_Compact_When_Including_HiddenTools() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry — curated or hidden — must carry a non-empty one-line purpose");
+		result.Index!.Should().OnlyContain(entry => entry.Purpose.Length <= 120,
+			because: "the purpose must stay a single short line so the long-tail index remains cheap");
+	}
 }

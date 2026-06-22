@@ -603,7 +603,8 @@ internal static class ToolContractCatalog {
 	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
 	/// on <paramref name="detail"/>: any value other than <c>full</c> (the default) returns the cheap
-	/// compact INDEX of all canonical tools (names + one-line purpose + safety flags, <c>Tools</c> null);
+	/// compact INDEX of EVERY invokable tool — curated core plus the hidden long tail reachable through
+	/// clio-run (names + one-line purpose + safety flags, <c>Tools</c> null);
 	/// <c>full</c> returns every canonical tool's full contract (legacy behavior, <c>Index</c> null). When
 	/// <paramref name="toolNames"/> is supplied the named tools' full contracts are returned via the
 	/// curated → registry → reflection → not-found cascade (unchanged).
@@ -683,24 +684,90 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Builds the compact discovery index over the canonical tool set: one entry per tool carrying its
-	/// name, a one-line purpose distilled from the curated contract description, the contract-available
-	/// flag (always <c>true</c> here — every canonical tool has a curated contract), and the destructive
-	/// hint when the invoker registry can cheaply supply it.
+	/// Builds the compact discovery index over EVERY invokable MCP tool — the curated core (canonical
+	/// contracts) plus the hidden long tail reachable only through <c>clio-run</c> /
+	/// <c>clio-run-destructive</c> (for example <c>stop-creatio</c>, <c>add-package-dependency</c>). The
+	/// name set is the case-insensitive union of <see cref="CanonicalToolNames"/>, the invoker registry's
+	/// <see cref="IMcpToolInvokerRegistry.ToolNames"/>, and the reflection catalog's
+	/// <see cref="McpToolSchemaCatalog.RegisteredToolNames"/>, deduplicated and ordered ordinally so the
+	/// index is deterministic for prompt-cache prefix stability. Each entry carries the tool name, a
+	/// one-line purpose (curated description, else the registry/reflection-derived description), the
+	/// contract-available flag (true when a curated OR derived contract resolves), and the destructive
+	/// hint when the invoker registry can cheaply supply it. The index stays compact — names + purpose +
+	/// safety flags only, never full schemas.
 	/// </summary>
-	/// <param name="toolInvokerRegistry">Optional registry used to read each tool's destructive hint; <c>null</c> leaves the flag unset.</param>
+	/// <param name="toolInvokerRegistry">Optional registry used to enumerate hidden tools and read each tool's destructive hint; <c>null</c> leaves the flag unset and limits the set to curated + reflection-discovered tools.</param>
 	private static IReadOnlyList<ToolContractIndexEntry> BuildCompactIndex(
 		IMcpToolInvokerRegistry? toolInvokerRegistry) {
-		return CanonicalToolNames
-			.Select(name => {
-				ToolContractDefinition contract = Contracts[name];
-				return new ToolContractIndexEntry(
-					name,
-					BuildPurpose(contract.Description),
-					ContractAvailable: true,
-					Destructive: ResolveDestructive(toolInvokerRegistry, name));
-			})
+		return BuildIndexToolNames(toolInvokerRegistry)
+			.Select(name => BuildIndexEntry(name, toolInvokerRegistry))
 			.ToArray();
+	}
+
+	/// <summary>
+	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
+	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
+	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
+	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		return CanonicalToolNames
+			.Concat(registryNames)
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => name, StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Builds a single compact index entry for <paramref name="name"/>. The purpose is distilled from the
+	/// curated contract when one exists, otherwise from the same registry-then-reflection derived contract
+	/// the NAMED path uses; a missing description falls back to the tool name so the purpose is never empty.
+	/// <c>contract-available</c> is true when a curated OR derived contract resolves.
+	/// </summary>
+	/// <param name="name">The tool name to describe.</param>
+	/// <param name="toolInvokerRegistry">Optional registry used to derive uncurated descriptions and the destructive hint.</param>
+	private static ToolContractIndexEntry BuildIndexEntry(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		bool contractAvailable = TryResolveIndexDescription(name, toolInvokerRegistry, out string description);
+		string purpose = BuildPurpose(description);
+		return new ToolContractIndexEntry(
+			name,
+			string.IsNullOrEmpty(purpose) ? name : purpose,
+			ContractAvailable: contractAvailable,
+			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+	}
+
+	/// <summary>
+	/// Resolves the description for an index entry through the same curated → registry → reflection cascade
+	/// the NAMED contract path uses. Returns <c>true</c> with the resolved description when any source
+	/// matches; otherwise <c>false</c> with an empty description (the caller supplies a safe fallback).
+	/// </summary>
+	/// <param name="name">The tool name to resolve.</param>
+	/// <param name="toolInvokerRegistry">Optional registry holding hidden, dispatchable tools.</param>
+	/// <param name="description">The resolved description when available; otherwise empty.</param>
+	private static bool TryResolveIndexDescription(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		out string description) {
+		if (Contracts.TryGetValue(name, out ToolContractDefinition? curated)) {
+			description = curated.Description;
+			return true;
+		}
+		if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, name, out ToolContractDefinition registryContract)) {
+			description = registryContract.Description;
+			return true;
+		}
+		if (McpToolSchemaCatalog.TryGetSchemaContract(name, out ToolContractDefinition schemaContract)) {
+			description = schemaContract.Description;
+			return true;
+		}
+		description = string.Empty;
+		return false;
 	}
 
 	/// <summary>
