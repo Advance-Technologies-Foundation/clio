@@ -13,7 +13,7 @@ public sealed class RunProcessButtonGuidanceTests {
 	[Test]
 	[Category("Unit")]
 	public async Task GuidanceGet_Should_Return_RunProcessButton_Article() {
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("run-process-button"));
 

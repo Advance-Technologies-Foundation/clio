@@ -357,6 +357,10 @@ public class BindingsModule {
 		services.AddTransient<DeleteSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
+		// Process-scoped (clio mcp-server stdio = one process per client session) record of which
+		// guidance articles get-guidance has fetched this session. Singleton so every tool invocation
+		// shares one ledger.
+		services.AddSingleton<IGuidanceAccessLedger, GuidanceAccessLedger>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<GetUserCultureTool>();

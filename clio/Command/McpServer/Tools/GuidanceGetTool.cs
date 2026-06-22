@@ -15,8 +15,14 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// Returns canonical clio MCP guidance articles by stable guide name.
 /// </summary>
+/// <remarks>
+/// Successful lookups are recorded in the process-scoped <see cref="IGuidanceAccessLedger"/> so
+/// later write-path checks can tell whether the relevant guidance was read this session. The
+/// canonical catalog name (not the raw caller argument) is recorded, and only on a successful
+/// resolve — a not-found lookup records nothing.
+/// </remarks>
 [McpServerToolType]
-public sealed class GuidanceGetTool {
+public sealed class GuidanceGetTool(IGuidanceAccessLedger guidanceAccessLedger) {
 	internal const string ToolName = "get-guidance";
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
@@ -63,6 +69,9 @@ public sealed class GuidanceGetTool {
 				});
 			}
 			if (GuidanceCatalog.TryGet(effectiveName, out GuidanceCatalogEntry entry)) {
+				// Record the canonical catalog name (not the raw caller arg) so later write-path
+				// checks can match the ledger against catalog names. Recorded on the success path only.
+				guidanceAccessLedger.Record(entry.Name);
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = true,
 					Hint = aliasHint,

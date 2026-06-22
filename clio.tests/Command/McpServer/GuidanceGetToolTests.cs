@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -90,7 +91,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical ESQ filters guidance article when the caller requests esq-filters.")]
 	public async Task GuidanceGet_Should_Return_Esq_Filters_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("esq-filters"));
@@ -109,7 +110,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical indicator widget guidance article when the caller requests indicator-widget.")]
 	public async Task GuidanceGet_Should_Return_Indicator_Widget_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("indicator-widget"));
@@ -132,7 +133,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical related-list guidance article when the caller requests related-list.")]
 	public async Task GuidanceGet_Should_Return_Related_List_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("related-list"));
@@ -161,7 +162,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical handler guidance article when the caller requests page-schema-handlers.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-handlers"));
@@ -182,7 +183,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical SDK common guidance article when the caller requests page-schema-creatio-devkit-common.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-creatio-devkit-common"));
@@ -205,7 +206,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical page modification guidance article when the caller requests page-modification.")]
 	public async Task GuidanceGet_Should_Return_Page_Modification_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
@@ -236,7 +237,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-resources"));
@@ -257,7 +258,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical validator guidance article when the caller requests page-schema-validators.")]
 	public void GuidanceGet_Should_Return_Page_Schema_Validators_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators")).Result;
@@ -278,7 +279,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Resolves guidance names case-insensitively so prompt-generated uppercase names still work.")]
 	public void GuidanceGet_Should_Resolve_Guidance_Name_Case_Insensitively() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS")).Result;
@@ -296,7 +297,7 @@ public sealed class GuidanceGetToolTests {
 	[Category("Unit")]
 	[Description("Returns structured error with availableGuides when args omit the required name parameter")]
 	public void GuidanceGet_Should_Return_Structured_Error_On_Missing_Name() {
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(null)).Result;
 
@@ -311,7 +312,7 @@ public sealed class GuidanceGetToolTests {
 	[Category("Unit")]
 	[Description("Legacy alias 'topic' is accepted as 'name' with a hint when ExtensionData carries the value")]
 	public void GuidanceGet_Should_Accept_Legacy_Alias_Topic() {
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 		var element = System.Text.Json.JsonDocument.Parse("\"page-schema-validators\"").RootElement;
 		GuidanceGetArgs args = new(null) {
 			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
@@ -333,7 +334,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns an explicit error and the known guide names when the requested guidance name is unknown.")]
 	public void GuidanceGet_Should_Return_Known_Guide_Names_For_Unknown_Request() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
@@ -380,7 +381,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical configuration web-service guidance article when the caller requests configuration-webservice.")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice"));
@@ -401,7 +402,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical configuration web-service test guidance article when the caller requests configuration-webservice-tests.")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Tests_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice-tests"));
@@ -422,7 +423,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns generated composable-app skill guidance articles by their skill names.")]
 	public async Task GuidanceGet_Should_Return_Generated_Composable_App_Skill_Articles() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse atfResult = await tool.GetGuidance(new GuidanceGetArgs("atf-repository-dev"));
@@ -453,7 +454,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical converter guidance article when the caller requests page-schema-converters.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Converters_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-converters"));
@@ -474,7 +475,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical agent-execution guidance article when the caller requests agent-execution.")]
 	public async Task GuidanceGet_Should_Return_Agent_Execution_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("agent-execution"));
@@ -495,7 +496,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical support-mode guidance article when the caller requests support-mode.")]
 	public async Task GuidanceGet_Should_Return_Support_Mode_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("support-mode"));
@@ -516,7 +517,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical sys-settings guidance article when the caller requests sys-settings, with the documented core contract, value-type rules, SecureText masking, and Lookup resolution sections.")]
 	public async Task GuidanceGet_Should_Return_SysSettings_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("sys-settings"));
@@ -551,7 +552,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical deploy-lifecycle guidance article when the caller requests deploy-lifecycle.")]
 	public async Task GuidanceGet_Should_Return_Deploy_Lifecycle_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(new GuidanceAccessLedger());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("deploy-lifecycle"));
@@ -569,5 +570,77 @@ public sealed class GuidanceGetToolTests {
 			because: "the deploy lifecycle guide must culminate in the deployment call");
 		result.Article.Text.Should().Contain("install-gate",
 			because: "the deploy lifecycle guide must cover cliogate installation as a post-deploy readiness step");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records the canonical guidance name in the access ledger when a lookup succeeds.")]
+	public async Task GuidanceGet_Should_Record_Canonical_Name_When_Lookup_Succeeds() {
+		// Arrange
+		IGuidanceAccessLedger ledger = Substitute.For<IGuidanceAccessLedger>();
+		GuidanceGetTool tool = new(ledger);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("esq-filters"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "esq-filters is a registered guidance name");
+		ledger.Received(1).Record("esq-filters");
+		// asserts the ledger records the resolved canonical catalog name exactly once on a successful fetch
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records the canonical guidance name even when the caller supplies a differently-cased name.")]
+	public async Task GuidanceGet_Should_Record_Canonical_Name_When_Name_Case_Differs() {
+		// Arrange
+		IGuidanceAccessLedger ledger = Substitute.For<IGuidanceAccessLedger>();
+		GuidanceGetTool tool = new(ledger);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the catalog resolves names case-insensitively");
+		ledger.Received(1).Record("page-schema-validators");
+		// asserts the recorded value is the canonical catalog name, not the raw upper-cased caller argument
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not record any guidance name when the requested guidance is unknown.")]
+	public async Task GuidanceGet_Should_Not_Record_When_Guidance_Is_Unknown() {
+		// Arrange
+		IGuidanceAccessLedger ledger = Substitute.For<IGuidanceAccessLedger>();
+		GuidanceGetTool tool = new(ledger);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("not-a-guide"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "unknown guidance names should not resolve");
+		ledger.DidNotReceiveWithAnyArgs().Record(default!);
+		// asserts a not-found lookup leaves the ledger untouched so the gate never sees a phantom fetch
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not record any guidance name when the required name argument is missing.")]
+	public async Task GuidanceGet_Should_Not_Record_When_Name_Is_Missing() {
+		// Arrange
+		IGuidanceAccessLedger ledger = Substitute.For<IGuidanceAccessLedger>();
+		GuidanceGetTool tool = new(ledger);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs(null));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a missing name cannot resolve to a guidance article");
+		ledger.DidNotReceiveWithAnyArgs().Record(default!);
+		// asserts the missing-name error path never records into the ledger
 	}
 }
