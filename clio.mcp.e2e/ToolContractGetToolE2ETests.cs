@@ -162,7 +162,7 @@ public sealed class ToolContractGetToolE2ETests {
 		ToolContractGetResponse defaultResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?>());
+			new Dictionary<string, object?> { ["detail"] = "full" });
 		ToolContractGetResponse explicitResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
@@ -181,7 +181,7 @@ public sealed class ToolContractGetToolE2ETests {
 
 		// Assert
 		defaultResponse.Success.Should().BeTrue(
-			because: "the default bootstrap lookup should succeed before the caller decides whether it needs explicit Data Forge maintenance contracts");
+			because: "the detail=full bootstrap lookup should succeed before the caller decides whether it needs explicit Data Forge maintenance contracts");
 		defaultResponse.Tools!.Select(tool => tool.Name).Should().Contain(DataForgeTool.DataForgeContextToolName,
 			because: "the default bootstrap set should include read-only Data Forge discovery/context contracts");
 		defaultResponse.Tools!.Select(tool => tool.Name).Should().NotContain(DataForgeTool.DataForgeInitializeToolName,
@@ -197,6 +197,44 @@ public sealed class ToolContractGetToolE2ETests {
 		explicitResponse.Tools.Should().OnlyContain(tool =>
 				tool.Description.Contains("Creatio platform version 10.0.0 or later"),
 			because: "Data Forge contracts should advertise the platform version requirement through the real MCP server");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract returns a compact tool index by default and expands full contracts on detail=full")]
+	public async Task ToolContractGet_Should_Return_Compact_Index_By_Default_And_Full_On_Detail() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse indexResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+		ToolContractGetResponse fullResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["detail"] = "full" });
+
+		// Assert
+		indexResponse.Success.Should().BeTrue(
+			because: "the no-args default is the cheap compact-discovery entry point");
+		indexResponse.Tools.Should().BeNull(
+			because: "the compact index must not pay for the heavy full contracts by default");
+		indexResponse.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index so an agent can see what tools exist");
+		indexResponse.Index!.Select(entry => entry.Name).Should().Contain(GuidanceGetTool.ToolName,
+			because: "the compact index must cover the canonical tool surface");
+		indexResponse.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry must carry a one-line purpose so the agent can choose a tool without the full schema");
+		fullResponse.Success.Should().BeTrue(
+			because: "detail=full should still return the legacy full contract set");
+		fullResponse.Index.Should().BeNull(
+			because: "detail=full preserves the legacy behavior and must not emit the compact index");
+		fullResponse.Tools.Should().NotBeNullOrEmpty(
+			because: "detail=full must expand the full contracts of all canonical tools");
 	}
 
 	[Test]
