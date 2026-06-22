@@ -1436,6 +1436,10 @@ public sealed class ToolContractGetToolTests {
 			because: "unknown tool names should map to the tool-not-found error code");
 		result.Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
 			because: "the error should suggest the closest matching registered tool name");
+		result.Error.Message.Should().Contain("get-tool-contract",
+			because: "the tool-not-found message must point the agent at the discovery tool when its guess (and suggestions) miss");
+		result.Error.Message.Should().Contain("compact index of every tool",
+			because: "the discovery hint must name the cheap compact-index path for in-band recovery");
 	}
 
 	[Test]
@@ -1829,6 +1833,10 @@ public sealed class ToolContractGetToolTests {
 			because: "the fallback must not mask genuinely unknown tool names");
 		result.Error.Suggestions.Should().NotBeNullOrEmpty(
 			because: "the error should still offer nearest-name suggestions");
+		result.Error.Message.Should().EndWith(ToolContractGetTool.DiscoveryHint,
+			because: "the discovery hint must trail the tool-not-found message so a missed guess has the full-catalog path");
+		result.Error.Message.Should().Contain("compact index of every tool",
+			because: "the hint must name the cheap compact-index discovery route");
 	}
 	[Test]
 	[Category("Unit")]

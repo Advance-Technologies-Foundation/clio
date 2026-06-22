@@ -78,7 +78,12 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
 				: string.Empty;
-			return Error($"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.{didYouMean}");
+			// Always append the in-band discovery hint (regardless of whether there were near-miss
+			// suggestions) so an agent whose guesses missed has an explicit path to the full catalog: the
+			// compact index from get-tool-contract (no args). `didYouMean` is empty or starts with its own
+			// leading space, so a single space before the hint keeps spacing correct in both shapes.
+			return Error(
+				$"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.{didYouMean} {ToolContractGetTool.DiscoveryHint}");
 		}
 
 		// No destructive-vs-safe refusal: field testing showed capable models loop indefinitely on the

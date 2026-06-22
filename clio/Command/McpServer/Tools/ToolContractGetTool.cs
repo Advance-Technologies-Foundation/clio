@@ -14,6 +14,15 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ToolContractGetTool {
 	internal const string ToolName = "get-tool-contract";
 
+	/// <summary>
+	/// In-band discovery hint appended to "tool not found" / "unknown tool" error messages so an agent
+	/// whose guessed name (and any "did you mean" shortlist) missed still has an explicit path to the full
+	/// catalog: the compact index returned by <c>get-tool-contract</c> with no arguments. Wording mirrors
+	/// <c>McpServerInstructions</c> ("compact index of every tool") for a single consistent phrasing.
+	/// </summary>
+	internal const string DiscoveryHint =
+		"Call get-tool-contract with no arguments for a compact index of every tool.";
+
 	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
 
 	/// <summary>
@@ -667,7 +676,7 @@ internal static class ToolContractCatalog {
 				false,
 				Error: new ToolContractError(
 					"tool-not-found",
-					$"Tool '{normalizedName}' is not registered by clio MCP.",
+					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
 					BuildSuggestions(normalizedName)));
 		}
 		return new ToolContractGetResponse(true, results);

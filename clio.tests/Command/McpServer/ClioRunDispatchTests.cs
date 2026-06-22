@@ -110,9 +110,14 @@ public sealed class ClioRunDispatchTests {
 		CallToolResult result = await _sut.RunAsync("nope", null, destructiveSurface: false, CallContext(), CancellationToken.None);
 
 		// Assert
+		string text = ErrorText(result);
 		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
-		ErrorText(result).Should().Contain("unknown tool 'nope'",
+		text.Should().Contain("unknown tool 'nope'",
 			because: "the failure must be a structured unknown-tool message");
+		text.Should().Contain("get-tool-contract",
+			because: "the unknown-tool error must always point the agent at the discovery tool");
+		text.Should().Contain("compact index of every tool",
+			because: "the discovery hint must name the cheap compact-index path so a wrong guess has an in-band recovery route");
 	}
 
 	[Test]
@@ -133,6 +138,58 @@ public sealed class ClioRunDispatchTests {
 			because: "a near-miss must carry a self-correction hint instead of a bare error");
 		text.Should().Contain("find-app",
 			because: "the nearest real tool name (Levenshtein distance 1) must lead the suggestions");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Appends the get-tool-contract compact-index discovery hint to the unknown-tool error WHEN a 'did you mean' shortlist is present, so even after wrong guesses the agent still has the full-catalog path.")]
+	public async Task RunAsync_ShouldAppendDiscoveryHint_WhenUnknownToolHasSuggestions() {
+		// Arrange
+		_registry.ToolNames.Returns(new[] { "find-app", "find-entity-schema", "list-apps" });
+		_registry.TryGetTool("find-ap", out Arg.Any<McpServerTool>()).Returns(false);
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("find-ap", null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
+		text.Should().Contain("Did you mean",
+			because: "this case must carry the suggestion shortlist so the hint coexists with suggestions");
+		text.Should().EndWith(ToolContractGetTool.DiscoveryHint,
+			because: "the discovery hint must trail the message even after the 'did you mean' suggestions");
+		text.Should().NotContain("  ",
+			because: "the hint must follow with exactly one space (no double space) after the suggestions segment");
+	}
+
+	// The executor's suggestion source unions the (mockable) registry with the static reflection catalog
+	// of every clio MCP tool, which is always non-empty — so a real ClioRunExecutor cannot emit a literally
+	// empty 'did you mean' segment. The append is unconditional (outside the suggestions ternary), so this
+	// pins the invariant that matters regardless of the shortlist: the hint is the trailing sentence and is
+	// appended with correct single-space punctuation, with no empty-fragment double punctuation.
+	[Test]
+	[Category("Unit")]
+	[Description("The get-tool-contract compact-index discovery hint is always the trailing sentence of the unknown-tool error and is appended with single-space punctuation (no double space) — independent of the 'did you mean' shortlist.")]
+	public async Task RunAsync_ShouldEndWithDiscoveryHint_WhenToolIsUnknown() {
+		// Arrange — registry advertises ONLY the executor names (BuildSuggestions strips them), so any
+		// shortlist here can only come from the reflection catalog, exercising the hint append path.
+		_registry.ToolNames.Returns(new[] { ClioRunTool.ToolName, ClioRunDestructiveTool.ToolName });
+		_registry.TryGetTool("zzzzzzzzzzzzzzzz", out Arg.Any<McpServerTool>()).Returns(false);
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("zzzzzzzzzzzzzzzz", null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
+		text.Should().Contain("get-tool-contract",
+			because: "the discovery hint must always point the agent at the discovery tool");
+		text.Should().Contain("compact index of every tool",
+			because: "the error must name the cheap compact-index discovery path");
+		text.Should().EndWith(ToolContractGetTool.DiscoveryHint,
+			because: "the hint must always be the trailing sentence regardless of whether suggestions exist");
+		text.Should().NotContain(". .",
+			because: "an empty 'did you mean' fragment must not double-punctuate before the hint");
 	}
 
 	[Test]
