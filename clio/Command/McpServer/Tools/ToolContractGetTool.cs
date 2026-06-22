@@ -733,9 +733,10 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Builds a single compact index entry for <paramref name="name"/>. The purpose is distilled from the
-	/// curated contract when one exists, otherwise from the same registry-then-reflection derived contract
-	/// the NAMED path uses; a missing description falls back to the tool name so the purpose is never empty.
-	/// <c>contract-available</c> is true when a curated OR derived contract resolves.
+	/// curated contract when one exists, otherwise from the tool's RAW registry/reflection description
+	/// (without the "no curated contract yet" note the full named contract carries); a missing description
+	/// falls back to the tool name so the purpose is never empty.
+	/// <c>contract-available</c> is true when a curated OR registry OR reflection contract resolves.
 	/// </summary>
 	/// <param name="name">The tool name to describe.</param>
 	/// <param name="toolInvokerRegistry">Optional registry used to derive uncurated descriptions and the destructive hint.</param>
@@ -753,8 +754,13 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Resolves the description for an index entry through the same curated → registry → reflection cascade
-	/// the NAMED contract path uses. Returns <c>true</c> with the resolved description when any source
-	/// matches; otherwise <c>false</c> with an empty description (the caller supplies a safe fallback).
+	/// the NAMED contract path uses for AVAILABILITY, but reads the RAW functional description (no
+	/// "Auto-generated … no curated contract yet" note) for the uncurated registry/reflection levels so the
+	/// compact one-line purpose reflects only what the tool DOES. The note still appears in the FULL named
+	/// contract (see <see cref="GetContracts"/>); only this index one-liner is noteless. Returns <c>true</c>
+	/// with the resolved description when any source matches — preserving <c>contract-available</c> semantics
+	/// (a tool with a raw description but no curated contract is still dispatchable via clio-run) — otherwise
+	/// <c>false</c> with an empty description (the caller supplies a safe fallback to the tool name).
 	/// </summary>
 	/// <param name="name">The tool name to resolve.</param>
 	/// <param name="toolInvokerRegistry">Optional registry holding hidden, dispatchable tools.</param>
@@ -763,16 +769,21 @@ internal static class ToolContractCatalog {
 		string name,
 		IMcpToolInvokerRegistry? toolInvokerRegistry,
 		out string description) {
+		// Level 1 — curated descriptions are handwritten and carry NO note, so use them verbatim.
 		if (Contracts.TryGetValue(name, out ToolContractDefinition? curated)) {
 			description = curated.Description;
 			return true;
 		}
-		if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, name, out ToolContractDefinition registryContract)) {
-			description = registryContract.Description;
+		// Level 2 — registry-derived: read the RAW tool description (not TryBuild, which appends the note).
+		// A registered tool resolves here under the SAME condition TryBuild would, so contract-available
+		// stays true even though the one-liner is now noteless.
+		if (toolInvokerRegistry is not null
+			&& McpToolRegistrySchemaContract.TryGetRawDescription(toolInvokerRegistry, name, out description)) {
 			return true;
 		}
-		if (McpToolSchemaCatalog.TryGetSchemaContract(name, out ToolContractDefinition schemaContract)) {
-			description = schemaContract.Description;
+		// Level 3 — reflection fallback: read the RAW reflected description (not TryGetSchemaContract, which
+		// appends the note). Same availability condition as the note-appending path.
+		if (McpToolSchemaCatalog.TryGetRawDescription(name, out description)) {
 			return true;
 		}
 		description = string.Empty;

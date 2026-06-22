@@ -72,6 +72,32 @@ internal static class McpToolRegistrySchemaContract {
 		return true;
 	}
 
+	/// <summary>
+	/// Tries to read the tool's RAW registered description (the <c>[Description]</c> on the MCP tool method,
+	/// surfaced as <c>ProtocolTool.Description</c>) WITHOUT the uncurated "Auto-generated … no curated
+	/// contract yet" <see cref="Note"/> that <see cref="TryBuild"/> appends. The compact discovery index
+	/// uses this so a one-line purpose reflects only what the tool DOES, never the absence of curation; the
+	/// full named-contract path keeps the note via <see cref="TryBuild"/> (unchanged).
+	/// </summary>
+	/// <param name="registry">The invoker registry holding the real, dispatchable tools.</param>
+	/// <param name="toolName">The requested MCP tool name.</param>
+	/// <param name="description">
+	/// The raw tool description (possibly empty when the tool declares none) when the tool is registered;
+	/// otherwise empty.
+	/// </param>
+	/// <returns><c>true</c> when a registered tool matched (even with an empty description); otherwise <c>false</c>.</returns>
+	internal static bool TryGetRawDescription(
+		IMcpToolInvokerRegistry registry,
+		string toolName,
+		out string description) {
+		description = string.Empty;
+		if (registry is null || !registry.TryGetTool(toolName, out McpServerTool tool) || tool is null) {
+			return false;
+		}
+		description = tool.ProtocolTool.Description ?? string.Empty;
+		return true;
+	}
+
 	private static ToolInputSchemaContract BuildInputSchema(JsonElement schema) {
 		if (schema.ValueKind != JsonValueKind.Object) {
 			return new ToolInputSchemaContract([], []);

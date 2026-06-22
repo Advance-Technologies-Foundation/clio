@@ -1950,4 +1950,78 @@ public sealed class ToolContractGetToolTests {
 		result.Index!.Should().OnlyContain(entry => entry.Purpose.Length <= 120,
 			because: "the purpose must stay a single short line so the long-tail index remains cheap");
 	}
+
+	// PR #743 follow-up: the uncurated registry/reflection contract appends an "Auto-generated … no curated
+	// contract yet" note to its Description. Because a hidden tool's raw description often has no terminating
+	// period (e.g. stop-creatio's "Stops Creatio instance by environment name"), BuildPurpose could not cut
+	// at a sentence boundary and the index one-liner leaked the meta-note (e.g. "Stops Creatio instance by
+	// environment name Auto-ge…"). The note describes the ABSENCE of curation, not what the tool does, so it
+	// is noise in a compact index. These guards pin: (a) the index one-liner is noteless functional text,
+	// and (b) the FULL named contract still carries the note.
+	[Test]
+	[Category("Unit")]
+	[Description("A hidden long-tail tool's compact-index purpose carries only the raw functional description, never the uncurated 'Auto-generated … no curated contract' note.")]
+	public void ToolContractGet_Should_Strip_UncuratedNote_From_HiddenIndexPurpose() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry stopCreatio = result.Index!.Single(entry => entry.Name == "stop-creatio");
+		stopCreatio.Purpose.Should().NotContain("Auto-generated",
+			because: "the compact index one-liner must describe what the tool does, not announce that no curated contract exists");
+		stopCreatio.Purpose.Should().NotContain("no curated contract",
+			because: "the absence-of-curation meta-note is noise in a compact discovery index");
+		stopCreatio.Purpose.Should().Be("Stops Creatio instance by environment name",
+			because: "the purpose must be the tool's raw functional description, not the description merged with and truncated against the meta-note");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A hidden tool with a no-period description (add-package-dependency) yields a noteless functional compact-index purpose, proving the strip is independent of sentence-boundary detection.")]
+	public void ToolContractGet_Should_Strip_UncuratedNote_From_HiddenIndexPurpose_When_Description_Has_No_SentenceBreak() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry addDependency = result.Index!.Single(entry =>
+			entry.Name == AddPackageDependencyTool.AddPackageDependencyToolName);
+		addDependency.Purpose.Should().NotContain("Auto-generated",
+			because: "stripping the note must not depend on the description ending in a sentence-terminating period");
+		addDependency.Purpose.Should().NotContain("no curated contract",
+			because: "the meta-note must be removed before the purpose is distilled, for every uncurated tool");
+		addDependency.Purpose.Should().StartWith("Adds one or more package dependencies",
+			because: "the purpose must be distilled from the tool's own functional description");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The FULL named contract for a hidden long-tail tool still carries the 'Auto-generated … no curated contract' note, proving the note was stripped only from the compact index, not from the full contract.")]
+	public void ToolContractGet_Should_Keep_UncuratedNote_In_FullNamedContract_ForHiddenTool() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["stop-creatio"]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "stop-creatio is invokable via clio-run-destructive and must expose a discoverable full contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("Auto-generated",
+			because: "the full named contract must keep the note so a caller knows the contract is auto-derived, not curated");
+		contract.Description.Should().Contain("no curated contract",
+			because: "the note correctly signals the uncurated nature only in the full contract; the index one-liner stays noteless");
+		contract.Description.Should().StartWith("Stops Creatio instance by environment name",
+			because: "the full contract still leads with the tool's functional description before the appended note");
+	}
 }
