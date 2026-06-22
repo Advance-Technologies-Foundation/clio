@@ -14,7 +14,7 @@ internal static class PageLayoutGuidanceGateTestSupport {
 	/// <summary>Builds a real ledger with <c>ui-page-layout</c> already recorded (gate satisfied).</summary>
 	public static IGuidanceAccessLedger SatisfiedLedger() {
 		var ledger = new GuidanceAccessLedger();
-		ledger.Record("ui-page-layout");
+		ledger.Record(PageLayoutGuidanceGate.RequiredGuidanceName);
 		return ledger;
 	}
 

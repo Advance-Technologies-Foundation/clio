@@ -506,13 +506,8 @@ public sealed class PageSyncTool(
 	private PageSyncPageResult CreateLayoutGuidanceFailure(
 		PageSyncPageInput page,
 		PageSyncValidationResult validationResult) {
-		if (page.Force ?? false) {
-			return null;
-		}
-		if (!layoutCompositionDetector.BodyAddsOrLaysOutComponents(page.Body)) {
-			return null;
-		}
-		if (guidanceAccessLedger.WasFetched(PageLayoutGuidanceGate.RequiredGuidanceName)) {
+		if (!PageLayoutGuidanceGate.ShouldBlock(
+				layoutCompositionDetector, guidanceAccessLedger, page.Body, page.Force ?? false)) {
 			return null;
 		}
 		return new PageSyncPageResult {

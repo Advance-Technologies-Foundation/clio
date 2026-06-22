@@ -10,10 +10,10 @@ namespace Clio.Command.McpServer.Tools;
 /// <remarks>
 /// clio MCP runs over stdio: one <c>clio mcp-server</c> process serves a single client session
 /// (subagents and forks share the same process), so a process-lifetime singleton is the correct
-/// scope for "which guidance did this session already read" state. Implementations must be
-/// thread-safe — guidance-consuming flows such as sync-pages process pages concurrently — and
-/// must compare guidance names case-insensitively to match the catalog's
-/// <see cref="StringComparer.OrdinalIgnoreCase"/> keying.
+/// scope for "which guidance did this session already read" state. Implementations are thread-safe
+/// (cheap insurance and future-proofing) even though the current guidance-consuming flows such as
+/// sync-pages process pages one at a time, and must compare guidance names case-insensitively to
+/// match the catalog's <see cref="StringComparer.OrdinalIgnoreCase"/> keying.
 /// </remarks>
 public interface IGuidanceAccessLedger {
 	/// <summary>

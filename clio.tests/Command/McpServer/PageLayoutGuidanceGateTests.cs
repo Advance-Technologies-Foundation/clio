@@ -1,6 +1,7 @@
 using System.IO.Abstractions.TestingHelpers;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -31,24 +32,35 @@ public sealed class PageLayoutGuidanceGateTests {
 		+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
 		+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	// Merge-only viewConfigDiff (no insert) toggling a boolean property. Using a non-caption
+	// property keeps this a pure layout-neutral edit that passes update-page content validation in
+	// dry-run, so the non-composition tests assert the command's real success path, not a validator
+	// rejection on an inline caption literal.
 	private const string NonCompositionBody =
 		"define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, "
 		+ "function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { "
-		+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+		+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"visible\":true}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
 		+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
 		+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, "
 		+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
 		+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
 		+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	// A mobile-style plain-JSON body: it carries a crt.* insert in a viewConfigDiff property, but it
+	// has NO SCHEMA_VIEW_CONFIG_DIFF markers, so the web-only composition detector fails open and the
+	// gate must never fire on it.
+	private const string MobilePlainJsonBody =
+		"{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]}";
+
 	// ----- update-page -----
 
 	private static PageUpdateTool BuildUpdateTool(IGuidanceAccessLedger ledger) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		ILogger logger = Substitute.For<ILogger>();
+		// Reuse the SAME successful-command wiring sync-pages uses so a gate-allowed dry-run reaches a
+		// real success response. With the gate disabled (mutation), the allow tests would still see a
+		// successful save and fail to detect the regression — exactly what asserting Success==true catches.
+		PageUpdateCommand command = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		return new PageUpdateTool(
 			command, logger, commandResolver,
@@ -69,6 +81,7 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("update-page rejects a layout-composing body when ui-page-layout was not fetched and not forced.")]
 	public async Task UpdatePage_Should_Reject_When_Composition_And_Guidance_Not_Fetched() {
 		// Arrange
@@ -88,51 +101,79 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("update-page allows a layout-composing body once ui-page-layout was fetched this session.")]
 	public async Task UpdatePage_Should_Allow_When_Guidance_Was_Fetched() {
-		// Arrange
-		PageUpdateTool tool = BuildUpdateTool(LedgerWith("ui-page-layout"));
-		PageUpdateArgs args = new("UsrTodo_FormPage", CompositionBody, null, null, null, null, null, null);
+		// Arrange — dry-run reaches a real success response when the gate allows, so a
+		// WasFetched-always-true mutation that bypassed the gate would still surface here.
+		PageUpdateTool tool = BuildUpdateTool(LedgerWith(PageLayoutGuidanceGate.RequiredGuidanceName));
+		PageUpdateArgs args = new("UsrTodo_FormPage", CompositionBody, null, DryRun: true, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
 
 		// Assert
-		response.Error.Should().NotContain("Layout guidance required",
-			because: "fetching ui-page-layout satisfies the gate so the layout-guidance rejection must not fire");
+		response.Success.Should().BeTrue(
+			because: "fetching ui-page-layout satisfies the gate so the dry-run update succeeds end to end");
+		response.Error.Should().BeNull(
+			because: "a satisfied gate produces no error and the dry-run validation passes");
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("update-page allows a layout-composing body when force=true even if ui-page-layout was not fetched.")]
 	public async Task UpdatePage_Should_Allow_When_Forced() {
 		// Arrange
 		PageUpdateTool tool = BuildUpdateTool(LedgerWith());
-		PageUpdateArgs args = new("UsrTodo_FormPage", CompositionBody, null, null, null, null, null, null, Force: true);
+		PageUpdateArgs args = new("UsrTodo_FormPage", CompositionBody, null, DryRun: true, null, null, null, null, Force: true);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
 
 		// Assert
-		response.Error.Should().NotContain("Layout guidance required",
-			because: "force:true overrides the layout-guidance gate, mirroring the checksum-conflict override");
+		response.Success.Should().BeTrue(
+			because: "force:true overrides the layout-guidance gate (mirroring the checksum-conflict override) so the dry-run update succeeds");
+		response.Error.Should().BeNull(
+			because: "a forced write past the gate produces no layout-guidance error");
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("update-page does not fire the gate for a non-composition (merge-only) body.")]
 	public async Task UpdatePage_Should_Not_Fire_Gate_For_Non_Composition_Body() {
 		// Arrange
 		PageUpdateTool tool = BuildUpdateTool(LedgerWith());
-		PageUpdateArgs args = new("UsrTodo_FormPage", NonCompositionBody, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTodo_FormPage", NonCompositionBody, null, DryRun: true, null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a merge-only body adds no components, so the gate never fires and the dry-run update succeeds");
+		response.Error.Should().BeNull(
+			because: "a non-composition body is not blocked by the layout-guidance gate");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-page does not fire the layout-guidance gate for a mobile plain-JSON body even with an empty ledger.")]
+	public async Task UpdatePage_Should_Not_Fire_Gate_For_Mobile_Body() {
+		// Arrange — mobile bodies carry no SCHEMA_VIEW_CONFIG_DIFF markers, so the web-only detector
+		// fails open and the gate must not fire even though the JSON has a crt.* insert.
+		PageUpdateTool tool = BuildUpdateTool(LedgerWith());
+		PageUpdateArgs args = new("UsrTodo_FormPage", MobilePlainJsonBody, null, DryRun: true, null, null, null, null);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
 
 		// Assert
 		response.Error.Should().NotContain("Layout guidance required",
-			because: "a merge-only body adds no components, so the layout-guidance gate must not fire");
+			because: "a mobile body is not a web composition, so the web-only detector fails open and the gate must not fire");
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("update-page still rejects when only the ui-guidelines index was fetched, not the ui-page-layout leaf.")]
 	public async Task UpdatePage_Should_Reject_When_Only_Index_Was_Fetched() {
 		// Arrange — reading only the thin index is exactly the failure the gate fixes.
@@ -202,6 +243,7 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("sync-pages rejects a layout-composing page per-page when ui-page-layout was not fetched and not forced.")]
 	public async Task SyncPages_Should_Reject_When_Composition_And_Guidance_Not_Fetched() {
 		// Arrange
@@ -225,10 +267,11 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("sync-pages allows a layout-composing page once ui-page-layout was fetched this session.")]
 	public async Task SyncPages_Should_Allow_When_Guidance_Was_Fetched() {
 		// Arrange
-		PageSyncTool tool = BuildSyncTool(LedgerWith("ui-page-layout"));
+		PageSyncTool tool = BuildSyncTool(LedgerWith(PageLayoutGuidanceGate.RequiredGuidanceName));
 		PageSyncArgs args = new("dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", CompositionBody)],
 			Validate: false,
@@ -245,6 +288,7 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("sync-pages allows a layout-composing page when the per-page force=true even if ui-page-layout was not fetched.")]
 	public async Task SyncPages_Should_Allow_When_Page_Is_Forced() {
 		// Arrange
@@ -263,6 +307,7 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("sync-pages does not fire the gate for a non-composition (merge-only) page.")]
 	public async Task SyncPages_Should_Not_Fire_Gate_For_Non_Composition_Page() {
 		// Arrange
@@ -283,6 +328,7 @@ public sealed class PageLayoutGuidanceGateTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("sync-pages still rejects when only the ui-guidelines index was fetched, not the ui-page-layout leaf.")]
 	public async Task SyncPages_Should_Reject_When_Only_Index_Was_Fetched() {
 		// Arrange — reading only the thin index is exactly the failure the gate fixes.
@@ -300,5 +346,24 @@ public sealed class PageLayoutGuidanceGateTests {
 			because: "the ui-guidelines index does not carry the layout mechanics, so it must not satisfy the gate");
 		response.Pages[0].Error.Should().Contain("ui-page-layout",
 			because: "the per-page rejection must still direct the agent to the ui-page-layout leaf");
+	}
+
+	// ----- gate constant <-> guidance catalog coupling -----
+
+	[Test]
+	[Category("Unit")]
+	[Description("The gate's RequiredGuidanceName resolves to a real guidance catalog entry so a future catalog rename cannot silently make the gate un-satisfiable.")]
+	public void RequiredGuidanceName_Should_Resolve_To_A_Catalog_Entry() {
+		// Arrange
+		string requiredName = PageLayoutGuidanceGate.RequiredGuidanceName;
+
+		// Act
+		bool found = GuidanceCatalog.TryGet(requiredName, out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the gate is satisfied only by recording RequiredGuidanceName via get-guidance, so that exact name MUST exist in the guidance catalog — if a future catalog rename dropped it, the gate would block every layout body forever with no way to satisfy it");
+		entry.Name.Should().Be(requiredName,
+			because: "the resolved catalog entry must be the same canonical name the gate records and checks, otherwise get-guidance would record a different key than the gate looks up");
 	}
 }

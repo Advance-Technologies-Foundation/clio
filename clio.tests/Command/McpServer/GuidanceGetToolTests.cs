@@ -301,7 +301,8 @@ public sealed class GuidanceGetToolTests {
 
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(null)).Result;
 
-		result.Success.Should().BeFalse();
+		result.Success.Should().BeFalse(
+			because: "calling get-guidance without the required name must report failure rather than succeed");
 		result.Error.Should().Contain("Missing required parameter 'name'",
 			because: "calling without name should surface a clear structured error instead of throwing");
 		result.AvailableGuides.Should().NotBeNullOrEmpty(
@@ -324,7 +325,8 @@ public sealed class GuidanceGetToolTests {
 
 		result.Success.Should().BeTrue(
 			because: "legacy 'topic' alias should resolve to 'name' so the caller's first attempt succeeds");
-		result.Article!.Name.Should().Be("page-schema-validators");
+		result.Article!.Name.Should().Be("page-schema-validators",
+			because: "the legacy 'topic' alias must resolve to the same canonical guidance article as 'name'");
 		result.Hint.Should().Contain("rename to 'name'",
 			because: "the hint should teach the caller the canonical field name");
 	}

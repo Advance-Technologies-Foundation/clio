@@ -146,13 +146,8 @@ public sealed class PageUpdateTool(
 	// the same way TryCheckForExternalModification reads it (options.Force) keeps the override
 	// semantics consistent with the checksum-conflict path.
 	private PageUpdateResponse TryCreateLayoutGuidanceFailure(PageUpdateOptions options) {
-		if (options.Force) {
-			return null;
-		}
-		if (!_layoutCompositionDetector.BodyAddsOrLaysOutComponents(options.Body)) {
-			return null;
-		}
-		if (_guidanceAccessLedger.WasFetched(PageLayoutGuidanceGate.RequiredGuidanceName)) {
+		if (!PageLayoutGuidanceGate.ShouldBlock(
+				_layoutCompositionDetector, _guidanceAccessLedger, options.Body, options.Force)) {
 			return null;
 		}
 		return new PageUpdateResponse {

@@ -31,4 +31,25 @@ internal static class PageLayoutGuidanceGate {
 		+ "memory; read the existing page with get-page so the new layout matches its style. "
 		+ "The ui-guidelines index alone does NOT satisfy this — fetch the ui-page-layout leaf. "
 		+ "To deliberately override this gate, retry with force:true.";
+
+	/// <summary>
+	/// The single fail-closed decision shared by both write-path tools: a body should be blocked
+	/// when it is NOT forced, it adds or lays out <c>crt.*</c> components, AND the
+	/// <see cref="RequiredGuidanceName"/> guidance was not fetched this session. Both
+	/// <see cref="PageUpdateTool"/> and <see cref="PageSyncTool"/> call this so the gate decision
+	/// never drifts between them; each keeps only its own per-tool response construction local.
+	/// </summary>
+	/// <param name="detector">Detects whether <paramref name="body"/> adds or lays out components.</param>
+	/// <param name="ledger">Records which guidance articles were fetched this session.</param>
+	/// <param name="body">The raw page body being written.</param>
+	/// <param name="force">Whether the caller explicitly forced the write (overrides the gate).</param>
+	/// <returns><see langword="true"/> when the body must be blocked; otherwise <see langword="false"/>.</returns>
+	internal static bool ShouldBlock(
+		IPageLayoutCompositionDetector detector,
+		IGuidanceAccessLedger ledger,
+		string body,
+		bool force) =>
+		!force
+		&& detector.BodyAddsOrLaysOutComponents(body)
+		&& !ledger.WasFetched(RequiredGuidanceName);
 }

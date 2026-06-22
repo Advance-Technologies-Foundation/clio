@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio.Command;
 
 namespace Clio.Command.McpServer.Tools;
@@ -16,8 +17,10 @@ namespace Clio.Command.McpServer.Tools;
 /// validator-only bodies, do <strong>not</strong> add or lay out components and return
 /// <see langword="false"/>. A missing, empty, or unparseable <c>viewConfigDiff</c> also returns
 /// <see langword="false"/> (fail-open: a body the detector cannot understand is never blocked by the
-/// layout gate). Implementations must be side-effect-free and thread-safe — sync-pages evaluates
-/// pages concurrently.
+/// layout gate). Detection scans only the TOP-LEVEL <c>viewConfigDiff</c> entries — a <c>crt.*</c>
+/// component nested inside <c>values.items</c> of another entry is intentionally not scanned.
+/// Implementations must be side-effect-free; they are also thread-safe (cheap insurance and
+/// future-proofing) even though the current write paths evaluate one body at a time.
 /// </remarks>
 public interface IPageLayoutCompositionDetector {
 	/// <summary>
@@ -64,6 +67,11 @@ public sealed class PageLayoutCompositionDetector : IPageLayoutCompositionDetect
 		} catch (JsonException) {
 			// A body whose viewConfigDiff is not valid JSON is rejected (or accepted) by the
 			// syntax/content validators that run BEFORE this gate — never block on a parse failure here.
+			return false;
+		} catch (RegexMatchTimeoutException) {
+			// NormalizeJson runs a trailing-comma Regex.Replace under a 5s timeout; a pathological
+			// body can trip it. Fail open here for the same reason as a JsonException — never block on
+			// a parse failure (matches the non-throwing guarantee documented on the interface).
 			return false;
 		}
 		using (document) {

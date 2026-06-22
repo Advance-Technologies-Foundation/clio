@@ -750,6 +750,14 @@ public sealed class ToolContractGetToolTests {
 			because: "sync-pages should warn through the contract that a layout body is rejected unless ui-page-layout was fetched this session");
 		pageGetContract.Description.Should().NotContain("LAYOUT-GUIDANCE GATE",
 			because: "get-page is a read tool and does not enforce the write-path layout-guidance gate");
+		pageUpdateContract.Preconditions.Should().Contain(
+			precondition => precondition.Contains(PageLayoutGuidanceGate.RequiredGuidanceName, StringComparison.Ordinal),
+			because: "update-page must surface the layout-guidance gate as a structured precondition naming ui-page-layout, not only in the prose description");
+		pageSyncContract.Preconditions.Should().Contain(
+			precondition => precondition.Contains(PageLayoutGuidanceGate.RequiredGuidanceName, StringComparison.Ordinal),
+			because: "sync-pages must surface the layout-guidance gate as a structured precondition naming ui-page-layout, not only in the prose description");
+		pageGetContract.Preconditions.Should().BeNullOrEmpty(
+			because: "get-page is read-only and must not advertise the write-path layout-guidance gate as a precondition");
 	}
 
 	[Test]

@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -75,6 +77,7 @@ public sealed class GuidanceAccessLedgerTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Ignores null, empty, or whitespace names passed to Record.")]
 	[TestCase(null)]
 	[TestCase("")]
@@ -157,5 +160,37 @@ public sealed class GuidanceAccessLedgerTests {
 			because: "a thread-safe ledger must record every distinct name written by concurrent writers without loss");
 		names.All(ledger.WasFetched).Should().BeTrue(
 			because: "every concurrently recorded name must be reported as fetched");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records a small fixed set of names from many parallel writers while a parallel reader repeatedly enumerates Fetched, without exceptions and converging on the distinct set.")]
+	public async Task Fetched_Should_Be_Safe_To_Read_While_Recording_Concurrently() {
+		// Arrange — a few hot names hammered by many writers exercises the read-under-lock path against
+		// concurrent mutation (the case the plain distinct-names test does not cover).
+		IGuidanceAccessLedger ledger = new GuidanceAccessLedger();
+		string[] hotNames = { "ui-page-layout", "esq-filters", "page-modification", "data-bindings" };
+		var readerCancellation = new CancellationTokenSource();
+
+		// Act — start a reader that keeps enumerating the snapshot while writers record the hot names.
+		Task reader = Task.Run(() => {
+			while (!readerCancellation.IsCancellationRequested) {
+				foreach (string _ in ledger.Fetched) {
+					// Enumerate the snapshot to exercise the read-under-lock path against live writers.
+				}
+			}
+		});
+		Func<Task> recordAndStopReader = async () => {
+			await Task.Run(() => Parallel.For(0, 2000, index => ledger.Record(hotNames[index % hotNames.Length])));
+			readerCancellation.Cancel();
+			await reader;
+		};
+
+		// Assert
+		await recordAndStopReader.Should().NotThrowAsync(
+			because: "reading the Fetched snapshot under lock while many writers record concurrently must never throw");
+		ledger.Fetched.Should().BeEquivalentTo(hotNames,
+			because: "hammering the same few names from many writers must converge on exactly the distinct set, with no duplicates and no loss");
+		readerCancellation.Dispose();
 	}
 }

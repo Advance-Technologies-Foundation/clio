@@ -2521,7 +2521,10 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when single-page dry-run or legacy save is required.")
 			],
-			[]);
+			[],
+			Preconditions: [
+				$"A page body that adds or lays out crt.* components requires get-guidance name=`{PageLayoutGuidanceGate.RequiredGuidanceName}` earlier in this session (per-page `force` overrides the gate)."
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageList() {
@@ -3327,6 +3330,9 @@ internal static class ToolContractCatalog {
 					[
 						PageSyncTool.ToolName
 					])
+			],
+			Preconditions: [
+				$"A body that adds or lays out crt.* components requires get-guidance name=`{PageLayoutGuidanceGate.RequiredGuidanceName}` earlier in this session (`force` overrides the gate)."
 			]);
 	}
 

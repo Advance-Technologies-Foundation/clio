@@ -26,6 +26,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 		+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns true when the body inserts a crt.* view component.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_True_When_Inserting_Crt_Component() {
 		// Arrange
@@ -42,6 +43,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns true when a crt.* container component is inserted.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_True_When_Inserting_Crt_Container() {
 		// Arrange
@@ -58,6 +60,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a merge-only viewConfigDiff (no insert).")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Merge_Only() {
 		// Arrange
@@ -74,6 +77,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a remove-only viewConfigDiff.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Remove_Only() {
 		// Arrange
@@ -90,6 +94,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a move-only viewConfigDiff.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Move_Only() {
 		// Arrange
@@ -106,6 +111,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false when an insert's values.type is not a crt.* element.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Insert_Is_Not_Crt_Type() {
 		// Arrange
@@ -122,6 +128,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a handler-only body (empty viewConfigDiff, handlers present).")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Handler_Only() {
 		// Arrange
@@ -142,6 +149,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a converter-only body.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Converter_Only() {
 		// Arrange
@@ -162,6 +170,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a validator-only body.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Validator_Only() {
 		// Arrange
@@ -182,6 +191,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for an empty viewConfigDiff array.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_ViewConfigDiff_Is_Empty() {
 		// Arrange
@@ -197,6 +207,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false when the body has no viewConfigDiff marker section at all.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_No_ViewConfigDiff_Marker() {
 		// Arrange
@@ -212,6 +223,7 @@ public sealed class PageLayoutCompositionDetectorTests {
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns false for a null or whitespace body.")]
 	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Body_Is_Null_Or_Blank() {
 		// Arrange
@@ -224,5 +236,54 @@ public sealed class PageLayoutCompositionDetectorTests {
 		// Assert
 		nullResult.Should().BeFalse(because: "a null body adds nothing");
 		blankResult.Should().BeFalse(because: "a blank body adds nothing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns false for a mobile-style plain-JSON body with a crt.* insert because it has no SCHEMA_VIEW_CONFIG_DIFF markers.")]
+	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Mobile_Plain_Json() {
+		// Arrange — a mobile body is plain JSON with no marker-delimited viewConfigDiff section.
+		var detector = new PageLayoutCompositionDetector();
+		string body = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}}]}";
+
+		// Act
+		bool result = detector.BodyAddsOrLaysOutComponents(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the detector is web-only and reads the SCHEMA_VIEW_CONFIG_DIFF marker section; a mobile body has no markers, so per the fail-open contract it is never blocked by the layout gate");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns false when an insert has values but no type property.")]
+	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_Insert_Has_Values_Without_Type() {
+		// Arrange
+		var detector = new PageLayoutCompositionDetector();
+		string body = WrapViewConfigDiff(
+			"[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]");
+
+		// Act
+		bool result = detector.BodyAddsOrLaysOutComponents(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "an insert whose values omit a type cannot be classified as a crt.* component, so the fail-open contract returns false rather than blocking");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns false when the viewConfigDiff marker section content is malformed, unparseable JSON.")]
+	public void BodyAddsOrLaysOutComponents_Should_Return_False_When_ViewConfigDiff_Json_Is_Malformed() {
+		// Arrange — the marker section is present but its content is not parseable JSON.
+		var detector = new PageLayoutCompositionDetector();
+		string body = WrapViewConfigDiff("[{\"operation\": insert, ");
+
+		// Act
+		bool result = detector.BodyAddsOrLaysOutComponents(body);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "an unparseable viewConfigDiff is handled by the syntax/content validators that run before this gate; the detector follows the fail-open contract and never blocks on a parse failure");
 	}
 }
