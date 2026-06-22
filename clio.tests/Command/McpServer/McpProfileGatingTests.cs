@@ -13,16 +13,17 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Story 1 (opt-in lazy MCP profile): the <c>mcp-lazy-tools</c> feature switches the registered MCP
-/// tool surface between the full flat catalog (OFF, default) and the lazy core profile plus the
-/// always-on executor / contract tools (ON). Gating happens at the single
-/// <see cref="McpFeatureToggleFilter"/> seam; these tests pin the type-selection contract.
+/// The registered MCP tool surface is the lazy core profile plus the always-on executor / contract
+/// tools — the only surface clio's MCP server exposes (the long-tail flat schemas are reached via
+/// <c>clio-run</c> / <c>clio-run-destructive</c> and discovered via <c>get-tool-contract</c>).
+/// Selection happens at the single <see cref="McpFeatureToggleFilter"/> seam; these tests pin the
+/// type-selection contract and ratchet the tool count / serialized size of the surface.
 /// </summary>
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class McpProfileGatingTests
 {
-	// Lazy mode keeps the core set + the 3 always-on lazy types. 18 core types +
+	// The surface keeps the core set + the 3 always-on lazy types. 18 core types +
 	// {ClioRunTool, ClioRunDestructiveTool} (ToolContractGetTool is already a core member) = 20
 	// distinct flat tool TYPES. Per-TYPE granularity (ADR resolved decision #5) keeps the WHOLE class,
 	// and several core classes declare more than one [McpServerTool] (DataForgeTool declares 8 — only
@@ -33,13 +34,13 @@ public sealed class McpProfileGatingTests
 	// full catalog.
 	private const int MaxLazyToolCount = 30;
 
-	// tools/list budget ceiling for lazy mode. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok)
-	// for the clio surface. We measure the serialized ProtocolTool set (name + description + input
-	// schema) of the lazy tools as a proxy for the tools/list payload. Story 2 slimmed the core
-	// descriptions (and the ubiquitous environment-name/uri/login/password params), dropping the lazy
-	// payload from ~37.4k to ~30.1k bytes; the remaining bulk is the input-schema bodies, which Story 2
-	// does not touch. The ratchet is tightened to 33k bytes — below the post-slim measurement with a
-	// small (~3k) headroom — to lock in the win and catch any silent re-growth of the core descriptions.
+	// tools/list budget ceiling. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok) for the clio
+	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
+	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
+	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
+	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet is
+	// tightened to 33k bytes — below the post-slim measurement with a small (~3k) headroom — to lock in
+	// the win and catch any silent re-growth of the core descriptions.
 	private const int MaxLazyToolsSerializedBytes = 33 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
@@ -50,79 +51,62 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the full enabled tool-type set unchanged when the lazy-tools feature is OFF (default), so existing consumers see zero change.")]
-	public void SelectToolTypes_ShouldReturnFullSet_WhenLazyToolsDisabled() {
+	[Description("Drops long-tail tool types and keeps only the core profile plus the always-on executor/contract types.")]
+	public void SelectToolTypes_ShouldReturnCorePlusExecutorsAndDropLongTail_WhenCalled() {
 		// Arrange
 		Type[] enabled = EnabledToolTypes();
 
 		// Act
-		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: false).ToArray();
-
-		// Assert
-		selected.Should().BeEquivalentTo(enabled,
-			because: "with mcp-lazy-tools OFF the registered tool surface must be the unchanged full flat catalog");
-		selected.Should().Contain(typeof(PageUpdateTool),
-			because: "a long-tail tool type stays registered flat when lazy mode is off");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Drops long-tail tool types and keeps only the core profile plus the always-on executor/contract types when the lazy-tools feature is ON.")]
-	public void SelectToolTypes_ShouldReturnCorePlusExecutors_WhenLazyToolsEnabled() {
-		// Arrange
-		Type[] enabled = EnabledToolTypes();
-
-		// Act
-		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: true).ToArray();
+		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled).ToArray();
 
 		// Assert
 		selected.Should().NotContain(typeof(PageUpdateTool),
-			because: "a long-tail tool type must drop out of tools/list in lazy mode");
+			because: "a long-tail tool type must not sit flat in tools/list");
 		selected.Should().Contain(typeof(ClioRunTool),
-			because: "the safe executor stays flat in lazy mode so the long tail is reachable");
+			because: "the safe executor stays flat so the long tail is reachable");
 		selected.Should().Contain(typeof(ClioRunDestructiveTool),
-			because: "the destructive executor stays flat in lazy mode so destructive long-tail commands are reachable");
+			because: "the destructive executor stays flat so destructive long-tail commands are reachable");
 		selected.Should().Contain(typeof(ToolContractGetTool),
-			because: "the lazy-schema describe tool stays flat so the long tail is discoverable");
+			because: "the schema-describe tool stays flat so the long tail is discoverable");
 		selected.Should().Contain(typeof(DataForgeTool),
-			because: "a core profile tool type stays flat in lazy mode");
+			because: "a core profile tool type stays flat");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every type the lazy mode selects is either a core profile type or an always-on lazy type, with no other tool types leaking through.")]
-	public void SelectToolTypes_ShouldSelectOnlyCoreAndAlwaysOnTypes_WhenLazyToolsEnabled() {
+	[Description("Every selected type is either a core profile type or an always-on lazy type, with no other tool types leaking through.")]
+	public void SelectToolTypes_ShouldSelectOnlyCoreAndAlwaysOnTypes_WhenCalled() {
 		// Arrange
 		Type[] enabled = EnabledToolTypes();
 		HashSet<Type> allowed = new(McpCoreToolProfile.CoreToolTypes);
 		allowed.UnionWith(McpCoreToolProfile.AlwaysOnLazyToolTypes);
 
 		// Act
-		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: true).ToArray();
+		Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled).ToArray();
 
 		// Assert
 		selected.Should().OnlyContain(type => allowed.Contains(type),
-			because: "lazy mode registers exactly the core profile unioned with the always-on executor/contract types");
+			because: "the surface registers exactly the core profile unioned with the always-on executor/contract types");
 		selected.Should().HaveCountLessThan(enabled.Length,
-			because: "lazy mode must register strictly fewer tool types than the full catalog");
+			because: "the surface must register strictly fewer tool types than the full discovered catalog");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Confirms the lazy mode selection is strictly smaller than the full catalog and the full catalog is non-trivial, proving the reduction is real.")]
-	public void SelectToolTypes_ShouldReduceTheCatalog_WhenComparingModes() {
+	[Description("Confirms the selected surface is strictly smaller than the full discovered catalog and the full catalog is non-trivial, proving the reduction is real.")]
+	public void SelectToolTypes_ShouldReturnStrictSubsetOfFullCatalog_WhenCalled() {
 		// Arrange
 		Type[] enabled = EnabledToolTypes();
 
 		// Act
-		int fullCount = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: false).Count();
-		int lazyCount = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: true).Count();
+		int fullCount = enabled.Length;
+		int lazyCount = McpFeatureToggleFilter.SelectToolTypes(enabled).Count();
 
 		// Assert
 		fullCount.Should().BeGreaterThan(100,
-			because: "clio ships well over a hundred MCP tool types in the full flat catalog");
+			because: "clio ships well over a hundred MCP tool types in the full discovered catalog");
 		lazyCount.Should().BeLessThan(fullCount,
-			because: "lazy mode is a strict subset of the full catalog");
+			because: "the registered surface is a strict subset of the full discovered catalog");
 	}
 
 	[Test]
@@ -137,14 +121,13 @@ public sealed class McpProfileGatingTests
 			Environment.SetEnvironmentVariable(spikeEnvVar, "DataForgeTool");
 
 			// Act
-			Type[] selectedOff = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: false).ToArray();
-			Type[] selectedOn = McpFeatureToggleFilter.SelectToolTypes(enabled, lazyToolsEnabled: true).ToArray();
+			Type[] selected = McpFeatureToggleFilter.SelectToolTypes(enabled).ToArray();
 
 			// Assert
-			selectedOff.Should().BeEquivalentTo(enabled,
-				because: "the removed spike env var must not narrow the OFF (full catalog) selection");
-			selectedOn.Should().Contain(typeof(PageListTool),
-				because: "the selection is driven only by the lazy-tools flag, not by CLIO_MCP_TOOL_TYPES");
+			selected.Should().Contain(typeof(PageListTool),
+				because: "the selection is driven only by the core profile, not by CLIO_MCP_TOOL_TYPES");
+			selected.Should().NotContain(typeof(PageUpdateTool),
+				because: "the removed spike env var must not widen the surface to include long-tail types");
 		} finally {
 			Environment.SetEnvironmentVariable(spikeEnvVar, original);
 		}
@@ -152,33 +135,33 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Registering with lazy mode ON yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
-	public void RegisterEnabledPrimitives_ShouldKeepLazyToolCountWithinBudget_WhenLazyToolsEnabled() {
+	[Description("Registering yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
+	public void RegisterEnabledPrimitives_ShouldKeepToolCountWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
 		IMcpServerBuilder builder = services.AddMcpServer();
 
 		// Act
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default, lazyToolsEnabled: true);
+			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
 		int lazyToolCount = services.Count(descriptor => descriptor.ServiceType == typeof(McpServerTool));
 
 		// Assert
 		lazyToolCount.Should().BeGreaterThan(0,
-			because: "lazy mode still registers the core + executor tools");
+			because: "the surface still registers the core + executor tools");
 		lazyToolCount.Should().BeLessThanOrEqualTo(MaxLazyToolCount,
-			because: $"the lazy tools/list must stay within the {MaxLazyToolCount}-tool budget so it cannot silently bloat back toward the full catalog");
+			because: $"the tools/list must stay within the {MaxLazyToolCount}-tool budget so it cannot silently bloat back toward the full catalog");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The serialized tools/list payload for lazy mode stays within the byte budget, ratcheting the context cost of the core set.")]
-	public void RegisterEnabledPrimitives_ShouldKeepLazyToolsSerializedSizeWithinBudget_WhenLazyToolsEnabled() {
+	[Description("The serialized tools/list payload stays within the byte budget, ratcheting the context cost of the core set.")]
+	public void RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
 		IMcpServerBuilder builder = services.AddMcpServer();
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default, lazyToolsEnabled: true);
+			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
 		using ServiceProvider provider = services.BuildServiceProvider();
 
 		// Act
@@ -189,8 +172,8 @@ public sealed class McpProfileGatingTests
 
 		// Assert
 		protocolTools.Should().NotBeEmpty(
-			because: "lazy mode advertises a non-empty tools/list");
+			because: "the surface advertises a non-empty tools/list");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxLazyToolsSerializedBytes,
-			because: $"the lazy tools/list payload must stay under {MaxLazyToolsSerializedBytes} bytes (~ADR token budget) to deliver the context-reduction goal");
+			because: $"the tools/list payload must stay under {MaxLazyToolsSerializedBytes} bytes (~ADR token budget) to deliver the context-reduction goal");
 	}
 }

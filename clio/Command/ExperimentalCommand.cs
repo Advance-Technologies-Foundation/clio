@@ -154,11 +154,10 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	}
 
 	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
-	// options/MCP type. The mcp-lazy-tools profile key gates a registration-filter PROFILE (which
-	// tool TYPES register flat), not a single hideable command, so it has no attribute carrier — it
-	// is enumerated here so `clio experimental` lists it and `--enable/--disable` does not warn it is
-	// unknown. Compared case-insensitively, like all feature keys.
-	internal static readonly string[] StandaloneFeatureKeys = [McpServer.McpCoreToolProfile.FeatureKey];
+	// options/MCP type (registration-filter profiles, etc.), listed so `clio experimental` shows them
+	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
+	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
+	internal static readonly string[] StandaloneFeatureKeys = [];
 
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()

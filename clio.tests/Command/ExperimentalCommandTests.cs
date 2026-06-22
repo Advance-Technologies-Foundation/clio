@@ -134,21 +134,6 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 	}
 
 	[Test]
-	[Description("Toggling the standalone mcp-lazy-tools profile key persists the flag without warning it is unknown.")]
-	public void Execute_ShouldNotWarn_WhenTogglingMcpLazyToolsProfileKey() {
-		// Arrange
-		ExperimentalOptions options = new() { Name = Clio.Command.McpServer.McpCoreToolProfile.FeatureKey, Enable = true };
-
-		// Act
-		int result = _sut.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "mcp-lazy-tools is a recognized standalone feature key");
-		_settingsRepository.Received(1).SetFeature(Clio.Command.McpServer.McpCoreToolProfile.FeatureKey, true);
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
-	}
-
-	[Test]
 	[Description("Lists feature flags by printing a table when no toggle arguments are supplied.")]
 	public void Execute_ShouldListFeatures_WhenNoArgumentsSupplied() {
 		// Arrange

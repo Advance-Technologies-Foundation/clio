@@ -5,8 +5,10 @@ using Clio.Command.McpServer.Tools;
 namespace Clio.Command.McpServer;
 
 /// <summary>
-/// The lazy-mode MCP tool profile: the declaring <c>[McpServerToolType]</c> classes kept flat in
-/// <c>tools/list</c> when the <c>mcp-lazy-tools</c> feature is enabled.
+/// The MCP tool profile: the declaring <c>[McpServerToolType]</c> classes kept flat in
+/// <c>tools/list</c>. This is the only tool surface clio's MCP server exposes — the long-tail
+/// schemas are reached via <c>clio-run</c> / <c>clio-run-destructive</c> and discovered via
+/// <c>get-tool-contract</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,14 +32,7 @@ namespace Clio.Command.McpServer;
 public static class McpCoreToolProfile {
 
 	/// <summary>
-	/// The feature key (ADR resolved decision #4) that opts a consumer into lazy MCP mode. OFF by
-	/// default ⇒ full flat catalog (unchanged). Compared case-insensitively, like all feature keys.
-	/// Toggle with <c>clio experimental --name mcp-lazy-tools --enable</c> / <c>--disable</c>.
-	/// </summary>
-	public const string FeatureKey = "mcp-lazy-tools";
-
-	/// <summary>
-	/// The core flat tool-type classes for lazy mode. Each maps to one of the proposed core tool
+	/// The core flat tool-type classes. Each maps to one of the proposed core tool
 	/// names in the migration inventory (several core tools share a declaring class, so this set is
 	/// the deduplicated set of their <c>[McpServerToolType]</c> classes).
 	/// </summary>

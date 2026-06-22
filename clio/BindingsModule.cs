@@ -680,13 +680,11 @@ public class BindingsModule {
 				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
 		// Single registration seam shared with the parity regression test: registers the feature-enabled
 		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
-		// hazard is documented on RegisterEnabledPrimitives). The opt-in `mcp-lazy-tools` feature
-		// (OFF by default => full flat catalog, zero regression) switches the tool surface to the
-		// lazy core profile + clio-run executors + get-tool-contract.
-		bool mcpLazyToolsEnabled = mcpFeatureToggleService.IsFeatureEnabled(McpCoreToolProfile.FeatureKey);
+		// hazard is documented on RegisterEnabledPrimitives). The tool surface is always the lazy core
+		// profile + clio-run executors + get-tool-contract; the long-tail flat schemas stay reachable via
+		// the executors and discoverable via get-tool-contract.
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions,
-			mcpLazyToolsEnabled);
+			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {

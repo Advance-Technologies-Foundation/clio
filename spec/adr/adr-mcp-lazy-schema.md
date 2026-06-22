@@ -1,6 +1,6 @@
 # ADR — MCP lazy-schema tool surface (reduce context impact, not just tool count)
 
-- **Status:** Accepted (decisions resolved 2026-06-19; **pivoted to opt-in lazy mode** 2026-06-19 — see Resolved decisions #2)
+- **Status:** Accepted (decisions resolved 2026-06-19; **pivoted to opt-in lazy mode** 2026-06-19 — see Resolved decisions #2). **2026-06-22: toggle removed — lazy is the only implementation (always on). The `mcp-lazy-tools` feature key and the full-catalog code path were deleted; `SelectToolTypes` / `RegisterEnabledPrimitives` always register the lazy surface. Rationale: an opt-in flag that defaulted off (and was silently reverted by a master merge) left CI on the full catalog and the surface in two states — one implementation removes that whole class of problem.**
 - **Date:** 2026-06-19
 - **Jira:** ENG-90312 (same goal as PR #624; this ADR proposes an alternative design)
 - **Related:** PR [#624](https://github.com/Advance-Technologies-Foundation/clio/pull/624) (draft), spike branch `spike/mcp-lazy-schema`
