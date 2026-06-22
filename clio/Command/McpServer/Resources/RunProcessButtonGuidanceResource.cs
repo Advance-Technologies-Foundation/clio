@@ -50,7 +50,15 @@ public sealed class RunProcessButtonGuidanceResource {
 			         (`isLookup=true`) pass a Guid value, not display text.
 
 			       Button skeleton (insert into a container via update-page, mode append)
-			       - Pick `parentName` from `get-page` -> `bundle.containers` (do not guess; e.g. `MainHeaderTop`).
+			       - Pick `parentName` from `get-page` -> `bundle.containers` (NEVER guess a literal name).
+			         Choose by the page's action-button region, not by copying the example below:
+			         * Record form / edit page (FormPage): use `ActionButtonsContainer` — the record action bar
+			           next to Save/Close. This is the default target for a run-process button on a form page.
+			           Do NOT use `MainHeaderTop`: that is the page title header, not the action area.
+			         * List / grid page, or a form with no `ActionButtonsContainer`: pick the relevant action bar
+			           from `bundle.containers` (a `crt.FlexContainer` with `childCount` > 0 in the header region,
+			           commonly `MainHeaderTop` on list pages).
+			         Always confirm the chosen name actually exists in `bundle.containers` before writing.
 			       - The `clicked` config is `{ request: 'crt.RunBusinessProcessRequest', params: {...} }`.
 			       - Caption must be a localizable binding — pass the key via the `resources` parameter.
 
@@ -66,7 +74,7 @@ public sealed class RunProcessButtonGuidanceResource {
 			                           "color": "default",
 			                           "clicked": { /* one of the params blocks below */ }
 			                       },
-			                       "parentName": "MainHeaderTop",
+			                       "parentName": "ActionButtonsContainer", /* form page default; replace with the real container from bundle.containers — see the parentName rule above */
 			                       "propertyName": "items",
 			                       "index": 0
 			                   }
