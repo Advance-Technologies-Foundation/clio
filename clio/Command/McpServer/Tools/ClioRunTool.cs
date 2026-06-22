@@ -103,8 +103,9 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			// Without this catch the exception escapes to the outer McpToolErrorFilter, which the agent
 			// sees as a generic "An error occurred invoking '<tool>'" with no detail — so it cannot
 			// self-correct. Surface the real (inner-most) message as a structured Error result instead
-			// (field-test defect #3).
-			return Error($"Error: tool '{toolName}' failed: {GetInnermostMessage(ex)}");
+			// (field-test defect #3), redacted so paths/URIs/credentials never reach the transcript
+			// (mirrors McpToolErrorFilter; SensitiveErrorTextRedactor is the single redaction rule).
+			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
 		}
 	}
 

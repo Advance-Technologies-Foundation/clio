@@ -37,9 +37,11 @@ public static class McpToolErrorFilter
 				// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
 				// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
 				// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
-				// the real (inner-most) message as a structured error result for EVERY tool uniformly.
+				// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
+				// redacted, because this text lands in the model/host transcript and inner-most messages
+				// routinely carry absolute paths, request URIs (target hosts), and credentials.
 				return CreateJsonErrorResult(
-					$"MCP tool '{context.Params?.Name ?? "<unknown>"}' failed: {GetInnermostMessage(ex)}");
+					$"MCP tool '{context.Params?.Name ?? "<unknown>"}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
 			}
 		};
 
@@ -100,9 +102,11 @@ public static class McpToolErrorFilter
 		?? string.Empty;
 
 	private static string BuildDeserializationErrorMessage(string? toolName, string? argumentName, Exception exception) {
+		// The serializer message can echo back the offending argument value, so redact it too.
+		string detail = SensitiveErrorTextRedactor.Redact(exception.Message);
 		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"Failed to deserialize arguments for MCP tool '{toolName ?? "<unknown>"}': {exception.Message}"
-			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? "<unknown>"}': {exception.Message}";
+			? $"Failed to deserialize arguments for MCP tool '{toolName ?? "<unknown>"}': {detail}"
+			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? "<unknown>"}': {detail}";
 		return message;
 	}
 

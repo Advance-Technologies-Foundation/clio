@@ -41,6 +41,34 @@ public sealed class McpToolErrorFilterTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts absolute paths, URIs (with credentials), and connection-string hosts from the surfaced exception message while keeping the logical reason the agent self-corrects on — the message lands in the model/host transcript.")]
+	public async Task HandleCallToolErrors_Should_Redact_Sensitive_Tokens_From_Execution_Exception() {
+		// Arrange
+		InvalidOperationException executionException = new(
+			"Login failed for 'NoSuchEnv' at https://admin:s3cret@crm.contoso.com/0/ServiceModel; config /Users/alex/.clio/appsettings.json; password=hunter2");
+		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
+		RequestContext<CallToolRequestParams> context = CreateContext("restore-from-package-backup");
+
+		// Act
+		CallToolResult result = await handler(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		text.Should().Contain("Login failed for 'NoSuchEnv'",
+			because: "the logical reason must survive so the agent can still self-correct");
+		text.Should().NotContain("crm.contoso.com",
+			because: "the target host inside the URI must not leak into the transcript");
+		text.Should().NotContain("s3cret",
+			because: "credentials embedded in the URI authority must be redacted");
+		text.Should().NotContain("/Users/alex",
+			because: "absolute file paths must not leak into the transcript");
+		text.Should().NotContain("hunter2",
+			because: "a password=… value must be redacted");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Lets cancellation propagate so the host sees a cancellation, not a masked tool error.")]
 	public async Task HandleCallToolErrors_Should_Propagate_Cancellation() {
 		// Arrange
