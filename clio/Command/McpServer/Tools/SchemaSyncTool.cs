@@ -57,7 +57,11 @@ public sealed class SchemaSyncTool(
 					args.EnvironmentName,
 					CollectCandidateTerms(args),
 					CollectLookupHints(args));
-			} catch (Exception ex) {
+			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
+				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here
+				// (project rule: no blanket catch). The recoverable set is open-ended, so we exclude the
+				// unrecoverable set rather than enumerate every operational type the builder may surface.
 				dataForge = new ApplicationDataForgeResult(
 					Used: true,
 					Health: null,

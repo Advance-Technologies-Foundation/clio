@@ -9,6 +9,7 @@ using Clio.Common;
 using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -1253,6 +1254,64 @@ public sealed class SchemaSyncToolTests {
 			because: "the error must identify the culture key whose value is in the wrong script");
 		fakeUpdateCommand.CapturedOptions.Should().BeNull(
 			because: "an invalid en-US value must be rejected before the command executes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degrades an operational enrichment failure into a dataforge: warning without failing an otherwise-valid batch (diagnostic enrichment must never gate schema operations).")]
+	public async Task SchemaSync_Should_Degrade_Operational_Enrichment_Failure_Into_Warning() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new InvalidOperationException("baseUri: Value cannot be null"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a throwing enrichment service is diagnostic-only and must not fail an otherwise-valid operation");
+		response.DataForge.Should().NotBeNull(
+			because: "the degraded enrichment result must still be attached so the warning surfaces");
+		response.DataForge!.Warnings.Should().ContainSingle(warning => warning.StartsWith("dataforge:", StringComparison.Ordinal),
+			because: "the operational failure must be reported as a dataforge: warning, not swallowed silently");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does NOT mask an unrecoverable exception (programming defect) from enrichment as a warning — it propagates so the real bug is not hidden as a recoverable degradation.")]
+	public async Task SchemaSync_Should_Propagate_Unrecoverable_Enrichment_Exception() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		ISchemaEnrichmentService enrichmentService = Substitute.For<ISchemaEnrichmentService>();
+		enrichmentService
+			.Enrich(Arg.Any<string?>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>?>())
+			.Throws(new NullReferenceException("object reference not set"));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, enrichmentService);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		Func<Task> act = async () => await tool.SchemaSync(args);
+
+		// Assert
+		await act.Should().ThrowAsync<NullReferenceException>(
+			because: "a programming defect must not be hidden as a benign dataforge: degradation");
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
