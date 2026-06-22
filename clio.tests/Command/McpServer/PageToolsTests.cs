@@ -391,6 +391,33 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("get-page, update-page, and sync-pages tool descriptions route page design and layout work to the ui-guidelines guide so layout guidance is read before composing a body.")]
+	public void PageTools_Descriptions_Should_Route_Design_And_Layout_To_Ui_Guidelines() {
+		// Arrange
+		string getDesc = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		string updateDesc = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		string syncDesc = typeof(PageSyncTool).GetMethod(nameof(PageSyncTool.SyncPages))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+
+		// Act & Assert
+		foreach ((string tool, string description) in new[] {
+			("get-page", getDesc), ("update-page", updateDesc), ("sync-pages", syncDesc)
+		}) {
+			description.Should().Contain("get-guidance with name `ui-guidelines`",
+				because: $"{tool} must route page design/layout work to the ui-guidelines guide on the tool-description channel, not only via a buried GATE row — the agent followed the listed clauses but skipped ui-guidelines when it was absent");
+			description.Should().Contain("laying out",
+				because: $"{tool} must surface the design/layout trigger so the agent recognizes a composition task before authoring a body");
+			description.Should().Contain("not from memory",
+				because: $"{tool} must direct the agent to author layout from the guide rather than from memory, the failure mode observed when ui-guidelines had no tool-channel trigger");
+		}
+	}
+
+	[Test]
 	[Description("Serializes update-page resource registration metadata in the command response.")]
 	public void PageUpdateResponse_Should_Serialize_Resource_Registration_Metadata() {
 		// Arrange

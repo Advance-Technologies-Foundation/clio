@@ -49,6 +49,7 @@ public sealed class PageUpdateTool(
 			"the process with get-process-signature FIRST — parameter keys must be the process parameter " +
 			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
 			"unknown ones. " +
+			"if the body adds or lays out components — designing or laying out the page UI/UX (choosing a component for a concept, placing or ordering fields, grid columns/colSpan, container nesting, grouping into tabs/groups, captions/tooltips/placeholders) — call get-guidance with name `ui-guidelines` first (it routes to `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`); author from it, not from memory, and match the existing page style (read the page with get-page first). " +
 			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]

@@ -44,7 +44,8 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
+	             "if the body adds or lays out components — designing or laying out the page UI/UX (choosing a component for a concept, placing or ordering fields, grid columns/colSpan, container nesting, grouping into tabs/groups, captions/tooltips/placeholders) — call get-guidance with name `ui-guidelines` first (it routes to `ui-page-layout`, `ui-accessibility`, `ui-review-checklists`); author from it, not from memory, and match the existing page style.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
