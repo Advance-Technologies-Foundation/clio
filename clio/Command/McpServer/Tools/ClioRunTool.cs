@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using ModelContextProtocol.Protocol;
@@ -92,21 +93,42 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
-			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
+			CallToolResult result = await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
+			return AttachDispatchAudit(result, toolName);
 		}
 		catch (OperationCanceledException) {
 			// Honour cooperative cancellation/timeout — let it propagate so the host sees a cancellation,
 			// not a masked tool error.
 			throw;
 		}
-		catch (Exception ex) {
+		catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			// Without this catch the exception escapes to the outer McpToolErrorFilter, which the agent
 			// sees as a generic "An error occurred invoking '<tool>'" with no detail — so it cannot
 			// self-correct. Surface the real (inner-most) message as a structured Error result instead
 			// (field-test defect #3), redacted so paths/URIs/credentials never reach the transcript
 			// (mirrors McpToolErrorFilter; SensitiveErrorTextRedactor is the single redaction rule).
+			// A fatal/programming-defect exception (OOM/NRE/…) is NOT masked as a tool failure here — it
+			// propagates to the top-level request boundary (McpToolErrorFilter).
 			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
 		}
+	}
+
+	// Records WHAT was actually dispatched and its resolved destructiveness into the result's out-of-band
+	// `_meta` (never the content the model reads), so a host that auto-allows clio-run still has an audit
+	// trail of the concrete tool it ran — clio-run/clio-run-destructive collapse the safe/destructive
+	// split, so the inner tool's own annotation never reaches the host for a per-call prompt (ADR-accepted;
+	// this echo is the residual audit mitigation). Uses a dedicated `clio-run` key so a tool's own `_meta`
+	// is preserved.
+	private CallToolResult AttachDispatchAudit(CallToolResult result, string toolName) {
+		if (result is null) {
+			return result;
+		}
+		result.Meta ??= new JsonObject();
+		result.Meta["clio-run"] = new JsonObject {
+			["dispatchedTool"] = toolName,
+			["destructive"] = toolRegistry.IsDestructive(toolName)
+		};
+		return result;
 	}
 
 	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause

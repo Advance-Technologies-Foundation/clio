@@ -201,6 +201,27 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Records the dispatched tool name and its resolved destructiveness into the result's out-of-band _meta, so a host that auto-allows clio-run still has an audit trail of the concrete (possibly destructive) tool it ran.")]
+	public async Task RunAsync_ShouldEchoResolvedDestructivenessIntoMeta_WhenToolIsDispatched() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: true);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.Meta.Should().NotBeNull(because: "every dispatch must leave an audit record in _meta");
+		System.Text.Json.Nodes.JsonNode auditNode = result.Meta!["clio-run"];
+		auditNode.Should().NotBeNull(because: "the audit entry is stored under a dedicated 'clio-run' key");
+		auditNode!["dispatchedTool"]!.GetValue<string>().Should().Be("echo-tool",
+			because: "the audit trail must record which concrete tool clio-run actually executed");
+		auditNode["destructive"]!.GetValue<bool>().Should().BeTrue(
+			because: "the resolved tool's destructiveness (registry.IsDestructive) must be echoed for the host/audit trail");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A known safe tool is invoked through the SDK and its CallToolResult is returned to the caller.")]
 	public async Task RunAsync_ShouldInvokeToolAndReturnResult_WhenSafeToolIsValid() {
 		// Arrange
