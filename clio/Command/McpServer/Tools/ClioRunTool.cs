@@ -69,7 +69,16 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		}
 
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
-			return Error($"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.");
+			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
+			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
+			// the agent can self-correct without an extra discovery round-trip. Source set mirrors the
+			// index/named path (registry's invokable names + reflection catalog), deduped case-insensitively,
+			// ranked by Levenshtein distance then ordinal — same ranking as ToolContractGetTool.BuildSuggestions.
+			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
+			string didYouMean = suggestions.Count > 0
+				? $" Did you mean: {string.Join(", ", suggestions)}?"
+				: string.Empty;
+			return Error($"Error: unknown tool '{toolName}'. It is not a registered clio MCP tool.{didYouMean}");
 		}
 
 		// No destructive-vs-safe refusal: field testing showed capable models loop indefinitely on the
@@ -201,6 +210,24 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			return false;
 		}
 		return !(type.IsGenericType && type.GetGenericTypeDefinition() == typeof(RequestContext<>));
+	}
+
+	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
+	// requested name then ordinally by name (mirrors ToolContractGetTool.BuildSuggestions). The source is
+	// the FULL invokable name set — the registry's invokable names (the hidden long tail clio-run targets)
+	// unioned with the reflection catalog — deduped case-insensitively. The executor names themselves are
+	// excluded so a near-miss never suggests re-entering clio-run / clio-run-destructive.
+	private IReadOnlyList<string> BuildSuggestions(string requestedName) {
+		return toolRegistry.ToolNames
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
+			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.Take(3)
+			.ToArray();
 	}
 
 	private static CallToolResult Error(string message) =>

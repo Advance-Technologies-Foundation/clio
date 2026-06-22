@@ -117,6 +117,46 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Appends a 'did you mean' shortlist of the nearest real tool names to the unknown-tool error so the agent can self-correct without an extra discovery round-trip.")]
+	public async Task RunAsync_ShouldSuggestNearestRealTools_WhenToolNameIsNearMiss() {
+		// Arrange
+		_registry.ToolNames.Returns(new[] { "find-app", "find-entity-schema", "list-apps" });
+		_registry.TryGetTool("find-ap", out Arg.Any<McpServerTool>()).Returns(false);
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("find-ap", null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
+		text.Should().Contain("Did you mean",
+			because: "a near-miss must carry a self-correction hint instead of a bare error");
+		text.Should().Contain("find-app",
+			because: "the nearest real tool name (Levenshtein distance 1) must lead the suggestions");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The 'did you mean' suggestions never include the executor names clio-run / clio-run-destructive, so a near-miss never advises re-entering the executor.")]
+	public async Task RunAsync_ShouldNeverSuggestExecutorNames_WhenBuildingSuggestions() {
+		// Arrange — registry advertises only the executor names, so without the exclusion they would surface.
+		_registry.ToolNames.Returns(new[] { ClioRunTool.ToolName, ClioRunDestructiveTool.ToolName });
+		_registry.TryGetTool("clio-rin", out Arg.Any<McpServerTool>()).Returns(false);
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("clio-rin", null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		result.IsError.Should().BeTrue(because: "an unknown tool is a failure result");
+		text.Should().NotContain("clio-run-destructive",
+			because: "suggesting the destructive executor would advise re-entering the executor instead of a real target");
+		text.Should().NotMatchRegex(@"Did you mean:[^?]*\bclio-run\b",
+			because: "suggesting clio-run itself would loop the agent back into the executor rather than a concrete tool");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects dispatching clio-run to itself, preventing unbounded recursive self-dispatch (DoS).")]
 	public async Task RunAsync_ShouldRejectSelfDispatch_WhenTargetIsClioRun() {
 		// Arrange
