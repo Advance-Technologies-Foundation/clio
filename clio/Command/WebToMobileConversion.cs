@@ -101,10 +101,16 @@ public static class WebToMobileAnalysisService {
 		var convertedRequests = new List<ConvertedRequest>();
 		var droppedRequests = new List<DroppedRequest>();
 		var flaggedRequests = new List<FlaggedRequest>();
+		var sourcePlacements = new Dictionary<string, (int? Col, int? Row)>(StringComparer.OrdinalIgnoreCase);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
+
+		// Adaptive (per-breakpoint) layout proposal: group fields by mobile container, place them
+		// (stack on phone, 2 columns on tablet — reusing source column/row as the medium/large baseline),
+		// bake child placement into each field's mobileValues, and emit the container-side adaptiveDiff.
+		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourcePlacements);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -140,8 +146,9 @@ public static class WebToMobileAnalysisService {
 			SectionRegistration = sectionRegistration,
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
-			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null),
-			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null),
+			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
+			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0),
+			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
 		};
@@ -576,7 +583,7 @@ public static class WebToMobileAnalysisService {
 
 	private static List<string> BuildConstraints(
 		bool multipleDataSources, IReadOnlyList<string> webOnlySections,
-		bool hasModelConfig, bool hasViewModelConfig) {
+		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -604,10 +611,18 @@ public static class WebToMobileAnalysisService {
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");
 		}
+		if (hasAdaptiveLayout) {
+			constraints.Add(
+				"adaptiveLayout proposes a per-screen layout for each container that groups 2+ fields (stack on " +
+				"phone, 2 columns on tablet). The child placement is ALREADY baked into each field's " +
+				"mobileValues.layoutConfig.adaptive — paste it verbatim. To complete the responsive layout, also " +
+				"apply each adaptiveLayout[].adaptiveDiff (the container-side column counts). Present this proposal " +
+				"to the user before approving — they may adjust column counts / placement or decline it.");
+		}
 		return constraints;
 	}
 
-	private static List<string> BuildNextSteps(bool hasDataSections) {
+	private static List<string> BuildNextSteps(bool hasDataSections, bool hasAdaptiveLayout) {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
@@ -616,6 +631,9 @@ public static class WebToMobileAnalysisService {
 		};
 		if (hasDataSections) {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is a single root merge carrying the full config). Do NOT rebuild them by hand and never copy the data-source section from an existing body — keep every attribute's type and path.");
+		}
+		if (hasAdaptiveLayout) {
+			steps.Add("Present the adaptiveLayout proposal (per-screen field placement) to the user for review; once approved, apply each adaptiveLayout[].adaptiveDiff for the container columns (the child layoutConfig.adaptive is already inside the fields' mobileValues).");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -644,7 +662,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, RequestMappingRule> RequestMap,
 		List<ConvertedRequest> ConvertedRequests,
 		List<DroppedRequest> DroppedRequests,
-		List<FlaggedRequest> FlaggedRequests);
+		List<FlaggedRequest> FlaggedRequests,
+		Dictionary<string, (int? Col, int? Row)> SourcePlacements);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -664,10 +683,11 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, RequestMappingRule> requestMap,
 		List<ConvertedRequest> convertedRequests,
 		List<DroppedRequest> droppedRequests,
-		List<FlaggedRequest> flaggedRequests) {
+		List<FlaggedRequest> flaggedRequests,
+		Dictionary<string, (int? Col, int? Row)> sourcePlacements) {
 		var ctx = new ElementMapContext(map, mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
-			requestMap, convertedRequests, droppedRequests, flaggedRequests);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
 		return ctx.Out;
 	}
@@ -761,6 +781,7 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
+			CaptureSourcePlacement(ctx, name, node);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
@@ -981,6 +1002,123 @@ public static class WebToMobileAnalysisService {
 			DroppedRequests = dropped,
 			FlaggedRequests = flagged
 		};
+	}
+
+	// ── Adaptive (per-breakpoint) layout proposal ──────────────────────────────────────────────
+
+	/// <summary>Reads an integer property from a Newtonsoft node, or null when absent / non-integer.</summary>
+	private static int? ReadInt(JObject obj, string prop) =>
+		obj[prop] is { Type: JTokenType.Integer } token ? token.Value<int>() : null;
+
+	/// <summary>Records a leaf field's source grid placement (web <c>layoutConfig</c> column/row) for the adaptive pass.</summary>
+	private static void CaptureSourcePlacement(ElementMapContext ctx, string name, JObject node) {
+		if (node["layoutConfig"] is not JObject layout) {
+			return;
+		}
+		int? col = ReadInt(layout, "column");
+		int? row = ReadInt(layout, "row");
+		if (col is not null || row is not null) {
+			ctx.SourcePlacements[name] = (col, row);
+		}
+	}
+
+	/// <summary>
+	/// Builds the per-breakpoint layout PROPOSAL: groups inserted FIELD entries by their mobile container,
+	/// and for each container that groups 2+ fields, stacks them on phone (<c>small</c> = 1 column) and
+	/// flows them into columns on tablet (<c>medium</c> / <c>large</c>) — reusing the source column/row as
+	/// the tablet baseline when the source page already placed the field, else a 2-column flow. The child
+	/// placement is written into each field's <c>mobileValues.layoutConfig.adaptive</c> (mutated in place);
+	/// the container columns are returned as a ready-to-apply merge diff per group. Empty when nothing groups
+	/// 2+ fields.
+	/// </summary>
+	private static List<AdaptiveLayoutGroup> BuildAdaptiveLayout(
+		List<ElementMapEntry> elementMap, IReadOnlyDictionary<string, (int? Col, int? Row)> placements) {
+		// Group field inserts by their mobile parent container, preserving tree (= elementMap) order.
+		var byParent = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
+		var order = new List<string>();
+		foreach (ElementMapEntry e in elementMap) {
+			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
+				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
+				!SchemaValidationService.StandardFieldComponentTypes.Contains(e.MobileType ?? "")) {
+				continue;
+			}
+			if (!byParent.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
+				list = [];
+				byParent[e.ParentName] = list;
+				order.Add(e.ParentName);
+			}
+			list.Add(e);
+		}
+
+		var groups = new List<AdaptiveLayoutGroup>();
+		foreach (string parent in order) {
+			List<ElementMapEntry> fields = byParent[parent];
+			if (fields.Count < 2) {
+				continue; // a single field has nothing to reflow
+			}
+			// Tablet (medium/large) column count: reuse the source layout's widest column when present, else 2.
+			int sourceMaxCol = 0;
+			foreach (ElementMapEntry f in fields) {
+				if (placements.TryGetValue(f.MobileName, out (int? Col, int? Row) p) && p.Col is int c && c > sourceMaxCol) {
+					sourceMaxCol = c;
+				}
+			}
+			int tabletCols = sourceMaxCol >= 2 ? sourceMaxCol : 2;
+
+			var items = new List<AdaptiveLayoutItem>();
+			for (int i = 0; i < fields.Count; i++) {
+				ElementMapEntry f = fields[i];
+				placements.TryGetValue(f.MobileName, out (int? Col, int? Row) src);
+				// small: single-column vertical stack; medium/large: reuse source cell, else flow N-per-row.
+				int tabletCol = src.Col is int sc && sc >= 1 ? sc : (i % tabletCols) + 1;
+				int tabletRow = src.Row is int sr && sr >= 1 ? sr : (i / tabletCols) + 1;
+				var adaptive = new JsonObject {
+					["small"] = Cell(1, i + 1),
+					["medium"] = Cell(tabletCol, tabletRow),
+					["large"] = Cell(tabletCol, tabletRow)
+				};
+				// Bake the child placement into the already-built mobileValues (mutating the referenced node).
+				((JsonObject)f.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
+				items.Add(new AdaptiveLayoutItem { Name = f.MobileName, LayoutConfigAdaptive = adaptive });
+			}
+
+			groups.Add(new AdaptiveLayoutGroup {
+				ContainerName = parent,
+				ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
+					["small"] = Cols(1), ["medium"] = Cols(tabletCols), ["large"] = Cols(tabletCols)
+				},
+				AdaptiveDiff = BuildAdaptiveColumnsDiff(parent, tabletCols),
+				Items = items
+			});
+		}
+		return groups;
+
+		static JsonObject Cell(int column, int row) =>
+			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
+		static IReadOnlyList<string> Cols(int n) => Enumerable.Repeat("1fr", n).ToList();
+	}
+
+	/// <summary>A single root <c>merge</c> diff that sets a container's per-breakpoint adaptive column counts.</summary>
+	private static JsonNode BuildAdaptiveColumnsDiff(string containerName, int tabletCols) =>
+		new JsonArray(new JsonObject {
+			["operation"] = "merge",
+			["name"] = containerName,
+			["values"] = new JsonObject {
+				["adaptive"] = new JsonObject {
+					["small"] = new JsonObject { ["columns"] = ColumnsNode(1) },
+					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tabletCols) },
+					["large"] = new JsonObject { ["columns"] = ColumnsNode(tabletCols) }
+				}
+			}
+		});
+
+	/// <summary>A JSON array of <paramref name="n"/> "1fr" column sizes.</summary>
+	private static JsonArray ColumnsNode(int n) {
+		var arr = new JsonArray();
+		for (int i = 0; i < n; i++) {
+			arr.Add("1fr");
+		}
+		return arr;
 	}
 
 	/// <summary>The bound column code of a field node: the first <c>$ref</c> that maps to a declared attribute's column.</summary>

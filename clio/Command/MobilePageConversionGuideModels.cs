@@ -404,6 +404,20 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public RequestConversionInfo RequestConversions { get; init; }
 
+	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
+	/// <summary>
+	/// A PROPOSED responsive layout for each mobile container that groups two or more fields: how many
+	/// grid columns to show per breakpoint (<c>small</c> phone, <c>medium</c> tablet portrait,
+	/// <c>large</c> tablet landscape) and which cell each field occupies. The child placement is already
+	/// baked into each field's <c>elementMap[].mobileValues.layoutConfig.adaptive</c>; the container side
+	/// is delivered as a ready-to-apply <c>adaptiveDiff</c> per group. This is a PROPOSAL — present it at
+	/// the conversion gate so the user can adjust column counts / placement or decline it. Null when no
+	/// container groups two or more fields.
+	/// </summary>
+	[JsonPropertyName("adaptiveLayout")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<AdaptiveLayoutGroup> AdaptiveLayout { get; init; }
+
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];
@@ -559,6 +573,52 @@ public sealed class FlaggedRequest {
 
 	[JsonPropertyName("reason")]
 	public string Reason { get; init; }
+}
+
+/// <summary>
+/// A PROPOSED adaptive (per-breakpoint) layout for one mobile container that groups two or more fields.
+/// The child placement is already written into each field's <c>mobileValues.layoutConfig.adaptive</c>;
+/// <see cref="AdaptiveDiff"/> carries the matching container-side change. Present it at the conversion
+/// gate so the user can adjust or decline.
+/// </summary>
+public sealed class AdaptiveLayoutGroup {
+	/// <summary>The mobile container these fields are grouped into (e.g. "AreaProfileContainer").</summary>
+	[JsonPropertyName("containerName")]
+	public string ContainerName { get; init; }
+
+	/// <summary>
+	/// Advisory overview of the proposed grid columns per breakpoint:
+	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
+	/// </summary>
+	[JsonPropertyName("columnsByBreakpoint")]
+	public IReadOnlyDictionary<string, IReadOnlyList<string>> ColumnsByBreakpoint { get; init; }
+		= new Dictionary<string, IReadOnlyList<string>>();
+
+	/// <summary>
+	/// Ready-to-apply container-side change: a single root <c>merge</c> diff that sets the container's
+	/// <c>adaptive</c> column counts per breakpoint. Apply it after the body is built (works whether the
+	/// container is a template twin or a newly inserted grid container).
+	/// </summary>
+	[JsonPropertyName("adaptiveDiff")]
+	public JsonNode AdaptiveDiff { get; init; }
+
+	/// <summary>The fields placed in this container and the per-breakpoint cell each occupies.</summary>
+	[JsonPropertyName("items")]
+	public IReadOnlyList<AdaptiveLayoutItem> Items { get; init; } = [];
+}
+
+/// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>
+public sealed class AdaptiveLayoutItem {
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>
+	/// The <c>layoutConfig.adaptive</c> object: keys <c>small</c> / <c>medium</c> / <c>large</c>, each
+	/// <c>{ row, column, colSpan, rowSpan }</c> (1-based). Identical to what is already written into the
+	/// field's <c>elementMap[].mobileValues.layoutConfig.adaptive</c>.
+	/// </summary>
+	[JsonPropertyName("layoutConfigAdaptive")]
+	public JsonNode LayoutConfigAdaptive { get; init; }
 }
 
 // ── Intermediate read-model (not serialized) ──────────────────────────

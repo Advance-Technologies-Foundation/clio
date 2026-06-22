@@ -231,8 +231,10 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       ADAPTIVE BREAKPOINTS
 		       ─────────────────────────────────────────────────────────────
-		       Apply this section only when the user explicitly asks for adaptive / responsive layout.
-		       Otherwise rely on the static `columns` / `layoutConfig` values.
+		       The web→mobile conversion PROPOSES an adaptive layout for containers that group 2+ fields
+		       (stack on phone, 2 columns on tablet) — present it to the user, who can adjust or decline.
+		       Apply this section whenever you want per-screen placement; otherwise rely on the static
+		       `columns` / `layoutConfig` values.
 
 		       Breakpoints: "small" (phone portrait), "medium" (landscape / tablet portrait), "large" (tablet landscape).
 		       The mobile designer "Tablet portrait" / "Tablet landscape" preview switcher maps to `medium` / `large`.
@@ -312,8 +314,10 @@ public sealed class MobilePageGuidanceResource {
 		       Rules of thumb:
 		         - Define `adaptive` on the GridContainer AND `layoutConfig.adaptive` on every child
 		           that needs to move between breakpoints. Skipping either side breaks the layout.
-		         - Use 1-based `row` and `column`. `colSpan` / `rowSpan` default to 1; include them
-		           explicitly to match the format produced by the mobile designer.
+		         - Use 1-based `row` and `column` — the runtime reflows children by these per breakpoint
+		           (one item per cell). `colSpan` / `rowSpan` are serialized as 1 to match the mobile
+		           designer's format, but are NOT honored per-item by the runtime; do not rely on them to
+		           span cells. To make an item wider, give the container fewer columns at that breakpoint.
 		         - Keep all three breakpoints (`small`, `medium`, `large`) populated even when two
 		           share the same cell — the designer always serialises the full set and partial maps
 		           may render as empty cells on the missing breakpoint.

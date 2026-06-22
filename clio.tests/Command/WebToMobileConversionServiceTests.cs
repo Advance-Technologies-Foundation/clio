@@ -748,4 +748,87 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	#endregion
+
+	#region Adaptive (per-breakpoint) layout
+
+	private static JsonObject AdaptiveOf(MobilePageConversionGuide guide, string fieldName) =>
+		Element(guide, fieldName).MobileValues!.AsObject()["layoutConfig"]!.AsObject()["adaptive"]!.AsObject();
+
+	[Test]
+	[Description("A container that groups 2+ fields gets a proposed adaptive layout: small = 1-column stack, medium/large = 2-column flow; child placement is baked into each field's mobileValues.layoutConfig.adaptive.")]
+	public void Analyze_GroupedFields_ProposesStackOnPhoneTwoColumnsOnTablet() {
+		// Main (crt.FlexContainer) is not mobile-supported → relocate-children; its fields land in MainContainer.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FieldA", "type": "crt.Input" },
+				{ "name": "FieldB", "type": "crt.Input" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		guide.AdaptiveLayout.Should().NotBeNull();
+		AdaptiveLayoutGroup group = guide.AdaptiveLayout!.Single();
+		group.ContainerName.Should().Be("MainContainer");
+		group.Items.Select(i => i.Name).Should().Equal("FieldA", "FieldB");
+
+		// Container side: 1 / 2 / 2 columns by breakpoint, delivered as a ready-to-apply merge diff.
+		group.ColumnsByBreakpoint["small"].Should().Equal("1fr");
+		group.ColumnsByBreakpoint["medium"].Should().Equal("1fr", "1fr");
+		group.ColumnsByBreakpoint["large"].Should().Equal("1fr", "1fr");
+		JsonObject diff = group.AdaptiveDiff!.AsArray().Single()!.AsObject();
+		diff["operation"]!.GetValue<string>().Should().Be("merge");
+		diff["name"]!.GetValue<string>().Should().Be("MainContainer");
+		diff["values"]!["adaptive"]!["medium"]!["columns"]!.AsArray().Should().HaveCount(2);
+
+		// Child side: stack on phone, side-by-side on tablet — baked into mobileValues.
+		JsonObject a = AdaptiveOf(guide, "FieldA");
+		a["small"]!["column"]!.GetValue<int>().Should().Be(1);
+		a["small"]!["row"]!.GetValue<int>().Should().Be(1);
+		a["medium"]!["column"]!.GetValue<int>().Should().Be(1);
+		a["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+
+		JsonObject b = AdaptiveOf(guide, "FieldB");
+		b["small"]!["column"]!.GetValue<int>().Should().Be(1);
+		b["small"]!["row"]!.GetValue<int>().Should().Be(2, because: "second field stacks below the first on a phone");
+		b["medium"]!["column"]!.GetValue<int>().Should().Be(2, because: "second field sits in the next column on a tablet");
+		b["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+		b["large"]!["colSpan"]!.GetValue<int>().Should().Be(1, because: "colSpan is serialized as 1 for designer parity");
+	}
+
+	[Test]
+	[Description("When source fields already carry layoutConfig column/row, that placement is reused as the tablet (medium/large) baseline and the column count follows the widest source column; phone still stacks.")]
+	public void Analyze_GroupedFields_ReusesSourcePlacementForTablet() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
+				{ "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 2 } } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		AdaptiveLayoutGroup group = guide.AdaptiveLayout!.Single();
+		group.ColumnsByBreakpoint["medium"].Should().Equal(new[] { "1fr", "1fr", "1fr" }, "the widest source column is 3");
+
+		JsonObject b = AdaptiveOf(guide, "FieldB");
+		b["medium"]!["column"]!.GetValue<int>().Should().Be(3, because: "source column is reused on tablet");
+		b["medium"]!["row"]!.GetValue<int>().Should().Be(2);
+		b["small"]!["column"]!.GetValue<int>().Should().Be(1, because: "the phone breakpoint always collapses to a single column");
+		b["small"]!["row"]!.GetValue<int>().Should().Be(2);
+	}
+
+	[Test]
+	[Description("A container with a single field gets no adaptive proposal (nothing to reflow) and the field's mobileValues carry no layoutConfig.")]
+	public void Analyze_SingleField_NoAdaptiveProposal() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OnlyField", "type": "crt.Input" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		guide.AdaptiveLayout.Should().BeNull();
+		Element(guide, "OnlyField").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse();
+	}
+
+	#endregion
 }
