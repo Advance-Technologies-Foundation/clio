@@ -115,10 +115,10 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 
 	// Records WHAT was actually dispatched and its resolved destructiveness into the result's out-of-band
 	// `_meta` (never the content the model reads), so a host that auto-allows clio-run still has an audit
-	// trail of the concrete tool it ran — clio-run/clio-run-destructive collapse the safe/destructive
-	// split, so the inner tool's own annotation never reaches the host for a per-call prompt (ADR-accepted;
-	// this echo is the residual audit mitigation). Uses a dedicated `clio-run` key so a tool's own `_meta`
-	// is preserved.
+	// trail of the concrete tool it ran. Because clio-run and clio-run-destructive collapse the
+	// safe-versus-destructive distinction, the inner tool's own annotation never reaches the host for a
+	// per-call prompt; this echo is the ADR-accepted residual audit mitigation. A dedicated `clio-run`
+	// key keeps a tool's own `_meta` preserved.
 	private CallToolResult AttachDispatchAudit(CallToolResult result, string toolName) {
 		if (result is null) {
 			return result;
