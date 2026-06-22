@@ -530,6 +530,62 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the ui-page-layout leaf must carry the concept-to-component map agents rely on");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the ui-accessibility leaf with the WCAG contrast rules")]
+	public async Task GuidanceGet_Should_Return_Ui_Accessibility_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "ui-accessibility"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "ui-accessibility is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/ui-accessibility",
+			because: "the canonical resource URI for the ui-accessibility leaf should be stable");
+		response.Article.Text.Should().Contain("WCAG 2.2 AA",
+			because: "the ui-accessibility leaf must carry the WCAG version it targets");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the ui-review-checklists leaf with the severity model")]
+	public async Task GuidanceGet_Should_Return_Ui_Review_Checklists_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "ui-review-checklists"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "ui-review-checklists is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/ui-review-checklists",
+			because: "the canonical resource URI for the ui-review-checklists leaf should be stable");
+		response.Article.Text.Should().Contain("Severity model",
+			because: "the ui-review-checklists leaf must carry the severity model agents use for audits");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

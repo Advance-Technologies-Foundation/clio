@@ -1779,6 +1779,27 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("page-modification GATE routes UI design and review work to ui-guidelines, the only path that delivers the design guidance for ENG-91403.")]
+	public void PageModificationGuidanceResource_Should_Route_Ui_Design_To_Ui_Guidelines() {
+		// Arrange
+		PageModificationGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the page-modification guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the guide should expose its canonical docs:// URI");
+		article.Text.Should().Contain("designing or laying out a page",
+			because: "the GATE must keep the trigger that routes page design and layout work to the UI guidance");
+		article.Text.Should().Contain("ui-guidelines",
+			because: "the GATE row must route UI design and review tasks to the ui-guidelines index (ENG-91403)");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes the ui-guidelines index and its three leaves so get-guidance can return each by name (ENG-91403).")]
 	public void GuidanceCatalog_Should_Include_Ui_Guidelines_Entries() {
 		// Arrange
@@ -1798,6 +1819,8 @@ public sealed class McpGuidanceResourceTests {
 				because: "the catalog entry name must match the lookup key exactly");
 			entry.Article.Uri.Should().Be(uri,
 				because: "the article URI in the catalog must match the resource URI");
+			entry.Description.Should().NotBeNullOrWhiteSpace(
+				because: "a blank or missing catalog description degrades get-guidance discoverability for agents");
 		}
 	}
 }
