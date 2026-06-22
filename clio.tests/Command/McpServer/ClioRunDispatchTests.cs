@@ -129,6 +129,24 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a different-cased executor name (e.g. 'CLIO-RUN'), since the registry resolves names case-insensitively — a case mismatch must not slip past the recursion guard.")]
+	public async Task RunAsync_ShouldRejectSelfDispatch_WhenTargetIsDifferentlyCasedExecutorName() {
+		// Arrange
+		string mixedCaseName = ClioRunTool.ToolName.ToUpperInvariant();
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(mixedCaseName, null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the registry matches names with OrdinalIgnoreCase, so a different-cased executor name is still self-dispatch and must be refused");
+		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
+			because: "the guard must reject the case-variant alias for the same recursion reason");
+		_registry.DidNotReceive().TryGetTool(mixedCaseName, out Arg.Any<McpServerTool>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a structured error when 'command' is null or whitespace.")]
 	public async Task RunAsync_ShouldReturnError_WhenCommandIsBlank() {
 		// Arrange
