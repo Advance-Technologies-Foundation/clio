@@ -222,6 +222,31 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the compact index (Index populated, Tools null) when called with a null args object, proving the no-arguments discovery call is null-safe and yields the index path.")]
+	public void ToolContractGet_Should_Return_Compact_Index_When_Args_Is_Null() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(null);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "a null args object is the natural no-arguments discovery call and must not throw");
+		result.Success.Should().BeTrue(
+			because: "the no-arguments discovery call is the default compact-discovery entry point");
+		result.Error.Should().BeNull(
+			because: "a successful index lookup should not return a structured error");
+		result.Tools.Should().BeNull(
+			because: "the no-arguments call must yield the compact index, not the heavy full contracts");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "a null args object must resolve to the same compact index as an omitted-tool-names call");
+		result.Index!.Select(entry => entry.Name).Should().NotContain(ToolContractGetTool.ToolName,
+			because: "get-tool-contract should not index itself in the default discovery set");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Populates the destructive safety flag in the compact index from the MCP tool annotation when an invoker registry is available.")]
 	public void ToolContractGet_Should_Populate_Destructive_Flag_In_Index_When_Registry_Available() {
 		// Arrange

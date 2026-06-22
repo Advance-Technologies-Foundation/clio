@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -49,9 +48,13 @@ public sealed class ToolContractGetTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit tool-names for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
-		[Required]
-		ToolContractGetArgs args) {
+		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
+		ToolContractGetArgs? args = null) {
+		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
+		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
+		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to
+		// the index path unchanged. All recovery/alias/detail handling below then operates on a non-null args.
+		args ??= new ToolContractGetArgs();
 		try {
 			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
 			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
