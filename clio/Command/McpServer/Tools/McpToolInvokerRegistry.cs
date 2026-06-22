@@ -142,12 +142,15 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 		// WithTools(IEnumerable<Type>) registers, otherwise a tool reachable via tools/call would be
 		// unreachable via clio-run dispatch (a parity regression). The SDK discovers tool methods with
 		// `toolType.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public |
-		// BindingFlags.NonPublic)` (ModelContextProtocol McpServerBuilderExtensions.WithTools), so the
-		// same flag set is mirrored here. The reflected members are only filtered for [McpServerTool] and
-		// handed back to the SDK's McpServerTool.Create; no private state is read or mutated.
+		// BindingFlags.NonPublic)` (verified against ModelContextProtocol 1.4.0
+		// McpServerBuilderExtensions.WithTools) — note the SDK does NOT pass DeclaredOnly, so a
+		// [McpServerTool] method inherited from a base [McpServerToolType] is registered by the SDK; this
+		// flag set is mirrored exactly (no DeclaredOnly) so inherited tools stay reachable via clio-run.
+		// The reflected members are only filtered for [McpServerTool] and handed back to the SDK's
+		// McpServerTool.Create; no private state is read or mutated.
 #pragma warning disable S3011
 		const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic |
-			BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+			BindingFlags.Instance | BindingFlags.Static;
 #pragma warning restore S3011
 		return toolType.GetMethods(flags)
 			.Where(method => method.GetCustomAttribute<McpServerToolAttribute>() is not null);

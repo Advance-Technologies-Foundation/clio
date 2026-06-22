@@ -1,8 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -61,6 +66,57 @@ public sealed class McpToolInvokerRegistryTests {
 		// Assert
 		foundEsq.Should().BeTrue(because: "execute-esq is an MCP-only long-tail tool that must be reachable");
 		foundODataRead.Should().BeTrue(because: "odata-read is an MCP-only long-tail tool that must be reachable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The registry's tool names equal the SDK's own WithTools discovery over the full catalog, so no tool is reachable via tools/call yet missing from clio-run dispatch (guards the BindingFlags parity, incl. inherited [McpServerTool] methods the SDK keeps and DeclaredOnly would drop).")]
+	public void ToolNames_ShouldEqualSdkDiscoveredNames_OverFullCatalog() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+		// SDK truth, verified against ModelContextProtocol 1.4.0 McpServerBuilderExtensions.WithTools:
+		// toolType.GetMethods(Instance | Static | Public | NonPublic) — NO DeclaredOnly. Encoded here
+		// independently of the registry's own constant so a drift in the registry fails this test.
+		HashSet<string> expected = DiscoverSdkToolNamesOverFullCatalog();
+
+		// Act
+		HashSet<string> actual = registry.ToolNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		// Assert
+		expected.Should().NotBeEmpty(
+			because: "the production catalog contains MCP tools, so the SDK-discovered set must be non-empty");
+		actual.Should().BeEquivalentTo(expected,
+			because: "every SDK-registered tool must be reachable via clio-run dispatch, and vice versa — no parity gap");
+	}
+
+	// Mirrors the SDK's WithTools(IEnumerable<Type>) method enumeration over the same feature-enabled
+	// [McpServerToolType] set the registry scans, then derives each name through the SDK's own
+	// McpServerTool.Create — so the ONLY variable this comparison isolates is the BindingFlags set.
+	private static HashSet<string> DiscoverSdkToolNamesOverFullCatalog() {
+		const BindingFlags sdkFlags = BindingFlags.Instance | BindingFlags.Static |
+			BindingFlags.Public | BindingFlags.NonPublic;
+		McpServerToolCreateOptions createOptions = new() {
+			Services = Substitute.For<IServiceProvider>(),
+			SerializerOptions = JsonSerializerOptions.Default
+		};
+		Type[] enabledToolTypes = McpFeatureToggleFilter.GetEnabledTypes(
+			typeof(SchemaSyncTool).Assembly, typeof(McpServerToolTypeAttribute), _ => true);
+
+		HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+		foreach (Type toolType in enabledToolTypes) {
+			foreach (MethodInfo method in toolType.GetMethods(sdkFlags)
+				.Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)) {
+				// createTargetFunc is never invoked for name resolution; instance methods reject target:null.
+				McpServerTool tool = method.IsStatic
+					? McpServerTool.Create(method, target: null, createOptions)
+					: McpServerTool.Create(method, (Func<RequestContext<CallToolRequestParams>, object>)(_ => null!), createOptions);
+				string name = tool.ProtocolTool.Name;
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+		}
+		return names;
 	}
 
 	[Test]
