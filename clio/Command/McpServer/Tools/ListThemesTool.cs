@@ -77,12 +77,13 @@ public class ListThemesTool(
 				return ListThemesResult.Failure(ex.Message);
 			}
 			try {
-				return resolvedCommand.TryGetAvailableThemes(options,
-						out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage)
-					? ListThemesResult.Successful(themes)
-					: ListThemesResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
+				if (!resolvedCommand.TryGetAvailableThemes(options,
+						out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage)) {
+					return ListThemesResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "GetAvailableThemes returned success=false."
 						: errorMessage);
+				}
+				return ListThemesResult.Successful(themes);
 			}
 			catch (Exception ex) {
 				return ListThemesResult.Failure(ex.Message);

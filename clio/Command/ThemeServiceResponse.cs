@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Clio.Command;
 
@@ -10,9 +11,11 @@ namespace Clio.Command;
 internal sealed record ThemeServiceResponse
 {
 	/// <summary>Whether the operation succeeded. A missing value is treated as success (the contract default).</summary>
+	[JsonPropertyName("success")]
 	public bool? Success { get; init; }
 
 	/// <summary>Diagnostic block populated by the service when <see cref="Success"/> is <c>false</c>.</summary>
+	[JsonPropertyName("errorInfo")]
 	public ThemeServiceErrorInfo ErrorInfo { get; init; }
 }
 
@@ -22,9 +25,11 @@ internal sealed record ThemeServiceResponse
 internal sealed record ThemeServiceErrorInfo
 {
 	/// <summary>Server-side error classification (e.g. <c>SecurityException</c>, <c>ArgumentException</c>).</summary>
+	[JsonPropertyName("errorCode")]
 	public string ErrorCode { get; init; }
 
 	/// <summary>Human-readable failure message surfaced to the caller.</summary>
+	[JsonPropertyName("message")]
 	public string Message { get; init; }
 }
 

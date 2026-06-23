@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
 
@@ -121,17 +122,22 @@ namespace Clio.Command
 
 		private sealed record ListThemesResponse
 		{
+			[JsonPropertyName("success")]
 			public bool? Success { get; init; }
 
+			[JsonPropertyName("errorInfo")]
 			public ThemeServiceErrorInfo ErrorInfo { get; init; }
 
+			[JsonPropertyName("values")]
 			public List<ThemeDescriptor> Values { get; init; }
 		}
 
 		private sealed record ThemeServiceErrorInfo
 		{
+			[JsonPropertyName("errorCode")]
 			public string ErrorCode { get; init; }
 
+			[JsonPropertyName("message")]
 			public string Message { get; init; }
 		}
 	}

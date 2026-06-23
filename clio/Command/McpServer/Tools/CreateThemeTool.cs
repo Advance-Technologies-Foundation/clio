@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -49,6 +50,8 @@ public class CreateThemeTool(
 	[McpServerTool(Name = CreateThemeByCredentialsToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Create a custom Creatio theme using explicit credentials. Returns { success, id, error? }. " +
 		"For the theme workflow, read get-guidance theming first.")]
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Tool parameters intentionally mirror the create-theme-by-credentials MCP contract.")]
 	public CreateThemeResult CreateThemeByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
@@ -94,11 +97,12 @@ public class CreateThemeTool(
 				return CreateThemeResult.Failure(ex.Message);
 			}
 			try {
-				return resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)
-					? CreateThemeResult.Successful(createdId)
-					: CreateThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
+				if (!resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+					return CreateThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "CreateTheme returned success=false."
 						: errorMessage);
+				}
+				return CreateThemeResult.Successful(createdId);
 			}
 			catch (Exception ex) {
 				return CreateThemeResult.Failure(ex.Message);

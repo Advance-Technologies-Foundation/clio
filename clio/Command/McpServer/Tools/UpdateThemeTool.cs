@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -47,6 +48,8 @@ public class UpdateThemeTool(
 	[McpServerTool(Name = UpdateThemeByCredentialsToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme using explicit credentials (full overwrite by id). " +
 		"For the theme workflow, read get-guidance theming first.")]
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Tool parameters intentionally mirror the update-theme-by-credentials MCP contract.")]
 	public CommandExecutionResult UpdateThemeByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,

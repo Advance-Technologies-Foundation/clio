@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
 
@@ -61,15 +62,19 @@ namespace Clio.Command
 
 		private sealed record ClearThemesCacheResponse
 		{
+			[JsonPropertyName("success")]
 			public bool? Success { get; init; }
 
+			[JsonPropertyName("errorInfo")]
 			public ThemeServiceErrorInfo ErrorInfo { get; init; }
 		}
 
 		private sealed record ThemeServiceErrorInfo
 		{
+			[JsonPropertyName("errorCode")]
 			public string ErrorCode { get; init; }
 
+			[JsonPropertyName("message")]
 			public string Message { get; init; }
 		}
 	}
