@@ -475,6 +475,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ic"></a>
 <a id="install-creatio"></a>
 - [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+<a id="deploy-identity"></a>
+- [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`

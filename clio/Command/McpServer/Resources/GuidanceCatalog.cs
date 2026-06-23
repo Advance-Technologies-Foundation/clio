@@ -88,7 +88,7 @@ internal static class GuidanceCatalog {
 				AgentExecutionGuidanceResource.Guide),
 			["deploy-lifecycle"] = Create(
 				"deploy-lifecycle",
-				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio, plus build discovery, registration, and cliogate installation.",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",

@@ -46,6 +46,7 @@ delete-schema:delete-schema
 delete-adac:delete-adac
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+deploy-identity:deploy-identity
 deploy-infrastructure:deploy-infrastructure,di
 download-application:download-application,dapp,download-app
 download-configuration:download-configuration,dconf
