@@ -16,10 +16,13 @@ Creates a server-to-server (`client_credentials`) OAuth app in Creatio through t
 [`create-oauth-technical-user`](create-oauth-technical-user.md)) or `--system-user` by name
 (defaults to `Supervisor`).
 
-The returned client id and client secret are surfaced **only** in the structured command result.
-The secret is never written to logs and is **not** persisted to clio settings by this command (that
-is the responsibility of the higher-level [`deploy-identity`](deploy-identity.md) flow). Capture the
-secret immediately; it cannot be retrieved again.
+The returned client id and client secret are surfaced **only** in the structured command result. On
+the CLI this result is printed as a single JSON object (`clientId`, `clientSecret`, `systemUserId`,
+`name`) to STDOUT, with a one-time-capture warning on STDERR (so `... | jq` keeps STDOUT clean); via
+MCP it is the structured tool record. The secret is never written to logs and is **not** persisted to
+clio settings by this command (that is the responsibility of the higher-level
+[`deploy-identity`](deploy-identity.md) flow). Capture the secret immediately; it cannot be retrieved
+again.
 
 ## Synopsis
 

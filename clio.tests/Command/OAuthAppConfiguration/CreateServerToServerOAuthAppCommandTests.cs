@@ -101,22 +101,37 @@ internal sealed class CreateServerToServerOAuthAppCommandTests : BaseCommandTest
 	}
 
 	[Test]
-	[Description("Execute logs the client id but never logs the client secret, and returns exit code 0.")]
-	public void Execute_ShouldLogClientIdButNeverSecret_WhenAppCreated() {
+	[NonParallelizable]
+	[Description("Execute writes the one-time client id and client secret as JSON to STDOUT and never routes the secret through the logger, returning exit code 0.")]
+	public void Execute_ShouldEmitCredentialsToStdoutAndNeverLogSecret_WhenAppCreated() {
 		// Arrange
 		const string userId = "44444444-4444-4444-4444-444444444444";
 		_creatioClient.CreateClioClient(Arg.Any<DeployIdentityOptions>(), userId)
 			.Returns(new OAuthClientCredentials("client-id-3", Secret));
 		CreateServerToServerOAuthAppOptions options = new() { SystemUserId = userId };
+		System.IO.TextWriter originalOut = System.Console.Out;
+		System.IO.StringWriter capturedStdout = new();
+		System.Console.SetOut(capturedStdout);
 
 		// Act
-		int exitCode = _command.Execute(options);
+		int exitCode;
+		try {
+			exitCode = _command.Execute(options);
+		}
+		finally {
+			System.Console.SetOut(originalOut);
+		}
+		string stdout = capturedStdout.ToString();
 
 		// Assert
 		exitCode.Should().Be(0,
 			because: "creating the OAuth app is a success");
-		_logger.Received(1).WriteInfo(Arg.Is<string>(line => line.Contains("client-id-3")));
+		stdout.Should().Contain("client-id-3",
+			because: "the CLI must reveal the created client id on STDOUT so the caller can use the app");
+		stdout.Should().Contain(Secret,
+			because: "the CLI is the deliberate one-time delivery channel for the generated client secret");
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains(Secret)));
 		_logger.DidNotReceive().WriteError(Arg.Is<string>(line => line.Contains(Secret)));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(line => line.Contains(Secret)));
 	}
 }

@@ -70,6 +70,20 @@ public sealed record CreateServerToServerOAuthAppResult(
 	[property: JsonPropertyName("grantType")] string GrantType);
 
 /// <summary>
+/// CLI one-time reveal of the created OAuth credentials. The client secret is generated once by Creatio
+/// and cannot be retrieved later, so the CLI must hand it to the user who explicitly ran the command.
+/// </summary>
+/// <param name="ClientId">The created OAuth client identifier.</param>
+/// <param name="ClientSecret">The created OAuth client secret. Emitted to STDOUT only; never logged.</param>
+/// <param name="SystemUserId">The system user the OAuth app is bound to.</param>
+/// <param name="Name">The OAuth client display name.</param>
+public sealed record CreateServerToServerOAuthAppCredentials(
+	[property: JsonPropertyName("clientId")] string ClientId,
+	[property: JsonPropertyName("clientSecret")] string ClientSecret,
+	[property: JsonPropertyName("systemUserId")] string SystemUserId,
+	[property: JsonPropertyName("name")] string Name);
+
+/// <summary>
 /// Creates a server-to-server (<c>client_credentials</c>) OAuth app in Creatio through the platform
 /// <c>OAuthConfigService/AddClient</c> endpoint (KnownRoute 48) over REST, binding it to a system user.
 /// The returned client credentials are surfaced ONLY in the structured result; the secret is never
@@ -79,6 +93,7 @@ public sealed record CreateServerToServerOAuthAppResult(
 public class CreateServerToServerOAuthAppCommand : Command<CreateServerToServerOAuthAppOptions>
 {
 	private const string DefaultSystemUser = "Supervisor";
+	private const string DefaultClientName = "clio s2s";
 	private const string ClientCredentialsGrantType = "client_credentials";
 
 	private static readonly JsonSerializerOptions WriteIndentedOptions = new() {
@@ -106,10 +121,30 @@ public class CreateServerToServerOAuthAppCommand : Command<CreateServerToServerO
 	public override int Execute(CreateServerToServerOAuthAppOptions options) {
 		try {
 			CreateServerToServerOAuthAppResult result = CreateApp(options);
-			// The secret is intentionally omitted from the log: only the client id is echoed to the CLI.
-			_logger.WriteInfo($"OAuth client id: {result.ClientId}");
-			_logger.WriteInfo($"Bound system user id: {result.SystemUserId}");
-			_logger.WriteInfo("OAuth client secret: <returned in structured result only>");
+
+			// One-time secret reveal. Creatio generates the client secret once and never returns it again,
+			// so the CLI MUST hand it to the user who ran the command. The logger (ILogger.WriteInfo) is NOT
+			// used for the secret: every ConsoleLogger method also persists to the rotating log file and any
+			// additional sinks. Instead the credentials are written as a pure-JSON object directly to STDOUT
+			// (bypassing the logger's file sinks) so the output stays both secret-safe and machine-parseable
+			// (e.g. `clio create-server-to-server-oauth-app -e env | jq`). The capture warning goes to STDERR
+			// to keep STDOUT a clean JSON document. The MCP tool path does NOT use Execute() — it calls
+			// CreateApp() and returns the secret in its structured record — so this console write is CLI-only.
+			CreateServerToServerOAuthAppCredentials credentials = new(
+				result.ClientId,
+				result.ClientSecret,
+				result.SystemUserId,
+				ResolveClientName(options));
+			// CLIO002: direct Console use is intentional and must NOT be routed through ILogger here. Every
+			// ConsoleLogger method also persists to the rotating log file / additional sinks, which would
+			// leak the one-time secret to disk. Writing the secret straight to STDOUT (and the warning to
+			// STDERR) keeps it off every log sink and keeps STDOUT a clean JSON document. Mirrors the
+			// machine-readable console-output pattern in ShowAppListCommand.
+#pragma warning disable CLIO002
+			Console.Error.WriteLine(
+				"WARNING: the client secret below is shown ONCE and cannot be retrieved later. Capture it now.");
+			Console.Out.WriteLine(JsonSerializer.Serialize(credentials, WriteIndentedOptions));
+#pragma warning restore CLIO002
 			return 0;
 		}
 		catch (Exception exception) {
@@ -129,7 +164,7 @@ public class CreateServerToServerOAuthAppCommand : Command<CreateServerToServerO
 		string systemUserId = ResolveSystemUserId(options);
 
 		DeployIdentityOptions clientOptions = new() {
-			ClientName = string.IsNullOrWhiteSpace(options.ClientName) ? "clio s2s" : options.ClientName,
+			ClientName = ResolveClientName(options),
 			ClientApplicationUrl = string.IsNullOrWhiteSpace(options.ClientApplicationUrl)
 				? "https://github.com/Advance-Technologies-Foundation/clio.git"
 				: options.ClientApplicationUrl,
@@ -145,6 +180,9 @@ public class CreateServerToServerOAuthAppCommand : Command<CreateServerToServerO
 			systemUserId,
 			ClientCredentialsGrantType);
 	}
+
+	private static string ResolveClientName(CreateServerToServerOAuthAppOptions options) =>
+		string.IsNullOrWhiteSpace(options.ClientName) ? DefaultClientName : options.ClientName;
 
 	private string ResolveSystemUserId(CreateServerToServerOAuthAppOptions options) {
 		if (!string.IsNullOrWhiteSpace(options.SystemUserId)) {

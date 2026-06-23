@@ -11,7 +11,9 @@ DESCRIPTION
     --system-user by name (defaults to Supervisor).
 
     The returned client id and client secret are surfaced ONLY in the structured command result.
-    The secret is never written to logs and is NOT persisted to clio settings by this command
+    On the CLI this result is printed as a single JSON object (clientId, clientSecret, systemUserId,
+    name) to STDOUT, with a one-time-capture warning on STDERR; via MCP it is the structured tool
+    record. The secret is never written to logs and is NOT persisted to clio settings by this command
     (that is the responsibility of the higher-level deploy-identity flow). Capture the secret
     immediately; it cannot be retrieved again.
 
