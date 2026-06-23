@@ -16,9 +16,28 @@ catalog that the MCP `get-component-info` tool serves to AI clients, but as
 a regular CLI verb. It supports two modes:
 
 - **List mode** (default): grouped catalog summary by category, optionally
-  filtered with `--search`.
+  filtered with `--search`. The list response also carries a `composites`
+  array (see below) and flags composite-only components with `compositeOnly`.
 - **Detail mode**: full metadata for a specific component type passed as the
   first positional argument.
+- **Composite mode** (`--composite <caption>`): assembly docs for a composite
+  Designer element. Mutually exclusive with the positional component-type.
+
+### Composites and `compositeOnly`
+
+Some Designer elements (e.g. "Expanded list", "Attachments", "Next steps") are
+not standalone components but pre-built combinations of several components, so
+they have no `componentType` of their own. They are surfaced in a top-level
+`composites` array (`{ caption, description, docs }`) in list mode, and fetched
+by caption with `--composite "<caption>"`, which returns a `mode:"composite"`
+response carrying the composite's assembly docs. A `--composite` lookup whose
+docs all fail to load sets `documentationUnavailable: true` so a transient docs
+fetch failure is distinguishable from a composite that genuinely ships no docs.
+
+A component with no standalone Designer toolbar presence carries
+`compositeOnly: true` (with `compositeOnlyHint` on detail) — it must be built via
+its composite rather than placed directly. This CLI verb and the MCP tool stay in
+lockstep on composites; both share the same catalog and response builders.
 
 The catalog is loaded through the CDN → file cache → embedded snapshot
 fallback chain (see `component-registry-refresh` for cache control). For
@@ -49,6 +68,21 @@ including the long-form `documentation` field built from any
 and other scripting tools. Pass `--pretty` for a human-readable text
 rendering on stdout — the docs block surfaces under a `documentation:`
 section.
+
+Detail responses additionally carry the producer's **selection-metadata**
+when it is published for the component:
+
+- `whenToUse` / `whenNotToUse` — one-line "pick this when…" / "do NOT pick
+  this when…" guidance. Use them to choose between visually similar
+  components (e.g. `crt.Gallery` vs `crt.DataGrid` vs `crt.List`).
+- `synonyms` / `useCases` — alternate names and concrete scenarios. These are
+  also folded into `--search` matching, so an informal term like `table`
+  surfaces `crt.DataGrid`.
+- `appliesToCustomEntities` — `false` marks an entity-coupled component that
+  cannot be built on a custom entity; `entityCouplingNote` explains why.
+
+Each field is omitted when the producer published none; under `--pretty` they
+render directly beneath the `description:` line.
 
 The web-catalog response carries `resolvedTargetVersion` and `resolvedFrom`
 markers (`"environment"` | `"environment-superset"` | `"latest-fallback"`) so
@@ -95,7 +129,7 @@ environment's real component set.
 ## Synopsis
 
 ```bash
-get-component-info [<component-type>] [--search <keyword>] [--version <semver>] [--environment <name>] [--schema-type <web|mobile>] [--pretty]
+get-component-info [<component-type>] [--composite <caption>] [--search <keyword>] [--version <semver>] [--environment <name>] [--schema-type <web|mobile>] [--pretty]
 ```
 
 ## Aliases
@@ -109,8 +143,14 @@ component-info
                                    type (e.g. crt.TabContainer). Omit or
                                    pass 'list' to return the grouped catalog.
 
---search                           Keyword filter applied in list mode and
-                                   in not-found suggestions.
+--composite                        Composite Designer-element caption (e.g.
+                                   'Expanded list'). Returns the composite's
+                                   assembly docs. Mutually exclusive with the
+                                   positional component-type.
+
+--search                           Keyword filter applied in list mode (filters
+                                   components AND composites) and in not-found
+                                   suggestions.
 
 --version                          Explicit catalog version to load
                                    (3-part semver, e.g. 8.3.4). Mutually
@@ -155,6 +195,9 @@ clio get-component-info crt.Input --environment dev
 
 # Pretty text output for humans
 clio get-component-info crt.Button --pretty
+
+# Composite Designer element (assembly docs)
+clio get-component-info --composite "Expanded list"
 
 # Mobile catalog
 clio get-component-info --schema-type mobile

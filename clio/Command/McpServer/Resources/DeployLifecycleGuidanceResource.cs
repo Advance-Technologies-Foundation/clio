@@ -38,14 +38,14 @@ public sealed class DeployLifecycleGuidanceResource {
 		          Read `status` (pass/partial/fail) and `database-candidates`.
 		       2. `show-passing-infrastructure` - narrow to only the choices that are safe to deploy against and read
 		          `recommendedDeployment` (and `recommendedByEngine`) for the deploy-creatio argument bundle.
-		       3. `find-empty-iis-port` - for a local IIS deployment, take `firstAvailablePort` as the deploy `site-port`.
-		       4. Resolve the build archive - `deploy-creatio` needs an absolute `zip-file` path. Use the configured
+		       3. `find-empty-iis-port` - for a local IIS deployment, take `firstAvailablePort` as the deploy `sitePort`.
+		       4. Resolve the build archive - `deploy-creatio` needs an absolute `zipFile` path. Use the configured
 		          `creatio-products` build folder to pick the desired version deterministically.
 
 		       Deploy
 		       - `deploy-creatio` is the most consequential, hardest-to-reverse tool: it drops and recreates the target
-		         site. Required args: `site-name`, `zip-file` (absolute build archive path), `site-port`. Optional:
-		         `db-server-name`, `redis-server-name` (omit to keep the default Kubernetes deployment path).
+		         site. Required args: `siteName`, `zipFile` (absolute build archive path), `sitePort`. Optional:
+		         `dbServerName`, `redisServerName` (omit to keep the default Kubernetes deployment path).
 		       - Prefer the recommended bundle from `show-passing-infrastructure` and the port from `find-empty-iis-port`.
 		       - Do not proceed if assert-infrastructure left the targeted database/Redis sections failing.
 

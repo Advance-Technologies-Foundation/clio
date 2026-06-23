@@ -137,11 +137,18 @@ internal static class GuidanceCatalog {
 				"""
 				Canonical MCP guidance for adding a Freedom UI button that runs a business process
 				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant / 
+				key = CODE not caption (silent-skip warning), and the static-constant /
 				view-model-attribute-binding / current-record variants.
 				""",
 				RunProcessButtonGuidanceResource.Guide,
-				featureGateType: typeof(RunProcessButtonGuidanceResource))
+				featureGateType: typeof(RunProcessButtonGuidanceResource)),
+			["identity-assertion"] = Create(
+				"identity-assertion",
+				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
+				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
+				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
+				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
+				IdentityAssertionGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

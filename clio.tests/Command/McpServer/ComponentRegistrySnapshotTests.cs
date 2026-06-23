@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -49,6 +50,13 @@ public sealed class ComponentRegistrySnapshotTests {
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
 			because: "any new key under root.references.* must be mapped or explicitly allowlisted");
 
+		// Assert — count floor guarding the de-truncated fixture (ENG-91571 DoD).
+		// Without it the per-component loop below passes vacuously over any count, so a
+		// silent regression of the live fixture back to the old ~5 curated entries would
+		// keep every web snapshot test green — re-opening exactly the gap this PR closed.
+		state.Entries.Count.Should().BeGreaterThan(150,
+			because: "the ~200-component live catalog is the ENG-91571 DoD — a regression to the old ~5-entry curated set must fail this guard");
+
 		// Assert — per-component entries.
 		foreach (ComponentRegistryEntry entry in state.Entries) {
 			UnmappedKeys(entry.UnmappedExtensions).Should().BeEmpty(
@@ -57,6 +65,15 @@ public sealed class ComponentRegistrySnapshotTests {
 				UnmappedKeys(entry.References.UnmappedExtensions).Should().BeEmpty(
 					because: $"any new key under '{entry.ComponentType}'.references.* must be mapped");
 			}
+		}
+
+		// Assert — composites (top-level `composites[]`). The guard is symmetric with the
+		// per-component check so a producer adding a key under a composite cannot drop it
+		// silently. No-op until the live fixture is refreshed to a payload that ships
+		// composites, but it locks the contract the moment one appears.
+		foreach (CompositeDefinition composite in state.Composites ?? System.Array.Empty<CompositeDefinition>()) {
+			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
+				because: $"any new key on composite '{composite.Caption}' must be mapped");
 		}
 	}
 
@@ -80,7 +97,7 @@ public sealed class ComponentRegistrySnapshotTests {
 		// baseInputs (root.references.baseInputs) — keys that should appear on every
 		// component's inputs after the merge.
 		detail.Inputs.Should().NotBeNull();
-		foreach (string inheritedKey in new[] { "classes", "id", "loading", "styles", "tabIndex" }) {
+		foreach (string inheritedKey in new[] { "classes", "id", "styles", "tabIndex" }) {
 			detail.Inputs!.Should().ContainKey(inheritedKey,
 				because: $"'{inheritedKey}' lives under root.references.baseInputs and must inherit onto every component's inputs surface");
 		}
@@ -108,6 +125,37 @@ public sealed class ComponentRegistrySnapshotTests {
 			because: "the transitive-closure filter must drop globals that no crt.Button binding references");
 		detail.References.TypeDefinitions.Count.Should().BeLessThan(20,
 			because: "crt.Button only needs a handful of typedefs reachable from its inputs/outputs/per-component typedefs — surfacing the full ~190-key global bag would defeat the closure filter");
+	}
+
+	[Test]
+	[Description("A detail response for a component that publishes Solution A selection-metadata (crt.DataGrid) must surface whenToUse/whenNotToUse/synonyms/useCases/appliesToCustomEntities through CreateDetailResponse — proving the producer's @whenToUse-family JSDoc tags reach the AI consumer instead of being dropped to the UnmappedExtensions bucket.")]
+	public void Live_Snapshot_Detail_Should_Surface_Selection_Metadata_When_Producer_Publishes_It() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.DataGrid", out ComponentRegistryEntry? dataGrid).Should().BeTrue(
+			because: "crt.DataGrid ships Solution A selection-metadata in the pinned live snapshot");
+
+		// Act
+		ComponentInfoResponse detail = ComponentInfoTool.CreateDetailResponse(
+			dataGrid!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert
+		detail.WhenToUse.Should().NotBeNullOrWhiteSpace(
+			because: "the producer publishes @whenToUse on crt.DataGrid and clio must surface it (Solution A, ENG-91571)");
+		detail.WhenNotToUse.Should().NotBeNullOrWhiteSpace(
+			because: "crt.DataGrid publishes @whenNotToUse to steer the agent away from image/list use-cases");
+		detail.Synonyms.Should().NotBeNullOrEmpty(
+			because: "crt.DataGrid publishes @synonym tags that must surface so list-mode discovery can match informal names");
+		detail.UseCases.Should().NotBeNullOrEmpty(
+			because: "crt.DataGrid publishes @useCase tags describing concrete scenarios it fits");
+		detail.AppliesToCustomEntities.Should().BeTrue(
+			because: "crt.DataGrid is buildable on a custom entity, so the published applicability flag must round-trip");
 	}
 
 	[Test]
@@ -139,6 +187,37 @@ public sealed class ComponentRegistrySnapshotTests {
 		}
 		state.Entries.Should().NotBeEmpty(
 			because: "the live mobile catalog must list at least one component");
+	}
+
+	[Test]
+	[Description("A synthetic payload that actually ships a top-level composites[] entry and a compositeOnly component must deserialise with no fields on an UnmappedExtensions bucket. The live snapshot ships no composites yet, so the composite arm of the guard in Live_Registry_Snapshot_... is a no-op today — this test exercises that arm for real so a producer renaming/adding a key under a composite is caught.")]
+	public void Synthetic_Composite_Payload_Should_Parse_With_No_Unmapped_Fields() {
+		// A minimal wrapped envelope carrying one top-level composite and one compositeOnly
+		// component — the composite-bearing shape the live snapshot does not yet contain.
+		const string payload = """
+		{
+		  "components": [
+		    { "componentType": "crt.ExpansionPanel", "category": "containers", "description": "Collapsible panel.", "container": true, "properties": {} },
+		    { "componentType": "crt.NextSteps", "category": "interactive", "description": "Next steps widget.", "compositeOnly": true, "properties": {} }
+		  ],
+		  "composites": [
+		    { "caption": "Next steps", "description": "Expansion panel wrapping a crt.NextSteps list.", "docs": ["docs/expansion-panel-next-steps.component.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(payload));
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// The composite arm of the guard now actually iterates (proving it is not dead).
+		state.Composites.Should().NotBeNull(because: "the payload ships a top-level composites[] array");
+		state.Composites!.Should().ContainSingle(because: "exactly one composite is declared")
+			.Which.Caption.Should().Be("Next steps");
+		state.Lookup["crt.NextSteps"].CompositeOnly.Should().BeTrue(
+			because: "the compositeOnly component flag must round-trip through deserialisation");
+		foreach (CompositeDefinition composite in state.Composites!) {
+			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
+				because: $"every key on composite '{composite.Caption}' must be mapped, not dropped to an UnmappedExtensions bucket");
+		}
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>

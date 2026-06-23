@@ -119,7 +119,7 @@ public sealed class InstallApplicationToolTests {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<InstallApplicationCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException("Environment with key 'missing-env' not found."));
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
 		InstallApplicationTool tool = new(
 			new FakeInstallApplicationCommand(),
 			ConsoleLogger.Instance,
@@ -133,8 +133,8 @@ public sealed class InstallApplicationToolTests {
 			EnvironmentName: "missing-env"));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "resolver failures should be returned as normal command execution envelopes with the FromException exit code");
+		result.ExitCode.Should().Be(1,
+			because: "resolver failures are expected validation errors and must surface with exit code 1, not the unexpected-exception code -1");
 		result.Output.Should().ContainSingle(message =>
 			message.GetType() == typeof(ErrorMessage) &&
 			message.Value != null &&

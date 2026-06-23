@@ -267,6 +267,52 @@ public sealed class BaseToolTests {
 			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A resolver EnvironmentResolutionException (unknown environment, missing URI, broken bootstrap) is an expected, caller-actionable failure and surfaces with exit code 1, and the command never runs.")]
+	public void InternalExecuteGeneric_ShouldReturnExitCodeOneAndNotRunCommand_WhenResolverThrowsEnvironmentResolutionException() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeUngatedCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment 'missing-env' not found."));
+		UngatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an environment-resolution failure is an expected validation error and must surface with exit code 1, not the unexpected-runtime code -1");
+		messageValues.Should().Contain(value => value.Contains("missing-env"),
+			because: "the resolver failure message must be surfaced to the MCP caller");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unexpected resolver failure (e.g. a DI/wiring exception from GetRequiredService) surfaces with exit code -1 so a real bug stays distinguishable from a bad environment name, and the command never runs.")]
+	public void InternalExecuteGeneric_ShouldReturnExitCodeMinusOneAndNotRunCommand_WhenResolverThrowsUnexpectedException() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeUngatedCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException("Unable to resolve service for type 'X' while wiring the container."));
+		UngatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "an unexpected DI/wiring failure must surface with exit code -1, not be misreported as an expected validation error (1)");
+		messageValues.Should().Contain(value => value.Contains("wiring the container"),
+			because: "the unexpected-failure message must be surfaced to the MCP caller for diagnosis");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	[RequiresPackage("cliogate", "2.0.0.0")]
 	private sealed class GatedToolHarnessOptions : EnvironmentOptions { }
 

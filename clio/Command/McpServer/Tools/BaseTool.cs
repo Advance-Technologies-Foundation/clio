@@ -49,15 +49,22 @@ public abstract class BaseTool<T>(
 		TCommand resolvedCommand;
 		try {
 			// ResolveCommand resolves the env-scoped command AND enforces this options type's
-			// [RequiresPackage] declarations against the per-call target environment. An unmet
-			// requirement surfaces as a PackageRequirementException; any other verification failure
-			// (HTTP/auth/unknown-environment) surfaces as its own exception. Both are converted to a
-			// failed result below, so the command never runs when its requirements are not satisfied.
+			// [RequiresPackage] declarations against the per-call target environment. The gate lives
+			// inside ResolveCommand so the typed-response path (tools that call it directly from inside
+			// ExecuteWithCleanLog) is package-gated too. An unmet requirement surfaces as a
+			// PackageRequirementException; an environment/argument failure as an
+			// EnvironmentResolutionException; both become a caller-actionable failed result (exit 1)
+			// below, so the command never runs when its preconditions are not satisfied.
 			resolvedCommand = ResolveCommand<TCommand>(options);
 		} catch (PackageRequirementException ex) {
 			// Surface the actionable install hint verbatim, without the exception-chain decoration.
 			return CommandExecutionResult.FromError(ex.Message);
+		} catch (EnvironmentResolutionException e) {
+			// Expected, caller-actionable environment/argument failure → exit code 1.
+			return CommandExecutionResult.FromResolverError(e);
 		} catch (Exception e) {
+			// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
+			// misreported as a routine validation error and stays diagnosable.
 			return CommandExecutionResult.FromException(e);
 		}
 
@@ -73,10 +80,10 @@ public abstract class BaseTool<T>(
 	/// Both BaseTool execution paths funnel through here — the <see cref="InternalExecute{TCommand}"/>
 	/// path and the typed-response path that calls this method directly from inside
 	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package-gated uniformly,
-	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment
-	/// failure from <see cref="ResolveFromCallContainer"/> still surfaces exactly as before), THEN the
-	/// requirement is enforced. A <see cref="PackageRequirementException"/> (unmet requirement) and any
-	/// other verification failure both propagate to the caller.
+	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment failure
+	/// surfaces as <see cref="EnvironmentResolutionException"/>), THEN the requirement is enforced. A
+	/// <see cref="PackageRequirementException"/> (unmet requirement) and any other verification failure
+	/// both propagate to the caller.
 	/// </remarks>
 	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
 		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
@@ -141,10 +148,10 @@ public abstract class BaseTool<T>(
 
 	private protected virtual CommandExecutionResult InternalExecute(Command<T> command, T options) {
 		// Package requirements are NOT enforced here. [RequiresPackage] is verified against the per-call
-		// target environment, which is only known where the env-scoped command is resolved
-		// (ResolveCommand). The env-SENSITIVE paths run the gate inside ResolveCommand before reaching
-		// this method; the env-INsensitive injected-command path (InternalExecute(T) → this overload)
-		// does not carry a target environment, so a package requirement would be meaningless there.
+		// target environment, which only the env-SENSITIVE generic InternalExecute<TCommand> path knows
+		// about; that path runs the gate (EnforcePackageRequirements) before reaching this method. The
+		// env-INsensitive injected-command path does not carry a target environment, so a package
+		// requirement would be meaningless there.
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
 		CommandExecutionResult executionResult;
 		IReadOnlyList<LogMessage> messagesToForward;

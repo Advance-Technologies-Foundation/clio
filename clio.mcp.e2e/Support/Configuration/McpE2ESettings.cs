@@ -15,6 +15,14 @@ internal sealed class McpE2ESettings {
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
+	/// <summary>
+	/// Absolute path to the Creatio installation root for the sandbox environment.
+	/// Required by ClearRedis and other tests that read ConnectionStrings.config.
+	/// Set via McpE2E__Sandbox__EnvironmentPath environment variable in CI,
+	/// or ensure the clio environment is registered with --environment-path.
+	/// </summary>
+	public string? EnvironmentPath { get; set; }
+
 	public string? ProcessCode { get; set; }
 
 	public string? ApplicationPackagePath { get; set; }

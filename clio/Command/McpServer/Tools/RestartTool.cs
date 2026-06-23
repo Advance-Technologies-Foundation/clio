@@ -16,7 +16,7 @@ public class RestartTool(
 		[Description("Target Environment name to restart")] [Required] string environmentName
 	) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		RestartOptions options = new() {
 			Environment = environmentName,
