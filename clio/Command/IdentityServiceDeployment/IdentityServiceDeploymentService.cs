@@ -366,6 +366,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 	private const int DefaultIdentityPortRangeStart = 40001;
 	private const string DesignerClientId = "bpmonline-designer";
 	private const string DefaultSystemUser = "Supervisor";
+	private static readonly TimeSpan SiteNameRegexTimeout = TimeSpan.FromSeconds(1);
 	private readonly IIdentityServiceArchiveResolver _archiveResolver;
 	private readonly IAvailableIisPortService _availableIisPortService;
 	private readonly IIdentityServiceCreatioClient _creatioClient;
@@ -483,7 +484,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 
 	private static void ValidateSiteName(string siteName) {
 		if (string.IsNullOrWhiteSpace(siteName)
-			|| !Regex.IsMatch(siteName, @"^[A-Za-z0-9._-]+$")) {
+			|| !Regex.IsMatch(siteName, @"^[A-Za-z0-9._-]+$", RegexOptions.CultureInvariant, SiteNameRegexTimeout)) {
 			throw new ArgumentException(
 				"IdentityService site name may contain only letters, digits, dot, underscore, and hyphen.",
 				nameof(siteName));

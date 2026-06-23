@@ -4302,3 +4302,10 @@ Decision: PageUpdateTool DryRun had the SAME "generic JS syntax error shadows ma
 Discovery: validated serially vs stand — PageUpdateToolE2ETests 17->20 passed (recovered Reject_{Handler_Request_Without_Dot, Validator_Key_Without_Dot, Converter_Key_Without_Dot}_In_DryRun_Mode), FailFast stayed green, no regression. Residual 5 (separate, pre-existing): RunProcess_Button_Without_ProcessName (ValidateRunProcessButtonStructure doesn't flag this button shape — distinct gap), Reject_Invalid_OptionalProperties_Json + Reject_Invalid_Resources_Json (arg-JSON error wording), Report_Invalid_Environment_Failure (env msg), Surface_UnAwaitedContextWarning_In_DryRun_Mode (advisory should pass).
 Files: clio/Command/McpServer/Tools/PageUpdateTool.cs
 Impact: clears the PageUpdate half of the marker/content-vs-syntax precedence bug; same proven pattern as merged PageSync #744.
+
+## 2026-06-23 13:05 – PR 753 Sonar regex timeout fix
+Context: SonarCloud flagged PR 753 security hotspot `csharpsquid:S6444` on IdentityService site-name validation.
+Decision: Changed `Regex.IsMatch` in `IdentityServiceDeploymentService.ValidateSiteName` to use the overload with `RegexOptions.CultureInvariant` and a one-second timeout.
+Discovery: The hotspot was on regex execution time, not process execution; focused IdentityService/OAuth/MCP unit coverage is sufficient for this targeted fix.
+Files: clio/Command/IdentityServiceDeployment/IdentityServiceDeploymentService.cs
+Impact: Removes the open Sonar security hotspot while preserving the existing site-name allowlist.
