@@ -1,4 +1,4 @@
-# create-entity-business-rule
+# create-entity-business-rules
 
 ## Purpose
 
