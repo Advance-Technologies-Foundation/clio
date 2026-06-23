@@ -33,6 +33,11 @@ namespace Clio.Command {
 		private const string ExpressionKey = "expression";
 		private const int ContainsComparisonType = 11;
 
+		/// <summary>
+		/// Result cap applied when <c>limit</c> is omitted or supplied as 0 ("use the default").
+		/// </summary>
+		internal const int DefaultLimit = 50;
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -55,32 +60,26 @@ namespace Clio.Command {
 					};
 					return false;
 				}
+				// A negative limit must NOT silently disable the result cap (Creatio treats a
+				// negative rowCount as "no limit", which would return every page on the
+				// environment). Reject it; treat 0 as "use the default".
+				if (options.Limit < 0) {
+					response = new PageListResponse {
+						Success = false,
+						Error = $"limit must be zero or greater (got {options.Limit}). Omit limit or pass 0 to use the default of {DefaultLimit}."
+					};
+					return false;
+				}
+				int effectiveLimit = options.Limit == 0 ? DefaultLimit : options.Limit;
 				string packageName = options.PackageName;
 				if (string.IsNullOrWhiteSpace(packageName) && !string.IsNullOrWhiteSpace(options.AppCode)) {
 					packageName = ResolvePrimaryPackageName(options.AppCode);
 				}
-				var filters = new JObject {
-					[FilterTypeKey] = 6,
-					["logicalOperation"] = 0,
-					["isEnabled"] = true,
-					[ItemsKey] = new JObject {
-						["ManagerName"] = BuildComparisonFilter("ManagerName", "ClientUnitSchemaManager", 1, 3)
-					}
-				};
-				if (!string.IsNullOrWhiteSpace(packageName)) {
-					filters[ItemsKey]["PackageName"] = BuildComparisonFilter("SysPackage.Name", packageName, 1, 3);
-				}
 				string nameFilter = options.SearchPattern?.Trim('*', ' ') ?? string.Empty;
-				if (!string.IsNullOrWhiteSpace(nameFilter)) {
-					filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
-				}
-				if (!string.IsNullOrWhiteSpace(options.UId)) {
-					filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", options.UId, 0, 3);
-				}
 				var selectQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",
 					["operationType"] = 0,
-					["filters"] = filters,
+					["filters"] = BuildPageFilters(packageName, nameFilter, options.UId),
 					["columns"] = new JObject {
 						[ItemsKey] = new JObject {
 							["Name"] = new JObject {
@@ -121,7 +120,7 @@ namespace Clio.Command {
 							}
 						}
 					},
-					["rowCount"] = options.Limit
+					["rowCount"] = effectiveLimit
 				};
 				string url = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 				string requestBody = selectQuery.ToString(Formatting.None);
@@ -140,9 +139,15 @@ namespace Clio.Command {
 						ParentSchemaName = row["ParentSchemaName"]?.ToString()
 					})
 					.ToList();
+				// The capped data query cannot reveal how many pages matched in total, so a caller
+				// could not otherwise tell a 50-item page from a complete result. Query the full
+				// match count separately and surface total + truncated so truncation is observable.
+				int total = QueryTotalPageCount(url, packageName, nameFilter, options.UId, pages.Count);
 				response = new PageListResponse {
 					Success = true,
 					Count = pages.Count,
+					Total = total,
+					Truncated = total > pages.Count,
 					Pages = pages
 				};
 				return true;
@@ -150,6 +155,73 @@ namespace Clio.Command {
 			catch (Exception ex) {
 				response = new PageListResponse { Success = false, Error = ex.Message };
 				return false;
+			}
+		}
+
+		private static JObject BuildPageFilters(string packageName, string nameFilter, string uId) {
+			var filters = new JObject {
+				[FilterTypeKey] = 6,
+				["logicalOperation"] = 0,
+				["isEnabled"] = true,
+				[ItemsKey] = new JObject {
+					["ManagerName"] = BuildComparisonFilter("ManagerName", "ClientUnitSchemaManager", 1, 3)
+				}
+			};
+			if (!string.IsNullOrWhiteSpace(packageName)) {
+				filters[ItemsKey]["PackageName"] = BuildComparisonFilter("SysPackage.Name", packageName, 1, 3);
+			}
+			if (!string.IsNullOrWhiteSpace(nameFilter)) {
+				filters[ItemsKey]["Name"] = BuildComparisonFilter("Name", nameFilter, 1, ContainsComparisonType);
+			}
+			if (!string.IsNullOrWhiteSpace(uId)) {
+				filters[ItemsKey]["UId"] = BuildComparisonFilter("UId", uId, 0, 3);
+			}
+			return filters;
+		}
+
+		/// <summary>
+		/// Queries the full number of pages matching the same filters as the data query (ignoring
+		/// the result cap) via a COUNT(Id) aggregation. Best-effort: when the count query fails or
+		/// returns an unexpected shape, falls back to <paramref name="returnedCount"/> so the
+		/// response never claims fewer pages than were actually returned.
+		/// </summary>
+		private int QueryTotalPageCount(string url, string packageName, string nameFilter, string uId, int returnedCount) {
+			try {
+				var countQuery = new JObject {
+					["rootSchemaName"] = "SysSchema",
+					["operationType"] = 0,
+					["filters"] = BuildPageFilters(packageName, nameFilter, uId),
+					["columns"] = new JObject {
+						[ItemsKey] = new JObject {
+							["RecordCount"] = new JObject {
+								[ExpressionKey] = new JObject {
+									[ExpressionTypeKey] = 1,
+									["functionType"] = 2,
+									["aggregationType"] = 1,
+									["functionArgument"] = new JObject {
+										[ExpressionTypeKey] = 0,
+										[ColumnPathKey] = "Id"
+									}
+								}
+							}
+						}
+					}
+				};
+				string countResponseJson = _applicationClient.ExecutePostRequest(url, countQuery.ToString(Formatting.None));
+				var countResponse = JObject.Parse(countResponseJson);
+				if (!(countResponse["success"]?.Value<bool>() ?? false)) {
+					return returnedCount;
+				}
+				JToken recordCount = (countResponse["rows"] as JArray)?.FirstOrDefault()?["RecordCount"];
+				if (recordCount is not null && int.TryParse(recordCount.ToString(), out int total)) {
+					return Math.Max(total, returnedCount);
+				}
+				return returnedCount;
+			}
+			catch (Newtonsoft.Json.JsonException) {
+				// A malformed count body is informational only; never fail the whole listing because
+				// the supplementary count could not be parsed.
+				return returnedCount;
 			}
 		}
 

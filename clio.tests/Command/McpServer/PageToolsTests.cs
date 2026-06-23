@@ -567,7 +567,7 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		applicationClient.Received(1).ExecutePostRequest(
+		applicationClient.Received(2).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -614,9 +614,9 @@ public class PageToolsTests
 		response.Success.Should().BeTrue("because the page query succeeded after package resolution");
 		response.Pages.Should().ContainSingle("because one page row was returned");
 		response.Pages[0].SchemaName.Should().Be("UsrTodo_FormPage");
-		applicationClient.Received(3).ExecutePostRequest(
+		applicationClient.Received(4).ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		applicationClient.Received(1).ExecutePostRequest(
+		applicationClient.Received(2).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("UsrTodo")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -679,6 +679,161 @@ public class PageToolsTests
 		result.Should().BeFalse("because an exception occurred during execution");
 		response.Success.Should().BeFalse("because the operation failed with an exception");
 		response.Error.Should().Be("Connection refused", "because the exception message should be propagated");
+	}
+
+	[Test]
+	[Description("TryListPages reports total and truncated=true when the full match count exceeds the returned page")]
+	public void TryListPages_WhenMoreMatchesThanLimit_ReportsTotalAndTruncated() {
+		// Arrange — the data query returns a capped page; the follow-up count query reports the full total
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" },
+				new JObject { ["Name"] = "Page2", ["UId"] = "uid-2", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 3232 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 2 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query itself succeeded");
+		response.Count.Should().Be(2, "because the capped page returned two rows");
+		response.Total.Should().Be(3232, "because the count query reports the full number of matching pages");
+		response.Truncated.Should().BeTrue(
+			"because total exceeds count, so a caller must be able to detect the result is incomplete");
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=false when the full match count equals the returned count")]
+	public void TryListPages_WhenAllMatchesReturned_ReportsNotTruncated() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 1 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query succeeded");
+		response.Count.Should().Be(1, "because a single page matched");
+		response.Total.Should().Be(1, "because the count query confirms only one page matches");
+		response.Truncated.Should().BeFalse(
+			"because total equals count, so the result is complete");
+	}
+
+	[Test]
+	[Description("TryListPages rejects a negative limit instead of disabling the cap and returning every page")]
+	public void TryListPages_WhenLimitNegative_ReturnsFailureWithoutQuerying() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = -5 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse("because a negative limit is invalid and must not run an unbounded query");
+		response.Success.Should().BeFalse("because the negative limit is rejected before any request");
+		response.Error.Should().Contain("limit must be zero or greater",
+			because: "the failure should explain why the negative limit was rejected");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("TryListPages treats limit=0 as 'use the default' and sends the default rowCount to the server")]
+	public void TryListPages_WhenLimitZero_UsesDefaultRowCount() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 0 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because limit=0 is a valid request that falls back to the default cap");
+		response.Success.Should().BeTrue("because the default-capped query succeeded");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rowCount\":50")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages honors a small valid limit and sends it as the server rowCount")]
+	public void TryListPages_WhenSmallValidLimit_SendsThatRowCount() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 1 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 5 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because a small valid limit is honored");
+		response.Count.Should().Be(1, "because one row was returned");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rowCount\":5")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]

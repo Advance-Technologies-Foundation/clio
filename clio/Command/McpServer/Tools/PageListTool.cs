@@ -39,7 +39,7 @@ public sealed class PageListTool(
 	};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("List Freedom UI pages in Creatio with package and parent schema context. Results are capped (default 50); the response always reports total (full match count) and truncated so an incomplete result is observable. A negative limit is rejected. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageListArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
@@ -52,7 +52,9 @@ public sealed class PageListTool(
 			PackageName = args.PackageName,
 			AppCode = args.Code,
 			SearchPattern = args.SearchPattern,
-			Limit = args.Limit ?? 50,
+			// 0 (the value used when limit is omitted) and an explicit 0 both mean "use the default";
+			// the command validates a negative limit and rejects it instead of disabling the cap.
+			Limit = args.Limit ?? 0,
 			UId = args.UId,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
@@ -92,7 +94,7 @@ public sealed record PageListArgs(
 	string? SearchPattern,
 
 	[property: JsonPropertyName("limit")]
-	[property: Description("Maximum number of results. Default: 50")]
+	[property: Description("Maximum number of results. Omit or pass 0 to use the default of 50. A negative limit is rejected (it must not disable the cap). The response always carries total and truncated so a capped result is observable.")]
 	int? Limit,
 
 	[property: JsonPropertyName("environment-name")]
