@@ -244,6 +244,10 @@ public sealed class ComponentInfoCommand {
 		// Name/description-first resolution shared with the MCP tool: match components by
 		// name/description first, then route to composite="<caption>" when the requested label
 		// names a composite (e.g. "Expanded list") rather than leaving the agent to hand-build.
+		// Intentional behavioral change from the pre-factory path: the old code used
+		// FilterEntries(entries, options.Search) (substring filter on the --search value). The
+		// factory's fallback uses SuggestForUnknown (edit-distance on the requested component-type
+		// label + --search), which ranks by similarity to what the user typed, not by --search alone.
 		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
 			state.Entries, state.Composites, componentType!, options.Search,
 			state.ResolvedVersion, resolvedFrom, resolvedFromReason);

@@ -1081,6 +1081,76 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Name-first resolution, branch 1 (hasComponentMatch): a query that substring-matches a component's name/description — but is NOT an exact type and matches NO composite — surfaces those components with the 'by name/description' message, NOT the composite route nor the distance-fallback shortlist.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Component_By_Description_Surfaces_Name_Matches() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// "widget" substring-matches crt.NextSteps ("Next steps widget.") but is not an exact type and
+		// matches no composite caption/description.
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("widget"));
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("widget", because: "the error echoes the requested query");
+		response.Error.Should().Contain("by name/description",
+			because: "the name-match branch must use its own wording, distinct from the routing and distance branches");
+		response.Error.Should().NotContain("composite=",
+			because: "'widget' matches no composite, so no composite route");
+		response.Error.Should().NotContain("closest known type",
+			because: "a name/description match must not degrade to the distance-fallback wording");
+		response.Items!.Select(item => item.ComponentType).Should().Contain("crt.NextSteps",
+			because: "the component whose description contains the query is surfaced");
+		response.Count.Should().BeLessThanOrEqualTo(8, because: "the name-match shortlist honors the same cap");
+	}
+
+	[Test]
+	[Description("RC-3 regression: a query that is an EXACT composite caption AND also substring-matches a component's description ('Next steps' matches both the composite and crt.NextSteps's description) must still ROUTE to the composite — the exact-caption match wins over the fuzzy component match, so composite routing is not suppressed.")]
+	public async Task ComponentInfoTool_ExactCompositeCaption_Routes_Even_When_A_Component_Description_Also_Matches() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Next steps"));
+
+		response.Success.Should().BeFalse(because: "'Next steps' is a composite caption, not a component type");
+		response.Error.Should().Contain("composite=",
+			because: "an exact composite-caption match must route to the composite even though crt.NextSteps matches by description");
+		response.Error.Should().Contain("Next steps", because: "the routing directive names the composite");
+		response.Composites!.Select(c => c.Caption).Should().Contain("Next steps",
+			because: "the matched composite is surfaced on the routing branch");
+		response.Items.Should().BeNullOrEmpty(
+			because: "the routing branch surfaces only the composite, not component suggestions the directive tells the agent to ignore");
+	}
+
+	[Test]
+	[Description("RC-C5 regression: when a query matches MULTIPLE composites by description (but no exact caption), the routing response surfaces all matched composites and Items is empty. Pins the multi-match branch so a future refactor cannot silently drop the full composite list or skip the directive.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Multiple_Composites_Routes_With_All_Captions() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// "Expansion panel" substring-matches BOTH composites by description but no exact caption and
+		// no component by name/description:
+		//   "Next steps"    → description "Expansion panel wrapping a crt.NextSteps list."
+		//   "Expanded list" → description "Expansion panel pre-filled with a crt.DataGrid and a toolbar."
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Expansion panel"));
+
+		response.Success.Should().BeFalse(because: "'Expansion panel' is not a component type");
+		response.Error.Should().Contain("composite=",
+			because: "the query matches composites, so a routing directive is emitted");
+		response.Error.Should().Contain("'Next steps'",
+			because: "every matched composite caption must appear in the error");
+		response.Error.Should().Contain("'Expanded list'",
+			because: "every matched composite caption must appear in the error");
+		response.Composites.Should().NotBeNull();
+		response.Composites!.Count.Should().Be(2,
+			because: "both matched composites are surfaced on the routing branch");
+		response.Items.Should().BeNullOrEmpty(
+			because: "the routing branch surfaces only composite(s), not component suggestions the directive tells the agent to ignore");
+	}
+
+	[Test]
 	[Description("CreateComponentNotFoundResponse tolerates a null composites list (the parameter is nullable): FilterComposites guards null internally, so there is no NullReferenceException. Locks the contract — returns a not-found envelope with no composite routing and no Composites section.")]
 	public void ComponentInfoTool_CreateComponentNotFoundResponse_Tolerates_Null_Composites() {
 		ComponentRegistryEntry[] entries = [

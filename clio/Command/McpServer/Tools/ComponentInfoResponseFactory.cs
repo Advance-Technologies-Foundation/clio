@@ -103,41 +103,59 @@ public static class ComponentInfoResponseFactory {
 		string? resolvedFromReason) {
 		string query = requestedType.Trim();
 
-		// 1. "Ready component" pass — match the requested label against component name/description/
-		//    synonyms/use-cases. Only when that finds nothing do we fall back to closest-by-distance
-		//    (typo tolerance), so a real label like "Expanded list" is not buried under edit-distance noise.
+		// Does the requested label name a composite? An EXACT caption match (case-insensitive) means the
+		// caller reached for a composite by its human label and MUST be routed there regardless of any fuzzy
+		// component match — otherwise a caption like "Attachments" or "Next steps" that substring-matches a
+		// component's description would set hasComponentMatch and silently suppress the composite route. A
+		// substring-only composite match (no exact caption) routes only when no component matched — the
+		// weaker signal.
+		IReadOnlyList<CompositeDefinition> queryComposites = ComponentInfoGrouping.FilterComposites(composites, query);
+		CompositeDefinition? exactComposite = queryComposites
+			.FirstOrDefault(item => string.Equals(item.Caption, query, StringComparison.OrdinalIgnoreCase));
+
+		// "Ready component" pass — match the label against component name/description/synonyms/use-cases.
 		IReadOnlyList<ComponentRegistryEntry> nameMatches = ComponentInfoGrouping.FilterEntries(entries, query);
 		bool hasComponentMatch = nameMatches.Count > 0;
+
+		bool routeToComposite = exactComposite is not null || (!hasComponentMatch && queryComposites.Count > 0);
+		if (routeToComposite) {
+			// Surface ONLY the matched composite(s); component suggestions here would be noise the directive
+			// tells the agent to ignore. The directive caption prefers the exact match.
+			string directiveCaption = (exactComposite ?? queryComposites[0]).Caption;
+			string captions = string.Join(", ", queryComposites.Select(item => $"'{item.Caption}'"));
+			return new ComponentInfoResponse {
+				Success = false,
+				Mode = "list",
+				Error = $"No component type '{query}' exists, but it matches composite {captions}. "
+					+ "A composite is a pre-built combination of components (no componentType of its own) — call "
+					+ $"get-component-info composite=\"{directiveCaption}\" for its assembly recipe instead of hand-building it.",
+				Count = 0,
+				Items = [],
+				Composites = ComponentInfoGrouping.CreateCompositeItems(queryComposites),
+				ResolvedTargetVersion = resolvedTargetVersion,
+				ResolvedFrom = resolvedFrom,
+				ResolvedFromReason = resolvedFromReason
+			};
+		}
+
+		// No composite route. Suggestions come from the name matches when present (the "ready component"
+		// half of name->composite), else the closest-by-distance shortlist (typo tolerance). SuggestForUnknown
+		// is computed lazily here so the routing branch above never pays for it.
 		IReadOnlyList<ComponentRegistryEntry> suggestions = hasComponentMatch
 			? nameMatches.Take(MaxNotFoundSuggestions).ToArray()
 			: ComponentInfoGrouping.SuggestForUnknown(entries, query, search, MaxNotFoundSuggestions);
 
-		// 2. Composite fallback — does the requested label name a composite?
-		IReadOnlyList<CompositeDefinition> queryComposites = ComponentInfoGrouping.FilterComposites(composites, query);
-		bool routeToComposite = !hasComponentMatch && queryComposites.Count > 0;
-
-		// On the routing path show the matched composite(s); otherwise keep the existing
-		// search-filtered composites section so the agent still sees that composites exist.
-		IReadOnlyList<CompositeDefinition> shownComposites = routeToComposite
-			? queryComposites
-			: ComponentInfoGrouping.FilterComposites(composites, search);
-		IReadOnlyList<CompositeSummary> compositeItems = ComponentInfoGrouping.CreateCompositeItems(shownComposites);
-
-		string error;
-		if (routeToComposite) {
-			string captions = string.Join(", ", queryComposites.Select(item => $"'{item.Caption}'"));
-			error = $"No component type '{query}' exists, but it matches composite {captions}. "
-				+ "A composite is a pre-built combination of components (no componentType of its own) — call "
-				+ $"get-component-info composite=\"{queryComposites[0].Caption}\" for its assembly recipe instead of hand-building it.";
-		} else if (hasComponentMatch) {
-			error = $"Component type '{query}' was not found. "
+		string error = hasComponentMatch
+			? $"Component type '{query}' was not found. "
 				+ $"Showing {suggestions.Count} component(s) matching '{query}' by name/description — pass one as 'component-type', "
-				+ "or omit 'component-type' to list the full catalog.";
-		} else {
-			error = $"Component type '{query}' was not found. "
+				+ "or omit 'component-type' to list the full catalog."
+			: $"Component type '{query}' was not found. "
 				+ $"Showing the {suggestions.Count} closest known type(s) — pass one as 'component-type', "
 				+ "or omit 'component-type' to list the full catalog (components AND composites).";
-		}
+
+		// Keep the search-filtered composites section so the agent still sees that composites exist.
+		IReadOnlyList<CompositeSummary> compositeItems = ComponentInfoGrouping.CreateCompositeItems(
+			ComponentInfoGrouping.FilterComposites(composites, search));
 
 		return new ComponentInfoResponse {
 			Success = false,
