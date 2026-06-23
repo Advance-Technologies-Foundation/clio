@@ -466,6 +466,27 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("CLI parity with ComponentInfoTool_Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions: a component-type that matches neither a component nor a composite falls back to closest-type suggestions (exit 1, no composite route). Covers the FilterEntries -> shared SuggestForUnknown behavioral delta on the CLI not-found path.")]
+	public async Task Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.TotallyMadeUp" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "a type matching neither a component nor a composite is a lookup failure");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("crt.TotallyMadeUp", because: "the failure must echo the missing type");
+		parsed.Error.Should().NotContain("composite=",
+			because: "no composite matches, so the CLI must not fabricate a composite route");
+		parsed.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
+	[Test]
 	[Description("--composite with an unknown caption + --pretty surfaces the actionable not-found message (with known captions) and exits 1 — it is NOT silently empty. Render prints 'Error: <message>' for any unsuccessful response before AppendComposite early-returns, so the JSON path's known-captions hint reaches the pretty surface too.")]
 	public async Task Pretty_Output_Surfaces_Composite_NotFound_Message() {
 		using CapturedLogger logger = new();

@@ -501,8 +501,8 @@ public sealed class ComponentInfoToolTests {
 			because: "the failure should identify the missing component type");
 		response.Count.Should().BeGreaterThan(0,
 			because: "a not-found response should still offer the closest known types for discovery");
-		response.Count.Should().BeLessThan(12,
-			because: "suggestions must be a bounded shortlist, never the entire 12-entry catalog (acceptance #2)");
+		response.Count.Should().BeLessThanOrEqualTo(8,
+			because: "suggestions are capped at MaxNotFoundSuggestions (8), never the entire 12-entry catalog — pins the cap after the constant moved to ComponentInfoResponseFactory (acceptance #2)");
 		response.Items.Should().NotBeNull();
 		response.Items!.Count.Should().Be(response.Count,
 			because: "the item list and the reported count must agree");
@@ -1078,6 +1078,31 @@ public sealed class ComponentInfoToolTests {
 		response.Error.Should().NotContain("composite=",
 			because: "no composite matches this label, so the response must not invent a composite route");
 		response.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
+	[Test]
+	[Description("CreateComponentNotFoundResponse tolerates a null composites list (the parameter is nullable): FilterComposites guards null internally, so there is no NullReferenceException. Locks the contract — returns a not-found envelope with no composite routing and no Composites section.")]
+	public void ComponentInfoTool_CreateComponentNotFoundResponse_Tolerates_Null_Composites() {
+		ComponentRegistryEntry[] entries = [
+			new() { ComponentType = "crt.TabContainer", Description = "Tab body." }
+		];
+
+		System.Func<ComponentInfoResponse> act = () => ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			entries,
+			composites: null,
+			requestedType: "crt.DoesNotExist",
+			search: null,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			resolvedFromReason: null);
+
+		ComponentInfoResponse response = act.Should().NotThrow(
+			because: "FilterComposites guards a null list, so a null composites argument must not throw").Subject;
+		response.Success.Should().BeFalse(because: "an unknown component type is a lookup failure");
+		response.Error.Should().Contain("crt.DoesNotExist");
+		response.Error.Should().NotContain("composite=",
+			because: "a null composites list cannot match, so no composite route is fabricated");
+		response.Composites.Should().BeNull(because: "there are no composites to surface when the list is null");
 	}
 
 	[TestCase(true, "composites are a web-only Designer feature",
