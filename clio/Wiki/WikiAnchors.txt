@@ -62,6 +62,9 @@ get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 list-themes:list-themes,get-themes
+create-theme:create-theme
+update-theme:update-theme
+delete-theme:delete-theme
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties

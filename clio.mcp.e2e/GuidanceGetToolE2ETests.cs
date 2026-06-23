@@ -473,7 +473,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical theming orchestration guide")]
-	[Description("Verifies get-guidance returns the theming article that delegates theme authoring to @creatio-devkit/theming and routes activation to clear-themes-cache.")]
+	[Description("Verifies get-guidance returns the theming article that delegates theme authoring to @creatio/theming and routes activation to clear-themes-cache.")]
 	public async Task GuidanceGet_Should_Return_Theming_Guide() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -495,10 +495,14 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/theming",
 			because: "the canonical resource URI should still be visible in the tool response");
-		response.Article.Text.Should().Contain("@creatio-devkit/theming",
+		response.Article.Text.Should().Contain("@creatio/theming",
 			because: "the theming guide must delegate authoring to the npm package");
 		response.Article.Text.Should().Contain("push-workspace",
 			because: "the theming guide must route deployment through push-workspace");
+		response.Article.Text.Should().Contain("create-theme-by-environment",
+			because: "the theming guide must route the no-code/server flow to the create-theme MCP tool");
+		response.Article.Text.Should().Contain("palette engine",
+			because: "the no-code/server flow's primary path is the deterministic palette engine — the guide must point the agent to @creatio/theming's engine");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

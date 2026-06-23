@@ -106,7 +106,7 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that delegates to the @creatio-devkit/theming package and routes the agent to the right flow rather than embedding the token catalog.")]
+	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that delegates to the @creatio/theming package and routes the agent to the right flow rather than embedding the token catalog.")]
 	public async Task GuidanceGet_Should_Return_Theming_Article() {
 		// Arrange
 		GuidanceGetTool tool = new();
@@ -125,12 +125,44 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical theming article text");
 		result.Article.Text.Should().Contain("Which flow",
 			because: "theming is the single entry point — the article must help the agent pick the workspace/dev vs no-code/server flow");
-		result.Article.Text.Should().Contain("@creatio-devkit/theming",
+		result.Article.Text.Should().Contain("@creatio/theming",
 			because: "the Delegate model requires the guide to route theme authoring to the npm package");
 		result.Article.Text.Should().Contain("AI_GUIDES_INDEX.md",
 			because: "the guide must route token lookups to the package catalog (via its index) instead of embedding token names/values");
 		result.Article.Text.Should().Contain("push-workspace",
 			because: "the workspace/dev flow must direct deployment through push-workspace");
+		result.Article.Text.Should().Contain("No-code / server flow",
+			because: "the no-code/server flow is now available and must be described, not marked unavailable");
+		result.Article.Text.Should().NotContain("not yet available",
+			because: "the server flow shipped, so the guide must no longer say it is unavailable");
+		result.Article.Text.Should().Contain("create-theme-by-environment",
+			because: "the server flow must route the agent to the create-theme MCP tool");
+		result.Article.Text.Should().Contain("update-theme-by-environment",
+			because: "the server flow must route the agent to the update-theme MCP tool");
+		result.Article.Text.Should().Contain("delete-theme-by-environment",
+			because: "the server flow must route the agent to the delete-theme MCP tool");
+		result.Article.Text.Should().Contain("palette engine",
+			because: "the server flow's primary path is the deterministic palette engine — the guide must point the agent to @creatio/theming's engine rather than hand-computing colors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the theming guidance a thin pointer (CM-03): it routes token lookups to the @creatio/theming catalog via AI_GUIDES_INDEX.md and names the --crt-* token namespace at most once, without restating the token catalog.")]
+	public async Task GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Article.Should().NotBeNull(
+			because: "theming is a registered guidance name that resolves to an article");
+		result.Article!.Text.Should().Contain("AI_GUIDES_INDEX.md",
+			because: "the guide must route token lookups to the @creatio/theming catalog index rather than embedding the catalog");
+		int tokenNamespaceMentions = result.Article.Text.Split("--crt").Length - 1;
+		tokenNamespaceMentions.Should().BeLessThanOrEqualTo(1,
+			because: "the guide may name the --crt-* token namespace once as a pointer, but must not restate the --crt-* token catalog (CM-03 — single source of truth)");
 	}
 
 	[Test]

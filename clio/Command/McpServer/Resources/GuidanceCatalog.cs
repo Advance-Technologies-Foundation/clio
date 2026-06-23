@@ -116,7 +116,7 @@ internal static class GuidanceCatalog {
 				WorkspaceUiProjectGuidanceResource.Guide),
 			["theming"] = Create(
 				"theming",
-				"Canonical MCP guidance for managing custom Creatio themes with @creatio-devkit/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio.",
+				"Canonical MCP guidance for managing custom Creatio themes with @creatio/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio.",
 				ThemingGuidanceResource.Guide),
 			["run-process-button"] = Create(
 				"run-process-button",

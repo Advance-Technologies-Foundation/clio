@@ -506,6 +506,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment, `get-themes`
+<a id="create-theme"></a>
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment
+<a id="update-theme"></a>
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment
+<a id="delete-theme"></a>
+- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment
 <a id="CustomizeDataProtection"></a>
 <a id="cdp"></a>
 - [`CustomizeDataProtection`](docs/commands/CustomizeDataProtection.md) - Toggle CustomizeDataProtection in appsettings.json, `cdp`

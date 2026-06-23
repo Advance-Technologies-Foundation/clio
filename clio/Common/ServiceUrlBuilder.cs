@@ -131,7 +131,22 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Refreshes the Creatio theme catalog cache via the native ThemeService.
 		/// </summary>
-		ClearThemesCache = 43
+		ClearThemesCache = 43,
+
+		/// <summary>
+		///     Creates a custom theme on the environment via the native ThemeService.
+		/// </summary>
+		CreateTheme = 44,
+
+		/// <summary>
+		///     Updates an existing custom theme via the native ThemeService.
+		/// </summary>
+		UpdateTheme = 45,
+
+		/// <summary>
+		///     Deletes a custom theme via the native ThemeService.
+		/// </summary>
+		DeleteTheme = 46
 
 	}
 
@@ -188,6 +203,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
+		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},
+		{KnownRoute.UpdateTheme, "ServiceModel/ThemeService.svc/UpdateTheme"},
+		{KnownRoute.DeleteTheme, "ServiceModel/ThemeService.svc/DeleteTheme"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

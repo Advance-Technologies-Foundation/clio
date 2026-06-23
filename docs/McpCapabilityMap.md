@@ -82,6 +82,7 @@ Typical examples:
 - `clear-redis-db-by-credentials`
 - `clear-themes-cache-by-credentials`
 - `list-themes-by-credentials`
+- `create-theme-by-credentials`
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -417,6 +418,12 @@ These tools are operational rather than design-oriented.
 - `clear-themes-cache-by-credentials`
 - `list-themes-by-environment`
 - `list-themes-by-credentials`
+- `create-theme-by-environment`
+- `create-theme-by-credentials`
+- `update-theme-by-environment`
+- `update-theme-by-credentials`
+- `delete-theme-by-environment`
+- `delete-theme-by-credentials`
 
 What an external AI can practically do here:
 
@@ -482,7 +489,7 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
 - `docs://mcp/guides/theming`
-  Canonical MCP guidance for managing custom Creatio themes with @creatio-devkit/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio
+  Canonical MCP guidance for managing custom Creatio themes with @creatio/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio
 
 How an external AI should interpret resources:
 
@@ -569,6 +576,12 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `clear-themes-cache-by-credentials`
 - `list-themes-by-environment`
 - `list-themes-by-credentials`
+- `create-theme-by-environment`
+- `create-theme-by-credentials`
+- `update-theme-by-environment`
+- `update-theme-by-credentials`
+- `delete-theme-by-environment`
+- `delete-theme-by-credentials`
 
 ### 4. Mixed response shapes
 
