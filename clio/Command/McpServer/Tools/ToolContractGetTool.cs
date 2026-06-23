@@ -379,6 +379,7 @@ internal static class ToolContractCatalog {
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
+	private const string CountFieldName = "count";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -1120,7 +1121,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("count", NumberType, "Number of rows returned."),
+				Field(CountFieldName, NumberType, "Number of rows returned."),
 				Field("rows", ArrayType, "Rows returned by the SelectQuery."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)),
 			CommonErrorContract,
@@ -1786,7 +1787,7 @@ internal static class ToolContractCatalog {
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
 				],
 				Validators: [
-					new ToolContractValidator("limit", "invalid-top", "top",
+					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
 						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
 				]),
 			EnvelopeOutput(
@@ -1796,7 +1797,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("count", NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available.")
 			),
@@ -3053,7 +3054,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, list-pages resolves the application's primary package before querying pages."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
-					Field("limit", NumberType, "Optional max result count. Omit or pass 0 to use the default of 50. A negative limit is rejected with success:false (it must not disable the cap).")),
+					Field(LimitFieldName, NumberType, "Optional max result count. Omit or pass 0 to use the default of 50. A negative limit is rejected with success:false (it must not disable the cap).")),
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
@@ -3064,7 +3065,7 @@ internal static class ToolContractCatalog {
 						],
 						Context: "list-pages accepts package-name or code, not both."),
 					new ToolContractValidator(
-						"limit", "invalid-limit", "limit",
+						LimitFieldName, "invalid-limit", LimitFieldName,
 						Context: "limit must be zero or greater; 0 (or omitting it) uses the default of 50, and a negative value is rejected with success:false."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -3074,7 +3075,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("count", NumberType, "Number of pages returned (after the result cap is applied)."),
+				Field(CountFieldName, NumberType, "Number of pages returned (after the result cap is applied)."),
 				Field("total", NumberType, "Total pages matching the query before the cap. Compare to count to detect an incomplete result."),
 				Field("truncated", BooleanType, "True when total is greater than count, meaning more pages match than were returned. Raise limit or add a filter to retrieve the rest."),
 				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
@@ -3739,7 +3740,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("mode", StringType, "detail or list."),
-				Field("count", NumberType, "Number of matching components."),
+				Field(CountFieldName, NumberType, "Number of matching components."),
 				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
 				Field("componentType", StringType, "Component type echoed back in detail mode."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),

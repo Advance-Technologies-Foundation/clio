@@ -31,6 +31,7 @@ namespace Clio.Command {
 		private const string FilterTypeKey = "filterType";
 		private const string ItemsKey = "items";
 		private const string ExpressionKey = "expression";
+		private const string SuccessKey = "success";
 		private const int ContainsComparisonType = 11;
 
 		/// <summary>
@@ -126,7 +127,7 @@ namespace Clio.Command {
 				string requestBody = selectQuery.ToString(Formatting.None);
 				string responseJson = _applicationClient.ExecutePostRequest(url, requestBody);
 				var rawResponse = JObject.Parse(responseJson);
-				if (!(rawResponse["success"]?.Value<bool>() ?? false)) {
+				if (!(rawResponse[SuccessKey]?.Value<bool>() ?? false)) {
 					response = new PageListResponse { Success = false, Error = "Query failed" };
 					return false;
 				}
@@ -209,7 +210,7 @@ namespace Clio.Command {
 				};
 				string countResponseJson = _applicationClient.ExecutePostRequest(url, countQuery.ToString(Formatting.None));
 				var countResponse = JObject.Parse(countResponseJson);
-				if (!(countResponse["success"]?.Value<bool>() ?? false)) {
+				if (!(countResponse[SuccessKey]?.Value<bool>() ?? false)) {
 					return returnedCount;
 				}
 				JToken recordCount = (countResponse["rows"] as JArray)?.FirstOrDefault()?["RecordCount"];
@@ -231,7 +232,7 @@ namespace Clio.Command {
 				selectUrl,
 				BuildInstalledApplicationQuery(appCode).ToString(Formatting.None));
 			var applicationResponse = JObject.Parse(applicationResponseJson);
-			if (!(applicationResponse["success"]?.Value<bool>() ?? false)) {
+			if (!(applicationResponse[SuccessKey]?.Value<bool>() ?? false)) {
 				throw new InvalidOperationException("Application lookup failed.");
 			}
 			var applicationRow = (applicationResponse["rows"] as JArray)?.FirstOrDefault() as JObject;
@@ -246,7 +247,7 @@ namespace Clio.Command {
 				_serviceUrlBuilder.Build("ServiceModel/ApplicationPackagesService.svc/GetApplicationPackages"),
 				JsonConvert.SerializeObject(applicationId));
 			var packagesResponse = JObject.Parse(packagesResponseJson);
-			if (!(packagesResponse["success"]?.Value<bool>() ?? false)) {
+			if (!(packagesResponse[SuccessKey]?.Value<bool>() ?? false)) {
 				throw new InvalidOperationException(packagesResponse["errorInfo"]?["message"]?.ToString() ?? "Failed to load application packages.");
 			}
 			var primaryPackage = (packagesResponse["packages"] as JArray)?
