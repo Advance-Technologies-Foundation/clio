@@ -554,6 +554,84 @@ public sealed class ExecuteEsqToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Fails when a requested column alias is absent from the returned rows instead of silently dropping the unknown column.")]
+	public void Execute_Should_Fail_When_Requested_Column_Is_Dropped_From_Rows() {
+		// Arrange — the server returns success:true rows that omit the requested NoSuchColumnZZZ alias
+		(ExecuteEsqTool tool, _, _) = BuildTool(
+			"{\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"John\"}],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}," +
+			"\"Name\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Name\"}}," +
+			"\"NoSuchColumnZZZ\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"NoSuchColumnZZZ\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a requested column that the SelectQuery silently dropped must be surfaced as a failure, not hidden");
+		response.Error.Should().Contain("NoSuchColumnZZZ",
+			because: "the failure should name the unresolved column so the caller can fix the columnPath");
+		response.Error.Should().Contain("Contact",
+			because: "the failure should name the schema the column was requested on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns success unchanged when every requested column alias is present in the returned rows.")]
+	public void Execute_Should_Return_Success_When_All_Requested_Columns_Present() {
+		// Arrange
+		(ExecuteEsqTool tool, _, _) = BuildTool(
+			"{\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"John\"}],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}," +
+			"\"Name\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Name\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "when every requested alias is present in the rows the query resolved correctly");
+		response.Count.Should().Be(1,
+			because: "the single returned row should still be reported");
+		response.Error.Should().BeNull(
+			because: "a fully-resolved query must not surface an error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not flag a dropped column when the result set is empty, since absence cannot be distinguished from a legitimately empty result.")]
+	public void Execute_Should_Not_Flag_Unknown_Column_When_Rows_Are_Empty() {
+		// Arrange — no rows to inspect, so a missing alias cannot be detected and must not false-positive
+		(ExecuteEsqTool tool, _, _) = BuildTool("{\"rows\":[],\"success\":true}");
+		JsonElement query = Json(
+			"{\"rootSchemaName\":\"Contact\",\"columns\":{\"items\":{" +
+			"\"NoSuchColumnZZZ\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"NoSuchColumnZZZ\"}}}}}");
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = query
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an empty result set cannot prove a column was dropped, so the call must not be failed on a false positive");
+		response.Count.Should().Be(0,
+			because: "the empty rows array should be reported as zero rows");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Reports a timeout/cancellation as a failure without the misleading ESQ-format guidance hint.")]
 	public void Execute_Should_Report_Timeout_Without_Guidance_Hint() {
 		// Arrange
