@@ -3,9 +3,10 @@ namespace Clio.Command.McpServer;
 /// <summary>
 /// Provides the server instructions text sent to MCP clients during initialization.
 /// This is a thin ROUTER, not a manual: it carries the few non-negotiable invariants that
-/// must survive client-side truncation, plus a names-only routing table that points the AI
-/// at the matching <c>get-guidance</c> article. Detailed rules live in <c>GuidanceCatalog</c>
-/// (loaded lazily on demand) — never duplicate guide content here.
+/// must survive client-side truncation, plus a names-only routing table — grouped into two
+/// levels by domain (pages, entities, data, applications) so the AI first picks the domain,
+/// then the row — that points the AI at the matching <c>get-guidance</c> article. Detailed
+/// rules live in <c>GuidanceCatalog</c> (loaded lazily on demand) — never duplicate guide content here.
 /// </summary>
 internal static class McpServerInstructions
 {
@@ -20,19 +21,20 @@ internal static class McpServerInstructions
 		- Destructive tools (uninstall-creatio, clear-redis-db, stop-creatio, delete-*) are high-impact: confirm the target environment with the user first.
 		- Every response carries a correlation-id; on error, inspect the inner-exception chain.
 
-		## Load the matching guidance FIRST (get-guidance name=...; an unknown name returns availableGuides)
-		- Freedom UI page create/edit -> get-component-info (read resolvedFrom) + name=page-modification
-		- Dashboards / analytics widgets -> name=dashboards AND name=indicator-widget
-		- Analytics widget placement/sizing/styling -> name=analytics-widgets
-		- Business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
-		- Raw ESQ queries -> name=esq AND name=esq-filters
-		- Lookup seeding / data bindings -> name=data-bindings
-		- Application / schema modeling -> name=app-modeling
-		- Deploy & provisioning -> name=deploy-lifecycle
-		- Executing an approved plan -> name=agent-execution
-		- Identity assertion / Identity Service V3 token exchange -> name=identity-assertion
+		## Load the matching guidance FIRST (get-guidance name=...; unknown name returns availableGuides). Pick the domain, then the row:
+		- Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
+		  - dashboards / analytics widgets -> name=dashboards AND name=indicator-widget; layout/style -> name=analytics-widgets
+		  - page business rules (visibility/required/value) -> name=business-rules
+		- Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
+		  - entity business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
+		- Data: raw ESQ queries -> name=esq AND name=esq-filters
+		  - lookup seeding / data bindings -> name=data-bindings
+		- Applications, deploy & ops: deploy & provisioning -> name=deploy-lifecycle
+		  - executing an approved plan -> name=agent-execution
+		  - identity assertion / Identity Service V3 -> name=identity-assertion
 
 		## Product telemetry (only when a consuming skill/contract drives it; otherwise do not call or prompt)
-		get-telemetry-consent (read-only consent check) -> send-telemetry (stores one event once consent is granted) -> withdraw-telemetry-consent (stop and discard the local outbox). Call get-tool-contract for the authoritative payload shape and emission order; the consent prompt and event sequence are owned by the skill/contract, not these instructions.
+		get-telemetry-consent (read-only consent check) -> send-telemetry (stores one event once consent is granted) -> withdraw-telemetry-consent (stop and discard the local outbox).
+		Call get-tool-contract for the authoritative payload shape and emission order; the consent prompt and event sequence are owned by the skill/contract, not these instructions.
 		""";
 }

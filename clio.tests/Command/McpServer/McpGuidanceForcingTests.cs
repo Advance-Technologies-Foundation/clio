@@ -26,7 +26,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
 
-	private const int RouterCharCeiling = 2900;
+	private const int RouterCharCeiling = 3000;
 
 	private static readonly string[] NewCreatioGuides = ["analytics-widgets"];
 
@@ -61,7 +61,7 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert
 		length.Should().BeLessThanOrEqualTo(RouterCharCeiling,
-			because: "the router must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens (ceiling raised to fit the merged-in product-telemetry advertisement, still far below baseline)");
+			because: "the router must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens (ceiling raised to fit the merged-in product-telemetry advertisement and the two-level domain routing table, ~2.9k chars / ~0.7k tokens, still far below baseline and the truncation point)");
 	}
 
 	[Test]
