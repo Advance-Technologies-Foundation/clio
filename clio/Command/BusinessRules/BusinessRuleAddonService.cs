@@ -14,6 +14,19 @@ internal interface IBusinessRuleAddonService {
 		AddonGetRequestDto request,
 		BusinessRule rule,
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules);
+
+	/// <summary>
+	/// Appends the combined metadata of multiple business rules to the target add-on schema in a
+	/// single round-trip: one <c>GetSchema</c>, one <c>SaveSchema</c>, one <c>ResetClientScriptCache</c>,
+	/// and one <c>BuildConfiguration</c> for the whole batch. This is the batch counterpart of
+	/// <see cref="AppendRule"/>, which makes those four remote calls per rule.
+	/// </summary>
+	/// <param name="request">Identifies the target add-on schema to fetch and save once.</param>
+	/// <param name="createdRules">Flattened metadata for every rule in the batch, appended in order.</param>
+	/// <returns>The generated name of the first appended rule.</returns>
+	BusinessRuleCreateResult AppendRules(
+		AddonGetRequestDto request,
+		IReadOnlyList<BusinessRuleMetadataDto> createdRules);
 }
 
 internal sealed class BusinessRuleAddonService(
@@ -23,6 +36,11 @@ internal sealed class BusinessRuleAddonService(
 	public BusinessRuleCreateResult AppendRule(
 		AddonGetRequestDto request,
 		BusinessRule rule,
+		IReadOnlyList<BusinessRuleMetadataDto> createdRules) =>
+		AppendRules(request, createdRules);
+
+	public BusinessRuleCreateResult AppendRules(
+		AddonGetRequestDto request,
 		IReadOnlyList<BusinessRuleMetadataDto> createdRules) {
 		ArgumentNullException.ThrowIfNull(createdRules);
 		if (createdRules.Count == 0) {

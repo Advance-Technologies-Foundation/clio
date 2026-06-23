@@ -487,6 +487,18 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ic"></a>
 <a id="install-creatio"></a>
 - [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+<a id="deploy-identity"></a>
+- [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
+<a id="get-identity-service-config"></a>
+- [`get-identity-service-config`](docs/commands/get-identity-service-config.md) - Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST
+<a id="resolve-oauth-system-user"></a>
+- [`resolve-oauth-system-user`](docs/commands/resolve-oauth-system-user.md) - Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST
+<a id="create-oauth-technical-user"></a>
+- [`create-oauth-technical-user`](docs/commands/create-oauth-technical-user.md) - Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST
+<a id="create-server-to-server-oauth-app"></a>
+- [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
+<a id="verify-oauth-app"></a>
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`
