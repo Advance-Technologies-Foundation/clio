@@ -355,6 +355,7 @@ internal static class ToolContractCatalog {
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
+			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -4039,6 +4040,17 @@ internal static class ToolContractCatalog {
 	private const string SitePortFieldName = "sitePort";
 	private const string DbServerNameFieldName = "dbServerName";
 	private const string RedisServerNameFieldName = "redisServerName";
+	private const string IdentitySitePortFieldName = "identitySitePort";
+	private const string IdentitySiteNameFieldName = "identitySiteName";
+	private const string IdentityPathFieldName = "identityPath";
+	private const string IdentityArchivePathInBundleFieldName = "identityArchivePathInBundle";
+	private const string ConfigurationModeFieldName = "configurationMode";
+	private const string ClientNameFieldName = "clientName";
+	private const string ClientApplicationUrlFieldName = "clientApplicationUrl";
+	private const string ClientDescriptionFieldName = "clientDescription";
+	private const string NoAppFieldName = "noApp";
+	private const string CreateTechUserFieldName = "createTechUser";
+	private const string UserFieldName = "user";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -4170,6 +4182,51 @@ internal static class ToolContractCatalog {
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
 				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
 				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildDeployIdentity() {
+		return new ToolContractDefinition(
+			DeployIdentityTool.DeployIdentityToolName,
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings. Never echo the generated client secret in logs or public messages.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
+					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
+					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files."),
+					Field(ConfigurationModeFieldName, StringType, "Creatio connection mode: db-first, rest, or db. db-first currently falls back to REST/sys-settings until direct DB seeding is proven."),
+					Field(ClientNameFieldName, StringType, "OAuth client display name created for clio."),
+					Field(ClientApplicationUrlFieldName, StringType, "OAuth client application URL."),
+					Field(ClientDescriptionFieldName, StringType, "OAuth client description."),
+					Field(NoAppFieldName, BooleanType, "Deploy and connect IdentityService without creating a clio OAuth app or verifying client_credentials."),
+					Field(CreateTechUserFieldName, BooleanType, "Create a new technical user for the OAuth app instead of binding it to an existing user."),
+					Field(UserFieldName, StringType, "Existing Creatio system user used by the OAuth client. Defaults to Supervisor.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Deploy IdentityService with environment defaults", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ConfigurationModeFieldName] = "db-first"
+				})
+			],
+			Flow(
+				[
+					DeployIdentityTool.DeployIdentityToolName
+				],
+				"Deploy IdentityService for an already registered local Creatio environment. The command can discover IdentityService.zip under EnvironmentPath and auto-pick a free IIS port; by default it creates a fresh OAuth app bound to Supervisor, stores generated clio OAuth credentials in local clio settings, and masks the secret in command output."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered and has EnvironmentPath pointing to a local Creatio installation.",
+				"Supervisor/default credentials or existing environment credentials can authenticate to Creatio.",
+				"Use explicit zipFile or identitySitePort only when overriding the EnvironmentPath archive discovery or default port range."
 			]);
 	}
 

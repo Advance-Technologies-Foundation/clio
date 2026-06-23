@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    resolve-oauth-system-user - Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST
+
+DESCRIPTION
+    Resolves a Creatio system user (SysAdminUnit) by name (default Supervisor) or by id using a
+    DataService SelectQuery over REST. No database access is required, so it works against remote
+    Creatio environments. It reports systemUserId, name, and found.
+
+    Use this to obtain the systemUserId that create-server-to-server-oauth-app binds the OAuth app
+    to. This is the REST-only replacement for the database-direct user resolution used by
+    deploy-identity.
+
+SYNOPSIS
+    clio resolve-oauth-system-user -e ENVIRONMENT [OPTIONS]
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered Creatio environment to query.
+
+    --name NAME
+        System user (SysAdminUnit) name to resolve.
+        Default: Supervisor
+
+    --id ID
+        System user (SysAdminUnit) id to resolve. Takes precedence over --name when supplied.
+
+EXAMPLES
+    # Resolve the default Supervisor user.
+    clio resolve-oauth-system-user -e c-dev
+
+    # Resolve a user by name.
+    clio resolve-oauth-system-user -e c-dev --name "Integration User"
+
+    # Resolve a user by id.
+    clio resolve-oauth-system-user -e c-dev --id 410006e1-ca4e-4502-a9ec-e54d922d2c00
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    This command is read-only; it does not modify Creatio.
