@@ -1,0 +1,45 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    create-oauth-technical-user - Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST
+
+DESCRIPTION
+    Creates a Creatio technical user through the platform OAuthConfigService/CreateTechnicalUser
+    endpoint over REST and returns its systemUserId, for binding a subsequent server-to-server
+    OAuth app.
+
+    ROLE GRANT IS DEFERRED. This REST-only path does NOT assign any Creatio role to the new user,
+    because the deploy-identity role grant is database-direct and cannot run against a remote
+    environment, and no clean REST endpoint for granting a role to a user is available today. The
+    reported roleGranted flag is always false. If the server-to-server app requires elevated
+    permissions, grant the role manually in Creatio, or use the local deploy-identity
+    --create-tech-user path against an environment with database access. Prefer
+    resolve-oauth-system-user (binding to an existing user such as Supervisor) unless a dedicated
+    technical user is required.
+
+SYNOPSIS
+    clio create-oauth-technical-user -e ENVIRONMENT [OPTIONS]
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered Creatio environment.
+
+    --name NAME
+        Technical user name to create.
+        Default: clio_oauth_technical_user
+
+EXAMPLES
+    # Create a technical user with the default name.
+    clio create-oauth-technical-user -e c-dev
+
+    # Create a technical user with a specific name.
+    clio create-oauth-technical-user -e c-dev --name svc_clio_s2s
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    This command mutates Creatio (creates a user). Whether OAuthConfigService/CreateTechnicalUser
+    already provisions the necessary roles server-side is an open question; verify in your
+    environment before relying on the new user for privileged operations.

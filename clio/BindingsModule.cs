@@ -199,6 +199,13 @@ public class BindingsModule {
 		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
 		services.AddTransient<IIdentityServiceSystemUserResolver, IdentityServiceSystemUserResolver>();
 		services.AddTransient<IIdentityServiceDeploymentService, IdentityServiceDeploymentService>();
+		services.AddSingleton<Command.OAuthAppConfiguration.IIdentityServerUrlResolver, Command.OAuthAppConfiguration.IdentityServerUrlResolver>();
+		services.AddTransient<Command.OAuthAppConfiguration.IIdentityServerProbe, Command.OAuthAppConfiguration.IdentityServerProbe>();
+		services.AddTransient<Command.OAuthAppConfiguration.GetIdentityServiceConfigCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.ResolveOAuthSystemUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateOAuthTechnicalUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateServerToServerOAuthAppCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.VerifyOAuthAppCommand>();
 		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
 		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
 		services.AddHttpClient<ICodeServerArchiveCache, CodeServerArchiveCache>();
