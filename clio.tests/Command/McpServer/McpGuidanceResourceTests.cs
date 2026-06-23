@@ -518,6 +518,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should stop AI from inventing placeholder subscription services in schema code");
 		article.Text.Should().Contain("Do NOT write `type: \"crt.ShowDialog\"` in imperative request code; use `type: \"crt.ShowDialogRequest\"`.",
 			because: "handler guidance should explicitly forbid the user-visible show-dialog label in imperative request code");
+		article.Text.Should().Contain("\"just show a short confirmation message\" is a `crt.ShowDialogRequest`, NOT a browser dialog",
+			because: "handler guidance must route a short confirmation message to crt.ShowDialogRequest so the agent does not fall back to alert() (ENG-91748)");
+		article.Text.Should().Contain("Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler",
+			because: "handler guidance must forbid raw browser dialog primitives in deployed page-body handlers (ENG-91748)");
 		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
 			because: "handler guidance should give AI callers a compact verification gate before sync-pages");
 		article.Text.Should().Contain("Are the exact `/**SCHEMA_HANDLERS*/` markers still present around the handlers array?",

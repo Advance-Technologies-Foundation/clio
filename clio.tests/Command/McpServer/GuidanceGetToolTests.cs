@@ -231,6 +231,10 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 	}
 
 	[Test]

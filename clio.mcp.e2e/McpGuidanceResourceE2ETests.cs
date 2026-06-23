@@ -532,6 +532,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should disambiguate the user-visible dialog label from the actual source request type with an explicit authoring rule");
 		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
 			because: "the handler guide must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
+		article.Text.Should().Contain("\"just show a short confirmation message\" is a `crt.ShowDialogRequest`, NOT a browser dialog",
+			because: "the handler guide must route a short confirmation message to crt.ShowDialogRequest so the agent does not fall back to alert() (ENG-91748)");
+		article.Text.Should().Contain("Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler",
+			because: "the handler guide must forbid raw browser dialog primitives in deployed page-body handlers (ENG-91748)");
 		article.Text.Should().Contain("Do NOT create a custom handler when a direct request already matches the requirement",
 			because: "the handler guide should explicitly prevent unnecessary custom handlers for simple actions");
 		article.Text.Should().Contain("Multiple handlers in one page-body array",
