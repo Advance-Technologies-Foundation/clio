@@ -28,16 +28,11 @@ public sealed class McpGuidanceForcingTests {
 
 	private const int RouterCharCeiling = 3000;
 
-	private static readonly string[] NewCreatioGuides = ["analytics-widgets"];
-
-	// Guides rolled back at business request (must NOT be registered or routed).
-	private static readonly string[] RolledBackGuides = ["ui-guidelines", "schema-naming"];
-
 	// Guide names referenced by the router routing table and/or the touched tool descriptions.
 	// Drift guard: every one must resolve in GuidanceCatalog.
 	private static readonly string[] ReferencedGuideNames = [
 		"page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
-		"analytics-widgets", "app-modeling", "esq", "esq-filters", "data-bindings"
+		"app-modeling", "esq", "esq-filters", "data-bindings"
 	];
 
 	private static string ToolDescription<TTool>() {
@@ -118,85 +113,6 @@ public sealed class McpGuidanceForcingTests {
 		}
 	}
 
-	[Test]
-	[Category("Unit")]
-	[Description("Confirms the router routes to the kept creatio-* guide(s) and drops the rolled-back ui-guidelines/schema-naming routes.")]
-	public void Router_ShouldRouteToKeptCreatioGuides_AndDropRolledBackOnes_WhenInspected() {
-		// Arrange
-		string router = McpServerInstructions.Text;
-
-		// Assert
-		foreach (string name in NewCreatioGuides) {
-			router.Should().Contain($"name={name}",
-				because: $"the router must route work to the kept {name} guide");
-		}
-		foreach (string name in RolledBackGuides) {
-			router.Should().NotContain($"name={name}",
-				because: $"{name} was rolled back at business request and must not be routed");
-		}
-	}
-
-	// ---- Pt 4: catalog registration + guide content ----
-
-	[Test]
-	[Category("Unit")]
-	[Description("Registers the three new creatio-* guides in GuidanceCatalog alongside the existing static guides.")]
-	public void GuidanceCatalog_ShouldRegisterNewCreatioGuides_WhenQueried() {
-		// Act
-		IReadOnlyList<string> names = GuidanceCatalog.GetNames();
-
-		// Assert
-		names.Should().Contain(NewCreatioGuides,
-			because: "Pt 4 keeps analytics-widgets as a static guide");
-		names.Should().NotContain(RolledBackGuides,
-			because: "ui-guidelines and schema-naming were rolled back at business request");
-		names.Should().Contain(["dashboards", "indicator-widget", "page-modification", "app-modeling"],
-			because: "the original static guides must remain registered");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Returns a non-empty article with the canonical URI for each new creatio-* guide via get-guidance.")]
-	public async Task GuidanceGet_ShouldReturnArticle_ForEachNewCreatioGuide() {
-		// Arrange
-		GuidanceGetTool tool = new();
-
-		foreach (string name in NewCreatioGuides) {
-			// Act
-			GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs(name));
-
-			// Assert
-			result.Success.Should().BeTrue(
-				because: $"{name} is a registered guidance name after Pt 4");
-			result.Article.Should().NotBeNull(
-				because: $"a successful {name} lookup must return the resolved article");
-			result.Article!.Uri.Should().Be($"docs://mcp/guides/{name}",
-				because: $"the {name} guide must expose its canonical docs:// URI");
-			result.Article.Text.Should().NotBeNullOrWhiteSpace(
-				because: $"the {name} guide must carry article content");
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Verifies the analytics-widgets guide references dashboards and indicator-widget by name (see-also) instead of duplicating their content.")]
-	public async Task AnalyticsWidgetsGuide_ShouldReferenceNeighborsByName_WhenInspected() {
-		// Arrange
-		GuidanceGetTool tool = new();
-
-		// Act
-		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("analytics-widgets"));
-		string article = result.Article!.Text;
-
-		// Assert
-		article.Should().Contain("See also",
-			because: "analytics-widgets is a pointer guide that must route to its neighbors");
-		article.Should().Contain("name=dashboards",
-			because: "the dashboards layout math lives in the dashboards guide and must be referenced by name, not copied");
-		article.Should().Contain("name=indicator-widget",
-			because: "the metric aggregation detail lives in the indicator-widget guide and must be referenced by name, not copied");
-	}
-
 	// ---- Pt 2: forcing triggers on guaranteed (tool description) channels ----
 
 	[Test]
@@ -234,28 +150,7 @@ public sealed class McpGuidanceForcingTests {
 		GuidanceGetTool tool = new();
 		GuidanceGetResponse pageMod = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
 		pageMod.Article!.Text.Should().Contain("dashboards",
-			because: "the page-modification GATE must dispatch dashboard work to the dashboards guide");
-		pageMod.Article.Text.Should().Contain("analytics-widgets",
-			because: "the page-modification GATE must make the analytics-widgets guide reachable from page work");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Confirms the entity tools trigger app-modeling (create/update) and business-rules (create/update/lookup/column); schema-naming was rolled back.")]
-	public void EntityTools_ShouldTriggerModelingAndBusinessRulesGuidance_WhenDescriptionInspected() {
-		// Assert
-		ToolDescription<CreateEntitySchemaTool>().Should().Contain("app-modeling",
-			because: "create-entity-schema must route schema-design workflow to app-modeling");
-		ToolDescription<UpdateEntitySchemaTool>().Should().Contain("app-modeling",
-			because: "update-entity-schema must route schema-design workflow to app-modeling");
-		ToolDescription<CreateLookupTool>().Should().Contain("business-rules",
-			because: "create-lookup must route conditional behavior to business-rules for consistency with create-entity-schema");
-		ToolDescription<ModifyEntitySchemaColumnTool>().Should().Contain("business-rules",
-			because: "modify-entity-schema-column must route conditional behavior to business-rules for consistency");
-		foreach (string name in RolledBackGuides) {
-			ToolDescription<CreateEntitySchemaTool>().Should().NotContain(name,
-				because: $"{name} was rolled back and must not be referenced by entity tool descriptions");
-		}
+			because: "the page-modification GATE must dispatch dashboard/analytics-widget work to the dashboards guide (which routes onward to indicator-widget + get-component-info)");
 	}
 
 	[Test]

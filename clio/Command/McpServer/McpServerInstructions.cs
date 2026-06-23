@@ -23,7 +23,7 @@ internal static class McpServerInstructions
 
 		## Load the matching guidance FIRST (get-guidance name=...; unknown name returns availableGuides). Pick the domain, then the row:
 		- Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
-		  - dashboards / analytics widgets -> name=dashboards AND name=indicator-widget; layout/style -> name=analytics-widgets
+		  - dashboards / analytics widgets (placement / sizing / styling) -> name=dashboards AND name=indicator-widget
 		  - page business rules (visibility/required/value) -> name=business-rules
 		- Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
 		  - entity business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
