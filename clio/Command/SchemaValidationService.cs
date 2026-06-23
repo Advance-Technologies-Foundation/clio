@@ -391,7 +391,7 @@ public static class SchemaValidationService
 				$"Attribute '{attr.Name}' binds a 'validators' property. " +
 				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
 				"Remove the validators binding and implement field-level validation via " +
-				"entity-level business rules (create-entity-business-rule).");
+				"entity-level business rules (create-entity-business-rules).");
 		}
 	}
 
@@ -1362,7 +1362,7 @@ public static class SchemaValidationService
 			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
 			// Freedom UI runtime ignores — controls render but read and write no data.
 			result.Errors.Add(
-				"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
+				"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
 				"which is declared in viewModelConfigDiff without the required nesting. " +
 				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
 				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
@@ -1372,8 +1372,8 @@ public static class SchemaValidationService
 			return;
 		}
 		result.Errors.Add(
-			"Inserted field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
-			"but the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
+			"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') has an undeclared attribute binding — " +
+			"the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
 			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
 			canonicalEntry + " so the control binds to the entity column. " +
 			"If the attribute is already provided by a parent schema or the current body, " +

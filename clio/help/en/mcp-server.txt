@@ -21,6 +21,10 @@ DESCRIPTION
     - get-component-info  Inspect curated Freedom UI component contracts
     - sync-pages       Batch page operations in a single call
     - data-binding    Manage data bindings and seed data
+    - telemetry       Record local product telemetry for app-creation workflows:
+      - get-telemetry-consent  Read locally stored telemetry consent (granted/denied/unknown); never writes
+      - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
+      - withdraw-telemetry-consent  Withdraw consent: set the stored decision to denied and delete not-yet-uploaded local events; stops all collection and upload
 
     Available MCP guidance resources:
     - docs://mcp/guides/app-modeling
@@ -84,6 +88,7 @@ NOTES
     - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
+    - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 
 RETURN VALUES
     0       Server shut down normally

@@ -58,6 +58,7 @@ public sealed class PageUpdateCommandDesignerPresenceTests {
 			_applicationClient,
 			serviceUrlBuilder,
 			logger,
+			Substitute.For<IPageBaselineGuard>(),
 			hierarchyClient,
 			_notifier);
 	}

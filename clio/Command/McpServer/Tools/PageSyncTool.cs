@@ -24,7 +24,8 @@ public sealed class PageSyncTool(
 	IFileSystem fileSystem,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService) {
+	IPageBodySamplingService samplingService,
+	IPageBaselineGuard pageBaselineGuard) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -166,7 +167,7 @@ public sealed class PageSyncTool(
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
 			if (entry.SyntaxFailureMessage is { } syntaxMsg) {
-				results.Add(BuildPrePassFailureResult(page, syntaxMsg));
+				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
 			}
 			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
@@ -256,6 +257,37 @@ public sealed class PageSyncTool(
 	// syntactic failure means we never ran the markers or content validators
 	// for this body, so the envelope must NOT claim those gates passed. Only
 	// JsSyntaxOk has authoritative state at this point.
+	// A whole-body JS syntax error is frequently a side effect of a more specific,
+	// regex-detectable content problem: broken JSON inside a JSON-backed SCHEMA_*
+	// marker (e.g. a stray double comma in SCHEMA_VIEW_CONFIG_DIFF), a converter /
+	// validator declared with the wrong key shape, a proxy field binding, etc. The
+	// generic Acornima message ("JavaScript syntax error at line X, column Y")
+	// cannot name the offending section. The deterministic content chain (ValidateBody)
+	// can — and it is regex-based, so it runs even on a body that does not parse as
+	// JavaScript. When validation is on and that chain pinpoints a concrete problem,
+	// prefer its specific, actionable error over the generic parser message. A genuine
+	// JS-only syntax error (clean markers + content) leaves the chain with no errors,
+	// so the ENG-89796 generic syntax wording is preserved for that case.
+	private static string ResolvePrePassSyntaxFailureMessage(PageSyncPageInput page, string syntaxMessage, bool validate) {
+		if (!validate) {
+			return syntaxMessage;
+		}
+		// Only override the generic syntax error when the body is still a recognizable
+		// page body — markers present and correctly paired. If marker integrity itself
+		// fails (e.g. missing SCHEMA_DEPS / SCHEMA_ARGS), the body is not a usable page
+		// at all and the generic JS syntax error is the more honest, actionable signal
+		// (ENG-89796). This keeps FailFast-on-pure-syntax-error behaviour intact while
+		// still pinpointing a marker/content problem inside an otherwise well-formed page.
+		if (!SchemaValidationService.ValidateMarkerIntegrity(page.Body).IsValid) {
+			return syntaxMessage;
+		}
+		PageSyncValidationResult content = ValidateBody(page.Body, page.Resources);
+		IReadOnlyList<string> contentErrors = content.Errors ?? Array.Empty<string>();
+		return contentErrors.Count == 0
+			? syntaxMessage
+			: "Client-side validation failed: " + string.Join("; ", contentErrors);
+	}
+
 	private static PageSyncPageResult BuildPrePassFailureResult(PageSyncPageInput page, string failureMessage) =>
 		new() {
 			SchemaName = page.SchemaName,
@@ -468,7 +500,7 @@ public sealed class PageSyncTool(
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
 			if (baselineArmed) {
-				RefreshOrDropBaseline(metaFilePath, page.SchemaName, opOptions.EnvironmentName, updateResponse);
+				pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
 			}
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
@@ -484,21 +516,6 @@ public sealed class PageSyncTool(
 				Success = false,
 				Error = ex.Message
 			};
-		}
-	}
-
-	private string ResolveBaselineMetaPath(string schemaName, string? outputDirectory) {
-		try {
-			return PageBaselineStore.ResolveMetaFilePath(
-				fileSystem,
-				fileSystem.Directory.GetCurrentDirectory(),
-				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-				ClioRuntimePaths.Home,
-				outputDirectory,
-				bodyFile: null,
-				schemaName);
-		} catch {
-			return null;
 		}
 	}
 
@@ -522,24 +539,21 @@ public sealed class PageSyncTool(
 	private (string MetaFilePath, bool BaselineArmed, PageUpdateOptions UpdateOptions) BuildUpdateRequest(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions) {
-		string metaFilePath = ResolveBaselineMetaPath(page.SchemaName, opOptions.OutputDirectory);
-		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(fileSystem, metaFilePath);
-		bool baselineArmed = baseline != null
-			&& PageBaselineStore.MatchesEnvironment(baseline, opOptions.EnvironmentName, null);
+		// sync-pages only ever knows the environment name (no per-page URI); set it on the options so
+		// the shared guard's environment-identity check compares against EnvironmentName, matching the
+		// prior MatchesEnvironment(baseline, opOptions.EnvironmentName, null) call.
 		PageUpdateOptions updateOptions = new() {
 			SchemaName = page.SchemaName,
 			Body = page.Body,
 			DryRun = false,
 			Resources = page.Resources,
 			OptionalProperties = page.OptionalProperties,
+			Environment = opOptions.EnvironmentName,
 			Force = page.Force ?? false,
 			NotifyDesignerPresence = false
 		};
-		if (baselineArmed) {
-			updateOptions.ExpectedChecksum = baseline.Checksum;
-			updateOptions.ExpectedSchemaUId = baseline.EditableSchemaUId;
-			updateOptions.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
-		}
+		(string metaFilePath, bool baselineArmed) =
+			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
 		return (metaFilePath, baselineArmed, updateOptions);
 	}
 
@@ -618,28 +632,6 @@ public sealed class PageSyncTool(
 		} catch {
 			// best-effort — meta refresh must never fail a verified save.
 		}
-	}
-
-	// FR-09: non-verify path — persist the post-save checksum into the existing baseline, or drop
-	// the baseline when fresh metadata could not be obtained (fail toward no-check).
-	private void RefreshOrDropBaseline(
-		string metaFilePath, string schemaName, string? environmentName, PageUpdateResponse updateResponse) {
-		if (string.IsNullOrWhiteSpace(updateResponse.NewChecksum)) {
-			PageBaselineStore.DeleteBaseline(fileSystem, metaFilePath);
-			return;
-		}
-		PageBaselineStore.RefreshExistingBaseline(
-			fileSystem,
-			metaFilePath,
-			new PageBaselineInfo {
-				SchemaName = schemaName,
-				EnvironmentName = string.IsNullOrWhiteSpace(environmentName) ? null : environmentName,
-				EditableSchemaExists = true,
-				EditableSchemaUId = updateResponse.SavedSchemaUId,
-				Checksum = updateResponse.NewChecksum,
-				ModifiedOn = updateResponse.NewModifiedOn,
-				CapturedAt = DateTime.UtcNow.ToString("o")
-			});
 	}
 
 	private static PageBaselineInfo BuildBaseline(

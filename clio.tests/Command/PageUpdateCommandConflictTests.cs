@@ -41,7 +41,7 @@ public sealed class PageUpdateCommandConflictTests
 		StubNameMetadata();
 		StubDesignerEndpoints();
 		_command = new PageUpdateCommand(
-			_applicationClient, _serviceUrlBuilder, logger, CreateHierarchyClient());
+			_applicationClient, _serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), CreateHierarchyClient());
 	}
 
 	private void StubNameMetadata() {
@@ -87,7 +87,7 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	private PageUpdateCommand CreateReplacingCommand() =>
-		new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(), CreateHierarchyClient(isCreateReplacing: true));
+		new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClient(isCreateReplacing: true));
 
 	private void StubDesignerEndpoints() {
 		_applicationClient.ExecutePostRequest(

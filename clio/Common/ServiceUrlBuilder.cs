@@ -121,7 +121,28 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Generates source code for schemas that require it.
 		/// </summary>
-		GenerateRequiredSchemasSources = 41
+		GenerateRequiredSchemasSources = 41,
+
+		/// <summary>
+		///     Issues a short-lived signed identity assertion (JWT) for the current authorized user,
+		///     used as input for the Identity Service V3 token exchange flow.
+		/// </summary>
+		IdentityAssertionCurrentUser = 42,
+
+		/// <summary>
+		///     Returns the instance public key as a JWK for registration with Identity Service V3.
+		/// </summary>
+		IdentityAssertionPublicJwk = 43,
+
+		/// <summary>
+		///     Regenerates the instance identity-assertion signing key pair (the private key never leaves Creatio).
+		/// </summary>
+		IdentityAssertionRegenerateSigningKey = 44,
+
+		/// <summary>
+		///     Reports whether the environment can use the OAuth authorization code flow.
+		/// </summary>
+		IdentityServiceInfoCanUseAuthorizationCodeFlow = 45
 
 	}
 
@@ -176,6 +197,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.IdentityAssertionCurrentUser, "identityAssertion/currentUser"},
+		{KnownRoute.IdentityAssertionPublicJwk, "identityAssertion/publicJwk"},
+		{KnownRoute.IdentityAssertionRegenerateSigningKey, "identityAssertion/regenerateSigningKey"},
+		{KnownRoute.IdentityServiceInfoCanUseAuthorizationCodeFlow, "identityServiceInfo/canUseAuthorizationCodeFlow"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

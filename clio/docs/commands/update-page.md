@@ -65,10 +65,10 @@ A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 
 ## Conflict Detection (external modifications)
 
-When `--expected-checksum` is supplied, update-page compares it against the current
-`SysSchema.Checksum` of the editable schema **before** saving. If the schema was modified
-outside your session (for example, a user edited the page in the Creatio designer),
-the save is blocked and the response carries a structured conflict:
+update-page compares a baseline checksum against the current `SysSchema.Checksum` of the
+editable schema **before** saving (baseline sources are described below). If the schema
+was modified outside your session (for example, a user edited the page in the Creatio
+designer), the save is blocked and the response carries a structured conflict:
 
 ```jsonc
 {
@@ -94,10 +94,20 @@ After a successful save with a baseline in play, the response carries `newChecks
 Successful saves may also return a `warnings` entry about the live Designer Presence
 push. Treat that warning as informational only: the schema save already succeeded.
 
-The MCP `update-page` tool arms this check automatically from the baseline that the MCP
-`get-page` tool stores in `.clio-pages/{schema-name}/meta.json` (matching environment
-required); the CLI verb arms it only when `--expected-checksum` is passed explicitly.
-A small race window between the check and the save remains (last write wins).
+Baseline sources: both the CLI verb and the MCP `update-page` tool arm this check
+automatically from the baseline that a previous `get-page` stores in
+`.clio-pages/{schema-name}/meta.json` (matching environment required) — so AI-agent CLI
+flows that read a page with `get-page` and then save it with `update-page` are protected
+without extra flags. `--expected-checksum` overrides the on-disk baseline when passed
+explicitly. After a successful save the on-disk baseline is refreshed automatically, so
+consecutive updates in the same session do not false-conflict. A small race window
+between the check and the save remains (last write wins).
+
+If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
+value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
+can report a conflict against a page that has not actually changed. This edge fails safe
+(it blocks the save rather than overwriting), but if you mix the two, keep
+`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
 
 ## Synopsis
 

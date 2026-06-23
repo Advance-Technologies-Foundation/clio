@@ -146,7 +146,7 @@ namespace Clio.Command {
 			if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
 				return new ClientUnitSchemaCreateResponse {
 					Success = false,
-					Error = "schema-name must start with a letter and contain only letters, digits, or underscores"
+					Error = PageSchemaMetadataHelper.SchemaNameFormatError
 				};
 			}
 			if (string.IsNullOrWhiteSpace(options.PackageName)) {

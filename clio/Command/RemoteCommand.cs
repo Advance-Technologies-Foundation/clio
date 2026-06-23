@@ -22,7 +22,7 @@ namespace Clio.Command
             internal set => _timeOut = value;
         }
 
-        public int RetryCount { get; internal set; } = 3;
+        public int MaxAttempts { get; internal set; } = 3;
         public int RetryDelay { get; internal set; } = 1;
 
 
@@ -98,7 +98,7 @@ namespace Clio.Command
 
         public virtual HttpMethod HttpMethod => HttpMethod.Post;
         public int RequestTimeout { get; set; }
-        public int RetryCount { get; set; }
+        public int MaxAttempts { get; set; }
         public int DelaySec { get; set; }
         public ILogger Logger { get; set; } = ConsoleLogger.Instance;
 
@@ -112,8 +112,8 @@ namespace Clio.Command
         protected virtual void ExecuteRemoteCommand(TEnvironmentOptions options)
         {
             string response = HttpMethod == HttpMethod.Post
-                ? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options), RequestTimeout, RetryCount, DelaySec)
-                : ApplicationClient.ExecuteGetRequest(ServiceUri, RequestTimeout, RetryCount, DelaySec);
+                ? ApplicationClient.ExecutePostRequest(ServiceUri, GetRequestData(options), RequestTimeout, MaxAttempts, DelaySec)
+                : ApplicationClient.ExecuteGetRequest(ServiceUri, RequestTimeout, MaxAttempts, DelaySec);
             ProceedResponse(response, options);
         }
 
@@ -169,7 +169,7 @@ namespace Clio.Command
             try
             {
                 RequestTimeout = options.TimeOut;
-                RetryCount = options.RetryCount;
+                MaxAttempts = options.MaxAttempts;
                 DelaySec = options.RetryDelay;
                 ExecuteRemoteCommand(options);
                 string commandName = typeof(TEnvironmentOptions).GetCustomAttribute<VerbAttribute>()?.Name;

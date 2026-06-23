@@ -26,6 +26,26 @@ Available MCP tool categories:
 - get-component-info  Inspect curated Freedom UI component contracts
 - sync-pages       Batch page operations in a single call
 - data-binding    Manage data bindings and seed data
+- telemetry       Record local product telemetry for app-creation workflows:
+  - get-telemetry-consent  Read the locally stored telemetry consent (granted/denied/unknown); never writes
+  - send-telemetry         Store one workflow telemetry event as a local OpenTelemetry-shaped event once consent is granted
+  - withdraw-telemetry-consent  Withdraw consent: set the stored decision to denied and delete not-yet-uploaded local events; stops all collection and upload
+
+A production OTLP/HTTP collector endpoint ships as the built-in default, so once consent is
+granted, stored events are uploaded in the background (on server start and after each stored
+event) as OTLP/HTTP JSON and removed locally on success. Override the endpoint with the settings
+file "telemetry.endpoint" or the CLIO_TELEMETRY_ENDPOINT / CLIO_TELEMETRY_INGEST_KEY environment
+variables (the endpoint must be https, or http only for a loopback host). Disable uploading
+entirely — regardless of consent — with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false
+in the settings file; the local spool is then only pruned (age and size caps). Nothing is ever
+uploaded unless consent is granted.
+
+Local telemetry is stored under &lt;clio-home&gt;/telemetry (relocate with CLIO_TELEMETRY_HOME;
+honors CLIO_HOME). Each event carries only product workflow metadata — session_id,
+event_name, timestamps, coding_agent, clio_version, platform, an anonymous installation_id,
+and skill/plugin versions — never prompts, secrets, tokens, customer data, or generated
+content. Spooled events are pruned after at most 30 days locally; the collected metrics are
+retained up to 1 year server-side.
 
 Available MCP guidance resources:
 - docs://mcp/guides/app-modeling

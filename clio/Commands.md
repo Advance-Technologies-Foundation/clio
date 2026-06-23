@@ -565,6 +565,21 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-adac"></a>
 - [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
 
+## Identity & Authentication
+
+<a id="get-identity-assertion"></a>
+<a id="identity-assertion"></a>
+- [`get-identity-assertion`](docs/commands/get-identity-assertion.md) - Issue a short-lived signed identity assertion (JWT) for the current user, `identity-assertion`
+<a id="get-identity-public-jwk"></a>
+<a id="identity-public-jwk"></a>
+- [`get-identity-public-jwk`](docs/commands/get-identity-public-jwk.md) - Get the instance public key (JWK) for Identity Service V3, `identity-public-jwk`
+<a id="regenerate-identity-signing-key"></a>
+<a id="identity-regenerate-key"></a>
+- [`regenerate-identity-signing-key`](docs/commands/regenerate-identity-signing-key.md) - Regenerate the instance identity-assertion signing key pair, `identity-regenerate-key`
+<a id="check-auth-code-flow"></a>
+<a id="auth-code-flow"></a>
+- [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
+
 ## General
 
 <a id="assert"></a>

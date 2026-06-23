@@ -30,5 +30,6 @@ internal static class McpServerInstructions
 		- Application / schema modeling -> name=app-modeling
 		- Deploy & provisioning -> name=deploy-lifecycle
 		- Executing an approved plan -> name=agent-execution
+		- Identity assertion / Identity Service V3 token exchange -> name=identity-assertion
 		""";
 }

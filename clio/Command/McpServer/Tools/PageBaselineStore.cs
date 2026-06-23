@@ -2,7 +2,7 @@ using System;
 using System.Text.Json;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command;
 
 /// <summary>
 /// Owns the conflict-detection baseline persisted in <c>.clio-pages/{schema}/meta.json</c>:

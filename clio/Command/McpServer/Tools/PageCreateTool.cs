@@ -35,6 +35,18 @@ public sealed class PageCreateTool(
 			Password = args.Password,
 			CaptionCulture = args.CaptionCulture
 		};
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = "schema-name is required"
+			};
+		}
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			PageCreateCommand resolvedCommand;
 			try {

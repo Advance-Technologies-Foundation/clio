@@ -121,10 +121,17 @@ internal static class GuidanceCatalog {
 				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
 				+ "view-model-attribute-binding / current-record variants.",
 				RunProcessButtonGuidanceResource.Guide),
-				["analytics-widgets"] = Create(
-					"analytics-widgets",
-					"Canonical MCP guidance for placing, sizing, and styling Freedom UI analytical widgets; a pointer that defers to the dashboards and indicator-widget guides.",
-					AnalyticsWidgetsGuidanceResource.Guide)
+			["analytics-widgets"] = Create(
+				"analytics-widgets",
+				"Canonical MCP guidance for placing, sizing, and styling Freedom UI analytical widgets; a pointer that defers to the dashboards and indicator-widget guides.",
+				AnalyticsWidgetsGuidanceResource.Guide),
+			["identity-assertion"] = Create(
+				"identity-assertion",
+				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
+				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
+				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
+				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
+				IdentityAssertionGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
