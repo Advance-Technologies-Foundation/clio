@@ -38,14 +38,14 @@ public sealed class ListCreatioBuildsTool {
 
 	/// <summary>
 	/// Lists Creatio build archives (.zip) discovered under the configured creatio-products folder so an
-	/// agent can pick a deploy-creatio zip-file deterministically instead of globbing the filesystem.
+	/// agent can pick a deploy-creatio zipFile deterministically instead of globbing the filesystem.
 	/// </summary>
 	[McpServerTool(Name = ListCreatioBuildsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[Description("""
 				 Lists the Creatio build archives (.zip) available under the configured `creatio-products` folder.
 
-				 Use this before `deploy-creatio` to discover a build and pass its full path as `zip-file`, instead
+				 Use this before `deploy-creatio` to discover a build and pass its full path as `zipFile`, instead
 				 of globbing the filesystem. The response includes the resolved products folder and whether it exists,
 				 so a stale or missing `creatio-products` configuration is surfaced explicitly.
 				 """)]
@@ -146,7 +146,7 @@ public sealed record ListCreatioBuildItem(
 	string FileName,
 
 	[property: JsonPropertyName("full-path")]
-	[property: Description("Absolute path to pass as the deploy-creatio zip-file argument")]
+	[property: Description("Absolute path to pass as the deploy-creatio zipFile argument")]
 	string FullPath,
 
 	[property: JsonPropertyName("size-bytes")]

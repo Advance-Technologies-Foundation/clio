@@ -263,9 +263,12 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string RuleFieldName = "rule";
+	private const string RulesFieldName = "rules";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
+	private const string EventNameFieldName = "event_name";
+	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
 	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
@@ -295,6 +298,9 @@ internal static class ToolContractCatalog {
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
+			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
+			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
+			[WithdrawTelemetryConsentTool.ToolName] = BuildWithdrawTelemetryConsent(),
 			[ApplicationCreateTool.ApplicationCreateToolName] = BuildApplicationCreate(),
 			[ApplicationSectionCreateTool.ApplicationSectionCreateToolName] = BuildApplicationSectionCreate(),
 			[ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName] = BuildApplicationSectionUpdate(),
@@ -349,6 +355,7 @@ internal static class ToolContractCatalog {
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
+			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -358,6 +365,9 @@ internal static class ToolContractCatalog {
 		GuidanceGetTool.ToolName,
 		ExecuteEsqTool.ToolName,
 		SettingsHealthTool.ToolName,
+		GetTelemetryConsentTool.ToolName,
+		SendTelemetryTool.ToolName,
+		WithdrawTelemetryConsentTool.ToolName,
 		ApplicationCreateTool.ApplicationCreateToolName,
 		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
@@ -535,6 +545,137 @@ internal static class ToolContractCatalog {
 					"Follow with get-tool-contract when the caller must choose a bootstrap-safe recovery or inspection tool.")
 			],
 			[]);
+	}
+
+	private static ToolContractDefinition BuildSendTelemetry() {
+		return BuildSendTelemetryContract(SendTelemetryTool.ToolName, "Use at product workflow milestones after the user has granted consent; until consent is granted nothing is stored, so events sent earlier are silently dropped. The set of events and their order is owned by the consuming skill/contract. Delivery is non-blocking and fire-and-forget.");
+	}
+
+	private static ToolContractDefinition BuildGetTelemetryConsent() {
+		return BuildGetTelemetryConsentContract(GetTelemetryConsentTool.ToolName,
+			"Use before sending the first product telemetry event to check whether consent is already stored. When telemetry_consent is unknown, the consuming workflow obtains the user's decision and persists it once via send-telemetry; until consent is granted, send-telemetry stores nothing, so events sent earlier are silently dropped.");
+	}
+
+	private static ToolContractDefinition BuildWithdrawTelemetryConsent() {
+		return new ToolContractDefinition(
+			WithdrawTelemetryConsentTool.ToolName,
+			"Withdraws product telemetry consent: sets the locally stored decision to denied and deletes any not-yet-uploaded local telemetry events, so collection stops and no further uploads start. Forward-looking — it does not delete events already uploaded to Creatio (those expire on the server-side retention timer). Idempotent and safe to call from any prior state.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Withdrawal status: withdrawn (consent set to denied) or withdraw-failed (a local I/O fault left consent unchanged)."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value after the call: denied on success."),
+				Field("events_purged", NumberType, "Count of not-yet-uploaded local telemetry event files deleted by the withdrawal.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Withdraw telemetry consent when the developer opts out", new Dictionary<string, object?>())
+			],
+			Flow([WithdrawTelemetryConsentTool.ToolName], "Call when the developer asks to stop, turn off, opt out of, or withdraw product telemetry. Idempotent and safe from any state; after success get-telemetry-consent returns denied and the workflow continues without telemetry."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildGetTelemetryConsentContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Reads locally persisted product telemetry consent without storing any telemetry event. Telemetry covers an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract; if no such skill is active, do not call this tool or prompt for consent.",
+			new ToolInputSchemaContract([], []),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Consent lookup status: known or unknown."),
+				Field(TelemetryConsentFieldName, StringType, "Local consent value: granted, denied, or unknown.")),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Read local telemetry consent", new Dictionary<string, object?>())
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Sending a telemetry event before consent is established", "Use this read-only consent tool before any telemetry event. Do not call send-telemetry until consent is granted or the first-run answer must be persisted.")
+			]);
+	}
+
+	private static ToolContractDefinition BuildSendTelemetryContract(string toolName, string flowNotes) {
+		return new ToolContractDefinition(
+			toolName,
+			"Stores a single product telemetry event (about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract) as a local OpenTelemetry-shaped JSON file after user consent. If no such skill is active, do not call this tool. When a telemetry endpoint is configured, stored events are uploaded in the background and removed locally on success; no agent action is needed.",
+			new ToolInputSchemaContract(
+				["session_id", EventNameFieldName, "coding_agent", "plugin_version"],
+				[
+					Field("session_id", StringType, "Stable product workflow session identifier reused across all events in one app-creation conversation."),
+					Field(EventNameFieldName, StringType,
+						$"Product event name. Allowed values: {string.Join(", ", Clio.Common.Telemetry.TelemetryService.AllowedEventNames)}."),
+					Field("coding_agent", StringType, "Agent or host name, for example Claude Code, Codex, GitHub Copilot CLI, or Cursor."),
+					Field("plugin_version", StringType, "Product plugin version."),
+					Field(TelemetryConsentFieldName, StringType, "Optional first-use consent value after asking the user: granted or denied."),
+					Field("duration_ms", NumberType, "Optional elapsed time in milliseconds for the step this event represents, where applicable. Omit it and clio infers the duration from local session timing when it can.")
+				],
+				Validators: [
+					new ToolContractValidator("enum", "unknown-event-name", EventNameFieldName,
+						Context: "event_name must be one of the documented product event names.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal,
+					"status == rejected"
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(StatusFieldName, StringType, "Telemetry status: recorded (clio accepted the event; any upload to a collector happens separately and is not confirmed by this call), consent-denied, record-failed, or rejected."),
+				Field("event_id", StringType, "Generated event identifier when an event is recorded."),
+				Field(ErrorFieldName, ObjectType, "Structured validation or persistence error when rejected.")),
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("telemetry-consent-required",
+					"Telemetry consent is not yet established. Ask the user and retry with telemetry_consent set to granted or denied."),
+				new ToolErrorCodeContract("record-unavailable",
+					"clio could not record the event because of a local I/O fault; it was not retained."),
+				new ToolErrorCodeContract("unsupported-fields",
+					"The payload contains fields outside the documented product telemetry fields."),
+				new ToolErrorCodeContract("missing-required-field",
+					"A required telemetry field (session_id, event_name, coding_agent, or plugin_version) is blank."),
+				new ToolErrorCodeContract("unknown-event-name",
+					"event_name is not one of the documented product event names."),
+				new ToolErrorCodeContract("unknown-consent",
+					"telemetry_consent is set to a value other than granted or denied."),
+				new ToolErrorCodeContract("invalid-duration",
+					"duration_ms must be a non-negative value when supplied."),
+				new ToolErrorCodeContract("invalid-session-id",
+					"session_id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'."),
+				new ToolErrorCodeContract("field-too-long",
+					"A scalar metadata field (coding_agent or plugin_version) exceeds the 64-character limit.")
+			]),
+			[],
+			[
+				new ToolContractDefaultValue(TelemetryConsentFieldName, "omitted after first run", "Consent is persisted locally after the first granted or denied value.")
+			],
+			[
+				Example("Store a Business Plan generated event after consent", new Dictionary<string, object?> {
+					["session_id"] = "018f6e4a-0000-7000-9000-000000000001",
+					[EventNameFieldName] = "business_plan_generated",
+					["coding_agent"] = "Codex",
+					["plugin_version"] = "0.1.0"
+				})
+			],
+			Flow([toolName], flowNotes),
+			[],
+			[],
+			[
+				new ToolAntiPattern("Adding custom telemetry fields", "The send-telemetry tool accepts only the documented product telemetry fields listed in this contract (including the optional duration_ms); any other field is rejected as unsupported-fields.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildGuidanceGet() {
@@ -1356,22 +1497,16 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			"Creates a Creatio record through OData v4 (POST). Returns the created record including its generated Id.",
+			"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array rather than one call per row; each row is inserted sequentially and reported independently. Returns a created/failed summary and a per-row result array including each created record's Id.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "data", EnvironmentNameFieldName],
+				[EntityFieldName, "rows", EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
-					Field("data", ObjectType, "Object of field/value pairs for the new record. Lookup fields are set with their GUID, for example { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }."),
+					Field("rows", ArrayType, "Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" } ]. Pass all rows in one call rather than one call per row."),
+					Field("stop-on-error", BooleanType, "Optional. Stop after the first failed row. Default false: continue and report every row independently. When true, rows after a failure are not attempted and do not appear in results, so results may be shorter than rows."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, "Whether the OData create succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "Generated GUID of the created record."),
-				Field("record", ObjectType, "The created record returned by Creatio.")
-			),
+			ODataCreateBatchOutput(),
 			CommonErrorContract,
 			[],
 			[],
@@ -1379,7 +1514,7 @@ internal static class ToolContractCatalog {
 				Example("Create a contact", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[EntityFieldName] = ExampleContactSchemaName,
-					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" } }
 				})
 			],
 			Flow([ODataCreateTool.ToolName], "Use to insert a new Creatio record when field values are known."),
@@ -1624,35 +1759,35 @@ internal static class ToolContractCatalog {
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
-					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
+					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rules[*].actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
-					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
+					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rules[*].actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
-					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
+					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rules[*].actions[*].items[*].value.expression",
 						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
-					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rule.actions[*]",
+					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rules[*].actions[*]",
 						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
+					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rules[*].actions[*].target",
 						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
-					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
+					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rules[*].actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
+					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rules[*].actions[*].filter",
 						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
-					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
-						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+					new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].actions[*].items[*].value.value",
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rules; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 				]),
-			CommandExecutionOutput(),
+			BusinessRuleBatchOutput(),
 			CommonErrorContract,
 			[
 			],
@@ -1859,7 +1994,7 @@ internal static class ToolContractCatalog {
 					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rule contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rules contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -1886,9 +2021,9 @@ internal static class ToolContractCatalog {
 			[],
 			null,
 			[
-				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
+				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
-				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
+				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
 	}
@@ -1898,25 +2033,25 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rule.condition.conditions[*].leftExpression.path",
+					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
 						Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
-					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rule.condition.conditions[*].rightExpression.path",
+					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
 						Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
-					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
-					new ToolContractValidator("page-element", "unknown-page-element", "rule.actions[*].items",
+					new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
 						Context: "Use any named element from recursive get-page bundle.viewConfig.")
 				]),
-			CommandExecutionOutput(),
+			BusinessRuleBatchOutput(),
 			CommonErrorContract,
 			[],
 			[],
@@ -2000,7 +2135,7 @@ internal static class ToolContractCatalog {
 					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rule contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rules contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -2019,31 +2154,31 @@ internal static class ToolContractCatalog {
 					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
 			],
 			[
-				"Call get-guidance with name business-rules before calling create-page-business-rule.",
-				"Call get-tool-contract for create-page-business-rule before building the final payload.",
+				"Call get-guidance with name business-rules before calling create-page-business-rules.",
+				"Call get-tool-contract for create-page-business-rules before building the final payload.",
 				"When any lookup condition constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id. With odata-read, filter records by a lookup value using a structured-filter traversal path such as Account/Id."
 			]);
 	}
 
 	private static ToolContractValidator[] BusinessRuleConditionValidators() =>
 		[
-			new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
+			new ToolContractValidator("enum", "unsupported-operator", "rules[*].condition.logicalOperation",
 				Context: "Supported values: AND, OR."),
-			new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
+			new ToolContractValidator("enum", "unsupported-comparison", "rules[*].condition.conditions[*].comparisonType",
 				Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
-			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rules[*].condition.conditions[*].rightExpression",
 				Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
-			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rules[*].condition.conditions[*]",
 				Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
-			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rules[*].condition.conditions[*]",
 				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
-			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
+			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rules[*].condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
-			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
+			new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].condition.conditions[*].rightExpression.value",
 				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
-			new ToolContractValidator("sys-value", "unsupported-system-variable", "rule.condition.conditions[*].leftExpression|rightExpression.sysValueName",
+			new ToolContractValidator("sys-value", "unsupported-system-variable", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysValueName",
 				Context: $"A SysValue may be on EITHER side of a condition. sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. Types: CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount=Lookup, CurrentUserRoles=ObjectList (a collection of SysAdminUnit roles). Both operands must resolve to the same data value type and, for lookups, the same reference schema (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit). Role-based visibility: CurrentUserRoles on the left, comparisonType contain/not-contain, and a Const SysAdminUnit role id on the right."),
-			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rules[*].condition.conditions[*]",
 				Context: "Either side may be AttributeValue, Const, or SysValue, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
 		];
 
@@ -2126,14 +2261,14 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[EntitySchemaNameFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
 					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
 				[ActionsFieldName] = new object[] { action }
-			}
+			} }
 		});
 	}
 
@@ -2153,14 +2288,14 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[EntitySchemaNameFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
 					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
 				[ActionsFieldName] = new object[] { action }
-			}
+			} }
 		});
 	}
 
@@ -2229,7 +2364,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2243,7 +2378,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2252,7 +2387,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2276,7 +2411,7 @@ internal static class ToolContractCatalog {
 						["items"] = new object[] { "DateMismatchWarningLabel" }
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2306,7 +2441,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2320,7 +2455,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2350,7 +2485,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2364,7 +2499,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -3756,7 +3891,7 @@ internal static class ToolContractCatalog {
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rule`, or `create-page-business-rule`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
 			]);
 	}
 
@@ -3900,11 +4035,22 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private const string SiteNameFieldName = "site-name";
-	private const string ZipFileFieldName = "zip-file";
-	private const string SitePortFieldName = "site-port";
-	private const string DbServerNameFieldName = "db-server-name";
-	private const string RedisServerNameFieldName = "redis-server-name";
+	private const string SiteNameFieldName = "siteName";
+	private const string ZipFileFieldName = "zipFile";
+	private const string SitePortFieldName = "sitePort";
+	private const string DbServerNameFieldName = "dbServerName";
+	private const string RedisServerNameFieldName = "redisServerName";
+	private const string IdentitySitePortFieldName = "identitySitePort";
+	private const string IdentitySiteNameFieldName = "identitySiteName";
+	private const string IdentityPathFieldName = "identityPath";
+	private const string IdentityArchivePathInBundleFieldName = "identityArchivePathInBundle";
+	private const string ConfigurationModeFieldName = "configurationMode";
+	private const string ClientNameFieldName = "clientName";
+	private const string ClientApplicationUrlFieldName = "clientApplicationUrl";
+	private const string ClientDescriptionFieldName = "clientDescription";
+	private const string NoAppFieldName = "noApp";
+	private const string CreateTechUserFieldName = "createTechUser";
+	private const string UserFieldName = "user";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -3970,14 +4116,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildFindEmptyIisPort() {
 		return new ToolContractDefinition(
 			FindEmptyIisPortTool.FindEmptyIisPortToolName,
-			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS site-port.",
+			"Finds the first free IIS deployment port between 40000 and 42000. Use this before deploy-creatio when you need a safe local IIS sitePort.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field("status", StringType, "Availability status for the requested range."),
 				Field("summary", StringType, "Human-readable scan summary."),
 				Field("rangeStart", NumberType, "Inclusive start of the scanned range."),
 				Field("rangeEnd", NumberType, "Inclusive end of the scanned range."),
-				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio site-port."),
+				Field("firstAvailablePort", NumberType, "First discovered free IIS port, if any. Use as the deploy-creatio sitePort."),
 				Field("iisBoundPortCount", NumberType, "Number of ports already claimed by IIS site bindings."),
 				Field("activeTcpPortCount", NumberType, "Number of ports already claimed by active TCP listeners or connections.")),
 			CommonErrorContract,
@@ -3991,7 +4137,7 @@ internal static class ToolContractCatalog {
 					FindEmptyIisPortTool.FindEmptyIisPortToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Pass firstAvailablePort as the deploy-creatio site-port for a local IIS deployment."),
+				"Pass firstAvailablePort as the deploy-creatio sitePort for a local IIS deployment."),
 			[],
 			[]);
 	}
@@ -4034,8 +4180,53 @@ internal static class ToolContractCatalog {
 			[],
 			Preconditions: [
 				"assert-infrastructure was run and the targeted database/Redis sections pass (or were chosen from show-passing-infrastructure).",
-				"For a local IIS deployment, site-port is a free port (use find-empty-iis-port).",
-				"zip-file points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+				"For a local IIS deployment, sitePort is a free port (use find-empty-iis-port).",
+				"zipFile points at an existing Creatio build archive (pick one from the configured creatio-products folder)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildDeployIdentity() {
+		return new ToolContractDefinition(
+			DeployIdentityTool.DeployIdentityToolName,
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings. Never echo the generated client secret in logs or public messages.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
+					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
+					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files."),
+					Field(ConfigurationModeFieldName, StringType, "Creatio connection mode: db-first, rest, or db. db-first currently falls back to REST/sys-settings until direct DB seeding is proven."),
+					Field(ClientNameFieldName, StringType, "OAuth client display name created for clio."),
+					Field(ClientApplicationUrlFieldName, StringType, "OAuth client application URL."),
+					Field(ClientDescriptionFieldName, StringType, "OAuth client description."),
+					Field(NoAppFieldName, BooleanType, "Deploy and connect IdentityService without creating a clio OAuth app or verifying client_credentials."),
+					Field(CreateTechUserFieldName, BooleanType, "Create a new technical user for the OAuth app instead of binding it to an existing user."),
+					Field(UserFieldName, StringType, "Existing Creatio system user used by the OAuth client. Defaults to Supervisor.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Deploy IdentityService with environment defaults", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ConfigurationModeFieldName] = "db-first"
+				})
+			],
+			Flow(
+				[
+					DeployIdentityTool.DeployIdentityToolName
+				],
+				"Deploy IdentityService for an already registered local Creatio environment. The command can discover IdentityService.zip under EnvironmentPath and auto-pick a free IIS port; by default it creates a fresh OAuth app bound to Supervisor, stores generated clio OAuth credentials in local clio settings, and masks the secret in command output."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered and has EnvironmentPath pointing to a local Creatio installation.",
+				"Supervisor/default credentials or existing environment credentials can authenticate to Creatio.",
+				"Use explicit zipFile or identitySitePort only when overriding the EnvironmentPath archive discovery or default port range."
 			]);
 	}
 
@@ -4112,14 +4303,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListCreatioBuilds() {
 		return new ToolContractDefinition(
 			ListCreatioBuildsTool.ListCreatioBuildsToolName,
-			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zip-file can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
+			"Lists the Creatio build archives (.zip) available under the configured creatio-products folder so a deploy-creatio zipFile can be chosen deterministically instead of globbing the filesystem. The response surfaces the resolved products folder and whether it exists, so a stale or missing configuration is reported explicitly.",
 			new ToolInputSchemaContract([], []),
 			StructuredResultOutput(
 				Field(StatusFieldName, StringType, "Discovery status: ok, no-builds-found, products-folder-missing, products-folder-not-configured, or products-folder-unreadable."),
 				Field("products-folder", StringType, "Resolved creatio-products folder configured in clio appsettings.json."),
 				Field("products-folder-exists", BooleanType, "Whether the configured creatio-products folder exists on disk."),
 				Field("message", StringType, "Human-readable summary or remediation hint."),
-				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zip-file."),
+				Field("builds", ArrayType, "Discovered build archives newest-first, each with file-name, full-path, size-bytes, and modified-on-utc. Pass full-path as the deploy-creatio zipFile."),
 				Field("truncated", BooleanType, "True when more builds exist than were returned.")),
 			CommonErrorContract,
 			[],
@@ -4132,7 +4323,7 @@ internal static class ToolContractCatalog {
 					ListCreatioBuildsTool.ListCreatioBuildsToolName,
 					InstallerCommandTool.DeployCreatioToolName
 				],
-				"Discover a build, then pass its full-path as the deploy-creatio zip-file. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
+				"Discover a build, then pass its full-path as the deploy-creatio zipFile. Run the infrastructure preflight (assert-infrastructure) alongside build discovery."),
 			[],
 			[]);
 	}
@@ -4149,6 +4340,38 @@ internal static class ToolContractCatalog {
 				Field("exit-code", NumberType, "Process exit code."),
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
 				Field("log-file-path", StringType, "Optional operation log path.")
+			]);
+	}
+
+	private static ToolOutputContract BusinessRuleBatchOutput() {
+		return new ToolOutputContract(
+			"business-rule-batch-result",
+			null,
+			[
+				"failed > 0",
+				"error != null"
+			],
+			[
+				Field("created", NumberType, "Number of rules created."),
+				Field("failed", NumberType, "Number of rules that failed."),
+				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name, success, ruleName, and error."),
+				Field("error", StringType, "Request-level error that prevented the whole batch from running.")
+			]);
+	}
+
+	private static ToolOutputContract ODataCreateBatchOutput() {
+		return new ToolOutputContract(
+			"odata-create-batch-result",
+			null,
+			[
+				"failed > 0",
+				"error != null"
+			],
+			[
+				Field("created", NumberType, "Number of rows created."),
+				Field("failed", NumberType, "Number of rows that failed."),
+				Field("results", ArrayType, "Per-row outcomes for every attempted row; each item has index, success, id, and error."),
+				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
 			]);
 	}
 

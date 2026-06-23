@@ -290,6 +290,8 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
 		result.Article.Text.Should().Contain("default to web",
 			because: "Step 0 must default to web when the requirement does not name a surface");
+		result.Article.Text.Should().Contain("whenToUse",
+			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
 	}
 
 	[Test]

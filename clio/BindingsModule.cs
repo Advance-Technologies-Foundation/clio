@@ -14,6 +14,7 @@ using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
@@ -27,6 +28,7 @@ using Clio.Common.Assertions;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.SystemServices;
+using Clio.Common.Telemetry;
 using Clio.Common.K8;
 using Clio.Common.Kubernetes;
 using Clio.Common.Database;
@@ -122,7 +124,11 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
-		
+		// Named HttpClient for background telemetry uploads — same registration-time-only
+		// timeout rule as the component-registry client above.
+		services.AddHttpClient(TelemetryFlushService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
+
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
 		// RealInteractiveConsole fails closed on redirected stdin (MCP stdio / CI), so this single
@@ -187,6 +193,19 @@ public class BindingsModule {
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
+		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
+		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
+		services.AddTransient<IIdentityServiceSystemUserResolver, IdentityServiceSystemUserResolver>();
+		services.AddTransient<IIdentityServiceDeploymentService, IdentityServiceDeploymentService>();
+		services.AddSingleton<Command.OAuthAppConfiguration.IIdentityServerUrlResolver, Command.OAuthAppConfiguration.IdentityServerUrlResolver>();
+		services.AddTransient<Command.OAuthAppConfiguration.IIdentityServerProbe, Command.OAuthAppConfiguration.IdentityServerProbe>();
+		services.AddTransient<Command.OAuthAppConfiguration.GetIdentityServiceConfigCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.ResolveOAuthSystemUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateOAuthTechnicalUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateServerToServerOAuthAppCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.VerifyOAuthAppCommand>();
 		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
 		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
 		services.AddHttpClient<ICodeServerArchiveCache, CodeServerArchiveCache>();
@@ -339,6 +358,27 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
+		// Singleton: the service is effectively stateless (its only shared mutable state is a static
+		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
+		// flusher that depends on it (no captured-dependency lifetime mismatch).
+		services.AddSingleton<ITelemetryService>(sp => new TelemetryService(
+			sp.GetRequiredService<IFileSystem>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>()));
+		services.AddSingleton<ITelemetryFlushOptionsProvider, TelemetryFlushOptionsProvider>();
+		services.AddSingleton<ITelemetryFlushService>(sp => new TelemetryFlushService(
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<IHttpClientFactory>(),
+			sp.GetRequiredService<ITelemetryService>(),
+			sp.GetRequiredService<ITelemetryFlushOptionsProvider>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushService>>()));
+		services.AddSingleton<ITelemetryFlushScheduler>(sp => new TelemetryFlushScheduler(
+			sp.GetRequiredService<ITelemetryFlushService>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushScheduler>>()));
+		services.AddTransient<GetTelemetryConsentTool>();
+		services.AddTransient<SendTelemetryTool>();
+		services.AddTransient<WithdrawTelemetryConsentTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
@@ -620,6 +660,10 @@ public class BindingsModule {
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();
+		services.AddTransient<GetIdentityAssertionCommand>();
+		services.AddTransient<GetIdentityPublicJwkCommand>();
+		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
+		services.AddTransient<CheckAuthCodeFlowCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();

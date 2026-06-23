@@ -43,7 +43,11 @@ internal static class MobilePageValidation {
 			MarkersOk = true,
 			JsSyntaxOk = true,
 			ContentOk = valid,
-			Errors = valid ? null : errors,
+			// A valid mobile body must still surface a non-null (empty) error
+			// collection: clients assert against Validation.Errors directly, and a
+			// null here surfaces as a missing "errors" field that breaks
+			// not-contains assertions (ENG-90640 mobile AMD-marker case).
+			Errors = valid ? [] : errors,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}

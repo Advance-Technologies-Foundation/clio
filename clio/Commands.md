@@ -475,6 +475,18 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ic"></a>
 <a id="install-creatio"></a>
 - [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+<a id="deploy-identity"></a>
+- [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
+<a id="get-identity-service-config"></a>
+- [`get-identity-service-config`](docs/commands/get-identity-service-config.md) - Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST
+<a id="resolve-oauth-system-user"></a>
+- [`resolve-oauth-system-user`](docs/commands/resolve-oauth-system-user.md) - Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST
+<a id="create-oauth-technical-user"></a>
+- [`create-oauth-technical-user`](docs/commands/create-oauth-technical-user.md) - Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST
+<a id="create-server-to-server-oauth-app"></a>
+- [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
+<a id="verify-oauth-app"></a>
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`
@@ -576,6 +588,21 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
 <a id="update-adac"></a>
 - [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
+
+## Identity & Authentication
+
+<a id="get-identity-assertion"></a>
+<a id="identity-assertion"></a>
+- [`get-identity-assertion`](docs/commands/get-identity-assertion.md) - Issue a short-lived signed identity assertion (JWT) for the current user, `identity-assertion`
+<a id="get-identity-public-jwk"></a>
+<a id="identity-public-jwk"></a>
+- [`get-identity-public-jwk`](docs/commands/get-identity-public-jwk.md) - Get the instance public key (JWK) for Identity Service V3, `identity-public-jwk`
+<a id="regenerate-identity-signing-key"></a>
+<a id="identity-regenerate-key"></a>
+- [`regenerate-identity-signing-key`](docs/commands/regenerate-identity-signing-key.md) - Regenerate the instance identity-assertion signing key pair, `identity-regenerate-key`
+<a id="check-auth-code-flow"></a>
+<a id="auth-code-flow"></a>
+- [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
 
 ## General
 

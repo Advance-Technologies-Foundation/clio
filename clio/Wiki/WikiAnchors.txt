@@ -47,6 +47,12 @@ delete-schema:delete-schema
 delete-adac:delete-adac
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+deploy-identity:deploy-identity
+get-identity-service-config:get-identity-service-config
+resolve-oauth-system-user:resolve-oauth-system-user
+create-oauth-technical-user:create-oauth-technical-user
+create-server-to-server-oauth-app:create-server-to-server-oauth-app
+verify-oauth-app:verify-oauth-app
 deploy-infrastructure:deploy-infrastructure,di
 download-application:download-application,dapp,download-app
 download-configuration:download-configuration,dconf
@@ -176,3 +182,7 @@ update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
 upload-licenses:upload-licenses,lic
 upsert-data-binding-row-db:upsert-data-binding-row-db
+get-identity-assertion:get-identity-assertion,identity-assertion
+get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
+regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
+check-auth-code-flow:check-auth-code-flow,auth-code-flow

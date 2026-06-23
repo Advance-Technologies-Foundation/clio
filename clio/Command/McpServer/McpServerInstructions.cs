@@ -21,6 +21,18 @@ internal static class McpServerInstructions
 
 		## Typical workflows
 
+		### Product telemetry
+		Three tools manage local product telemetry about an AI-assisted Creatio app-development session run through this MCP server, driven by a consuming skill/contract. If no such skill is active (ad-hoc clio use, scripts, or CI), do not call these tools or prompt for consent. The tools:
+		- `get-telemetry-consent` returns the locally stored telemetry consent (`granted`, `denied`, or `unknown`) without writing anything.
+		- `send-telemetry` validates and stores a single workflow telemetry event as a local OpenTelemetry-shaped file once consent is `granted`.
+		- `withdraw-telemetry-consent` sets the stored decision to `denied` and deletes any not-yet-uploaded local events; call it when the developer asks to stop, turn off, opt out of, or withdraw telemetry.
+
+		Consent gates storage: `send-telemetry` stores nothing until consent is `granted`, so establish consent before sending any event (call `get-telemetry-consent`; if `unknown`, obtain the user's decision and persist it once via `send-telemetry`); events sent earlier are silently dropped.
+		Consent can be withdrawn at any time with `withdraw-telemetry-consent`: it stops all further collection and upload and discards the local outbox. Withdrawal is forward-looking — events already uploaded to Creatio are not deleted (they expire on the server-side retention timer). After withdrawal `get-telemetry-consent` returns `denied`.
+		The consent prompt wording and the per-step event sequence are owned by the app-creation skill/contract, not by these MCP instructions.
+		Call `get-tool-contract` for `get-telemetry-consent`, `send-telemetry`, and `withdraw-telemetry-consent` to get the authoritative payload shape and emission order. If consent is denied or telemetry is unavailable, continue the user workflow without blocking.
+		Recording each event needs a `send-telemetry` call; once consent is granted, clio uploads those stored events in the background — no agent action for delivery.
+
 		### Inspect an environment
 		1. `list-environments` → pick an environment name
 		2. `list-packages` with that environment → see installed packages
@@ -58,6 +70,9 @@ internal static class McpServerInstructions
 		- Do not call `compile-creatio` or `restart-by-environment-name` "just in case" — see the rules above.
 		- When in doubt, prefer read-only tools (`list-packages`, `get-schema`, `list-environments`).
 
+		## Calling tools
+		- Every tool that takes parameters wraps them in a single top-level `args` object: put all fields inside `args`, never at the top level (a flat top-level payload is rejected with a missing-`args` error). Tools with no parameters take an empty object.
+
 		## Tool naming conventions
 		- Many tools have two variants: `*-by-environment-name` (uses a registered alias)
 		  and `*-by-credentials` (takes raw URL/username/password). Prefer the environment-name variant.
@@ -70,6 +85,7 @@ internal static class McpServerInstructions
 		   - `resolvedFrom: "environment-superset"` — the platform version was known (probe-success or explicit `--version`) but the exact per-version catalog was not published on the CDN, so `latest` was served as the closest available. The response carries `versionWarning` with a soft caveat. Flag this to the user and verify critical component types against the actual environment before committing to an implementation plan — a type listed in `latest` may not exist in the target’s actual platform version.
 		   - `resolvedFrom: "latest-fallback"` — the version could NOT be determined (no active environment, probe failed, or unparseable version). The response sets the machine-readable `requiresVersionConfirmation: true` flag — branch on it, not on the prose: do NOT silently assume a component set. Tell the user the platform version is unknown and request explicit confirmation before proceeding, or fix the upstream signal (register/activate the environment, upgrade cliogate). `resolvedFromReason` says whether the failure is transient (`probe-error` — a retry or a reachable environment may help) or stable (`no-active-environment` / `core-version-missing` / `core-version-unparseable` — supply an explicit version). The response's `versionWarning` carries the same caveat as prose.
 		2. **Discover the full component set proactively.** Call `get-component-info` with no `component-type` (list mode) to enumerate every component available for that version. Non-obvious components (e.g. `crt.Gallery`) live in the catalog and must be considered and suggested when relevant — never conclude a capability is missing, or wait for the user to ask you to search, without listing the catalog first. Pass `schema-type: "mobile"` to discover the separate mobile component set.
+		3. **Consider composites.** The same list response also returns a `composites` array — pre-built combinations of several components that have NO `componentType` of their own (e.g. "Expanded list", "Attachments", "Next steps", "Approval list", "Communication options"). When the user asks for one of these by name, do NOT hand-assemble it from raw component types: call `get-component-info` with `composite: "<caption>"` to fetch its exact assembly recipe (docs). A component listed with `compositeOnly: true` has no standalone toolbar presence — never insert it directly; if a matching composite exists, build it (`composite: "<caption>"`) and follow its recipe instead. If none matches, the component is not meant to be authored directly.
 
 		### Edit a page from a Creatio designer URL
 		A Freedom UI designer URL is one of:

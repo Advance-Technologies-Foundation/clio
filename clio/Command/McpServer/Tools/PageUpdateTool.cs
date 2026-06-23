@@ -35,11 +35,11 @@ public sealed class PageUpdateTool(
 		"CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, this tool blocks the save with `conflict: true` + `conflictDetails` if the schema was modified outside this session (e.g. the user edited the page in the Creatio designer). On a conflict: do NOT retry with the same body — re-run get-page, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set force=true ONLY after they explicitly confirm overwriting them. A small race window between the check and the save remains (last write wins). " +
 		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
-			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
+			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rules with apply-static-filter (call get-guidance with name `business-rules`). " +
 			"This holds for ANY constraint mechanism \u2014 an attribute value, a now-relative period (date macro), a fixed calendar/clock part such as a time of day (datePart), the existence or count of related child records, or a constraint gated by another field's value \u2014 classify the mechanism, not the wording; all are apply-static-filter, never a handler or crt.InitRequest. A gated constraint puts the gate (X = Y) into the rule's condition group and the apply-static-filter action on the target lookup. " +
 		"Section authoring rules for the body payload: " +
 		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
-		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first — NOTE: restricting which records a lookup/ComboBox offers is NEVER handler business logic, regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter), so use create-entity-business-rule, not crt.InitRequest; " +
+		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first — NOTE: restricting which records a lookup/ComboBox offers is NEVER handler business logic, regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter), so use create-entity-business-rules, not crt.InitRequest; " +
 		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
@@ -107,8 +107,28 @@ public sealed class PageUpdateTool(
 			}, null, null, null);
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
-		if (syntaxFailure != null)
+		if (syntaxFailure != null) {
+			// A whole-body JS syntax error is frequently a side effect of a more specific,
+			// regex-detectable marker/content problem (broken JSON in a SCHEMA_* marker, a
+			// converter/validator/handler declared with the wrong key shape, etc.). Prefer that
+			// specific, actionable error over the generic "JavaScript syntax error at line X,
+			// column Y" message — but only when the body is still a recognizable page (markers
+			// present and paired). A genuine JS-only syntax error (clean markers + content) leaves
+			// the content chain with no error, so the ENG-89796 fail-fast-on-syntax wording is
+			// preserved. Only the offline content chain (ValidateBody) runs here — the same single
+			// call PageSyncTool.ResolvePrePassSyntaxFailureMessage makes — so a body that cannot
+			// parse triggers no network I/O even in dry-run; the run-process signature check
+			// (which resolves process signatures over HTTP) deliberately stays on the success
+			// path and re-runs once the operator fixes the syntax and resubmits. The structural
+			// run-process check (processName required) already runs inside ValidateBody ->
+			// ValidateWebPageBody.
+			if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
+				(PageUpdateResponse contentFailure, _) = ValidateBody(options);
+				if (contentFailure != null)
+					return (contentFailure, null, null, null);
+			}
 			return (syntaxFailure, null, null, null);
+		}
 		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return (validationFailure, null, null, null);
@@ -217,7 +237,12 @@ public sealed class PageUpdateTool(
 			}
 			return (null, mobileResult.Warnings);
 		}
-		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body);
+		// Field-binding validators suppress label-resource errors for keys supplied via the
+		// `resources` parameter, so this pre-resolution gate must see them too — otherwise a page
+		// whose label is provided in `resources` is falsely rejected here, before the
+		// resource-aware post-resolution validation runs (matches PageUpdateOptions / PageSyncTool / PageValidateTool).
+		SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? explicitResources, out _);
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
@@ -389,7 +414,8 @@ public sealed class PageUpdateTool(
 		}
 	}
 
-	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(string body) {
+	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
+		string body, IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
@@ -405,6 +431,8 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
+		CollectWithPrefix(SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources), "invalid form field bindings", errors);
+		CollectWithPrefix(SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources), "invalid form field bindings", errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
@@ -414,6 +442,12 @@ public sealed class PageUpdateTool(
 
 	private static void Collect(SchemaValidationResult result, List<string> errors) {
 		if (!result.IsValid) errors.AddRange(result.Errors);
+	}
+
+	private static void CollectWithPrefix(SchemaValidationResult result, string prefix, List<string> errors) {
+		if (result.IsValid) return;
+		foreach (string err in result.Errors)
+			errors.Add(prefix + ": " + err);
 	}
 
 	private void TryVerifyPage(PageUpdateArgs args, PageUpdateResponse response) {

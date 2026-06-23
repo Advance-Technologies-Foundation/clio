@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.IdentityServiceDeployment;
+using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
@@ -153,6 +155,12 @@ internal class Program {
 		typeof(InstallSkillsOptions),
 		typeof(UpdateSkillOptions),
 		typeof(DeleteSkillOptions),
+		typeof(DeployIdentityOptions),
+		typeof(GetIdentityServiceConfigOptions),
+		typeof(ResolveOAuthSystemUserOptions),
+		typeof(CreateOAuthTechnicalUserOptions),
+		typeof(CreateServerToServerOAuthAppOptions),
+		typeof(VerifyOAuthAppOptions),
 		typeof(PfInstallerOptions),
 		typeof(CreateInfrastructureOptions),
 		typeof(DeployInfrastructureOptions),
@@ -221,6 +229,10 @@ internal class Program {
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
+		typeof(GetIdentityAssertionOptions),
+		typeof(GetIdentityPublicJwkOptions),
+		typeof(RegenerateIdentitySigningKeyOptions),
+		typeof(CheckAuthCodeFlowOptions),
 
 
 	];
@@ -392,6 +404,12 @@ internal class Program {
 			InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
 			UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
 			DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
+			DeployIdentityOptions opts => Resolve<DeployIdentityCommand>(opts).Execute(opts),
+			GetIdentityServiceConfigOptions opts => Resolve<GetIdentityServiceConfigCommand>(opts).Execute(opts),
+			ResolveOAuthSystemUserOptions opts => Resolve<ResolveOAuthSystemUserCommand>(opts).Execute(opts),
+			CreateOAuthTechnicalUserOptions opts => Resolve<CreateOAuthTechnicalUserCommand>(opts).Execute(opts),
+			CreateServerToServerOAuthAppOptions opts => Resolve<CreateServerToServerOAuthAppCommand>(opts).Execute(opts),
+			VerifyOAuthAppOptions opts => Resolve<VerifyOAuthAppCommand>(opts).Execute(opts),
 			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
@@ -467,6 +485,10 @@ internal class Program {
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
+			GetIdentityAssertionOptions opts => Resolve<GetIdentityAssertionCommand>(opts).Execute(opts),
+			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
+			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
+			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};

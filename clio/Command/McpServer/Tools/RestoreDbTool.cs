@@ -99,16 +99,16 @@ public class RestoreDbTool(
 /// MCP arguments for restoring a database by configured environment.
 /// </summary>
 public sealed record RestoreDbByEnvironmentArgs(
-	[property: JsonPropertyName("environment-name")]
+	[property: JsonPropertyName("environmentName")]
 	[property: Description("Configured clio environment name")]
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("backup-path")]
+	[property: JsonPropertyName("backupPath")]
 	[property: Description("Optional backup file path override")]
 	string? BackupPath,
 
-	[property: JsonPropertyName("db-name")]
+	[property: JsonPropertyName("dbName")]
 	[property: Description("Optional database name override")]
 	string? DbName,
 
@@ -116,11 +116,11 @@ public sealed record RestoreDbByEnvironmentArgs(
 	[property: Description("Force overwrite behavior in legacy environment restore mode")]
 	bool Force = false,
 
-	[property: JsonPropertyName("as-template")]
+	[property: JsonPropertyName("asTemplate")]
 	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
 	bool AsTemplate = false,
 
-	[property: JsonPropertyName("disable-reset-password")]
+	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
 	bool DisableResetPassword = true);
 
@@ -128,29 +128,29 @@ public sealed record RestoreDbByEnvironmentArgs(
 /// MCP arguments for restoring a database by explicit database credentials.
 /// </summary>
 public sealed record RestoreDbByCredentialsArgs(
-	[property: JsonPropertyName("db-server-uri")]
+	[property: JsonPropertyName("dbServerUri")]
 	[property: Description("Database server URI, for example mssql://localhost:1433")]
 	[property: Required]
 	string DbServerUri,
 
-	[property: JsonPropertyName("db-user")]
+	[property: JsonPropertyName("dbUser")]
 	[property: Description("Database user name")]
 	string? DbUser,
 
-	[property: JsonPropertyName("db-password")]
+	[property: JsonPropertyName("dbPassword")]
 	[property: Description("Database password")]
 	string? DbPassword,
 
-	[property: JsonPropertyName("db-working-folder")]
+	[property: JsonPropertyName("dbWorkingFolder")]
 	[property: Description("Optional database-visible working folder for MSSQL restore mode")]
 	string? DbWorkingFolder,
 
-	[property: JsonPropertyName("backup-path")]
+	[property: JsonPropertyName("backupPath")]
 	[property: Description("Backup file path")]
 	[property: Required]
 	string BackupPath,
 
-	[property: JsonPropertyName("db-name")]
+	[property: JsonPropertyName("dbName")]
 	[property: Description("Database name to create or restore")]
 	[property: Required]
 	string DbName,
@@ -159,11 +159,11 @@ public sealed record RestoreDbByCredentialsArgs(
 	[property: Description("Force overwrite behavior in legacy restore mode")]
 	bool Force = false,
 
-	[property: JsonPropertyName("as-template")]
+	[property: JsonPropertyName("asTemplate")]
 	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
 	bool AsTemplate = false,
 
-	[property: JsonPropertyName("disable-reset-password")]
+	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
 	bool DisableResetPassword = true);
 
@@ -171,29 +171,29 @@ public sealed record RestoreDbByCredentialsArgs(
 /// MCP arguments for restoring a database to a configured local database server.
 /// </summary>
 public sealed record RestoreDbToLocalServerArgs(
-	[property: JsonPropertyName("db-server-name")]
+	[property: JsonPropertyName("dbServerName")]
 	[property: Description("Configured local database server name from appsettings.json")]
 	[property: Required]
 	string DbServerName,
 
-	[property: JsonPropertyName("backup-path")]
+	[property: JsonPropertyName("backupPath")]
 	[property: Description("Path to a backup file or Creatio zip archive")]
 	[property: Required]
 	string BackupPath,
 
-	[property: JsonPropertyName("db-name")]
+	[property: JsonPropertyName("dbName")]
 	[property: Description("Database name to create or restore")]
 	[property: Required]
 	string DbName,
 
-	[property: JsonPropertyName("drop-if-exists")]
+	[property: JsonPropertyName("dropIfExists")]
 	[property: Description("Automatically drop an existing database if present")]
 	bool DropIfExists = false,
 
-	[property: JsonPropertyName("as-template")]
+	[property: JsonPropertyName("asTemplate")]
 	[property: Description("Create or refresh only the PostgreSQL template without creating a target database")]
 	bool AsTemplate = false,
 
-	[property: JsonPropertyName("disable-reset-password")]
+	[property: JsonPropertyName("disableResetPassword")]
 	[property: Description("Attempt to disable forced password reset after a successful restore when the existing version and environment checks allow it")]
 	bool DisableResetPassword = true);

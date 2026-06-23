@@ -222,6 +222,35 @@ namespace Clio
 		}
 	}
 
+	/// <summary>
+	/// Product telemetry upload configuration stored under the "telemetry" settings key.
+	/// </summary>
+	public class TelemetrySettings
+	{
+		/// <summary>
+		/// Master switch for product telemetry uploads. <c>false</c> disables uploading entirely —
+		/// even with the shipped default endpoint and granted consent; <c>null</c> (the key absent,
+		/// the default) leaves uploading enabled. Overridden by the <c>CLIO_TELEMETRY_ENABLED</c>
+		/// environment variable.
+		/// </summary>
+		[JsonProperty("enabled")]
+		public bool? Enabled { get; set; }
+
+		/// <summary>
+		/// Full OTLP/HTTP logs endpoint URL (for example https://telemetry.example.com/v1/logs);
+		/// must be https, or http only for a loopback host. Overrides the shipped production default;
+		/// when empty the default endpoint is used unless uploading is disabled via <see cref="Enabled"/>.
+		/// </summary>
+		[JsonProperty("endpoint")]
+		public string Endpoint { get; set; }
+
+		/// <summary>
+		/// Optional public ingest key sent as the X-Ingest-Key request header.
+		/// </summary>
+		[JsonProperty("ingest-key")]
+		public string IngestKey { get; set; }
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -305,7 +334,13 @@ namespace Clio
 
 		[JsonProperty("defaultRedis")]
 		public string DefaultRedisServerName { get; set; }
-		
+
+		/// <summary>
+		/// Gets or sets the product telemetry upload configuration.
+		/// </summary>
+		[JsonProperty("telemetry")]
+		public TelemetrySettings Telemetry { get; set; }
+
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
@@ -579,22 +614,25 @@ namespace Clio
 		}
 
 		public EnvironmentSettings GetEnvironment(EnvironmentOptions options) {
-			var settingsRepository = new SettingsRepository();
+			// Resolve against this repository's own settings (loaded from the filesystem it was
+			// constructed with). Earlier this method built a new SettingsRepository(), which re-reads
+			// the shared static FileSystem and made the result depend on global state — a race that
+			// broke parallel unit tests.
 			bool hasExplicitEnvironment = !string.IsNullOrWhiteSpace(options.Environment);
 			bool hasDirectUri = !string.IsNullOrEmpty(options.Uri);
 			EnvironmentSettings envSettings;
 			if (hasExplicitEnvironment) {
-				envSettings = settingsRepository.FindEnvironment(options.Environment);
+				envSettings = FindEnvironment(options.Environment);
 			} else if (hasDirectUri) {
 				envSettings = null;
 			} else {
-				envSettings = settingsRepository.FindEnvironment(null);
+				envSettings = FindEnvironment(null);
 			}
 			if (envSettings == null) {
-				var envName = options.Environment ?? settingsRepository.GetDefaultEnvironmentName();
-				if (!settingsRepository.IsEnvironmentExists(envName) && !hasDirectUri) {
+				var envName = options.Environment ?? GetDefaultEnvironmentName();
+				if (!IsEnvironmentExists(envName) && !hasDirectUri) {
 					if (string.IsNullOrWhiteSpace(envName)) {
-						var allEnvs = settingsRepository.GetAllEnvironments();
+						var allEnvs = GetAllEnvironments();
 						if (allEnvs.Count > 0) {
 							string envList = string.Join(", ", allEnvs.Keys);
 							throw new Exception(
@@ -747,6 +785,14 @@ namespace Clio
 		/// <returns>The configured container image CLI name.</returns>
 		public string GetContainerImageCli() {
 			return _settings.ContainerImageCli;
+		}
+
+		/// <summary>
+		/// Gets the product telemetry upload configuration.
+		/// </summary>
+		/// <returns>The configured telemetry settings; never <c>null</c>.</returns>
+		public TelemetrySettings GetTelemetrySettings() {
+			return _settings.Telemetry ?? new TelemetrySettings();
 		}
 
 		public LocalDbServerConfiguration GetLocalDbServer(string name) {

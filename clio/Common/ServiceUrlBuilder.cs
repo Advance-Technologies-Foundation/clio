@@ -124,29 +124,65 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		GenerateRequiredSchemasSources = 41,
 
 		/// <summary>
+		///     Issues a short-lived signed identity assertion (JWT) for the current authorized user,
+		///     used as input for the Identity Service V3 token exchange flow.
+		/// </summary>
+		IdentityAssertionCurrentUser = 42,
+
+		/// <summary>
+		///     Returns the instance public key as a JWK for registration with Identity Service V3.
+		/// </summary>
+		IdentityAssertionPublicJwk = 43,
+
+		/// <summary>
+		///     Regenerates the instance identity-assertion signing key pair (the private key never leaves Creatio).
+		/// </summary>
+		IdentityAssertionRegenerateSigningKey = 44,
+
+		/// <summary>
+		///     Reports whether the environment can use the OAuth authorization code flow.
+		/// </summary>
+		IdentityServiceInfoCanUseAuthorizationCodeFlow = 45,
+
+		/// <summary>
+		///     Reads the designer IdentityService client secret from Creatio.
+		/// </summary>
+		OAuthConfigGetIdentityServerClientSecret = 46,
+
+		/// <summary>
+		///     Creates a technical user for an OAuth client.
+		/// </summary>
+		OAuthConfigCreateTechnicalUser = 47,
+
+		/// <summary>
+		///     Adds an OAuth client through Creatio OAuth configuration service.
+		/// </summary>
+		OAuthConfigAddClient = 48,
+
+		/// <summary>
 		///     Lists the custom themes available on the environment via the native ThemeService.
 		/// </summary>
-		GetAvailableThemes = 42,
+		GetAvailableThemes = 49,
 
 		/// <summary>
 		///     Refreshes the Creatio theme catalog cache via the native ThemeService.
 		/// </summary>
-		ClearThemesCache = 43,
+		ClearThemesCache = 50,
 
 		/// <summary>
 		///     Creates a custom theme on the environment via the native ThemeService.
 		/// </summary>
-		CreateTheme = 44,
+		CreateTheme = 51,
 
 		/// <summary>
 		///     Updates an existing custom theme via the native ThemeService.
 		/// </summary>
-		UpdateTheme = 45,
+		UpdateTheme = 52,
 
 		/// <summary>
 		///     Deletes a custom theme via the native ThemeService.
 		/// </summary>
-		DeleteTheme = 46
+		DeleteTheme = 53
 
 	}
 
@@ -201,6 +237,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.IdentityAssertionCurrentUser, "identityAssertion/currentUser"},
+		{KnownRoute.IdentityAssertionPublicJwk, "identityAssertion/publicJwk"},
+		{KnownRoute.IdentityAssertionRegenerateSigningKey, "identityAssertion/regenerateSigningKey"},
+		{KnownRoute.IdentityServiceInfoCanUseAuthorizationCodeFlow, "identityServiceInfo/canUseAuthorizationCodeFlow"},
+		{KnownRoute.OAuthConfigGetIdentityServerClientSecret, "/rest/OAuthConfigService/GetIdentityServerClientSecret"},
+		{KnownRoute.OAuthConfigCreateTechnicalUser, "/rest/OAuthConfigService/CreateTechnicalUser"},
+		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},

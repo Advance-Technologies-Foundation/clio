@@ -51,14 +51,58 @@ public static class ComponentInfoGrouping {
 			.OrderBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
 			.Select(entry => new ComponentInfoListItem {
 				ComponentType = entry.ComponentType,
-				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description
+				Description = string.IsNullOrWhiteSpace(entry.Description) ? null : entry.Description,
+				CompositeOnly = entry.CompositeOnly == true ? true : null
 			})
 			.ToArray();
 	}
 
+	/// <summary>
+	/// Filters composites by the same keyword semantics as <see cref="FilterEntries"/>:
+	/// a case-insensitive substring match over the caption and description. Returns the
+	/// input unchanged when no search is supplied. Used by list mode so a search narrows
+	/// both the component and the composite sections in one call.
+	/// </summary>
+	public static IReadOnlyList<CompositeDefinition> FilterComposites(
+		IReadOnlyList<CompositeDefinition>? composites, string? search) {
+		if (composites is null || composites.Count == 0) {
+			return [];
+		}
+		if (string.IsNullOrWhiteSpace(search)) {
+			return composites;
+		}
+		string query = search.Trim();
+		return composites
+			.Where(composite => ContainsCi(composite.Caption, query) || ContainsCi(composite.Description, query))
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Projects composites to compact list items ordered alphabetically by caption,
+	/// mirroring <see cref="CreateItems"/>. Description is null-coalesced so the response
+	/// omits empty strings.
+	/// </summary>
+	public static IReadOnlyList<CompositeSummary> CreateCompositeItems(IReadOnlyList<CompositeDefinition> composites) {
+		return composites
+			.OrderBy(composite => composite.Caption, StringComparer.OrdinalIgnoreCase)
+			.Select(composite => new CompositeSummary {
+				Caption = composite.Caption,
+				Description = string.IsNullOrWhiteSpace(composite.Description) ? null : composite.Description
+			})
+			.ToArray();
+	}
+
+	// Search matches POSITIVE selection signals only (componentType, description, whenToUse,
+	// synonyms, useCases). WhenNotToUse is deliberately NOT searched: it names the scenarios a
+	// component is WRONG for (and the component to use instead), so matching it would surface the
+	// very component the guidance steers away from — e.g. searching "image" must not return
+	// crt.DataGrid just because its whenNotToUse says "not for image collections (use crt.Gallery)".
 	private static bool Matches(ComponentRegistryEntry entry, string query) {
 		return ContainsCi(entry.ComponentType, query)
 			|| ContainsCi(entry.Description, query)
+			|| ContainsCi(entry.WhenToUse, query)
+			|| entry.Synonyms.Any(synonym => ContainsCi(synonym, query))
+			|| entry.UseCases.Any(useCase => ContainsCi(useCase, query))
 			|| entry.ParentTypes.Any(parentType => ContainsCi(parentType, query))
 			|| entry.TypicalChildren.Any(childType => ContainsCi(childType, query))
 			|| entry.Properties.Any(property =>

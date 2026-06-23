@@ -88,7 +88,7 @@ internal static class GuidanceCatalog {
 				AgentExecutionGuidanceResource.Guide),
 			["deploy-lifecycle"] = Create(
 				"deploy-lifecycle",
-				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio, plus build discovery, registration, and cliogate installation.",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
@@ -124,7 +124,20 @@ internal static class GuidanceCatalog {
 				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
 				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
 				+ "view-model-attribute-binding / current-record variants.",
-				RunProcessButtonGuidanceResource.Guide)
+				RunProcessButtonGuidanceResource.Guide),
+			["identity-assertion"] = Create(
+				"identity-assertion",
+				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
+				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
+				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
+				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
+				IdentityAssertionGuidanceResource.Guide),
+			["server-to-server-oauth"] = Create(
+				"server-to-server-oauth",
+				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
+				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
+				+ "Creatio APIs with an Authorization: Bearer token.",
+				ServerToServerOAuthGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

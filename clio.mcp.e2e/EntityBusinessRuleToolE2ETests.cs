@@ -43,12 +43,12 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			.GetProperty("properties")
 			.GetProperty("args")
 			.GetProperty("properties")
-			.GetProperty("rule")
+			.GetProperty("rules").GetProperty("items")
 			.GetProperty("properties")
 			.GetProperty("actions")
 			.GetProperty("items");
 		JsonElement anyOf = actionSchema.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(6,
+		anyOf.GetArrayLength().Should().Be(7,
 			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
 		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
 			because: "page-only actions should not appear in the entity business-rule runtime schema");
@@ -109,7 +109,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateSetValuesRule()
+					["rules"] = new object[] { CreateSetValuesRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -123,6 +124,37 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		execution.Output.Should().Contain(message =>
 				ContainsText(message.Value, invalidEnvironmentName),
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
+	}
+
+	[Test]
+	[Description("Binds a multi-rule batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tool binds a multi-rule batch")]
+	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-batch-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rules"] = new object[] { CreateSetValuesRule(), CreateSysValueConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid two-rule batch payload should bind and return the structured batch response, not an MCP binding error");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				ContainsText(message, invalidEnvironmentName),
+			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
 	[Test]
@@ -142,7 +174,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				["environmentName"] = invalidEnvironmentName,
 				["packageName"] = "UsrPkg",
 				["entitySchemaName"] = "UsrOrder",
-				["rule"] = CreateApplyFilterRule()
+				["rules"] = new object[] { CreateApplyFilterRule()
+ }
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -175,7 +208,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateSysValueConditionRule()
+					["rules"] = new object[] { CreateSysValueConditionRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -209,7 +243,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateRoleGateRule("Require status for administrators")
+					["rules"] = new object[] { CreateRoleGateRule("Require status for administrators")
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -242,7 +277,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = "missing-business-rule-env",
 					["package-name"] = "UsrPkg",
 					["entity-schema-name"] = "UsrOrder",
-					["rule"] = CreateInvalidActionRule()
+					["rules"] = new object[] { CreateInvalidActionRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -285,7 +321,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactEntityRule(caption)
+					["rules"] = new object[] { CreateContactEntityRule(caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -337,7 +374,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactSysValueRule(caption)
+					["rules"] = new object[] { CreateContactSysValueRule(caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -388,7 +426,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateRoleGateRule(caption)
+					["rules"] = new object[] { CreateRoleGateRule(caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -439,7 +478,8 @@ public sealed class EntityBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["entity-schema-name"] = "Contact",
-					["rule"] = CreateContactApplyFilterRule(caption)
+					["rules"] = new object[] { CreateContactApplyFilterRule(caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
