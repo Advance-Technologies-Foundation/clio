@@ -196,13 +196,12 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		return JsonNode.Parse(element.GetRawText());
 	}
 
-	// Conservative failure detector for the audit backstop. A result is treated as a failure when ANY of:
-	//   * the SDK marked it (IsError = true);
-	//   * its StructuredContent payload carries a failure signal (success:false or a non-empty error);
-	//   * a JSON text-content block (the long-tail default where the POCO is serialised into Content, not
-	//     StructuredContent) carries the same failure signal.
-	// Anything else (a normal success payload, or a payload with no such markers) is left completely
-	// untouched so legitimate data is never redacted.
+	// Conservative failure detector for the audit backstop. A result counts as a failure when any of these
+	// hold: the SDK flagged it as an error, its StructuredContent payload carries a failure signal (a false
+	// success flag or a non-empty error field), or a JSON text-content block (the long-tail default, where
+	// the POCO is serialised into Content rather than StructuredContent) carries the same signal. Anything
+	// else — a normal success payload, or one with no such markers — is left untouched so legitimate data
+	// is never redacted.
 	private static bool IsFailureResult(CallToolResult result, JsonNode structured) {
 		if (result.IsError == true) {
 			return true;
@@ -213,12 +212,8 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		if (result.Content is null) {
 			return false;
 		}
-		foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
-			if (TextContentSignalsFailure(textBlock.Text)) {
-				return true;
-			}
-		}
-		return false;
+		return result.Content.OfType<TextContentBlock>()
+			.Any(textBlock => TextContentSignalsFailure(textBlock.Text));
 	}
 
 	// Parses a text-content block as JSON (the SDK's default serialised POCO shape) and applies the same
@@ -265,35 +260,46 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 	// raw IApplicationClient message that the SDK placed in StructuredContent (rather than only the text
 	// Content) is scrubbed too. Only error-named fields are rewritten; all other data is preserved verbatim.
 	// Returns true when at least one field was changed.
-	private static bool RedactStructuredErrorFields(JsonNode node) {
+	private static bool RedactStructuredErrorFields(JsonNode node) => node switch {
+		JsonObject obj => RedactObjectErrorFields(obj),
+		JsonArray array => RedactArrayErrorFields(array),
+		_ => false
+	};
+
+	// An error-named string field is redacted in place; any other field is recursed into. `||` short-
+	// circuits so a redacted error field is not also recursed (it is a leaf string), matching the prior
+	// if/else; `|=` accumulates without a filtering branch.
+	private static bool RedactObjectErrorFields(JsonObject obj) {
 		bool changed = false;
-		switch (node) {
-			case JsonObject obj:
-				foreach (string key in obj.Select(property => property.Key).ToList()) {
-					if (IsErrorFieldName(key)
-						&& obj[key] is JsonValue value
-						&& value.TryGetValue(out string text)
-						&& !string.IsNullOrEmpty(text)) {
-						string redacted = SensitiveErrorTextRedactor.Redact(text);
-						if (!string.Equals(redacted, text, StringComparison.Ordinal)) {
-							obj[key] = redacted;
-							changed = true;
-						}
-					}
-					else if (RedactStructuredErrorFields(obj[key])) {
-						changed = true;
-					}
-				}
-				break;
-			case JsonArray array:
-				foreach (JsonNode item in array) {
-					if (RedactStructuredErrorFields(item)) {
-						changed = true;
-					}
-				}
-				break;
+		foreach (string key in obj.Select(property => property.Key).ToList()) {
+			changed |= TryRedactErrorField(obj, key) || RedactStructuredErrorFields(obj[key]);
 		}
 		return changed;
+	}
+
+	private static bool RedactArrayErrorFields(JsonArray array) {
+		bool changed = false;
+		foreach (JsonNode item in array) {
+			changed |= RedactStructuredErrorFields(item);
+		}
+		return changed;
+	}
+
+	// Redacts the value of a single error-named string field in place. Returns false (leaving the caller to
+	// recurse) when the key is not an error field, the value is not a non-empty string, or redaction is a no-op.
+	private static bool TryRedactErrorField(JsonObject obj, string key) {
+		if (!IsErrorFieldName(key)
+			|| obj[key] is not JsonValue value
+			|| !value.TryGetValue(out string text)
+			|| string.IsNullOrEmpty(text)) {
+			return false;
+		}
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+		if (string.Equals(redacted, text, StringComparison.Ordinal)) {
+			return false;
+		}
+		obj[key] = redacted;
+		return true;
 	}
 
 	private static bool IsErrorFieldName(string key) =>
