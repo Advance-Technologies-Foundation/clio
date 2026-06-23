@@ -1106,7 +1106,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildExecuteEsq() {
 		return new ToolContractDefinition(
 			ExecuteEsqTool.ToolName,
-			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape.",
+			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape. A requested columns.items alias whose columnPath does not resolve fails the call with success:false instead of silently omitting that column from the rows.",
 			new ToolInputSchemaContract(
 				[QueryFieldName, EnvironmentNameFieldName],
 				[
@@ -1783,11 +1783,11 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
 				],
 				Validators: [
 					new ToolContractValidator("limit", "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitted or out-of-range values default to 25.")
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3053,7 +3053,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, list-pages resolves the application's primary package before querying pages."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
-					Field("limit", NumberType, "Optional max result count.")),
+					Field("limit", NumberType, "Optional max result count. Omit or pass 0 to use the default of 50. A negative limit is rejected with success:false (it must not disable the cap).")),
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
@@ -3063,6 +3063,9 @@ internal static class ToolContractCatalog {
 							SelectorCodeFieldName
 						],
 						Context: "list-pages accepts package-name or code, not both."),
+					new ToolContractValidator(
+						"limit", "invalid-limit", "limit",
+						Context: "limit must be zero or greater; 0 (or omitting it) uses the default of 50, and a negative value is rejected with success:false."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -3071,6 +3074,9 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("count", NumberType, "Number of pages returned (after the result cap is applied)."),
+				Field("total", NumberType, "Total pages matching the query before the cap. Compare to count to detect an incomplete result."),
+				Field("truncated", BooleanType, "True when total is greater than count, meaning more pages match than were returned. Raise limit or add a filter to retrieve the rest."),
 				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
