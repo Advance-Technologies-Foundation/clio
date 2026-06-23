@@ -209,7 +209,7 @@ public sealed class McpGuidanceForcingTests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "the fake command reports a successful page create");
-		response.Note.Should().Be("compile-creatio not required",
+		response.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
 			because: "Freedom UI page bodies are AMD modules served at runtime, so the deterministic note must steer agents away from a needless compile-creatio");
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -240,7 +240,7 @@ public sealed class McpGuidanceForcingTests {
 	public void CommandExecutionResultNote_ShouldBeOmittedWhenNullAndPresentWhenSet_OnSystemTextJson() {
 		// Arrange
 		CommandExecutionResult withoutNote = new(0, []);
-		CommandExecutionResult withNote = withoutNote with { Note = "compile-creatio not required" };
+		CommandExecutionResult withNote = withoutNote with { Note = CommandExecutionResult.CompileNotRequiredNote };
 
 		// Act
 		string jsonWithoutNote = JsonSerializer.Serialize(withoutNote);
@@ -249,7 +249,7 @@ public sealed class McpGuidanceForcingTests {
 		// Assert
 		jsonWithoutNote.Should().NotContain("\"note\"",
 			because: "a null note must be omitted from the wire output so the agent does not see an empty signal");
-		jsonWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+		jsonWithNote.Should().Contain($"\"note\":\"{CommandExecutionResult.CompileNotRequiredNote}\"",
 			because: "a set note must reach the agent verbatim under its wire key");
 	}
 
@@ -258,7 +258,7 @@ public sealed class McpGuidanceForcingTests {
 	public void PageCreateResponseNote_ShouldBeOmittedWhenNullAndPresentWhenSet_OnBothSerializers() {
 		// Arrange
 		PageCreateResponse withoutNote = new() { Success = true, SchemaName = "UsrTestPage" };
-		PageCreateResponse withNote = new() { Success = true, SchemaName = "UsrTestPage", Note = "compile-creatio not required" };
+		PageCreateResponse withNote = new() { Success = true, SchemaName = "UsrTestPage", Note = CommandExecutionResult.CompileNotRequiredNote };
 
 		// Act
 		string stjWithoutNote = JsonSerializer.Serialize(withoutNote);
@@ -269,11 +269,11 @@ public sealed class McpGuidanceForcingTests {
 		// Assert
 		stjWithoutNote.Should().NotContain("\"note\"",
 			because: "System.Text.Json must omit a null note (JsonIgnore WhenWritingNull)");
-		stjWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+		stjWithNote.Should().Contain($"\"note\":\"{CommandExecutionResult.CompileNotRequiredNote}\"",
 			because: "System.Text.Json must emit a set note under its wire key");
 		newtonsoftWithoutNote.Should().NotContain("\"note\"",
 			because: "Newtonsoft must omit a null note (NullValueHandling.Ignore)");
-		newtonsoftWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+		newtonsoftWithNote.Should().Contain($"\"note\":\"{CommandExecutionResult.CompileNotRequiredNote}\"",
 			because: "Newtonsoft must emit a set note under its wire key");
 	}
 

@@ -211,7 +211,7 @@ public class UpdateEntitySchemaToolTests {
 		// Assert
 		result.ExitCode.Should().Be(0,
 			because: "the fake command returns a successful exit code");
-		result.Note.Should().Be("compile-creatio not required",
+		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
 			because: "update-entity-schema applies DDL and refreshes the runtime schema itself, so the deterministic note must steer agents away from a needless compile-creatio");
 	}
 

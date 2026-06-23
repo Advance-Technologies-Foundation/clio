@@ -56,7 +56,7 @@ public sealed class PageCreateTool(
 			}
 			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
 			if (response is { Success: true }) {
-				response.Note = "compile-creatio not required";
+				response.Note = CommandExecutionResult.CompileNotRequiredNote;
 			}
 			return response;
 		});
