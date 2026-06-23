@@ -110,20 +110,22 @@ public sealed class PageUpdateTool(
 		if (syntaxFailure != null) {
 			// A whole-body JS syntax error is frequently a side effect of a more specific,
 			// regex-detectable marker/content problem (broken JSON in a SCHEMA_* marker, a
-			// converter/validator/handler declared with the wrong key shape, a run-process
-			// button without a process name, etc.). Prefer that specific, actionable error over
-			// the generic "JavaScript syntax error at line X, column Y" message — but only when
-			// the body is still a recognizable page (markers present and paired). A genuine
-			// JS-only syntax error (clean markers + content) leaves the content chain with no
-			// error, so the ENG-89796 fail-fast-on-syntax wording is preserved. Mirrors
-			// PageSyncTool.ResolvePrePassSyntaxFailureMessage (ENG-91926).
+			// converter/validator/handler declared with the wrong key shape, etc.). Prefer that
+			// specific, actionable error over the generic "JavaScript syntax error at line X,
+			// column Y" message — but only when the body is still a recognizable page (markers
+			// present and paired). A genuine JS-only syntax error (clean markers + content) leaves
+			// the content chain with no error, so the ENG-89796 fail-fast-on-syntax wording is
+			// preserved. Only the offline content chain (ValidateBody) runs here — the same single
+			// call PageSyncTool.ResolvePrePassSyntaxFailureMessage makes — so a body that cannot
+			// parse triggers no network I/O even in dry-run; the run-process signature check
+			// (which resolves process signatures over HTTP) deliberately stays on the success
+			// path and re-runs once the operator fixes the syntax and resubmits. The structural
+			// run-process check (processName required) already runs inside ValidateBody ->
+			// ValidateWebPageBody.
 			if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
 				(PageUpdateResponse contentFailure, _) = ValidateBody(options);
 				if (contentFailure != null)
 					return (contentFailure, null, null, null);
-				(PageUpdateResponse runProcessSyntaxFailure, _) = ValidateRunProcessButtons(options);
-				if (runProcessSyntaxFailure != null)
-					return (runProcessSyntaxFailure, null, null, null);
 			}
 			return (syntaxFailure, null, null, null);
 		}
