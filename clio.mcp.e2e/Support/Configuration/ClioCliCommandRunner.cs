@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -12,6 +13,16 @@ internal static class ClioCliCommandRunner {
 
 	private const int CliogateInstallAttempts = 6;
 	private static readonly TimeSpan CliogateInstallDelay = TimeSpan.FromSeconds(10);
+
+	private const int CliogateHttpReadinessAttempts = 12;
+	private static readonly TimeSpan CliogateHttpReadinessDelay = TimeSpan.FromSeconds(5);
+
+	/// <summary>
+	/// Read-only, idempotent cliogate route used as the HTTP-handler readiness probe.
+	/// It returns the cliogate assembly version (no <c>CheckCanManageSolution</c>, no DB writes),
+	/// so it is safe to call repeatedly and returns 404 only while the REST module is not yet serving.
+	/// </summary>
+	private const string CliogateProbeRoute = "rest/CreatioApiGateway/GetApiVersion";
 
 	public static async Task<ClioCliCommandResult> RunAsync(
 		McpE2ESettings settings,
@@ -121,6 +132,7 @@ internal static class ClioCliCommandRunner {
 			if (lastResult.ExitCode == 0 &&
 				TryReadSuccessFlag(lastResult.StandardOutput, out bool success) &&
 				success) {
+				await WaitForCliogateHttpHandlersAsync(environmentName, cancellationToken);
 				return;
 			}
 
@@ -140,6 +152,33 @@ internal static class ClioCliCommandRunner {
 		finalSuccess.Should().BeTrue(
 			because:
 			$"cliogate should become ready before destructive MCP tests proceed. stdout: {lastResult.StandardOutput}. stderr: {lastResult.StandardError}");
+	}
+
+	/// <summary>
+	/// After <c>list-packages</c> (DataService) reports ready, polls a read-only cliogate HTTP route
+	/// until it stops returning 404. The DataService layer can come up before the
+	/// <c>/rest/CreatioApiGateway/*</c> handlers do, so this closes the readiness race that causes
+	/// MCP tools calling cliogate routes to fail with (404) Not Found.
+	/// </summary>
+	private static async Task WaitForCliogateHttpHandlersAsync(
+		string environmentName,
+		CancellationToken cancellationToken) {
+		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+		string baseUri = environment.IsNetCore
+			? environment.Uri
+			: $"{environment.Uri.TrimEnd('/')}/0";
+
+		using HttpClientHandler handler = new() {
+			ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+		};
+		using HttpClient httpClient = new(handler) {
+			Timeout = TimeSpan.FromSeconds(30)
+		};
+		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
+			httpClient,
+			CliogateHttpReadinessAttempts,
+			CliogateHttpReadinessDelay);
+		await probe.WaitUntilServingAsync(baseUri, CliogateProbeRoute, cancellationToken);
 	}
 
 	private static bool TryReadSuccessFlag(string output, out bool success) {
