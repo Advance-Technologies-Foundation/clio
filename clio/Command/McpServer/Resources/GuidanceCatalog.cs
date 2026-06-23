@@ -127,7 +127,13 @@ internal static class GuidanceCatalog {
 				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
 				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
 				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
-				IdentityAssertionGuidanceResource.Guide)
+				IdentityAssertionGuidanceResource.Guide),
+			["server-to-server-oauth"] = Create(
+				"server-to-server-oauth",
+				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
+				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
+				+ "Creatio APIs with an Authorization: Bearer token.",
+				ServerToServerOAuthGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
