@@ -266,7 +266,7 @@ public sealed class UpdateEntitySchemaTool(
 			CommandExecutionResult result = InternalExecute<UpdateEntitySchemaCommand>(options);
 			return result with {
 				DataForge = dataForge,
-				Note = result.ExitCode == 0 ? "compile-creatio not required" : null
+				Note = result.ExitCode == 0 ? "compile-creatio not required" : result.Note
 			};
 		} catch (Exception exception) {
 			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);

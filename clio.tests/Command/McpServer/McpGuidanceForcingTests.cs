@@ -3,12 +3,15 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -23,7 +26,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
 
-	private const int RouterCharCeiling = 2400;
+	private const int RouterCharCeiling = 2900;
 
 	private static readonly string[] NewCreatioGuides = ["analytics-widgets"];
 
@@ -58,7 +61,7 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert
 		length.Should().BeLessThanOrEqualTo(RouterCharCeiling,
-			because: "the router must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens");
+			because: "the router must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens (ceiling raised to fit the merged-in product-telemetry advertisement, still far below baseline)");
 	}
 
 	[Test]
@@ -293,5 +296,115 @@ public sealed class McpGuidanceForcingTests {
 			because: "create-page emits note: 'compile-creatio not required' on success");
 		typeof(CommandExecutionResult).GetProperty("Note").Should().NotBeNull(
 			because: "update-entity-schema emits note: 'compile-creatio not required' on success");
+	}
+
+	[Test]
+	[Description("create-page emits the deterministic 'compile-creatio not required' note on a successful create so agents do not run a needless compile after a Freedom UI page save.")]
+	public void CreatePage_ShouldEmitCompileNotRequiredNote_WhenCreateSucceeds() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakePageCreateCommand command = new(success: true);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>()).Returns(command);
+		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		PageCreateResponse response = tool.CreatePage(BuildPageCreateArgs());
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the fake command reports a successful page create");
+		response.Note.Should().Be("compile-creatio not required",
+			because: "Freedom UI page bodies are AMD modules served at runtime, so the deterministic note must steer agents away from a needless compile-creatio");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("create-page suppresses the deterministic note when the create fails, so agents are not misled into skipping a compile after an unsuccessful page save.")]
+	public void CreatePage_ShouldNotEmitCompileNotRequiredNote_WhenCreateFails() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakePageCreateCommand command = new(success: false);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>()).Returns(command);
+		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		PageCreateResponse response = tool.CreatePage(BuildPageCreateArgs());
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the fake command reports an unsuccessful page create");
+		response.Note.Should().BeNull(
+			because: "the deterministic note is gated on success and must not ride a failed create");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("CommandExecutionResult omits the 'note' key from its System.Text.Json wire output when null and emits it when set, so the agent-consumed JSON matches the C# signal.")]
+	public void CommandExecutionResultNote_ShouldBeOmittedWhenNullAndPresentWhenSet_OnSystemTextJson() {
+		// Arrange
+		CommandExecutionResult withoutNote = new(0, []);
+		CommandExecutionResult withNote = withoutNote with { Note = "compile-creatio not required" };
+
+		// Act
+		string jsonWithoutNote = JsonSerializer.Serialize(withoutNote);
+		string jsonWithNote = JsonSerializer.Serialize(withNote);
+
+		// Assert
+		jsonWithoutNote.Should().NotContain("\"note\"",
+			because: "a null note must be omitted from the wire output so the agent does not see an empty signal");
+		jsonWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+			because: "a set note must reach the agent verbatim under its wire key");
+	}
+
+	[Test]
+	[Description("PageCreateResponse omits the 'note' key when null and emits it when set under BOTH serializers (System.Text.Json and Newtonsoft), so whichever serializer the host uses produces a consistent agent-consumed signal.")]
+	public void PageCreateResponseNote_ShouldBeOmittedWhenNullAndPresentWhenSet_OnBothSerializers() {
+		// Arrange
+		PageCreateResponse withoutNote = new() { Success = true, SchemaName = "UsrTestPage" };
+		PageCreateResponse withNote = new() { Success = true, SchemaName = "UsrTestPage", Note = "compile-creatio not required" };
+
+		// Act
+		string stjWithoutNote = JsonSerializer.Serialize(withoutNote);
+		string stjWithNote = JsonSerializer.Serialize(withNote);
+		string newtonsoftWithoutNote = Newtonsoft.Json.JsonConvert.SerializeObject(withoutNote);
+		string newtonsoftWithNote = Newtonsoft.Json.JsonConvert.SerializeObject(withNote);
+
+		// Assert
+		stjWithoutNote.Should().NotContain("\"note\"",
+			because: "System.Text.Json must omit a null note (JsonIgnore WhenWritingNull)");
+		stjWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+			because: "System.Text.Json must emit a set note under its wire key");
+		newtonsoftWithoutNote.Should().NotContain("\"note\"",
+			because: "Newtonsoft must omit a null note (NullValueHandling.Ignore)");
+		newtonsoftWithNote.Should().Contain("\"note\":\"compile-creatio not required\"",
+			because: "Newtonsoft must emit a set note under its wire key");
+	}
+
+	private static PageCreateArgs BuildPageCreateArgs() =>
+		new("UsrTestPage", "FormPage", "UsrPackage",
+			Caption: null, Description: null, EntitySchemaName: null,
+			EnvironmentName: "dev", Uri: null, Login: null, Password: null);
+
+	private sealed class FakePageCreateCommand : PageCreateCommand {
+		private readonly bool _success;
+
+		public FakePageCreateCommand(bool success)
+			: base(
+				Substitute.For<IApplicationClient>(),
+				Substitute.For<IServiceUrlBuilder>(),
+				Substitute.For<ISchemaTemplateCatalog>(),
+				Substitute.For<ILogger>(),
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
+			_success = success;
+		}
+
+		public override bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
+			response = _success
+				? new PageCreateResponse { Success = true, SchemaName = options.SchemaName }
+				: new PageCreateResponse { Success = false, Error = "create failed" };
+			return _success;
+		}
 	}
 }

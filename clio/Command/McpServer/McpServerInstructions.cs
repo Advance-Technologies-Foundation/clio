@@ -31,5 +31,8 @@ internal static class McpServerInstructions
 		- Deploy & provisioning -> name=deploy-lifecycle
 		- Executing an approved plan -> name=agent-execution
 		- Identity assertion / Identity Service V3 token exchange -> name=identity-assertion
+
+		## Product telemetry (only when a consuming skill/contract drives it; otherwise do not call or prompt)
+		get-telemetry-consent (read-only consent check) -> send-telemetry (stores one event once consent is granted) -> withdraw-telemetry-consent (stop and discard the local outbox). Call get-tool-contract for the authoritative payload shape and emission order; the consent prompt and event sequence are owned by the skill/contract, not these instructions.
 		""";
 }
