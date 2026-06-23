@@ -20,8 +20,9 @@ internal static class ThemeRequestBuilder
 	private const int MaxCaptionLength = 250;
 	private const int MaxCssClassNameLength = 100;
 
-	private static readonly Regex IdRegex = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
-	private static readonly Regex CssClassNameRegex = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex IdRegex = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled, RegexTimeout);
+	private static readonly Regex CssClassNameRegex = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
 	/// Resolves the theme CSS from exactly one of the inline (<paramref name="cssContent"/>) or file
