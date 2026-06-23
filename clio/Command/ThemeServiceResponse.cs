@@ -4,9 +4,8 @@ using System.Text.Json.Serialization;
 namespace Clio.Command;
 
 /// <summary>
-/// The <c>BaseResponse</c> shape returned by every native Creatio <c>ThemeService</c> write endpoint
-/// (<c>CreateTheme</c> / <c>UpdateTheme</c> / <c>DeleteTheme</c>): a success flag plus an optional
-/// error block. Shared by the three theme write commands so the failure-detection rule is single-sourced.
+/// The <c>BaseResponse</c> shape returned by the native Creatio <c>ThemeService</c> endpoints: a success flag
+/// plus an optional error block.
 /// </summary>
 internal sealed record ThemeServiceResponse
 {

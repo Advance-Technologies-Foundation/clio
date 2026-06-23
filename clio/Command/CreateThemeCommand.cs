@@ -107,7 +107,7 @@ namespace Clio.Command
 			if (ThemeServiceResponseParser.TryGetFailure(response, out string failure)) {
 				errorMessage = string.IsNullOrWhiteSpace(failure)
 					? "CreateTheme returned success=false. Check the Creatio application logs for details."
-					: failure;
+					: $"CreateTheme failed: {failure}";
 				return false;
 			}
 			createdId = id;

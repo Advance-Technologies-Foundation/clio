@@ -131,15 +131,6 @@ namespace Clio.Command
 			[JsonPropertyName("values")]
 			public List<ThemeDescriptor> Values { get; init; }
 		}
-
-		private sealed record ThemeServiceErrorInfo
-		{
-			[JsonPropertyName("errorCode")]
-			public string ErrorCode { get; init; }
-
-			[JsonPropertyName("message")]
-			public string Message { get; init; }
-		}
 	}
 
 	/// <summary>

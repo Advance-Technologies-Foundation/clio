@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
 
@@ -21,10 +19,6 @@ namespace Clio.Command
 	/// </summary>
 	public class ClearThemesCacheCommand : RemoteCommand<ClearThemesCacheOptions>
 	{
-		private static readonly JsonSerializerOptions ResponseJsonOptions = new() {
-			PropertyNameCaseInsensitive = true
-		};
-
 		private readonly IServiceUrlBuilder _urlBuilder;
 
 		/// <summary>
@@ -41,41 +35,12 @@ namespace Clio.Command
 
 		/// <inheritdoc />
 		protected override void ProceedResponse(string response, ClearThemesCacheOptions options) {
-			if (string.IsNullOrWhiteSpace(response)) {
-				return;
-			}
-			ClearThemesCacheResponse parsed;
-			try {
-				parsed = JsonSerializer.Deserialize<ClearThemesCacheResponse>(response, ResponseJsonOptions);
-			}
-			catch (JsonException) {
-				return;
-			}
-			if (parsed?.Success == false) {
+			if (ThemeServiceResponseParser.TryGetFailure(response, out string message)) {
 				CommandSuccess = false;
-				string message = parsed.ErrorInfo?.Message;
 				Logger.WriteError(string.IsNullOrWhiteSpace(message)
 					? "ClearThemesCache returned success=false. Check the Creatio application logs for details."
 					: $"ClearThemesCache failed: {message}");
 			}
-		}
-
-		private sealed record ClearThemesCacheResponse
-		{
-			[JsonPropertyName("success")]
-			public bool? Success { get; init; }
-
-			[JsonPropertyName("errorInfo")]
-			public ThemeServiceErrorInfo ErrorInfo { get; init; }
-		}
-
-		private sealed record ThemeServiceErrorInfo
-		{
-			[JsonPropertyName("errorCode")]
-			public string ErrorCode { get; init; }
-
-			[JsonPropertyName("message")]
-			public string Message { get; init; }
 		}
 	}
 }
