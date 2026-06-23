@@ -108,7 +108,7 @@ public sealed class ComponentInfoTool(
 			return new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Count = 0,
 				Items = []
 			};

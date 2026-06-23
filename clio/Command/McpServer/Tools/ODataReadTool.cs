@@ -63,7 +63,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			return ParseODataResponse(responseJson);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(ex.Message);
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -181,7 +181,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			if (preview.Length > 500) {
 				preview = preview[..500] + "...";
 			}
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {preview}");
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse OData response: {ex.Message} | Response: {preview}"));
 		}
 	}
 

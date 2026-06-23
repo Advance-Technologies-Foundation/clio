@@ -234,6 +234,35 @@ public sealed class FindAppToolTests {
 			options => options.Environment == "dev"));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts the target host/URI out of a raw IApplicationClient exception message before it reaches the typed FindAppResponse.Error envelope, since that POCO error path bypasses both the throw-path filter and the IsError dispatch audit.")]
+	public void FindApp_Should_Redact_Host_And_Uri_In_Error_Envelope_When_Command_Throws_With_Connection_Failure() {
+		// Arrange
+		const string sensitiveHost = "http://secret-host:88/0/odata";
+		string rawMessage = $"Failed to connect to {sensitiveHost}";
+		FindAppCommand resolvedCommand = Substitute.For<FindAppCommand>(
+			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>());
+		resolvedCommand.FindApplications(Arg.Any<FindAppOptions>())
+			.Returns(_ => throw new InvalidOperationException(rawMessage));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<FindAppCommand>(Arg.Any<FindAppOptions>()).Returns(resolvedCommand);
+		FindAppTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		FindAppResponse response = tool.FindApp(new FindAppArgs("dev"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a connection failure must be expressed as a structured error envelope, not an exception");
+		response.Error.Should().NotContain(sensitiveHost,
+			because: "the raw target host/URI from the IApplicationClient failure must never reach the transcript");
+		response.Error.Should().NotContain("secret-host",
+			because: "no fragment of the redacted host should survive in the surfaced error");
+		response.Error.Should().Contain("[redacted-uri]",
+			because: "the redactor replaces the URI with a stable placeholder rather than dropping the whole message");
+	}
+
 	private static (FindAppTool Tool, IToolCommandResolver Resolver) CreateTool(IReadOnlyList<AppSearchResult> results) {
 		FindAppCommand resolvedCommand = Substitute.For<FindAppCommand>(
 			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>());

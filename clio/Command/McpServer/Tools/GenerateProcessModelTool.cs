@@ -43,7 +43,7 @@ public sealed class GenerateProcessModelTool(
 			return InternalExecute<GenerateProcessModelCommand>(options);
 		}
 		catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)]);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))]);
 		}
 	}
 }

@@ -46,7 +46,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecutePostRequest(url, data.GetRawText(), 30_000);
 			return ParseCreated(responseJson);
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 

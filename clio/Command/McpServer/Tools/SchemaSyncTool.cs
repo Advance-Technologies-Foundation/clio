@@ -220,7 +220,7 @@ public sealed class SchemaSyncTool(
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 				CollisionInfo = collisionInfo
 			};
@@ -279,7 +279,7 @@ public sealed class SchemaSyncTool(
 					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
@@ -378,7 +378,7 @@ public sealed class SchemaSyncTool(
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}

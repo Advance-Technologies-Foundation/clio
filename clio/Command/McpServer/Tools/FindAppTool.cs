@@ -66,7 +66,7 @@ public sealed class FindAppTool(
 			IReadOnlyList<AppSearchResult> results = resolvedCommand.FindApplications(options);
 			return new FindAppResponse(true, results, null);
 		} catch (Exception exception) {
-			return new FindAppResponse(false, null, exception.Message);
+			return new FindAppResponse(false, null, SensitiveErrorTextRedactor.Redact(exception.Message));
 		}
 	}
 

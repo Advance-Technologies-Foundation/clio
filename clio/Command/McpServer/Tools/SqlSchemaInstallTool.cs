@@ -38,7 +38,7 @@ public sealed class SqlSchemaInstallTool(
 				resolvedCommand = ResolveCommand<SqlSchemaInstallCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaInstallResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaInstallResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryInstall(options, out SqlSchemaInstallResponse response);
 			return response;

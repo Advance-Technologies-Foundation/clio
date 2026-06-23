@@ -53,7 +53,7 @@ public sealed class CreateEntitySchemaTool(
 			CommandExecutionResult result = InternalExecute<CreateEntitySchemaCommand>(options);
 			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 
@@ -207,7 +207,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 					return returnResult;
 				}
 				catch (Exception exception) {
-					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(exception.Message)];
+					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 					CommandExecutionResult returnResult = new(
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
@@ -220,7 +220,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				}
 			}
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 }
@@ -267,7 +267,7 @@ public sealed class UpdateEntitySchemaTool(
 			CommandExecutionResult result = InternalExecute<UpdateEntitySchemaCommand>(options);
 			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 
@@ -526,7 +526,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null);
 		}
 	}
 }

@@ -52,7 +52,7 @@ public sealed class PageCreateTool(
 			try {
 				resolvedCommand = ResolveCommand<PageCreateCommand>(options);
 			} catch (Exception ex) {
-				return new PageCreateResponse { Success = false, Error = ex.Message };
+				return new PageCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
 			return response;

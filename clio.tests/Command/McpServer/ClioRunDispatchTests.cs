@@ -81,6 +81,48 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// A typed-POCO failure envelope: success:false + a raw error carrying a host/URI, returned as a plain
+	// record (NOT a CallToolResult), so the SDK serialises it into StructuredContent WITHOUT setting
+	// IsError — the long-tail leak the AttachDispatchAudit backstop must still scrub.
+	public sealed record PocoFailureEnvelope(bool Success, string Error);
+
+	[McpServerToolType]
+	private static class PocoFailureToolType {
+		internal const string SensitiveError =
+			"Failed to connect to http://secret-host:88/0/odata; see /Users/dev/secret/appsettings.json";
+
+		[McpServerTool(Name = "poco-failure-tool", Destructive = false)]
+		[System.ComponentModel.Description("Returns a typed POCO failure envelope with raw text.")]
+		public static PocoFailureEnvelope ReturnFailure([System.ComponentModel.Description("payload")] string value) =>
+			new(Success: false, Error: SensitiveError);
+	}
+
+	private static McpServerTool BuildPocoFailureTool() =>
+		McpServerTool.Create(
+			typeof(PocoFailureToolType).GetMethod(nameof(PocoFailureToolType.ReturnFailure))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	// A typed-POCO SUCCESS envelope whose data legitimately carries URI/path-shaped strings, returned as a
+	// plain record without IsError — the audit backstop must leave it completely untouched.
+	public sealed record PocoSuccessEnvelope(bool Success, string Url);
+
+	[McpServerToolType]
+	private static class PocoSuccessToolType {
+		internal const string LegitimateUrl = "https://legit-host:443/0/odata/Contact";
+
+		[McpServerTool(Name = "poco-success-tool", Destructive = false)]
+		[System.ComponentModel.Description("Returns a typed POCO success envelope carrying a URL field.")]
+		public static PocoSuccessEnvelope ReturnSuccess([System.ComponentModel.Description("payload")] string value) =>
+			new(Success: true, Url: LegitimateUrl);
+	}
+
+	private static McpServerTool BuildPocoSuccessTool() =>
+		McpServerTool.Create(
+			typeof(PocoSuccessToolType).GetMethod(nameof(PocoSuccessToolType.ReturnSuccess))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
 	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
@@ -393,6 +435,46 @@ public sealed class ClioRunDispatchTests {
 			because: "the absolute path in a returned error result must be redacted before reaching the transcript");
 		text.Should().Contain("[redacted",
 			because: "redaction replaces the sensitive tokens with a stable placeholder rather than dropping them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Scrubs a typed-POCO failure envelope (success:false + raw error) returned WITHOUT IsError: the SDK serialises it into the JSON text content, so the audit backstop must detect the failure signal and redact the host/URI/path even though the IsError gate alone would miss it.")]
+	public async Task RunAsync_ShouldRedactFailureEnvelope_WhenToolReturnsPocoWithoutIsError() {
+		// Arrange
+		RegisterTool("poco-failure-tool", BuildPocoFailureTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("poco-failure-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().NotContain("secret-host",
+			because: "the raw target host in a typed-POCO failure envelope must be redacted by the backstop even without IsError set");
+		text.Should().NotContain("/Users/dev/secret/appsettings.json",
+			because: "the absolute path in the failure envelope's error field must be redacted before reaching the transcript");
+		text.Should().Contain("[redacted",
+			because: "the failure content is rewritten with a stable placeholder rather than dropped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves a typed-POCO SUCCESS envelope untouched even when it carries URI/path-shaped data: the audit backstop only scrubs failure content and must never redact legitimate successful payloads.")]
+	public async Task RunAsync_ShouldNotRedactSuccessEnvelope_WhenToolReturnsPocoWithUrl() {
+		// Arrange
+		RegisterTool("poco-success-tool", BuildPocoSuccessTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("poco-success-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().Contain(PocoSuccessToolType.LegitimateUrl,
+			because: "a successful payload's legitimate URL data must survive — the backstop only touches failure content");
+		text.Should().NotContain("[redacted",
+			because: "no redaction placeholder may appear in a successful envelope");
 	}
 
 	[Test]

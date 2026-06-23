@@ -52,8 +52,9 @@ public sealed class PageListTool(
 			PackageName = args.PackageName,
 			AppCode = args.Code,
 			SearchPattern = args.SearchPattern,
-			// 0 (the value used when limit is omitted) and an explicit 0 both mean "use the default";
-			// the command validates a negative limit and rejects it instead of disabling the cap.
+			// When limit is omitted, pass zero so the command applies its default cap; an
+			// explicit zero means the same. The command rejects a negative limit instead of
+			// treating it as "disable the cap".
 			Limit = args.Limit ?? 0,
 			UId = args.UId,
 			Environment = args.EnvironmentName,
@@ -66,7 +67,7 @@ public sealed class PageListTool(
 			try {
 				resolvedCommand = ResolveCommand<PageListCommand>(options);
 			} catch (Exception ex) {
-				return new PageListResponse { Success = false, Error = ex.Message };
+				return new PageListResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryListPages(options, out PageListResponse response);
 			return response;

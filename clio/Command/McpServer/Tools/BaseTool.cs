@@ -91,7 +91,9 @@ public abstract class BaseTool<T>(
 		}
 		catch (Exception ex) {
 			// Unexpected failure while verifying requirements (e.g. an HTTP/GetPackages error) → exit code -1.
-			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
+			// The inner-most message can carry the target host/URI from IApplicationClient, so redact it.
+			return CommandExecutionResult.FromError(
+				SensitiveErrorTextRedactor.Redact($"Could not verify package requirements: {ex.Message}"));
 		}
 	}
 

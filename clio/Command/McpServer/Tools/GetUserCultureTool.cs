@@ -75,7 +75,7 @@ public sealed class GetUserCultureTool(
 				: GetUserCultureResponse.Failure(resolution.FailureReason);
 		}
 		catch (Exception ex) {
-			return GetUserCultureResponse.Failure(ex.Message);
+			return GetUserCultureResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 

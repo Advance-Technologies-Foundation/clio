@@ -41,7 +41,7 @@ public sealed class SqlSchemaUpdateTool(
 				resolvedCommand = ResolveCommand<SqlSchemaUpdateCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaUpdateResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdateSchema(options, out SqlSchemaUpdateResponse response);
 			return response;

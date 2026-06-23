@@ -56,7 +56,7 @@ public sealed class ApplicationDeleteTool(
 		} catch (Exception ex) {
 			return new ApplicationDeleteResponse {
 				Success = false,
-				Error = ex.Message
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 	}

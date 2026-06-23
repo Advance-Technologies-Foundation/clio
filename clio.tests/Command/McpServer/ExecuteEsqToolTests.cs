@@ -31,6 +31,39 @@ public sealed class ExecuteEsqToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts the target host/URI out of a raw IApplicationClient exception before it reaches the typed ExecuteEsqResponse failure envelope, since that POCO error path bypasses the throw-path and IsError redaction gates.")]
+	public void Execute_Should_Redact_Host_And_Uri_In_Failure_Envelope_When_Client_Throws_Connection_Failure() {
+		// Arrange
+		const string sensitiveHost = "http://secret-host:88/0/DataService/json/SyncReply/SelectQuery";
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns(sensitiveHost);
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException($"Failed to connect to {sensitiveHost}"));
+		ExecuteEsqTool tool = new(commandResolver);
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(new ExecuteEsqArgs {
+			EnvironmentName = "dev",
+			Query = Json("{\"rootSchemaName\":\"Contact\",\"operationType\":0,\"allColumns\":false,\"rowCount\":1}")
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a connection failure must produce a structured failure envelope, not an exception");
+		response.Error.Should().NotContain(sensitiveHost,
+			because: "the raw target host/URI from the IApplicationClient failure must never reach the transcript");
+		response.Error.Should().NotContain("secret-host",
+			because: "no fragment of the redacted host should survive in the surfaced error");
+		response.Error.Should().Contain("[redacted-uri]",
+			because: "the redactor replaces the URI with a stable placeholder rather than dropping the whole message");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Advertises a stable read-only MCP tool name for execute-esq.")]
 	public void Execute_Should_Advertise_Stable_Tool_Name() {
 		// Act

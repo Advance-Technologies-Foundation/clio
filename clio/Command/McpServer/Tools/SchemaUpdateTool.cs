@@ -42,7 +42,7 @@ public sealed class SchemaUpdateTool(
 				resolvedCommand = ResolveCommand<SourceCodeSchemaUpdateCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SourceCodeSchemaUpdateResponse { Success = false, Error = ex.Message };
+				return new SourceCodeSchemaUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdateSchema(options, out SourceCodeSchemaUpdateResponse response);
 			return response;

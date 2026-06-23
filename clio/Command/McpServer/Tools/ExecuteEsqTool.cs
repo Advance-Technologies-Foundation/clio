@@ -70,7 +70,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			return ExecuteEsqResponse.FailureWithoutGuidance(
 				$"SelectQuery request timed out or was canceled (timeout window {MinTimeoutMs}-{MaxTimeoutMs} ms). Increase 'timeout' or narrow the query, then retry.");
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure(ex.Message);
+			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -94,7 +94,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 					return true;
 				} catch (JsonException jsonEx) {
 					normalized = default;
-					error = $"query is not valid JSON: {jsonEx.Message}";
+					error = SensitiveErrorTextRedactor.Redact($"query is not valid JSON: {jsonEx.Message}");
 					return false;
 				}
 			default:
@@ -154,7 +154,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			// Succeeded but no rows array (e.g. a non-standard projection): return the whole body.
 			return new ExecuteEsqResponse(true, null, null, root.Clone());
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}");
+			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}"));
 		}
 	}
 

@@ -32,9 +32,9 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 			service.ClearSessionAsync(environment).ConfigureAwait(false).GetAwaiter().GetResult();
 			return new ClearBrowserSessionResult(true, $"Browser session for '{args.EnvironmentName}' cleared.");
 		} catch (SafeEnvironmentConfirmationRequiredException ex) {
-			return new ClearBrowserSessionResult(false, null, ex.Message);
+			return new ClearBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (InvalidOperationException ex) {
-			return new ClearBrowserSessionResult(false, null, ex.Message);
+			return new ClearBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (Exception) {
 			return new ClearBrowserSessionResult(false, null, "Failed to clear the browser session.");
 		}

@@ -37,7 +37,7 @@ public sealed class PageGetTool(
 			try {
 				resolvedCommand = ResolveCommand<PageGetCommand>(options);
 			} catch (Exception ex) {
-				return new PageGetResponse { Success = false, Error = ex.Message };
+				return new PageGetResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetPage(options, out PageGetResponse response);
 			if (!response.Success) {

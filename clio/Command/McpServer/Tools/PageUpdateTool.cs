@@ -57,7 +57,7 @@ public sealed class PageUpdateTool(
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
 			} catch (Exception ex) {
-				return new PageUpdateResponse { Success = false, Error = ex.Message };
+				return new PageUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse inner);
 			if (inner.Success && args.Verify == true)
@@ -367,14 +367,14 @@ public sealed class PageUpdateTool(
 		try {
 			signatureCommand = _commandResolver.Resolve<GetProcessSignatureCommand>(signatureOptions);
 		} catch (Exception ex) {
-			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			warning = SensitiveErrorTextRedactor.Redact($"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}");
 			return false;
 		}
 		try {
 			signatureCommand.TryGetSignature(signatureOptions, out signature);
 			return true;
 		} catch (Exception ex) {
-			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			warning = SensitiveErrorTextRedactor.Redact($"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}");
 			return false;
 		}
 	}

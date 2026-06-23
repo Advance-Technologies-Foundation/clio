@@ -76,7 +76,7 @@ public sealed class AddItemModelTool(
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			catch (Exception exception) {
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(exception.Message)];
+				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);

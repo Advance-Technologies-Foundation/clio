@@ -206,7 +206,7 @@ public sealed class PageSyncTool(
 				}
 				Thread.Sleep(500);
 			} catch (Exception ex) {
-				FillPendingWithError(results, pendingIndices, pages, ex.Message);
+				FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
 			}
 		}
 		return results;
@@ -230,7 +230,7 @@ public sealed class PageSyncTool(
 			}
 			return true;
 		} catch (Exception ex) {
-			error = ex.Message;
+			error = SensitiveErrorTextRedactor.Redact(ex.Message);
 			return false;
 		}
 	}
@@ -514,7 +514,7 @@ public sealed class PageSyncTool(
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
 				Success = false,
-				Error = ex.Message
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 	}

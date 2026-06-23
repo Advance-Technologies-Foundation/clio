@@ -41,7 +41,7 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 			client.ExecuteDeleteRequest(url, string.Empty, 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }

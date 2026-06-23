@@ -115,7 +115,7 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			childParams = BuildChildParams(toolName, tool, args);
 		}
 		catch (ArgumentException ex) {
-			return Error($"Error: {ex.Message}");
+			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
 		}
 
 		// Dispatch within the SAME request context (same server/session/services), retargeting it at the
@@ -155,15 +155,28 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		if (result is null) {
 			return result;
 		}
-		// Many clio tools catch internally and RETURN a structured error result (IsError = true) with
-		// raw text rather than throwing. The catch block above only redacts the throw path, so a
-		// returned error result carrying absolute paths/URIs/credentials would reach the transcript
-		// unredacted. clio-run is now the primary surfacing path for the long tail hidden from
-		// tools/list, so redact surfaced error-result text here too — closing the gap left by the
-		// throw-only redaction (SensitiveErrorTextRedactor is the single redaction rule).
-		if (result.IsError == true && result.Content is not null) {
-			foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
-				textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
+		// Many clio tools catch internally and RETURN a structured failure rather than throwing, so the
+		// throw-path redaction (the catch block above) never sees them. clio-run is now the primary
+		// surfacing path for the long tail hidden from tools/list, so it must be the backstop that scrubs
+		// surfaced failure text here too. Three shapes leak:
+		//   1. CallToolResult { IsError = true } carrying raw text (e.g. ODataWriteResponse-style throws
+		//      re-wrapped by a tool, or tools that build the error result by hand).
+		//   2. A typed POCO envelope { success: false, error: "<raw IApplicationClient message>" } that the
+		//      SDK serialises into a JSON TextContentBlock WITHOUT setting IsError — the long-tail default.
+		//   3. The same POCO surfaced via StructuredContent when a tool opts into structured output.
+		// Only failure content is touched; a successful payload is never scrubbed (it could carry legitimate
+		// host/path data). SensitiveErrorTextRedactor is the single redaction rule.
+		JsonNode structured = ToMutableNode(result.StructuredContent);
+		if (IsFailureResult(result, structured)) {
+			if (result.Content is not null) {
+				foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
+					textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
+				}
+			}
+			if (structured is not null && RedactStructuredErrorFields(structured)) {
+				// StructuredContent is an immutable JsonElement, so write the scrubbed graph back as a fresh
+				// element. Only done when something was actually redacted, so a clean payload is untouched.
+				result.StructuredContent = JsonSerializer.SerializeToElement(structured);
 			}
 		}
 		result.Meta ??= new JsonObject();
@@ -173,6 +186,118 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		};
 		return result;
 	}
+
+	// Converts the SDK's immutable StructuredContent (JsonElement?) into a mutable JsonNode graph so error
+	// fields can be rewritten. Returns null when there is no object/array payload to inspect.
+	private static JsonNode ToMutableNode(JsonElement? structuredContent) {
+		if (structuredContent is not { } element || element.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) {
+			return null;
+		}
+		return JsonNode.Parse(element.GetRawText());
+	}
+
+	// Conservative failure detector for the audit backstop. A result is treated as a failure when ANY of:
+	//   * the SDK marked it (IsError = true);
+	//   * its StructuredContent payload carries a failure signal (success:false or a non-empty error);
+	//   * a JSON text-content block (the long-tail default where the POCO is serialised into Content, not
+	//     StructuredContent) carries the same failure signal.
+	// Anything else (a normal success payload, or a payload with no such markers) is left completely
+	// untouched so legitimate data is never redacted.
+	private static bool IsFailureResult(CallToolResult result, JsonNode structured) {
+		if (result.IsError == true) {
+			return true;
+		}
+		if (PayloadSignalsFailure(structured)) {
+			return true;
+		}
+		if (result.Content is null) {
+			return false;
+		}
+		foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
+			if (TextContentSignalsFailure(textBlock.Text)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Parses a text-content block as JSON (the SDK's default serialised POCO shape) and applies the same
+	// success:false / non-empty-error failure test. Non-JSON or unparseable text is never treated as a
+	// failure, so plain prose success output is never scrubbed.
+	private static bool TextContentSignalsFailure(string text) {
+		if (string.IsNullOrWhiteSpace(text)) {
+			return false;
+		}
+		ReadOnlySpan<char> trimmed = text.AsSpan().TrimStart();
+		if (trimmed.IsEmpty || trimmed[0] != '{') {
+			return false;
+		}
+		try {
+			return PayloadSignalsFailure(JsonNode.Parse(text));
+		}
+		catch (JsonException) {
+			return false;
+		}
+	}
+
+	private static bool PayloadSignalsFailure(JsonNode payload) {
+		if (payload is not JsonObject obj) {
+			return false;
+		}
+		foreach (KeyValuePair<string, JsonNode> property in obj) {
+			if (string.Equals(property.Key, "success", StringComparison.OrdinalIgnoreCase)
+				&& property.Value is JsonValue successValue
+				&& successValue.TryGetValue(out bool success)
+				&& !success) {
+				return true;
+			}
+			if (IsErrorFieldName(property.Key)
+				&& property.Value is JsonValue errorValue
+				&& errorValue.TryGetValue(out string errorText)
+				&& !string.IsNullOrWhiteSpace(errorText)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Redacts the string value of every error-like field anywhere in the structured payload graph, so a
+	// raw IApplicationClient message that the SDK placed in StructuredContent (rather than only the text
+	// Content) is scrubbed too. Only error-named fields are rewritten; all other data is preserved verbatim.
+	// Returns true when at least one field was changed.
+	private static bool RedactStructuredErrorFields(JsonNode node) {
+		bool changed = false;
+		switch (node) {
+			case JsonObject obj:
+				foreach (string key in obj.Select(property => property.Key).ToList()) {
+					if (IsErrorFieldName(key)
+						&& obj[key] is JsonValue value
+						&& value.TryGetValue(out string text)
+						&& !string.IsNullOrEmpty(text)) {
+						string redacted = SensitiveErrorTextRedactor.Redact(text);
+						if (!string.Equals(redacted, text, StringComparison.Ordinal)) {
+							obj[key] = redacted;
+							changed = true;
+						}
+					}
+					else if (RedactStructuredErrorFields(obj[key])) {
+						changed = true;
+					}
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array) {
+					if (RedactStructuredErrorFields(item)) {
+						changed = true;
+					}
+				}
+				break;
+		}
+		return changed;
+	}
+
+	private static bool IsErrorFieldName(string key) =>
+		string.Equals(key, "error", StringComparison.OrdinalIgnoreCase);
 
 	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause
 	// rather than a generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.

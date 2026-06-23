@@ -33,7 +33,7 @@ public sealed class PageTemplatesListTool(
 			try {
 				resolvedCommand = ResolveCommand<PageTemplatesListCommand>(options);
 			} catch (Exception ex) {
-				return new PageTemplateListResponse { Success = false, Error = ex.Message };
+				return new PageTemplateListResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryListTemplates(options, out PageTemplateListResponse response);
 			return response;

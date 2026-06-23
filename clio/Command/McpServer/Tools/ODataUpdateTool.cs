@@ -46,7 +46,7 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {
-			return ODataWriteResponse.Failure(ex.Message);
+			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }

@@ -47,7 +47,7 @@ public sealed class ClientUnitSchemaUpdateTool(
 				resolvedCommand = ResolveCommand<ClientUnitSchemaUpdateCommand>(options);
 			}
 			catch (Exception ex) {
-				return new ClientUnitSchemaUpdateResponse { Success = false, Error = ex.Message };
+				return new ClientUnitSchemaUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdateSchema(options, out ClientUnitSchemaUpdateResponse response);
 			return response;

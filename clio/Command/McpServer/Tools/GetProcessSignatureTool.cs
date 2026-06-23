@@ -48,7 +48,7 @@ public sealed class GetProcessSignatureTool(
 				resolvedCommand = ResolveCommand<GetProcessSignatureCommand>(options);
 			}
 			catch (Exception ex) {
-				return new GetProcessSignatureResponse { Success = false, Error = ex.Message };
+				return new GetProcessSignatureResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSignature(options, out GetProcessSignatureResponse response);
 			return response;
