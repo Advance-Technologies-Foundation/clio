@@ -24,7 +24,11 @@ public interface IClioRunExecutor {
 	/// Runs the MCP tool named <paramref name="command"/> with <paramref name="args"/> on the
 	/// requested surface, in the context of the calling <c>clio-run</c> request.
 	/// </summary>
-	/// <param name="command">The MCP tool name (as advertised in full-mode <c>tools/list</c>).</param>
+	/// <param name="command">
+	/// The MCP tool name (as advertised in full-mode <c>tools/list</c>). May be <c>null</c> when the
+	/// caller sent the wrapped call shape <c>{"args":{"command":"&lt;tool&gt;", ...}}</c>; the executor
+	/// recovers the real command from <paramref name="args"/> in that case.
+	/// </param>
 	/// <param name="args">Free-form JSON args object forwarded to the target tool.</param>
 	/// <param name="destructiveSurface">
 	/// <c>true</c> when invoked from <c>clio-run-destructive</c>; <c>false</c> from <c>clio-run</c>.
@@ -33,7 +37,7 @@ public interface IClioRunExecutor {
 	/// <param name="cancellationToken">Cancellation token for the dispatched invocation.</param>
 	/// <returns>The target tool's <see cref="CallToolResult"/>, or a structured error result.</returns>
 	ValueTask<CallToolResult> RunAsync(
-		string command,
+		string? command,
 		JsonElement? args,
 		bool destructiveSurface,
 		RequestContext<CallToolRequestParams> callContext,
@@ -45,14 +49,28 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 
 	/// <inheritdoc />
 	public async ValueTask<CallToolResult> RunAsync(
-		string command,
+		string? command,
 		JsonElement? args,
 		bool destructiveSurface,
 		RequestContext<CallToolRequestParams> callContext,
 		CancellationToken cancellationToken) {
 		ArgumentNullException.ThrowIfNull(callContext);
+
+		// Wrapped-form tolerance: clio-run / clio-run-destructive declare TWO top-level params
+		// (command + args), so their real call shape is {"command":"X","args":{...}}. But most clio
+		// tools take ONE record param named `args`, so the SDK wraps everything under `args`. An agent
+		// habituated to that wrapper sends {"args":{"command":"X", ...}} — leaving top-level `command`
+		// null. `command` is now optional (string? = null) so the SDK no longer hard-rejects that call
+		// before the method runs; recover the real command/args here so BOTH call shapes work. This runs
+		// BEFORE the recursion guard and unknown-tool path, so the RECOVERED command is what those see.
 		if (string.IsNullOrWhiteSpace(command)) {
-			return Error("Error: 'command' is required.");
+			(command, args) = RecoverWrappedCall(args);
+		}
+
+		if (string.IsNullOrWhiteSpace(command)) {
+			return Error(
+				"Error: 'command' is required — the target clio MCP tool name (kebab-case). " +
+				"Call shape: {\"command\":\"<tool>\",\"args\":{...}}.");
 		}
 		string toolName = command.Trim();
 
@@ -166,6 +184,51 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		return current.Message;
 	}
 
+	// Recovers the real (command, args) pair from the WRAPPED call shape an agent sends when it treats
+	// clio-run like a single-`args`-record tool. Two wrapped variants are handled:
+	//   * wrapped-with-inner-args: {"args":{"command":"X","args":{...target params...}}}
+	//       -> command = "X", target args = the inner "args" object.
+	//   * wrapped-flat: {"args":{"command":"X", ...target params...}}
+	//       -> command = "X", target args = the SAME object MINUS the "command" key (re-serialized).
+	// Recovery only fires when `args` is a JSON object carrying a STRING "command" property. Anything
+	// else (primitive/array args, object without a string "command") yields (null, original args) so
+	// the caller falls through to the structured "missing command" error and nothing is dispatched.
+	private static (string? command, JsonElement? args) RecoverWrappedCall(JsonElement? args) {
+		if (args is not { ValueKind: JsonValueKind.Object } wrapper) {
+			return (null, args);
+		}
+		if (!wrapper.TryGetProperty("command", out JsonElement commandElement) ||
+			commandElement.ValueKind != JsonValueKind.String) {
+			return (null, args);
+		}
+		string? recoveredCommand = commandElement.GetString();
+		if (string.IsNullOrWhiteSpace(recoveredCommand)) {
+			return (null, args);
+		}
+
+		// Inner-args variant wins when an "args" property is present: forward it verbatim as the target
+		// tool's arguments. Otherwise treat the wrapper itself as the flat target args and drop the
+		// "command" key so it is not forwarded as a (non-existent) target parameter.
+		if (wrapper.TryGetProperty("args", out JsonElement innerArgs)) {
+			return (recoveredCommand, innerArgs.Clone());
+		}
+		return (recoveredCommand, StripCommandKey(wrapper));
+	}
+
+	// Rebuilds the wrapped object without its top-level "command" key, so the remaining properties become
+	// the flat target args. Returns Null kind (treated downstream as "no args") when nothing else remains.
+	private static JsonElement StripCommandKey(JsonElement wrapper) {
+		JsonObject stripped = new();
+		foreach (JsonProperty property in wrapper.EnumerateObject()) {
+			if (string.Equals(property.Name, "command", StringComparison.Ordinal)) {
+				continue;
+			}
+			stripped[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+		}
+		using JsonDocument document = JsonDocument.Parse(stripped.ToJsonString());
+		return document.RootElement.Clone();
+	}
+
 	// Maps the caller's free-form `args` object onto the target tool's argument dictionary. Most clio
 	// tools take a single typed args record parameter (named `args`); for those the whole object is
 	// wrapped under that parameter name. Tools that take multiple named scalar parameters receive the
@@ -258,10 +321,10 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
-	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
+	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}. The wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
-		[Description("clio MCP tool name (kebab-case), e.g. \"execute-esq\"")] string command,
+		[Description("clio MCP tool name (kebab-case), e.g. \"execute-esq\"")] string? command = null,
 		[Description("JSON arguments object the target tool expects")] JsonElement? args = null,
 		CancellationToken cancellationToken = default)
 		=> executor.RunAsync(command, args, destructiveSurface: false, context, cancellationToken);
@@ -282,10 +345,10 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
-	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects.")]
+	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}; the wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
-		[Description("clio MCP tool name (kebab-case), e.g. \"sync-schemas\"")] string command,
+		[Description("clio MCP tool name (kebab-case), e.g. \"sync-schemas\"")] string? command = null,
 		[Description("JSON arguments object the target tool expects")] JsonElement? args = null,
 		CancellationToken cancellationToken = default)
 		=> executor.RunAsync(command, args, destructiveSurface: true, context, cancellationToken);

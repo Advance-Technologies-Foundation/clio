@@ -450,6 +450,157 @@ public sealed class ClioRunDispatchTests {
 		await executor.Received(1).RunAsync("delete-thing", Arg.Any<JsonElement?>(), true, Arg.Any<RequestContext<CallToolRequestParams>>(), Arg.Any<CancellationToken>());
 	}
 
+	// --- Wrapped-form tolerance ----------------------------------------------------------------------
+	// clio-run / clio-run-destructive take TWO top-level params (command + args), but most clio tools take
+	// ONE record param named `args`, so the SDK wraps everything under `args`. An agent habituated to the
+	// wrapper sends {"args":{"command":"X", ...}}, leaving top-level `command` null. The executor recovers
+	// the real command/args so BOTH call shapes work without breaking the normal top-level form.
+
+	[Test]
+	[Category("Unit")]
+	[Description("NORMAL top-level form {\"command\":\"echo-tool\",\"args\":{...}} is dispatched unchanged (recovery is a no-op when command is present) — regression guard.")]
+	public async Task RunAsync_ShouldDispatchUnchanged_WhenCommandIsProvidedTopLevel() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("echo-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true, because: "the normal top-level form must keep dispatching unchanged");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "the top-level command/args pair must reach the real tool with its args intact");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("WRAPPED-with-inner-args {\"args\":{\"command\":\"echo-tool\",\"args\":{\"value\":\"hi\"}}} recovers command and the inner args object, then dispatches.")]
+	public async Task RunAsync_ShouldRecoverCommandAndInnerArgs_WhenCalledWithWrappedInnerArgsShape() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement wrapped = JsonDocument.Parse("{\"command\":\"echo-tool\",\"args\":{\"value\":\"hi\"}}").RootElement;
+
+		// Act — top-level command is null; the wrapped object lives in `args` (the SDK wrapper shape).
+		CallToolResult result = await _sut.RunAsync(null, wrapped, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true, because: "the wrapped-with-inner-args form must be recovered and dispatched");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "the recovered command must run with the inner args object as its arguments");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("WRAPPED-flat {\"args\":{\"command\":\"echo-tool\",\"value\":\"hi\"}} recovers command and strips the 'command' key so the remaining keys become the flat target args, then dispatches.")]
+	public async Task RunAsync_ShouldRecoverCommandAndStripCommandKey_WhenCalledWithWrappedFlatShape() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement wrapped = JsonDocument.Parse("{\"command\":\"echo-tool\",\"value\":\"hi\"}").RootElement;
+
+		// Act — top-level command is null; the flat-wrapped object (command + target params) is in `args`.
+		CallToolResult result = await _sut.RunAsync(null, wrapped, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true, because: "the wrapped-flat form must be recovered and dispatched after stripping the command key");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "after stripping 'command' the remaining 'value' key must bind as the tool's argument");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("WRAPPED self-dispatch {\"args\":{\"command\":\"clio-run\"}} is STILL refused — recovery resolves the real command BEFORE the recursion guard, so the recovered name hits the guard.")]
+	public async Task RunAsync_ShouldRejectSelfDispatch_WhenWrappedFormTargetsClioRun() {
+		// Arrange
+		JsonElement wrapped = JsonDocument.Parse("{\"command\":\"clio-run\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(null, wrapped, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "a wrapped clio-run target must still be caught by the recursion guard after recovery");
+		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
+			because: "recovery runs before the guard, so the recovered command 'clio-run' must trip the same self-dispatch refusal");
+		_registry.DidNotReceive().TryGetTool("clio-run", out Arg.Any<McpServerTool>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No command anywhere (empty wrapper {\"args\":{}}) returns a structured Error naming the correct call shape and dispatches nothing.")]
+	public async Task RunAsync_ShouldReturnShapeError_WhenWrapperHasNoCommand() {
+		// Arrange
+		JsonElement wrapped = JsonDocument.Parse("{}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(null, wrapped, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "a call with no recoverable command cannot be dispatched");
+		string text = ErrorText(result);
+		text.Should().Contain("'command' is required",
+			because: "the error must explain the missing command");
+		text.Should().Contain("{\"command\":\"<tool>\",\"args\":{...}}",
+			because: "the error must name the correct top-level call shape so the agent can fix its call");
+		_registry.DidNotReceive().TryGetTool(Arg.Any<string>(), out Arg.Any<McpServerTool>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A primitive (non-object) args value with a null command is NOT a recoverable wrapper — returns the structured shape Error and dispatches nothing.")]
+	public async Task RunAsync_ShouldReturnShapeError_WhenCommandIsNullAndArgsIsPrimitive() {
+		// Arrange
+		JsonElement primitive = JsonDocument.Parse("\"echo-tool\"").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(null, primitive, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "a primitive args value cannot carry a recoverable command property");
+		string text = ErrorText(result);
+		text.Should().Contain("'command' is required",
+			because: "with no object wrapper there is no command to recover, so the missing-command error must surface");
+		text.Should().Contain("{\"command\":\"<tool>\",\"args\":{...}}",
+			because: "the error must still name the correct call shape for a primitive args value");
+		_registry.DidNotReceive().TryGetTool(Arg.Any<string>(), out Arg.Any<McpServerTool>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Null command and null args returns the structured shape Error and dispatches nothing (the bare {} call with no args at all).")]
+	public async Task RunAsync_ShouldReturnShapeError_WhenCommandAndArgsAreBothNull() {
+		// Arrange
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(null, null, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "with neither a command nor an args wrapper there is nothing to dispatch");
+		ErrorText(result).Should().Contain("'command' is required",
+			because: "the missing-command error must surface when nothing is provided at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The shared executor path also serves clio-run-destructive: a wrapped-with-inner-args call recovers and dispatches through the same RunAsync used by the destructive surface.")]
+	public async Task RunAsync_ShouldRecoverWrappedForm_WhenInvokedOnDestructiveSurface() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: true);
+		JsonElement wrapped = JsonDocument.Parse("{\"command\":\"echo-tool\",\"args\":{\"value\":\"hi\"}}").RootElement;
+
+		// Act — destructiveSurface=true mirrors clio-run-destructive routing through the shared executor.
+		CallToolResult result = await _sut.RunAsync(null, wrapped, destructiveSurface: true, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "the wrapped-form recovery lives in the shared executor, so the destructive surface gets it too");
+		result.Content.OfType<TextContentBlock>().Should().Contain(
+			block => block.Text.Contains("echo:hi", StringComparison.Ordinal),
+			because: "clio-run-destructive must recover and dispatch the wrapped call just like clio-run");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("clio-run advertises Destructive=true (host-gated) and never ReadOnly, since it can run write/destructive tools.")]
