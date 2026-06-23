@@ -443,6 +443,29 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("Name-first resolution (CLI parity with the MCP tool): a component-type that names a COMPOSITE caption ('Expanded list') is not a dead end — the not-found response routes to composite=\"<caption>\" and surfaces the matched composite, instead of leaving the agent to hand-build the detail.")]
+	public async Task Unknown_ComponentType_Matching_Composite_Caption_Routes_To_Composite() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "Expanded list" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'Expanded list' is not a component type, so the lookup fails");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("Expanded list",
+			because: "the routing message must name the matched composite");
+		parsed.Error.Should().Contain("composite=",
+			because: "the CLI must route to the composite-discovery path, mirroring the MCP tool");
+		parsed.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
+			because: "the matched composite is surfaced so the caller can fetch its assembly recipe");
+	}
+
+	[Test]
 	[Description("--composite with an unknown caption + --pretty surfaces the actionable not-found message (with known captions) and exits 1 — it is NOT silently empty. Render prints 'Error: <message>' for any unsuccessful response before AppendComposite early-returns, so the JSON path's known-captions hint reaches the pretty surface too.")]
 	public async Task Pretty_Output_Surfaces_Composite_NotFound_Message() {
 		using CapturedLogger logger = new();

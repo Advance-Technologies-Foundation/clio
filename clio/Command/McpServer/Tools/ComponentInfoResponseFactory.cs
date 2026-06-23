@@ -14,6 +14,12 @@ namespace Clio.Command.McpServer.Tools;
 /// each caller, so the surfaces stay free to phrase their own messages.
 /// </summary>
 public static class ComponentInfoResponseFactory {
+	/// <summary>
+	/// Cap on the "did you mean" shortlist a not-found response echoes, so it never returns the
+	/// full ~199-item catalog as "suggestions".
+	/// </summary>
+	private const int MaxNotFoundSuggestions = 8;
+
 	/// <summary>Case-insensitive composite lookup by caption. Shared by the MCP tool and the CLI verb.</summary>
 	internal static CompositeDefinition? FindComposite(IReadOnlyList<CompositeDefinition>? composites, string caption) =>
 		(composites ?? []).FirstOrDefault(item => string.Equals(item.Caption, caption, StringComparison.OrdinalIgnoreCase));
@@ -74,6 +80,77 @@ public static class ComponentInfoResponseFactory {
 			ResolvedFrom = resolvedFrom,
 			ResolvedFromReason = resolvedFromReason
 		};
+
+	/// <summary>
+	/// Builds the not-found response for an unknown <c>component-type</c> using name/description
+	/// resolution: the agent typically reaches for a human label ("Expanded list") as if it were a
+	/// component, so when the exact type id misses we (1) match the requested value against COMPONENTS
+	/// by name/description/synonyms/use-cases, falling back to closest-by-distance suggestions for
+	/// typo tolerance, and (2) match it against COMPOSITES by caption/description. When the value
+	/// names a composite but no component matches it, the error ROUTES the agent to
+	/// <c>composite="&lt;caption&gt;"</c> instead of leaving it to hand-build — this works for ANY
+	/// composite, not a hard-coded set. Composites are still surfaced (search-filtered) on the
+	/// non-routing path so the "composites exist" discovery hint is preserved. Shared by the MCP tool
+	/// and the CLI verb so both surfaces resolve identically.
+	/// </summary>
+	internal static ComponentInfoResponse CreateComponentNotFoundResponse(
+		IReadOnlyList<ComponentRegistryEntry> entries,
+		IReadOnlyList<CompositeDefinition>? composites,
+		string requestedType,
+		string? search,
+		string? resolvedTargetVersion,
+		string? resolvedFrom,
+		string? resolvedFromReason) {
+		string query = requestedType.Trim();
+
+		// 1. "Ready component" pass — match the requested label against component name/description/
+		//    synonyms/use-cases. Only when that finds nothing do we fall back to closest-by-distance
+		//    (typo tolerance), so a real label like "Expanded list" is not buried under edit-distance noise.
+		IReadOnlyList<ComponentRegistryEntry> nameMatches = ComponentInfoGrouping.FilterEntries(entries, query);
+		bool hasComponentMatch = nameMatches.Count > 0;
+		IReadOnlyList<ComponentRegistryEntry> suggestions = hasComponentMatch
+			? nameMatches.Take(MaxNotFoundSuggestions).ToArray()
+			: ComponentInfoGrouping.SuggestForUnknown(entries, query, search, MaxNotFoundSuggestions);
+
+		// 2. Composite fallback — does the requested label name a composite?
+		IReadOnlyList<CompositeDefinition> queryComposites = ComponentInfoGrouping.FilterComposites(composites, query);
+		bool routeToComposite = !hasComponentMatch && queryComposites.Count > 0;
+
+		// On the routing path show the matched composite(s); otherwise keep the existing
+		// search-filtered composites section so the agent still sees that composites exist.
+		IReadOnlyList<CompositeDefinition> shownComposites = routeToComposite
+			? queryComposites
+			: ComponentInfoGrouping.FilterComposites(composites, search);
+		IReadOnlyList<CompositeSummary> compositeItems = ComponentInfoGrouping.CreateCompositeItems(shownComposites);
+
+		string error;
+		if (routeToComposite) {
+			string captions = string.Join(", ", queryComposites.Select(item => $"'{item.Caption}'"));
+			error = $"No component type '{query}' exists, but it matches composite {captions}. "
+				+ "A composite is a pre-built combination of components (no componentType of its own) — call "
+				+ $"get-component-info composite=\"{queryComposites[0].Caption}\" for its assembly recipe instead of hand-building it.";
+		} else if (hasComponentMatch) {
+			error = $"Component type '{query}' was not found. "
+				+ $"Showing {suggestions.Count} component(s) matching '{query}' by name/description — pass one as 'component-type', "
+				+ "or omit 'component-type' to list the full catalog.";
+		} else {
+			error = $"Component type '{query}' was not found. "
+				+ $"Showing the {suggestions.Count} closest known type(s) — pass one as 'component-type', "
+				+ "or omit 'component-type' to list the full catalog (components AND composites).";
+		}
+
+		return new ComponentInfoResponse {
+			Success = false,
+			Mode = "list",
+			Error = error,
+			Count = suggestions.Count,
+			Items = ComponentInfoGrouping.CreateItems(suggestions),
+			Composites = compositeItems.Count == 0 ? null : compositeItems,
+			ResolvedTargetVersion = resolvedTargetVersion,
+			ResolvedFrom = resolvedFrom,
+			ResolvedFromReason = resolvedFromReason
+		};
+	}
 
 	/// <summary>
 	/// Builds the <c>mode: "composite"</c> detail response. When the composite declares docs

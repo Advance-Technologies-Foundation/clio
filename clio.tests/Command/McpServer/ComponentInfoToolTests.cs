@@ -1045,6 +1045,41 @@ public sealed class ComponentInfoToolTests {
 			because: "the not-found error must list the known composite captions");
 	}
 
+	[Test]
+	[Description("Name-first resolution: an unknown component-type whose value names a COMPOSITE caption (the human label the agent reaches for, e.g. 'Expanded list') is not a dead end — the not-found response routes to composite=\"<caption>\" and surfaces the matched composite, so the agent fetches the recipe instead of hand-building. Systemic: works for any composite, not a hard-coded set.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Composite_Caption_Routes_To_Composite() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Expanded list"));
+
+		response.Success.Should().BeFalse(because: "'Expanded list' is not a component type");
+		response.Error.Should().Contain("Expanded list",
+			because: "the routing message must name the matched composite");
+		response.Error.Should().Contain("composite=",
+			because: "the agent must be routed to the composite-discovery path, not left to hand-build the detail");
+		response.Composites.Should().NotBeNull();
+		response.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
+			because: "the matched composite is surfaced so the agent can fetch its assembly recipe");
+	}
+
+	[Test]
+	[Description("Name-first resolution keeps the closest-type fallback: an unknown component-type matching NO composite still returns the bounded closest-known-types shortlist and does NOT fabricate a composite route.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TotallyMadeUp"));
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("crt.TotallyMadeUp", because: "the failure should identify the missing type");
+		response.Error.Should().NotContain("composite=",
+			because: "no composite matches this label, so the response must not invent a composite route");
+		response.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
 	[TestCase(true, "composites are a web-only Designer feature",
 		TestName = "CompositeNotFound: mobile empty catalog → web-only hint")]
 	[TestCase(false, "this catalog declares no composites",
