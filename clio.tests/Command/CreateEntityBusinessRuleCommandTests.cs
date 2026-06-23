@@ -76,7 +76,7 @@ public sealed class CreateEntityBusinessRuleCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
-		businessRuleService.DidNotReceiveWithAnyArgs().Create(default!);
+		businessRuleService.DidNotReceiveWithAnyArgs().Create(default(EntityBusinessRuleCreateRequest)!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("environment-name is required.")));
 	}
 }

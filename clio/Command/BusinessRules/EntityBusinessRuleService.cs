@@ -13,11 +13,26 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 public interface IEntityBusinessRuleService {
 	/// <summary>
-	/// Creates a new business rule in the target package and entity schema.
+	/// Creates a single business rule in the target package and entity schema.
 	/// </summary>
+	/// <remarks>
+	/// This single-rule overload backs the <c>create-entity-business-rule</c> CLI command; the MCP tool
+	/// uses the batch <see cref="Create(EntityBusinessRulesBatchRequest)"/> overload exclusively (a
+	/// single MCP rule is sent as a one-element batch).
+	/// </remarks>
 	/// <param name="request">Business-rule creation input.</param>
 	/// <returns>Generated metadata about the created rule.</returns>
 	BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request);
+
+	/// <summary>
+	/// Creates multiple business rules on the same package and entity schema in a single
+	/// add-on round-trip (one <c>SaveSchema</c> + cache reset + configuration rebuild for the whole
+	/// batch). Per-rule validation/conversion failures are isolated and reported; the remaining rules
+	/// are still saved.
+	/// </summary>
+	/// <param name="request">Batch business-rule creation input.</param>
+	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
+	IReadOnlyList<BusinessRuleBatchItemResult> Create(EntityBusinessRulesBatchRequest request);
 }
 
 /// <summary>
@@ -27,6 +42,15 @@ public sealed record EntityBusinessRuleCreateRequest(
 	string PackageName,
 	string EntitySchemaName,
 	BusinessRule Rule
+);
+
+/// <summary>
+/// Describes the package, entity schema, and business-rule definitions to create in one batch.
+/// </summary>
+public sealed record EntityBusinessRulesBatchRequest(
+	string PackageName,
+	string EntitySchemaName,
+	IReadOnlyList<BusinessRule> Rules
 );
 
 internal sealed class EntityBusinessRuleService(
@@ -64,6 +88,62 @@ internal sealed class EntityBusinessRuleService(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rule,
 			createdRules);
+	}
+
+	public IReadOnlyList<BusinessRuleBatchItemResult> Create(EntityBusinessRulesBatchRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		BusinessRuleBatchValidation.RequireBatchFields(
+			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
+
+		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
+			request.EntitySchemaName,
+			packageUId);
+
+		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
+		var pending = new List<(int Index, string Caption, string RuleName)>();
+		var toAppend = new List<BusinessRuleMetadataDto>();
+
+		// One static-filter context is shared across the whole batch: its schema/lookup caches then
+		// accumulate across rules instead of being rebuilt (and re-fetched) for every static-filter rule.
+		StaticFilterContext? batchStaticFilterContext = null;
+
+		for (int index = 0; index < request.Rules.Count; index++) {
+			BusinessRule rule = request.Rules[index];
+			string caption = rule?.Caption ?? string.Empty;
+			try {
+				ArgumentNullException.ThrowIfNull(rule);
+				StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(rule)
+					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
+					: null;
+
+				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
+				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
+
+				IReadOnlyList<BusinessRuleMetadataDto> createdRules = BusinessRuleMetadataConverter.ToEntityMetadata(
+					attributeContext.Attributes,
+					rule,
+					attributeContext.EntitySchema.Name,
+					staticFilterContext?.SchemaProvider,
+					staticFilterContext?.LookupResolver);
+				if (createdRules.Count == 0) {
+					results[index] = new BusinessRuleBatchItemResult(caption, false, null, "Rule produced no metadata.");
+					continue;
+				}
+
+				pending.Add((index, caption, createdRules[0].Name));
+				toAppend.AddRange(createdRules);
+			} catch (Exception exception) {
+				results[index] = new BusinessRuleBatchItemResult(caption, false, null, exception.Message);
+			}
+		}
+
+		if (toAppend.Count > 0) {
+			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId);
+			BusinessRuleBatchSave.StampOutcome(results, pending, () => businessRuleAddonService.AppendRules(addonRequest, toAppend));
+		}
+
+		return results;
 	}
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>
