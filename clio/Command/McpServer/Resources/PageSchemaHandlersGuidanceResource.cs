@@ -466,22 +466,24 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Dialog and special cases:
 		         | User-visible name | Source reality | Params | Notes |
 		         | --- | --- | --- | --- |
-		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
-		       - Minimal `dialogConfig` shape:
+		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
+		       - Minimal `dialogConfig` shape - `message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig` (it is a `MessageDialogConfig`; the platform renders `dialogConfig.data.message` / `dialogConfig.data.actions`). Placing them on `dialogConfig` directly opens an empty dialog with only the default OK button:
 		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
-		             title: "<OptionalTitle>",
-		             message: "<MessageText>",
-		             actions: [
-		               {
-		                 key: "ok",
-		                 config: {
-		                   color: "primary",
-		                   caption: "OK"
+		             data: {
+		               title: "<OptionalTitle>",
+		               message: "<MessageText>",
+		               actions: [
+		                 {
+		                   key: "ok",
+		                   config: {
+		                     color: "primary",
+		                     caption: "OK"
+		                   }
 		                 }
-		               }
-		             ]
+		               ]
+		             }
 		           },
 		           $context: request.$context,
 		           scopes: [...request.scopes]

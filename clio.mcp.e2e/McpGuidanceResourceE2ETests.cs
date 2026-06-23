@@ -528,10 +528,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should expose the runtime payload for attribute-change handlers");
 		article.Text.Should().Contain("| User-visible name | Source reality | Params | Notes |",
 			because: "the handler guide should isolate user-visible and source-runtime mismatches in a dedicated AI-readable table");
-		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
+		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
 			because: "the handler guide should disambiguate the user-visible dialog label from the actual source request type with an explicit authoring rule");
-		article.Text.Should().Contain("Minimal `dialogConfig` shape:",
-			because: "the handler guide should show a concrete minimal dialog payload instead of only naming the config field");
+		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
+			because: "the handler guide must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
 		article.Text.Should().Contain("Do NOT create a custom handler when a direct request already matches the requirement",
 			because: "the handler guide should explicitly prevent unnecessary custom handlers for simple actions");
 		article.Text.Should().Contain("Multiple handlers in one page-body array",

@@ -498,12 +498,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should optimize sidebar contracts into a compact AI-readable table");
 		article.Text.Should().Contain("| User-visible name | Source reality | Params | Notes |",
 			because: "handler guidance should isolate user-visible and source-runtime mismatches in a dedicated AI-readable table");
-		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
+		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
 			because: "handler guidance should disambiguate the user-visible dialog label from the source request type with an explicit authoring rule");
-		article.Text.Should().Contain("Minimal `dialogConfig` shape:",
-			because: "handler guidance should show a concrete minimal dialog payload instead of only naming the config field");
+		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
+			because: "handler guidance must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
 		article.Text.Should().Contain("type: \"crt.ShowDialogRequest\"",
 			because: "handler guidance should show the actual request type inside the minimal dialog example");
+		article.Text.Should().Contain("data: {",
+			because: "the minimal dialog example must nest message/actions under dialogConfig.data, not flat on dialogConfig (ENG-91748)");
 		article.Text.Should().Contain("Anti-patterns",
 			because: "handler guidance should call out incorrect handler shapes and request usage explicitly");
 		article.Text.Should().Contain("Preserve the exact `/**SCHEMA_HANDLERS*/` comment markers around the handlers array;",
