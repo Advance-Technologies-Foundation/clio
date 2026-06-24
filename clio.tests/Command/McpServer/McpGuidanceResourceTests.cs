@@ -504,8 +504,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
 		article.Text.Should().Contain("type: \"crt.ShowDialogRequest\"",
 			because: "handler guidance should show the actual request type inside the minimal dialog example");
-		article.Text.Should().Contain("data: {",
-			because: "the minimal dialog example must nest message/actions under dialogConfig.data, not flat on dialogConfig (ENG-91748)");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{",
+			because: "the minimal dialog example must nest the payload under dialogConfig.data, not flat on dialogConfig (ENG-91748)");
+		article.Text.Should().NotMatchRegex(@"dialogConfig:\s*\{\s*(message|title|actions):",
+			because: "the handler guide must never reintroduce the flat dialogConfig payload shape that caused the empty-dialog bug (ENG-91748)");
 		article.Text.Should().Contain("Anti-patterns",
 			because: "handler guidance should call out incorrect handler shapes and request usage explicitly");
 		article.Text.Should().Contain("Preserve the exact `/**SCHEMA_HANDLERS*/` comment markers around the handlers array;",
@@ -711,6 +713,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should make the dialog stop-rule explicit for request-dispatching handlers");
 		article.Text.Should().Contain("return await sdk.HandlerChainService.instance.process({",
 			because: "the guide should provide a copyable HandlerChainService example for SDK-oriented code");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{\s*message:",
+			because: "the crt.ShowDialogRequest example must nest message/actions under dialogConfig.data, locking the ENG-91748 fix against a flat-shape regression");
+		article.Text.Should().Contain("wraps that same config one level deeper under `dialogConfig.data`",
+			because: "the guide must keep the MessageDialogConfig contrast rule distinguishing crt.ShowDialogRequest (data-wrapped) from the flat DialogService.open shape (ENG-91748)");
+		article.Text.Should().NotMatchRegex(@"dialogConfig:\s*\{\s*(message|title|actions):",
+			because: "the guide must never reintroduce the flat dialogConfig payload shape that caused the empty-dialog bug (ENG-91748)");
 		article.Text.Should().Contain("Inner handler/body snippet only: ProcessEngineService with model query helpers:",
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",

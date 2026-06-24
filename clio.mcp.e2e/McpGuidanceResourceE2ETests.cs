@@ -731,6 +731,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the guide should make the dialog stop-rule explicit for request-dispatching handlers");
 		article.Text.Should().Contain("sdk.HandlerChainService.instance.process",
 			because: "the guide should include the SDK-oriented handler-chain dispatch pattern");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{\s*message:",
+			because: "the crt.ShowDialogRequest example must nest message/actions under dialogConfig.data, locking the ENG-91748 fix against a flat-shape regression");
+		article.Text.Should().Contain("wraps that same config one level deeper under `dialogConfig.data`",
+			because: "the guide must keep the MessageDialogConfig contrast rule distinguishing crt.ShowDialogRequest (data-wrapped) from the flat DialogService.open shape (ENG-91748)");
 		article.Text.Should().Contain("Inner handler/body snippet only: ProcessEngineService with model query helpers:",
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",
