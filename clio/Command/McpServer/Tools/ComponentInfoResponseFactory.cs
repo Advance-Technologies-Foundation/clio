@@ -126,9 +126,11 @@ public static class ComponentInfoResponseFactory {
 			return new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
-				Error = $"No component type '{query}' exists, but it matches composite {captions}. "
-					+ "A composite is a pre-built combination of components (no componentType of its own) — call "
-					+ $"get-component-info composite=\"{directiveCaption}\" for its assembly recipe instead of hand-building it.",
+				Error = $"'{query}' is not a component type — no such componentType exists in the catalog. "
+					+ $"Searching composites found: {captions}. "
+					+ $"REQUIRED: call get-component-info composite=\"{directiveCaption}\" to get the authoritative assembly recipe. "
+					+ "Do NOT synthesize this structure from memory, guidance articles, or raw component docs — "
+					+ "those sources are incomplete and will produce a broken result.",
 				Count = 0,
 				Items = [],
 				Composites = ComponentInfoGrouping.CreateCompositeItems(queryComposites),
@@ -145,12 +147,14 @@ public static class ComponentInfoResponseFactory {
 			? nameMatches.Take(MaxNotFoundSuggestions).ToArray()
 			: ComponentInfoGrouping.SuggestForUnknown(entries, query, search, MaxNotFoundSuggestions);
 
+		// No component, no composite match. The message explains the two-step search so the agent
+		// understands both paths were tried and neither matched.
 		string error = hasComponentMatch
-			? $"Component type '{query}' was not found. "
-				+ $"Showing {suggestions.Count} component(s) matching '{query}' by name/description — pass one as 'component-type', "
-				+ "or omit 'component-type' to list the full catalog."
-			: $"Component type '{query}' was not found. "
-				+ $"Showing the {suggestions.Count} closest known type(s) — pass one as 'component-type', "
+			? $"'{query}' is not a component type. "
+				+ $"Showing {suggestions.Count} component(s) matching '{query}' by name/description — pass the correct componentType, "
+				+ "or omit 'component-type' to list the full catalog (components AND composites)."
+			: $"'{query}' is not a component type and does not match any composite. "
+				+ $"Showing the {suggestions.Count} closest known type(s) — pass the correct componentType, "
 				+ "or omit 'component-type' to list the full catalog (components AND composites).";
 
 		// Keep the search-filtered composites section so the agent still sees that composites exist.
