@@ -21,6 +21,7 @@ public sealed class SchemaCreateToolE2ETests {
 	private const string ToolName = SchemaCreateTool.ToolName;
 	private const string PackageName = "Custom";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises create-schema in the MCP tool manifest.")]
 	[AllureTag(ToolName)]
@@ -35,6 +36,7 @@ public sealed class SchemaCreateToolE2ETests {
 			because: "create-schema must be advertised so MCP callers can discover the C# schema creation tool");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports readable failures when create-schema is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
@@ -63,6 +65,7 @@ public sealed class SchemaCreateToolE2ETests {
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects malformed schema-name via create-schema before any remote calls.")]
 	[AllureTag(ToolName)]
@@ -88,6 +91,7 @@ public sealed class SchemaCreateToolE2ETests {
 		response.Error.Should().Contain("schema-name must start with a letter");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a C# source-code schema and verifies it exists in the environment.")]
 	[AllureTag(ToolName)]
@@ -122,6 +126,7 @@ public sealed class SchemaCreateToolE2ETests {
 		createResponse.Caption.Should().Be("E2E test helper");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("create-schema returns a duplicate-name error when the schema already exists.")]
 	[AllureTag(ToolName)]

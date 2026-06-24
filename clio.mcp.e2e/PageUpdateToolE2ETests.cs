@@ -21,6 +21,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the update-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature(PageUpdateTool.ToolName)]
 [NonParallelizable]

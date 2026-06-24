@@ -14,6 +14,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the OData write MCP tools (create / update / delete).
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ODataWriteToolsE2ETests {

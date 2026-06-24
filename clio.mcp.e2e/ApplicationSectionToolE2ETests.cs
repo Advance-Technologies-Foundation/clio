@@ -24,6 +24,7 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -46,6 +47,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "create-app-section must be advertised so MCP callers can discover the existing-app section creation tool");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -83,6 +85,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server with an isolated settings file pointing at an unreachable Creatio URI and verifies that create-app-section returns the classified transport error envelope.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -143,6 +146,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the agent needs an actionable next step instead of blind retries");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -181,6 +185,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should explain that application-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app-section without caption, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -216,6 +221,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should explain that caption is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app-section with forbidden localization maps, and verifies that the tool returns a clear scalar-only validation failure.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -255,6 +261,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should explain that localization maps are forbidden on create-app-section");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a section with a brand-new custom entity in a known installed application and verifies the structured read-back data including the created section metadata.")]
 	public async Task ApplicationSectionCreate_WithCustomEntity_Should_Return_Structured_Readback_Data() {
@@ -324,6 +331,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a section reusing the platform Case entity in a known installed application and verifies the structured read-back data. Covers ENG-88782: Creatio stores Code = EntitySchemaName for platform entity sections; the readback must match by entity schema name, not the caption-derived code sent in the INSERT.")]
 	public async Task ApplicationSectionCreate_WithPlatformEntity_Should_Return_Structured_Readback_Data() {
@@ -395,6 +403,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a section with a non-Latin caption and no explicit code, and verifies create-app-section returns an actionable failure that asks for an explicit code instead of the opaque 'InsertQuery failed.' message. Reproduces ENG-91212: a Cyrillic caption (\"Контакти\") produced an invalid non-ASCII section code that Creatio silently rejected.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -439,6 +448,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should tell the caller to supply an explicit Latin code");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Reuses a non-existent entity schema and verifies create-app-section returns a descriptive 'does not exist' failure before any insert, instead of the opaque 'InsertQuery failed.' message. Covers ENG-91212: a missing existing-object target must be reported clearly.")]
 	[AllureFeature(SectionCreateToolName)]
@@ -485,6 +495,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "the failure should explain that the requested object was not found");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server with a small heartbeat interval and verifies that a long-running application tool streams at least one notifications/progress message, so MCP clients reset their inactivity timeout instead of timing out mid-operation (ENG-91274).")]
 	[AllureFeature("mcp-progress-heartbeat")]

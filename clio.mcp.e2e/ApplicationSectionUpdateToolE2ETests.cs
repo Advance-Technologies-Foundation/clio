@@ -24,6 +24,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -46,6 +47,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "update-app-section must be advertised so MCP callers can discover the existing-section update tool");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -84,6 +86,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without mutable fields, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -120,6 +123,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that section-update needs at least one field to change");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -156,6 +160,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that application-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without section-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -192,6 +197,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that section-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section with forbidden localization maps, and verifies that the tool returns a clear scalar-only validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -232,6 +238,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that localization maps are forbidden on update-app-section");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, creates a section in the seeded installed application, updates its caption and description via update-app-section, and verifies that the structured before-and-after read-back exposes both the prior and updated values.")]
 	[AllureFeature(SectionUpdateToolName)]

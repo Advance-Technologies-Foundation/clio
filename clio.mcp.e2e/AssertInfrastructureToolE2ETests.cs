@@ -15,6 +15,12 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the full infrastructure assert MCP tool.
 /// </summary>
 [TestFixture]
+// Sandbox tier: the arrange path is environment-free, but the assert-infrastructure tool
+// probes host infrastructure (Kubernetes/Docker/local DB/filesystem) and returns an
+// InternalError when that tooling is absent. Per the ENG-92150 classification rule,
+// host-infra-dependent tests default to the Sandbox tier so the NoEnvironment gate stays
+// deterministically green off the deploy-backed runner.
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("assert")]
 public sealed class AssertInfrastructureToolE2ETests

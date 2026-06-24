@@ -20,6 +20,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the validate-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(PageValidateTool.ToolName)]
 [NonParallelizable]

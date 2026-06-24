@@ -26,6 +26,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 	private const string RestoreToolName = RestoreWorkspaceTool.RestoreWorkspaceToolName;
 	private const string PackageListToolName = GetPkgListTool.GetPkgListToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes push-workspace with an unknown environment name, and verifies that the tool reports a readable failure without mutating the workspace directory.")]
 	[AllureTag(PushToolName)]
@@ -46,6 +47,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertWorkspaceWasNotMutated(arrangeContext.WorkspacePath);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes restore-workspace with an unknown environment name, and verifies that the tool reports a readable failure without mutating the workspace directory.")]
 	[AllureTag(RestoreToolName)]
@@ -66,6 +68,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertWorkspaceWasNotMutated(arrangeContext.WorkspacePath);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, and verifies the package appears in the target environment through list-packages.")]
 	[AllureTag(PushToolName)]
@@ -87,6 +90,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertPackageWasPublished(packageListResult, arrangeContext.PackageMetadata);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, deletes the local package files, restores into the same workspace, and verifies the package metadata is recreated from the environment.")]
 	[AllureTag(PushToolName)]
@@ -116,6 +120,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertRestoredPackageMatchesSourceMetadata(arrangeContext.WorkspacePath, arrangeContext.PackageName, arrangeContext.PackageMetadata);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
 		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
@@ -142,6 +147,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertGateDidNotRefuse(restoreResult, "cliogate");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, lists tools, and verifies that both workspace-sync MCP endpoints are advertised as destructive.")]
 	[AllureTag(PushToolName)]
@@ -162,6 +168,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertToolIsAdvertisedAsDestructive(tools, RestoreToolName);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, inspects push-workspace tool discovery metadata, and verifies that skip-backup is exposed as an optional input argument.")]
 	[AllureTag(PushToolName)]

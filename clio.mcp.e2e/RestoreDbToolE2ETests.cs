@@ -11,6 +11,7 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("restore-db")]
 public sealed class RestoreDbToolE2ETests {

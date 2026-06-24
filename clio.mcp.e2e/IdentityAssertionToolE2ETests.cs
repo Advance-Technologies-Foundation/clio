@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the identity-assertion MCP tools (Identity Service V3 token-exchange flow).
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("identity-assertion")]
 [NonParallelizable]

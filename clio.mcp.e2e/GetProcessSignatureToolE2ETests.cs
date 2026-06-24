@@ -21,6 +21,7 @@ namespace Clio.Mcp.E2E;
 public sealed class GetProcessSignatureToolE2ETests {
 	private const string ToolName = GetProcessSignatureTool.ToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-process-signature for the configured sandbox process, and verifies a structured signature with parameter codes.")]
 	[AllureTag(ToolName)]
@@ -58,6 +59,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 			because: "a successful signature must always carry a parameters collection (possibly empty)");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-process-signature with an invalid environment name, and verifies a readable structured failure.")]
 	[AllureTag(ToolName)]

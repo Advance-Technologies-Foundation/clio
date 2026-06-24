@@ -4309,3 +4309,10 @@ Decision: Changed `Regex.IsMatch` in `IdentityServiceDeploymentService.ValidateS
 Discovery: The hotspot was on regex execution time, not process execution; focused IdentityService/OAuth/MCP unit coverage is sufficient for this targeted fix.
 Files: clio/Command/IdentityServiceDeployment/IdentityServiceDeploymentService.cs
 Impact: Removes the open Sonar security hotspot while preserving the existing site-name allowlist.
+
+## 2026-06-24 12:55 – ENG-92150: Tier-tag MCP e2e tests by infrastructure (NoEnvironment vs Sandbox)
+Context: clio.mcp.e2e has ~60 trunk failures rooted in env-dependence (need a TeamCity-stood-up live Creatio). First structural fix: make tests separable by infra tier so the env-free subset runs fast/deterministic off-CI.
+Decision: Purely-additive NUnit categories `McpE2E.NoEnvironment` / `McpE2E.Sandbox`. Class-level [Category] on uniform fixtures; per-test [Category] on mixed fixtures. No test-logic, no product, no GHA, no TeamCity-config changes (gating documented in spec only).
+Discovery: Classification = arrange-gate based. Reliable Sandbox signals are the env-reach helpers PLUS two non-obvious ones that an initial signal list missed and that caused false-NOENV (tests silently `Assert.Ignore`d): (1) a bare `settings.Sandbox.EnvironmentName` read followed by `Assert.Ignore`, and (2) `ResolveReachableEnvironmentAsync`. Treating any reachable-from-test text containing `Assert.Ignore` as Sandbox closed the gap. Some Sandbox tests FAIL-FAST (not skip) locally when AllowDestructive is on but sandbox config is absent (EnsureSandboxIsConfigured before opt-in check) — documented contract in clio.mcp.e2e/AGENTS.md, reproduces on master. 346 tests total: 171 NoEnvironment, 175 Sandbox.
+Files: clio.mcp.e2e/*E2ETests.cs (60 files, attributes only), spec/mcp-e2e-tiering/mcp-e2e-tiering-spec.md, spec/mcp-e2e-tiering/mcp-e2e-tiering-validation.md
+Impact: `dotnet test --filter "Category=McpE2E.NoEnvironment"` is a deterministic env-free gate (0 fail, 0 env-skips) anyone can run; Sandbox tier stays on the deploy-backed step. Reusable arrange-gate classifier signals listed in the spec for future e2e additions.
