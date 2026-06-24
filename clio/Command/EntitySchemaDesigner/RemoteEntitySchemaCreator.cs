@@ -525,6 +525,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		stopwatch.Stop();
 		_logger.WriteInfo(
 			$"Schema '{options.SchemaName}' published in {stopwatch.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s.");
+		// After publishing, request the OData entities rebuild so the schema is reachable over
+		// OData (/0/odata/<Entity>) without a manual full compile. It runs as a background task, so
+		// access appears within minutes. A failure does not undo the publish, so it is only a warning.
+		try {
+			_entitySchemaDesignerClient.RunODataBuild(options);
+			_logger.WriteInfo($"OData entities rebuild requested for '{options.SchemaName}'.");
+		} catch (Exception odataException) when (odataException is InvalidOperationException
+				or System.Net.Http.HttpRequestException
+				or System.Net.WebException
+				or System.Threading.Tasks.TaskCanceledException
+				or Newtonsoft.Json.JsonException) {
+			// A rebuild-request failure (server error or transport/timeout/parse fault) must not undo or fail the
+			// already-published schema; surface it as a warning. Mirrors CheckRecordExists's filtered handling.
+			_logger.WriteWarning(
+				$"Schema '{options.SchemaName}' was published, but requesting the OData entities rebuild failed: " +
+				$"{odataException.Message} The schema is usable; it may not be reachable over OData until an OData build runs.");
+		}
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

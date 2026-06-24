@@ -1059,6 +1059,103 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Requests the OData entities rebuild after a successful publish so the new schema becomes reachable over OData without a manual full compile (ENG-92048).")]
+	public void Create_ShouldRequestODataBuild_AfterPublish()
+	{
+		// Arrange
+		bool publishCalled = false;
+		bool odataBuildCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				odataBuildCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				publishCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		publishCalled.Should().BeTrue(because: "the OData rebuild must follow a successful publish, not replace it");
+		odataBuildCalled.Should().BeTrue(
+			because: "create must request the OData entities rebuild so the schema is reachable over OData without a full compile");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("RunODataBuild", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("OData entities rebuild requested") && message.Contains("UsrVehicle")));
+	}
+
+	[Test]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request fails, because the schema is already published and usable (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildFails()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				return "{\"success\":false,\"errorInfo\":{\"message\":\"OData build refused.\"}}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a failed OData rebuild must not undo or fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("OData entities rebuild failed") && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[Test]
 	[Description("Anchors the schema caption to the explicit --caption-culture override when provided (override > profile > en-US).")]
 	public void Create_ShouldAnchorCaptionToOverrideCulture_WhenCaptionCultureProvided()
 	{

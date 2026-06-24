@@ -153,6 +153,48 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Posts to WorkspaceExplorerService.svc/RunODataBuild so a freshly published schema is rebuilt into the OData entities assembly without a manual full compile (ENG-92048).")]
+	public void RunODataBuild_PostsToWorkspaceExplorerRunODataBuild() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":true}");
+
+		// Act
+		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions());
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a successful RunODataBuild response must surface to the caller");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/ServiceModel/WorkspaceExplorerService.svc/RunODataBuild",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Throws an actionable error when RunODataBuild reports failure so the caller can decide how to react (the creator swallows it as a warning) (ENG-92048).")]
+	public void RunODataBuild_Throws_WhenServiceReportsFailure() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"OData build refused.\"}}");
+
+		// Act
+		Action act = () => _client.RunODataBuild(new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*OData build refused.*",
+				because: "an unsuccessful RunODataBuild response must surface the server error message");
+	}
+
+	[Test]
 	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
 	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
 		// Arrange

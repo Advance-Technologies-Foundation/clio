@@ -58,6 +58,11 @@ internal static class McpServerInstructions
 		- After `create-app`, `create-app-section`, `create-page`, `update-page` — Freedom UI bodies are AMD modules served at runtime.
 		- After `create-entity-schema` / `create-lookup` — these tools apply DDL AND publish the schema themselves,
 		  so the new entity is immediately visible to lookup pickers and sys-setting reference schema lists.
+		  They also request an OData entities rebuild, so the entity becomes reachable over OData
+		  (`/0/odata/<Entity>`, used by `odata-create` / `odata-read` / `odata-update` / `odata-delete`) without a
+		  compile. That rebuild is asynchronous (~1-2 min): a 404 / "No type was found that matches the controller"
+		  from an `odata-*` tool right after creation is the expected async gap — wait briefly and retry; do NOT run
+		  `compile-creatio` to force it.
 		- After `update-entity-schema` / `modify-entity-schema-column` — these tools already apply DDL and refresh the runtime schema themselves.
 		  Note: unlike `create-entity-schema`, these tools do not re-publish the full configuration (by design — the schema is already published).
 		  If a newly added lookup column must appear in reference schema lists immediately, run `compile-creatio`.
