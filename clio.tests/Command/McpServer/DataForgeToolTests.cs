@@ -126,6 +126,8 @@ public sealed class DataForgeToolTests {
 			.Subject;
 		result.Success.Should().BeFalse(
 			because: "a DataForge lookup read failure must be reported as a non-successful structured response");
+		result.Error.Should().NotBeNull(
+			because: "a failed read op must carry a structured error envelope");
 		result.Error!.Code.Should().Be("find_lookups_error",
 			because: "find-lookups failures expose a stable structured error code to MCP clients");
 		result.Error!.Message.Should().Be("DataForge lookups not ready",
@@ -157,6 +159,8 @@ public sealed class DataForgeToolTests {
 			.Subject;
 		result.Success.Should().BeFalse(
 			because: "a DataForge relation read failure must be reported as a non-successful structured response");
+		result.Error.Should().NotBeNull(
+			because: "a failed read op must carry a structured error envelope");
 		result.Error!.Code.Should().Be("relations_error",
 			because: "get-relations failures expose a stable structured error code to MCP clients");
 		result.Error!.Message.Should().Be("DataForge relations index missing",
