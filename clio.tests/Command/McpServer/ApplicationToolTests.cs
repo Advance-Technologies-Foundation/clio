@@ -503,6 +503,40 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Drives the real tool's catch(McpResponseDeadlineExceededException) path: when section creation exceeds the MCP response deadline the tool returns the in-progress envelope (success=false, creatio-timeout, section-created=in-progress, poll guidance) through the full chain, not only the helper in isolation.")]
+	public void ApplicationSectionCreate_Should_Return_InProgress_Envelope_When_Service_Exceeds_Response_Deadline() {
+		// Arrange — substitute the service to throw the deadline exception the heartbeat wrapper
+		// raises when the work outlives the response budget, exercising the tool's deadline branch.
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>())
+			.Returns(_ => throw new McpResponseDeadlineExceededException(
+				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+				TimeSpan.FromSeconds(150)));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act — server: null mirrors the existing heartbeat-contract tests; the deadline exception
+		// short-circuits the heartbeat wrapper and is caught by the tool itself.
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrTasksApp",
+			Caption: "Tasks",
+			Code: "UsrTask"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a deadline-bounded creation that has not finished is not a success envelope");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the deadline branch must classify as creatio-timeout so existing client guidance applies");
+		result.SectionCreated.Should().Be("in-progress",
+			because: "the tool must report in-progress through the real catch path, not verification-failed");
+		result.Error.Should().Contain("Tasks",
+			because: "the in-progress message must name the section still being created server-side");
+		result.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must be steered to poll the read tools instead of retrying create-app-section");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps an unknown side-effect verification outcome onto section-created=unknown in the structured error envelope.")]
 	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
 		// Arrange

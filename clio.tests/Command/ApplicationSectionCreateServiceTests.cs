@@ -811,6 +811,55 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Passes the explicit 600 000 ms override (the MCP background path) to the 3-arg ApplicationSection insert so the section commits server-side after the response deadline returns early.")]
+	public void CreateSection_Should_Pass_Explicit_Override_To_Three_Arg_Insert_When_Override_Provided() {
+		// Arrange — no env var, so only the explicit override is in play.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(600_000,
+			because: "the explicit override is the linchpin that lets the background insert outlive the response deadline, so it must reach the 3-arg ExecutePostRequest verbatim");
+	}
+
+	[Test]
+	[Description("Lets the explicit insert-timeout override win over the CLIO_CREATE_SECTION_TIMEOUT_SECONDS env var so the MCP background path is not capped by an operator's env value.")]
+	public void CreateSection_Should_Prefer_Explicit_Override_Over_EnvVar_When_Both_Set() {
+		// Arrange — env var set to a small value that the explicit override must beat.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, "42");
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(600_000,
+			because: "an explicit override must take precedence over the env var, otherwise the background path could be silently capped");
+	}
+
+	[TestCase(0)]
+	[TestCase(-1)]
+	[Description("Ignores a non-positive insert-timeout override and falls through to the env-var/default budget, never passing a zero or negative timeout to the insert.")]
+	public void CreateSection_Should_Ignore_NonPositive_Override_And_Fall_Through(int nonPositiveOverride) {
+		// Arrange — no env var, so the fallthrough must land on the 90 s default.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: nonPositiveOverride);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(90_000,
+			because: "a non-positive override (the 'is > 0' guard) must fall through to the default budget, not disable the insert timeout");
+	}
+
+	[Test]
 	[Description("Classifies a connection-level WebException as a transport failure that never reached Creatio and is safe to retry.")]
 	public void CreateSection_Should_Throw_Transport_Classified_Failure_When_Connect_Fails() {
 		// Arrange

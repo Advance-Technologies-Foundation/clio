@@ -107,7 +107,8 @@ public sealed class McpProgressHeartbeatTests {
 			await McpProgressHeartbeat.RunWithBeatAsync(beat, work, CancellationToken.None, FastInterval);
 
 		// Assert
-		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom").ConfigureAwait(false);
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom",
+			because: "a work exception must propagate unchanged through the heartbeat wrapper").ConfigureAwait(false);
 		int beatsAtThrow = Volatile.Read(ref beatCount);
 		await Task.Delay(TimeSpan.FromMilliseconds(150)).ConfigureAwait(false);
 		Volatile.Read(ref beatCount).Should().Be(beatsAtThrow,
@@ -214,6 +215,77 @@ public sealed class McpProgressHeartbeatTests {
 			interval: FastInterval).ConfigureAwait(false);
 
 		// Assert
-		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom").ConfigureAwait(false);
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom",
+			because: "a work exception thrown before the deadline must propagate unchanged, not be masked as a deadline").ConfigureAwait(false);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Propagates an OperationCanceledException instead of a fabricated deadline when the request is cancelled before the work completes, because the detached work does not survive server shutdown.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldThrowCancellation_WhenRequestCancelledBeforeWorkCompletes() {
+		// Arrange
+		using CancellationTokenSource cts = new CancellationTokenSource();
+		using ManualResetEventSlim workStarted = new ManualResetEventSlim(false);
+		Func<int> work = () => {
+			workStarted.Set();
+			// Outlives the cancellation below so the wait ends via cancellation, not completion.
+			Thread.Sleep(TimeSpan.FromMilliseconds(300));
+			return 1;
+		};
+
+		// Act — cancel the request once the work is provably running, well inside the long deadline.
+		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+			server: null,
+			progressToken: null,
+			operationName: "cancelled-op",
+			work: work,
+			deadline: TimeSpan.FromSeconds(30),
+			cancellationToken: cts.Token,
+			interval: FastInterval).ConfigureAwait(false);
+		workStarted.Wait(StopGuard);
+		cts.Cancel();
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "a cancelled request (or server shutdown) must surface as cancellation, not a fabricated 150 s deadline whose 'work continues, keep polling' guidance would be false").ConfigureAwait(false);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Invokes the background-fault sink with the unwrapped exception when the detached work faults after the deadline already returned, turning the otherwise-silent failure into a diagnostic trail.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldInvokeFaultSink_WhenBackgroundWorkFaultsAfterDeadline() {
+		// Arrange
+		using ManualResetEventSlim faultObserved = new ManualResetEventSlim(false);
+		Exception captured = null;
+		Action<Exception> onFault = ex => {
+			captured = ex;
+			faultObserved.Set();
+		};
+		Func<int> work = () => {
+			// Outlive the short deadline, then fault — the post-deadline background failure mode.
+			Thread.Sleep(TimeSpan.FromMilliseconds(200));
+			throw new InvalidOperationException("late boom");
+		};
+
+		// Act
+		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+			server: null,
+			progressToken: null,
+			operationName: "faulting-bg-op",
+			work: work,
+			deadline: TimeSpan.FromMilliseconds(60),
+			cancellationToken: CancellationToken.None,
+			interval: FastInterval,
+			onBackgroundFault: onFault).ConfigureAwait(false);
+
+		// Assert
+		await act.Should().ThrowAsync<McpResponseDeadlineExceededException>(
+			because: "the deadline elapses before the work faults, so the caller still receives the in-progress signal").ConfigureAwait(false);
+		faultObserved.Wait(StopGuard).Should().BeTrue(
+			because: "the background fault sink must fire once the detached work eventually faults");
+		captured.Should().BeOfType<InvalidOperationException>(
+			because: "the sink must receive the unwrapped base exception, not the AggregateException wrapper")
+			.Which.Message.Should().Be("late boom",
+				because: "the original fault detail must reach the diagnostic trail");
 	}
 }
