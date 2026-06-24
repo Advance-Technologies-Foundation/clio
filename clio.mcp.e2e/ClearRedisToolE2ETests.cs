@@ -18,6 +18,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the clear-redis MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
 public sealed class ClearRedisToolE2ETests {

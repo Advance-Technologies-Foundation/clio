@@ -12,6 +12,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("find-empty-iis-port")]
 public sealed class FindEmptyIisPortToolE2ETests

@@ -19,6 +19,7 @@ namespace Clio.Mcp.E2E;
 /// test is gated on a reachable forms-auth environment.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature(GetBrowserSessionTool.ToolName)]
 [NonParallelizable]

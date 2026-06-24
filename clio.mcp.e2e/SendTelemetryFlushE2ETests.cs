@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// uploaded as OTLP/HTTP JSON to a stub collector and removed locally on success.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("send-telemetry-flush")]
 [NonParallelizable]

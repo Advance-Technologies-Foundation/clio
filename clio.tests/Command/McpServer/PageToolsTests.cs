@@ -84,6 +84,81 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("list-page-templates rejects an invalid schema-type BEFORE resolving the environment (ENG-91825 validation-ordering invariant), so a bad schema-type is reported as a schema-type error instead of being masked by an environment-resolution failure")]
+	public void ListPageTemplates_ShouldRejectInvalidSchemaTypeBeforeResolvingEnvironment_WhenSchemaTypeIsUnknown() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — invalid schema-type paired with an environment that would also fail to resolve.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("not-a-schema-type", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown schema-type is a pure-input failure");
+		response.Error.Should().Contain("Unknown schema-type",
+			because: "the schema-type error must surface instead of an environment-resolution error");
+		commandResolver.DidNotReceive().Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("list-page-templates resolves the environment for a valid schema-type, proving the schema-type gate blocks only invalid input and does not short-circuit the normal resolution path")]
+	public void ListPageTemplates_ShouldResolveEnvironment_WhenSchemaTypeIsValid() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("environment 'does-not-exist' is not registered"));
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — valid schema-type, so the tool proceeds past the gate into environment resolution.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("web", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the environment cannot be resolved");
+		commandResolver.Received(1).Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("TryParseSchemaType maps every recognized web/mobile alias to its schema type, case- and whitespace-insensitively, so the MCP tool and the command accept the same documented filter values.")]
+	[TestCase("web", PageSchemaType.Web)]
+	[TestCase("freedomuipage", PageSchemaType.Web)]
+	[TestCase("page", PageSchemaType.Web)]
+	[TestCase("9", PageSchemaType.Web)]
+	[TestCase("  WEB  ", PageSchemaType.Web)]
+	[TestCase("mobile", PageSchemaType.Mobile)]
+	[TestCase("mobilepage", PageSchemaType.Mobile)]
+	[TestCase("10", PageSchemaType.Mobile)]
+	[TestCase("MoBiLe", PageSchemaType.Mobile)]
+	public void TryParseSchemaType_ShouldParseRecognizedAlias_WhenValueIsKnown(string value, PageSchemaType expected) {
+		// Act
+		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
+
+		// Assert
+		parsed.Should().BeTrue(because: "every documented schema-type alias must resolve to a schema type");
+		schemaType.Should().Be(expected, because: "the alias must map to its canonical schema type regardless of case or surrounding whitespace");
+		error.Should().BeNull(because: "a recognized alias produces no parse error");
+	}
+
+	[Test]
+	[Description("TryParseSchemaType is total over its input: null, blank, or unknown values return a clean false with an actionable message instead of throwing, because the method is public and may be called without the IsNullOrWhiteSpace pre-guard.")]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	[TestCase("desktop")]
+	public void TryParseSchemaType_ShouldReturnFalseWithMessage_WhenValueIsNullBlankOrUnknown(string value) {
+		// Act
+		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
+
+		// Assert
+		parsed.Should().BeFalse(because: "null, blank, or unrecognized input is not a valid schema-type");
+		schemaType.Should().Be(default(PageSchemaType), because: "an unparsed value must leave the out parameter at its default instead of a partial result");
+		error.Should().Contain("Unknown schema-type", because: "the caller needs an actionable message naming the accepted values");
+	}
+
+	[Test]
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange

@@ -20,6 +20,7 @@ public sealed class DeployCreatioToolE2ETests
 		"Infrastructure temporarily unavailable due to scheduled maintenance. Please try again later.";
 
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, discovers deploy-creatio, and verifies the tool metadata advertises destructive behavior plus the required preflight guidance.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio advertises preflight guidance and destructive metadata")]
@@ -52,6 +53,7 @@ public sealed class DeployCreatioToolE2ETests
 	}
 
 	[Test]
+	[Category("McpE2E.Sandbox")]
 	[Description("Starts the real clio MCP server, invokes deploy-creatio with an invalid archive path, and verifies that the tool reaches the real command path instead of returning the removed scheduled-maintenance stub.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio reaches the real command path")]

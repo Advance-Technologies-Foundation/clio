@@ -26,6 +26,7 @@ namespace Clio.Mcp.E2E;
 public sealed class FindAppToolE2ETests {
 	private const string FindAppToolName = FindAppTool.FindAppToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server and verifies that find-app is advertised so callers can discover the fast app-discovery tool.")]
 	[AllureTag(FindAppToolName)]
@@ -46,6 +47,7 @@ public sealed class FindAppToolE2ETests {
 			because: "find-app must be advertised so MCP callers can discover the fast app-discovery tool");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, calls find-app with no filter against the sandbox, and verifies a structured applications-with-sections envelope.")]
 	[AllureTag(FindAppToolName)]
@@ -79,6 +81,7 @@ public sealed class FindAppToolE2ETests {
 			because: "successful find-app calls should not include an error payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, calls find-app with an unknown environment, and verifies the structured error carries an actionable reg-web-app fix.")]
 	[AllureTag(FindAppToolName)]

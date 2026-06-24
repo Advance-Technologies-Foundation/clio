@@ -24,6 +24,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the sync-schemas composite MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("sync-schemas")]
 [NonParallelizable]

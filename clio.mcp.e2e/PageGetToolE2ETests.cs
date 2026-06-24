@@ -17,6 +17,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the get-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("get-page")]
 [NonParallelizable]

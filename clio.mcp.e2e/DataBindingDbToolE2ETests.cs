@@ -20,6 +20,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the DB-first data-binding MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("data-binding-db")]
 [NonParallelizable]

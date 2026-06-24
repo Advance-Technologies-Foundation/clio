@@ -23,6 +23,7 @@ namespace Clio.Mcp.E2E;
 public sealed class EntityBusinessRuleToolE2ETests {
 	private const string ToolName = CreateEntityBusinessRuleTool.BusinessRuleCreateToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises polymorphic anyOf runtime schema branches for business-rule actions through the real MCP server.")]
 	[AllureTag(ToolName)]
@@ -91,6 +92,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				because: "runtime MCP schema should explicitly reject Guid-valued sourceFilterPath paths");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a Set values business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -126,6 +128,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a multi-rule batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
 	[AllureTag(ToolName)]
@@ -157,6 +160,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds an apply-filter business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -171,11 +175,13 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["entitySchemaName"] = "UsrOrder",
-				["rules"] = new object[] { CreateApplyFilterRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rules"] = new object[] { CreateApplyFilterRule()
  }
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -190,6 +196,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the apply-filter payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a system-variable condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -225,6 +232,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a role-gate condition payload (CurrentUserRoles CONTAIN role on the left) through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -260,6 +268,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the role-gate payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
 	[AllureTag(ToolName)]
@@ -294,6 +303,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the caller should see the underlying System.Text.Json action binding error");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an entity business rule for Contact in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
@@ -349,6 +359,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an entity business rule with a system-variable condition for Contact through the real MCP server and verifies the persisted SysValue right expression.")]
 	[AllureTag(ToolName)]
@@ -401,6 +412,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a role-gate entity business rule (CurrentUserRoles CONTAIN role) for Contact through the real MCP server and verifies the persisted left SysValue + contain condition.")]
 	[AllureTag(ToolName)]
@@ -453,6 +465,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an apply-filter entity business-rule family for Contact in the target package through the real MCP server and verifies persisted parent and child metadata.")]
 	[AllureTag(ToolName)]

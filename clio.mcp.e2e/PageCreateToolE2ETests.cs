@@ -25,6 +25,7 @@ public sealed class PageCreateToolE2ETests {
 	private const string ListTemplatesToolName = PageTemplatesListTool.ToolName;
 	private const string PackageName = "Custom";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises create-page and list-page-templates in the MCP tool manifest.")]
 	[AllureTag(ToolName)]
@@ -44,6 +45,7 @@ public sealed class PageCreateToolE2ETests {
 			because: "list-page-templates must be advertised alongside create-page for template discovery");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports readable failures when create-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
@@ -75,6 +77,7 @@ public sealed class PageCreateToolE2ETests {
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects malformed schema-name via create-page before any remote calls.")]
 	[AllureTag(ToolName)]
@@ -103,6 +106,7 @@ public sealed class PageCreateToolE2ETests {
 		response.Error.Should().Contain("schema-name must start with a letter");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Lists the live Freedom UI template catalog for the sandbox environment.")]
 	[AllureTag(ListTemplatesToolName)]
@@ -134,6 +138,7 @@ public sealed class PageCreateToolE2ETests {
 			because: "BlankPageTemplate is a stable baseline template across Creatio 7.x environments");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a Freedom UI page from BlankPageTemplate and reads it back via get-page.")]
 	[AllureTag(ToolName)]
@@ -190,6 +195,7 @@ public sealed class PageCreateToolE2ETests {
 			because: "create-page must wire the new schema to the requested parent template");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("create-page returns a duplicate-name error when the schema already exists in the environment.")]
 	[AllureTag(ToolName)]
@@ -237,6 +243,7 @@ public sealed class PageCreateToolE2ETests {
 		duplicateResponse.Error.Should().Contain(schemaName).And.Contain("already exists");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports readable failures when list-page-templates is called with an invalid schema-type.")]
 	[AllureTag(ListTemplatesToolName)]

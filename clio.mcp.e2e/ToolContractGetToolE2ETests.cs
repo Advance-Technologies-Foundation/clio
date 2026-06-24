@@ -12,6 +12,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ToolContractGetTool.ToolName)]
 [NonParallelizable]
@@ -908,8 +909,14 @@ public sealed class ToolContractGetToolE2ETests {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		diagnostics.Should().Contain("An error occurred invoking 'get-tool-contract'.",
-			because: "the transport-level failure should surface as the generic invocation error for the tool");
+		// A binding-layer failure surfaces either as the SDK's generic invocation error (e.g. a missing
+		// required args wrapper) or as clio's more specific argument-deserialization diagnostic (e.g. an
+		// args payload whose type cannot bind to the tool's argument record). Both correctly identify a
+		// pre-execution binding failure for this tool, so accept either (ENG-91828 contract drift).
+		(diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
+			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal))
+			.Should().BeTrue(
+				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");
 	}
 
 	private sealed record ArrangeContext(

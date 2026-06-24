@@ -18,6 +18,7 @@ namespace Clio.Mcp.E2E;
 /// reachable environment.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature(ClearBrowserSessionTool.ToolName)]
 [NonParallelizable]

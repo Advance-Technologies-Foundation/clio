@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// real clio mcp-server process.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(GetUserCultureTool.ToolName)]
 [NonParallelizable]

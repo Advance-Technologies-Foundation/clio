@@ -46,6 +46,7 @@ public sealed class EntitySchemaToolE2ETests {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote entity schema, reads its structured properties, adds, modifies, and removes a column, and verifies the structured readbacks through the real MCP server.")]
 	[AllureTag(CreateToolName)]
@@ -97,6 +98,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertSchemaPropertiesAfterRemove(schemaProperties, schemaPropertiesAfterRemove, arrangeContext);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote lookup schema through MCP and verifies the resulting schema inherits from BaseLookup.")]
 	[AllureTag(CreateLookupToolName)]
@@ -148,6 +150,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the canonical Lookup binding should point only to the created registration row");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote lookup schema through MCP without custom columns and verifies BaseLookup inheritance plus registration side effects.")]
 	[AllureTag(CreateLookupToolName)]
@@ -193,6 +196,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the canonical Lookup binding should still point only to the created registration row");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds Binary, Image, and File columns through update-entity-schema and verifies friendly type names through structured readback.")]
 	[AllureTag(CreateToolName)]
@@ -231,6 +235,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertBinaryLikeColumnProperties(fileColumnProperties, fileColumnName, "File");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds an ImageLookup ('Image link') column through update-entity-schema and verifies it auto-references the SysImage schema so crt.ImageInput can read and write it.")]
 	[AllureTag(CreateToolName)]
@@ -266,6 +271,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertImageLookupColumnProperties(imageLookupColumnProperties, imageLookupColumnName);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds a column through update-entity-schema with only title-localizations, then applies default-value-config through modify-entity-schema-column and verifies the column remains readable.")]
 	[AllureTag(CreateToolName)]
@@ -308,6 +314,7 @@ public sealed class EntitySchemaToolE2ETests {
 			TextDefaultSettingCode);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Applies a structured system-value default through modify-entity-schema-column and verifies both legacy summary fields and structured readback metadata.")]
 	[AllureTag(CreateToolName)]
@@ -337,6 +344,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertStructuredSystemValueColumnProperties(columnProperties, arrangeContext.SchemaName, startDateColumnName, "Start date");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Applies a structured settings default through modify-entity-schema-column and verifies canonical setting code readback metadata.")]
 	[AllureTag(CreateToolName)]
@@ -371,6 +379,7 @@ public sealed class EntitySchemaToolE2ETests {
 			TextDefaultSettingCode);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Rejects a lookup Const default whose referenced record does not exist, verified end to end through the real MCP server (DRAFT-AC-06).")]
 	[AllureTag(CreateToolName)]
@@ -399,6 +408,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the rejection must explain that the default record does not exist in the referenced schema");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a schema through create-entity-schema with masked=true on a Text column and verifies masked is preserved in structured readback.")]
 	[AllureTag(CreateToolName)]
@@ -422,6 +432,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertMaskedTextColumnProperties(columnProperties, arrangeContext.SchemaName, maskedColumnName, "Masked text");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects inherited BaseLookup columns before environment resolution when create-lookup tries to redefine Name.")]
 	[AllureTag(CreateLookupToolName)]
@@ -464,6 +475,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "validation should happen before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects Cyrillic text under the en-US title key before environment resolution so a caption cannot be stored in the wrong language for the profile (ENG-91044).")]
 	[AllureTag(CreateToolName)]
@@ -497,6 +509,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the failure must name the en-US culture whose value is written in the wrong script");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when create-entity-schema is invoked with an unknown environment name.")]
 	[AllureTag(CreateToolName)]
@@ -515,6 +528,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before remote schema creation starts");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when get-entity-schema-properties is invoked with an unknown environment name.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -533,6 +547,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before schema properties are read");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when get-entity-schema-column-properties is invoked with an unknown environment name.")]
 	[AllureTag(ReadColumnToolName)]
@@ -551,6 +566,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before column properties are read");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when modify-entity-schema-column is invoked with an unknown environment name.")]
 	[AllureTag(ModifyToolName)]
@@ -577,6 +593,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before column mutations start");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when create-lookup is invoked with an unknown environment name.")]
 	[AllureTag(CreateLookupToolName)]
@@ -599,6 +616,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before remote lookup creation starts");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns stable structured schema metadata for Contact so callers can inspect existing schemas without destructive setup.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -636,6 +654,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the built-in Contact schema should expose the Name column in the nested read model");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns the merged effective column set for a built-in schema when package-name is omitted.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -669,6 +688,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the merged read must map the per-column indexed flag from the runtime payload, not hardcode it to false");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns stable structured column metadata for Contact.Name so callers can inspect existing columns without destructive setup.")]
 	[AllureTag(ReadColumnToolName)]
@@ -703,6 +723,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "column readback should expose the normalized friendly type name");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
@@ -732,6 +753,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without list-packages");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when find-entity-schema is invoked with an unknown environment name.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]

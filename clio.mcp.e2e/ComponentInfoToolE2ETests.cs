@@ -14,6 +14,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the get-component-info MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("get-component-info")]
 [NonParallelizable]

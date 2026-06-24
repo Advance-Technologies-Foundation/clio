@@ -23,6 +23,7 @@ public sealed class FsmModeToolE2ETests
 	private const string GetToolName = FsmModeTool.GetFsmModeToolName;
 	private const string SetToolName = FsmModeTool.SetFsmModeToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[AllureTag(GetToolName)]
 	[AllureDescription("Starts the real clio MCP server, invokes get-fsm-mode for the configured sandbox environment, and verifies that the structured FSM payload is returned from the live Creatio instance.")]
@@ -45,6 +46,7 @@ public sealed class FsmModeToolE2ETests
 		AssertStatusShapeMatchesMode(status);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[AllureTag(GetToolName)]
 	[AllureDescription("Starts the real clio MCP server, invokes get-fsm-mode with an invalid environment name, and verifies that the tool fails with readable diagnostics.")]
@@ -65,6 +67,7 @@ public sealed class FsmModeToolE2ETests
 		AssertFailureTextMentionsEnvironment(callResult, invalidEnvironmentName);
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[AllureTag(SetToolName)]
 	[AllureDescription("Starts the real clio MCP server, invokes set-fsm-mode with an invalid environment name, and verifies that the command fails with readable diagnostics.")]

@@ -20,6 +20,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the validate-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(PageValidateTool.ToolName)]
 [NonParallelizable]
@@ -300,7 +301,7 @@ public sealed class PageValidateToolE2ETests {
 			.Replace(
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
-					"{\"operation\":\"merge\",\"values\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
+					"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}}" +
 					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
 		await using ArrangeContext context = await ArrangeAsync();
 

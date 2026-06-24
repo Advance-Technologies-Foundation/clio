@@ -25,6 +25,7 @@ namespace Clio.Mcp.E2E;
 public sealed class PageBusinessRuleToolE2ETests {
 	private const string ToolName = CreatePageBusinessRuleTool.BusinessRuleCreateToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises polymorphic anyOf runtime schema branches only for page actions through the real MCP server.")]
 	[AllureTag(ToolName)]
@@ -64,6 +65,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "entity-only actions should not appear in the page business-rule runtime schema");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a show-element page business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -99,6 +101,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the page action payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a system-variable page condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -134,6 +137,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue page payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a multi-rule page batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
 	[AllureTag(ToolName)]
@@ -165,6 +169,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a page business rule for Contacts_FormPage in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
