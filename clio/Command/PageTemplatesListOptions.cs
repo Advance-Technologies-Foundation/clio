@@ -112,6 +112,12 @@ namespace Clio.Command {
 		public static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
 			schemaType = default;
 			error = null;
+			if (string.IsNullOrWhiteSpace(value)) {
+				// The method is public and may be called without the IsNullOrWhiteSpace pre-guard, so it must
+				// be total over its input: a null/blank value is a clean "not recognized", never a NullReferenceException.
+				error = $"Unknown schema-type '{value}'. Use 'web' or 'mobile'.";
+				return false;
+			}
 			switch (value.Trim().ToLowerInvariant()) {
 				case "web":
 				case "freedomuipage":

@@ -16,8 +16,20 @@ by the noise of env-dependent failures.
 
 Make the suite **separable by infrastructure tier** so the env-free subset can be run fast
 and deterministically by anyone, and so whoever owns the TeamCity job can later gate the
-two tiers on different steps. This change is **purely additive** (NUnit category traits only)
-— no test logic, no product code, no GitHub Actions workflow changes.
+two tiers on different steps.
+
+The **primary change is additive**: `McpE2E.*` NUnit category traits on every e2e
+test/fixture, with no harness/provisioning code and no GitHub Actions workflow changes.
+However, running the full env-free sweep to validate the tier boundary (instead of trusting a
+partial run) surfaced a cluster of genuine **env-free contract defects in product code** — so
+this branch also fixes them in the same change, otherwise the NoEnvironment tier would not be
+green and the whole exercise would be moot. Those fixes converge the business-rule tools and
+`list-page-templates` onto the ENG-91825 env-resolution-order / ENG-91830 structured-error
+contract (`clio/Command/McpServer/Tools/BusinessRuleTool.cs`,
+`clio/Command/McpServer/Tools/PageTemplatesListTool.cs`, `clio/Command/PageTemplatesListOptions.cs`,
+`clio/Command/McpServer/Tools/ToolContractGetTool.cs`), and align a few e2e assertions to the
+corrected contract (SettingsHealth, ToolContractGet, PageValidate, WorkspaceSync). See
+`mcp-e2e-tiering-validation.md` for the sweep that surfaced them and the exact before/after counts.
 
 ## Tier model
 
@@ -56,8 +68,14 @@ Counts measured on branch `feature/ENG-92150_mcp-e2e-tiering` (`net10.0`):
 
 - 346 e2e tests across 60 fixtures. Uniform fixtures carry a single class-level
   `[Category]`; mixed fixtures carry a per-test `[Category]`.
-- **NoEnvironment**: 171 tests — run with no sandbox configured: all pass, 0 fail, 0 env-gated skips.
-- **Sandbox**: 175 tests — they do **not** run clean locally without a stand. Most
+- **NoEnvironment**: 167 tests runnable env-free. The full env-free sweep with no sandbox
+  configured passes **166/167 with 0 skips**; the single remaining failure
+  (`Tool_ShouldListFeatureFlags_WhenNoArgumentsSupplied`) is fixed by PR #756 once it lands in
+  the integration branch (expected 167/167). The count settled at 167 after 3 mis-classified
+  host-infra tests moved to the Sandbox tier during the sweep (see `mcp-e2e-tiering-validation.md`
+  for the exact before/after run output — do not treat this tier as "all green" until that
+  `Skipped == 0` sweep is re-confirmed).
+- **Sandbox**: the remaining tests — they do **not** run clean locally without a stand. Most
   self-skip (`Assert.Ignore`) with an explicit reason; a subset that calls
   `EnsureSandboxIsConfigured` before checking the destructive opt-in **fails fast** with
   actionable diagnostics when the sandbox config is absent (this is the documented
@@ -111,7 +129,11 @@ Then point the suite at the sandbox via the `McpE2E` config (see `clio.mcp.e2e/A
   ```
   dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj --filter "Category=McpE2E.NoEnvironment"
   ```
-  Deterministic and green with no sandbox; suitable as a blocking pre-merge step.
+  Deterministic and green with no sandbox; suitable as a blocking pre-merge step. The
+  acceptance gate for this step is `Total == Passed` **and** `Skipped == 0`, not merely
+  `Failed == 0`: a skip is the signature of a mis-classified NoEnvironment test that silently
+  reached an environment, so the step must assert zero skips (see
+  `mcp-e2e-tiering-validation.md` → "Acceptance gate for the NoEnvironment tier").
 - **Sandbox step** — keep on the existing deploy-backed pipeline that runs
   `deploy-infrastructure` → `deploy-creatio` → `reg-web-app` → `install-gate` → seed:
   ```
@@ -130,7 +152,10 @@ Then point the suite at the sandbox via the `McpE2E` config (see `clio.mcp.e2e/A
 
 ## Non-goals
 
-- No change to test logic, assertions, or arrange behavior.
+- The **tier tagging itself** changes no test logic, assertions, or arrange behavior — it is
+  pure `[Category]` metadata. (The env-free contract fixes the full sweep surfaced *do* change
+  product code and a few assertions; that is the in-scope work described in "Goal of this
+  change" and `mcp-e2e-tiering-validation.md`, not part of the tagging.)
 - No new harness/sandbox provisioning code.
 - No GitHub Actions workflow edits.
 - No TeamCity job-config edits (documented only).

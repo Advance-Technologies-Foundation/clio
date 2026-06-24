@@ -284,6 +284,68 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the unexpected-failure command-execution envelope (exit code -1) when entity business-rule environment resolution throws a NON-environment exception (e.g. a DI/bootstrap failure), instead of letting it escape to the MCP SDK generic error. Pins the deliberate two-class discrimination — EnvironmentResolutionException maps to exit 1, every other resolve failure maps to exit -1 — against future reordering of the catch arms (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Unexpected_Failure_Envelope_When_Resolution_Throws_NonEnvironment_ForEntity() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new System.InvalidOperationException("BindingsModule.Register failed."));
+		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rules = [
+				new EntityBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new EntityMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unexpected (non-environment) resolve failure must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(-1,
+			because: "an unexpected DI/bootstrap failure is an internal error mapped to exit code -1, mirroring BaseTool.InternalExecute, not the exit code 1 reserved for a caller-actionable environment error");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("BindingsModule.Register failed."),
+			because: "the unexpected-failure envelope must carry the underlying exception message for diagnostics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the unexpected-failure command-execution envelope (exit code -1) when page business-rule environment resolution throws a NON-environment exception (e.g. a DI/bootstrap failure), instead of letting it escape to the MCP SDK generic error. Pins the deliberate two-class discrimination — EnvironmentResolutionException maps to exit 1, every other resolve failure maps to exit -1 — against future reordering of the catch arms (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Unexpected_Failure_Envelope_When_Resolution_Throws_NonEnvironment_ForPage() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new System.InvalidOperationException("BindingsModule.Register failed."));
+		CreatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrOrderFormPage",
+			Rules = [
+				new PageBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new PageMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unexpected (non-environment) resolve failure must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(-1,
+			because: "an unexpected DI/bootstrap failure is an internal error mapped to exit code -1, mirroring BaseTool.InternalExecute, not the exit code 1 reserved for a caller-actionable environment error");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("BindingsModule.Register failed."),
+			because: "the unexpected-failure envelope must carry the underlying exception message for diagnostics");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Marks create-entity-business-rules as a single required args wrapper so runtime calls use the same shape as other clio MCP tools.")]
 	public void BusinessRuleCreate_Should_Expose_Required_Args_Wrapper() {
 		// Arrange
