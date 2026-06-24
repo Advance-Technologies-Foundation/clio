@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 
@@ -179,9 +180,10 @@ internal static class ClioCliCommandRunner {
 		string environmentName,
 		CancellationToken cancellationToken) {
 		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
-		string baseUri = environment.IsNetCore
-			? environment.Uri
-			: $"{environment.Uri.TrimEnd('/')}/0";
+		// Compose the probe URL through ServiceUrlBuilder so the .NET-Framework `0/` alias is applied
+		// by the same canonical rule clio uses everywhere (it switches on IsNetCore) instead of
+		// re-deriving the `/0` suffix here. Mirrors LookupRegistrationProbe's use of ServiceUrlBuilder.
+		string probeUrl = new ServiceUrlBuilder(environment).Build(CliogateProbeRoute);
 
 		using HttpClientHandler handler = new() {
 			// Self-signed dev/CI stands serve over HTTPS with untrusted certs; this probe is a
@@ -201,7 +203,7 @@ internal static class ClioCliCommandRunner {
 			CliogateHttpReadinessAttempts,
 			CliogateHttpReadinessDelay,
 			CliogateHttpReadinessOverallTimeout);
-		await probe.WaitUntilServingAsync(baseUri, CliogateProbeRoute, cancellationToken);
+		await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
 	}
 
 	private static bool TryReadSuccessFlag(string output, out bool success) {

@@ -793,7 +793,11 @@ public class BindingsModule {
 					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
-					|| implementedInterface == typeof(IReauthExecutor)) {
+					|| implementedInterface == typeof(IReauthExecutor)
+					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
+					// attempt budget, and inter-attempt delays); it is constructed by the e2e
+					// readiness wait, not resolved from DI.
+					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

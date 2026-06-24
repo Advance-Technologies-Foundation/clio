@@ -1,21 +1,27 @@
+using System;
 using System.Net;
 using System.Net.Http;
-using Clio.Mcp.E2E.Support.Configuration;
+using System.Threading;
+using System.Threading.Tasks;
+using Clio.Common;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E;
+namespace Clio.Tests.Common;
 
 /// <summary>
 /// Unit tests for <see cref="CliogateHttpReadinessProbe"/>. They run against an in-process
 /// stub <see cref="HttpMessageHandler"/> (no sockets, no Creatio, no network I/O), so they are
-/// true unit tests that execute everywhere the unit suite runs and validate the
+/// true unit tests that execute in the <c>clio.tests</c> CI unit gate and validate the
 /// "serve on 2xx/401/403, retry on 404/3xx/5xx" polling contract locally.
 /// </summary>
-[TestFixture]
 [Category("Unit")]
-public sealed class CliogateHttpReadinessProbeTests {
+[Property("Module", "Common")]
+[TestFixture]
+internal sealed class CliogateHttpReadinessProbeTests {
 	private const string ProbeRoute = "rest/CreatioApiGateway/GetApiVersion";
-	private const string BaseUri = "https://localhost/";
+	private const string ProbeUrl = "https://localhost/" + ProbeRoute;
+	private const string CredentialedProbeUrl = "https://user:secret@localhost/" + ProbeRoute;
 
 	[Test]
 	[Description("Retries while the cliogate route returns 404 and succeeds once the route starts serving a 200 status.")]
@@ -27,7 +33,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 10);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		await act.Should().NotThrowAsync(
@@ -45,7 +51,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
@@ -68,7 +74,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 5);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		await act.Should().NotThrowAsync(
@@ -85,7 +91,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 5);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		await act.Should().NotThrowAsync(
@@ -104,7 +110,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 10);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		await act.Should().NotThrowAsync(
@@ -122,7 +128,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
@@ -142,7 +148,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
@@ -165,7 +171,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 			overallTimeout: TimeSpan.FromMilliseconds(20));
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, CancellationToken.None);
 
 		// Assert
 		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
@@ -181,33 +187,14 @@ public sealed class CliogateHttpReadinessProbeTests {
 	}
 
 	[Test]
-	[Description("Composes the probe URL against a .NET-Framework base URI that already carries the /0 segment without dropping it.")]
-	public async Task WaitUntilServingAsync_ShouldPreserveNetFrameworkZeroSegment_WhenBaseUriEndsWithZero() {
-		// Arrange
-		const string netFrameworkBaseUri = "https://localhost/0/";
-		using SequencedHttpMessageHandler handler = SequencedHttpMessageHandler.AlwaysReturns(HttpStatusCode.NotFound);
-		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 1);
-
-		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(netFrameworkBaseUri, ProbeRoute, CancellationToken.None);
-
-		// Assert
-		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
-			because: "the route never serves, so the probe reports the URI it actually probed")).Which;
-		exception.ProbedUri.Should().Be($"{netFrameworkBaseUri}{ProbeRoute}",
-			because: "the /0 net-framework segment must survive URL composition rather than being dropped by Uri concatenation");
-	}
-
-	[Test]
 	[Description("Strips user:pass userinfo from the probed URI so credentials in the base URI cannot leak into the timeout exception or logs.")]
 	public async Task WaitUntilServingAsync_ShouldStripUserInfoFromProbedUri_WhenBaseUriCarriesCredentials() {
 		// Arrange
-		const string credentialedBaseUri = "https://user:secret@localhost/";
 		using SequencedHttpMessageHandler handler = SequencedHttpMessageHandler.AlwaysReturns(HttpStatusCode.NotFound);
 		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 1);
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(credentialedBaseUri, ProbeRoute, CancellationToken.None);
+		Func<Task> act = () => probe.WaitUntilServingAsync(CredentialedProbeUrl, CancellationToken.None);
 
 		// Assert
 		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
@@ -233,7 +220,7 @@ public sealed class CliogateHttpReadinessProbeTests {
 		cts.CancelAfter(TimeSpan.FromMilliseconds(20));
 
 		// Act
-		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, cts.Token);
+		Func<Task> act = () => probe.WaitUntilServingAsync(ProbeUrl, cts.Token);
 
 		// Assert
 		await act.Should().ThrowAsync<OperationCanceledException>(

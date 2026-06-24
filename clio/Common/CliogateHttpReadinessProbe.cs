@@ -1,7 +1,10 @@
+using System;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace Clio.Mcp.E2E.Support.Configuration;
+namespace Clio.Common;
 
 /// <summary>
 /// Polls a cliogate HTTP route until the cliogate REST module is actually serving requests.
@@ -23,11 +26,15 @@ internal interface ICliogateHttpReadinessProbe {
 	/// Polls the cliogate route until it returns a status proving the route is serving
 	/// (<c>2xx</c>, <c>401</c> or <c>403</c>), or throws when retries are exhausted.
 	/// </summary>
-	/// <param name="baseUri">Environment base URI (for example <c>https://host/</c> or <c>https://host/0/</c>).</param>
-	/// <param name="relativeRoute">cliogate route relative to <paramref name="baseUri"/>, for example <c>rest/CreatioApiGateway/GetApiVersion</c>.</param>
+	/// <param name="requestUri">
+	/// Absolute cliogate route URI to probe, for example
+	/// <c>https://host/rest/CreatioApiGateway/GetApiVersion</c> or
+	/// <c>https://host/0/rest/CreatioApiGateway/GetApiVersion</c> on .NET Framework. Compose it with
+	/// <see cref="ServiceUrlBuilder"/> so the <c>/0</c> net-framework alias is applied consistently.
+	/// </param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>A task that completes once the route returns a serving status.</returns>
-	Task WaitUntilServingAsync(string baseUri, string relativeRoute, CancellationToken cancellationToken);
+	Task WaitUntilServingAsync(string requestUri, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -73,8 +80,9 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 	}
 
 	/// <inheritdoc />
-	public async Task WaitUntilServingAsync(string baseUri, string relativeRoute, CancellationToken cancellationToken) {
-		Uri requestUri = BuildRequestUri(baseUri, relativeRoute);
+	public async Task WaitUntilServingAsync(string requestUri, CancellationToken cancellationToken) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
+		Uri probedUri = new(requestUri, UriKind.Absolute);
 		HttpStatusCode? lastStatusCode = null;
 		string? lastError = null;
 		int attemptsPerformed = 0;
@@ -88,13 +96,13 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		for (int attempt = 0; attempt < _maxAttempts; attempt++) {
 			cancellationToken.ThrowIfCancellationRequested();
 			if (deadlineCts.IsCancellationRequested) {
-				lastError = $"overall readiness deadline of {_overallTimeout.TotalSeconds:0.#}s exceeded";
+				lastError = OverallDeadlineExceededMessage();
 				break;
 			}
 
 			attemptsPerformed++;
 			try {
-				using HttpRequestMessage request = new(HttpMethod.Get, requestUri);
+				using HttpRequestMessage request = new(HttpMethod.Get, probedUri);
 				using HttpResponseMessage response = await _httpClient.SendAsync(request, probeToken);
 				lastStatusCode = response.StatusCode;
 				lastError = null;
@@ -112,7 +120,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 				// Per-request timeout or the overall deadline (not the caller cancelling).
 				lastStatusCode = null;
 				if (deadlineCts.IsCancellationRequested) {
-					lastError = $"overall readiness deadline of {_overallTimeout.TotalSeconds:0.#}s exceeded";
+					lastError = OverallDeadlineExceededMessage();
 					break;
 				}
 
@@ -126,7 +134,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 					throw;
 				} catch (OperationCanceledException) {
 					// Overall deadline tripped during the inter-attempt delay.
-					lastError = $"overall readiness deadline of {_overallTimeout.TotalSeconds:0.#}s exceeded";
+					lastError = OverallDeadlineExceededMessage();
 					break;
 				}
 			}
@@ -135,8 +143,11 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		// Report the attempts actually performed, not _maxAttempts: when the overall deadline trips
 		// the loop breaks early, so reporting the cap would blur "deadline tripped" against
 		// "attempts exhausted". A genuine attempt-budget exhaustion still reports _maxAttempts.
-		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(requestUri), lastStatusCode, lastError, attemptsPerformed);
+		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(probedUri), lastStatusCode, lastError, attemptsPerformed);
 	}
+
+	private string OverallDeadlineExceededMessage() =>
+		$"overall readiness deadline of {_overallTimeout.TotalSeconds:0.#}s exceeded";
 
 	/// <summary>
 	/// Decides whether an HTTP status proves the cliogate REST module is actually serving the route.
@@ -162,12 +173,6 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		int code = (int)statusCode;
 		return code is >= 200 and < 300
 			|| statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
-	}
-
-	private static Uri BuildRequestUri(string baseUri, string relativeRoute) {
-		string normalizedBase = baseUri.EndsWith('/') ? baseUri : baseUri + "/";
-		string normalizedRoute = relativeRoute.StartsWith('/') ? relativeRoute[1..] : relativeRoute;
-		return new Uri(new Uri(normalizedBase, UriKind.Absolute), normalizedRoute);
 	}
 
 	/// <summary>
