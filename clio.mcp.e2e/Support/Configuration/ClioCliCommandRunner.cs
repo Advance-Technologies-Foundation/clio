@@ -9,6 +9,18 @@ using FluentAssertions;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal static class ClioCliCommandRunner {
+	// Login-readiness budget. Runs FIRST in EnsureCliogateInstalledAsync, BEFORE the install-gate
+	// loop, against the freshly-deployed stand. A just-deployed Creatio accepts TCP connections and
+	// even serves anonymous pages before the auth pipeline finishes warming up; without this gate the
+	// very first install-gate immediately fails inside CreatioClient.Login (HttpWebRequest.GetResponse)
+	// and cascades to ~30 fixtures. ping-app is an AUTHENTICATED probe on .NET-Core stands: clio routes
+	// it through CreatioClient.ExecuteGetRequest, which forces CreatioClient.Login via the lazy
+	// AuthCookie — the SAME login codepath install-gate's UploadFile uses. So a 401 (bad creds / wrong
+	// --ep) keeps failing this gate (cleanly isolating the auth case) while a transient warm-up is
+	// absorbed by the retries. Mirrors the 12 × 5s shape of the readiness loops below.
+	private const int CliogateLoginReadinessAttempts = 12;
+	private static readonly TimeSpan CliogateLoginReadinessDelay = TimeSpan.FromSeconds(5);
+
 	private const int CliogateReadinessAttempts = 12;
 	private static readonly TimeSpan CliogateReadinessDelay = TimeSpan.FromSeconds(5);
 
@@ -99,6 +111,13 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
+		// Gate on an AUTHENTICATED login before attempting install-gate. install-gate's first action
+		// is CreatioClient.Login; on a stand that was just deployed that login throws a WebException
+		// (connect/timeout while warming up) and the whole arrange phase collapses. Waiting until the
+		// stand actually accepts a login here absorbs the warm-up window and, if login NEVER succeeds,
+		// fails with a credentials-specific diagnostic instead of a misleading install-gate failure.
+		await WaitForLoginReadinessAsync(settings, environmentName, cancellationToken);
+
 		ClioCliCommandResult? lastInstallResult = null;
 		for (int attempt = 0; attempt < CliogateInstallAttempts; attempt++) {
 			lastInstallResult = await RunAsync(
@@ -147,6 +166,61 @@ internal static class ClioCliCommandRunner {
 			because:
 			$"cliogate must be installed before MCP tests that require it. " +
 			$"install stderr: {lastInstallResult.StandardError}. install stdout: {lastInstallResult.StandardOutput}");
+	}
+
+	/// <summary>
+	/// Polls <c>ping-app -e &lt;env&gt;</c> until it succeeds, confirming the freshly-deployed stand
+	/// accepts an AUTHENTICATED session before install-gate is attempted. On .NET-Core stands clio
+	/// runs <c>ping-app</c> through <c>CreatioClient.ExecuteGetRequest</c>, which forces
+	/// <c>CreatioClient.Login</c> via the lazily-initialised auth cookie — the same login path
+	/// install-gate's <c>UploadFile</c> exercises — so a 401/bad-credentials failure keeps failing
+	/// this gate while a transient warm-up is retried away. On exhaustion it throws with the last
+	/// command's exit code and full stdout/stderr (also written to <see cref="TestContext.Out"/>) so
+	/// a never-loginable stand (creds / <c>--ep</c>) is cleanly distinguishable from a slow warm-up.
+	/// </summary>
+	private static async Task WaitForLoginReadinessAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		ClioCliCommandResult? lastResult = null;
+		for (int attempt = 0; attempt < CliogateLoginReadinessAttempts; attempt++) {
+			lastResult = await RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: cancellationToken);
+			if (lastResult.ExitCode == 0) {
+				return;
+			}
+
+			if (attempt < CliogateLoginReadinessAttempts - 1) {
+				await Task.Delay(CliogateLoginReadinessDelay, cancellationToken);
+			}
+		}
+
+		lastResult.Should().NotBeNull(
+			because: "login-readiness polling should capture the last ping-app result for diagnostics");
+
+		// Emit the COMPLETE captured output before asserting: FluentAssertions truncates long
+		// assertion messages and would otherwise hide the real login failure (HTTP status / 401 /
+		// "Cannot connect"). TestContext output is not truncated, so the full clio error is visible.
+		int totalSeconds =
+			(int)(CliogateLoginReadinessAttempts * CliogateLoginReadinessDelay.TotalSeconds);
+		TestContext.Out.WriteLine(
+			$"[login-readiness] exit code: {lastResult!.ExitCode}");
+		TestContext.Out.WriteLine(
+			$"[login-readiness] command: clio {lastResult.Arguments}");
+		TestContext.Out.WriteLine(
+			$"[login-readiness] full stdout:{System.Environment.NewLine}{lastResult.StandardOutput}");
+		TestContext.Out.WriteLine(
+			$"[login-readiness] full stderr:{System.Environment.NewLine}{lastResult.StandardError}");
+
+		lastResult.ExitCode.Should().Be(0,
+			because:
+			$"the stand '{environmentName}' did not become loginable within {totalSeconds}s "
+			+ $"({CliogateLoginReadinessAttempts} ping-app attempts every "
+			+ $"{CliogateLoginReadinessDelay.TotalSeconds:0}s); a login that never succeeds points at "
+			+ $"credentials/endpoint rather than warm-up. last exit code: {lastResult.ExitCode}. "
+			+ $"ping-app stdout: {lastResult.StandardOutput}. ping-app stderr: {lastResult.StandardError}");
 	}
 
 	private static async Task WaitForCliogateReadinessAsync(
