@@ -11,11 +11,11 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("restore-db")]
 public sealed class RestoreDbToolE2ETests {
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, discovers the restore-db tools, and verifies that all three restore entrypoints are advertised as destructive operations.")]
 	[AllureTag(RestoreDbTool.RestoreDbByEnvironmentToolName)]
 	[AllureTag(RestoreDbTool.RestoreDbByCredentialsToolName)]
@@ -50,6 +50,7 @@ public sealed class RestoreDbToolE2ETests {
 	}
 
 	[Test]
+	[Category("McpE2E.Sandbox")]
 	[Description("Starts the real clio MCP server, invokes restore-db-to-local-server with invalid inputs, and verifies that the response still includes a database-operation log artifact path.")]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]
