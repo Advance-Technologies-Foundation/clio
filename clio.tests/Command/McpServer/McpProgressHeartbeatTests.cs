@@ -191,7 +191,8 @@ public sealed class McpProgressHeartbeatTests {
 			interval: FastInterval).ConfigureAwait(false);
 
 		// Assert
-		(await act.Should().ThrowAsync<McpResponseDeadlineExceededException>()
+		(await act.Should().ThrowAsync<McpResponseDeadlineExceededException>(
+				because: "work that outlives the response deadline must surface the deadline exception, not the work result")
 			.ConfigureAwait(false))
 			.Which.OperationName.Should().Be("slow-op",
 				because: "the deadline exception must name the operation so the tool can build an in-progress envelope");

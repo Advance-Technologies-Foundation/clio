@@ -9,7 +9,7 @@ namespace Clio.Command.McpServer.Tools;
 /// tool catching this exception must surface an "in-progress, poll" result rather than a failure
 /// (see <c>spec/adr/adr-create-app-section-response-deadline.md</c>, ENG-91316).
 /// </summary>
-internal sealed class McpResponseDeadlineExceededException : Exception {
+public sealed class McpResponseDeadlineExceededException : Exception {
 
 	/// <summary>Initializes a new instance for the given operation and deadline.</summary>
 	/// <param name="operationName">Human-readable operation label (typically the MCP tool name).</param>

@@ -4342,3 +4342,14 @@ Deferred (judgment-call, left for author): unbounded background-continuation fan
 Verified: clio + clio.tests build clean (0 errors); net10.0 Module=McpServer 1386 pass / 1 skip; ApplicationSectionCreateServiceTests 59 pass. net8.0 runtime not installed locally (CI covers it). No conflict markers, no new CLIO warnings in edited files.
 Files: clio/Command/McpServer/Tools/{McpProgressHeartbeat,ApplicationTool,ToolContractGetTool}.cs; clio.tests/Command/McpServer/{McpProgressHeartbeatTests,ApplicationToolTests}.cs; clio.tests/Command/ApplicationSectionCreateServiceTests.cs
 Impact: closes the reviewer's contract-drift, diagnosability, cancellation-semantics and CI-coverage Major items; architectural/governance items explicitly returned to the author.
+
+## 2026-06-24 – PR #759 follow-up (concurrency doc, Sonar S3871, e2e cleanup)
+Context: Automated drive-to-green pass; reviewer's fresh re-review at c64f9a89 left only the background-fan-out thread open and 1 Sonar new issue.
+Changes:
+- McpResponseDeadlineExceededException now public (Sonar S3871) — widening visibility is harmless; the type is thrown across the heartbeat surface and InternalsVisibleTo still covers internal callers.
+- RunWithProgressAndDeadlineAsync remarks: added the explicit unbounded-fan-out concurrency assumption the reviewer offered as a thread-closing alternative — single-session stdio + McpToolExecutionLock serialise foreground execution, so detached work accumulates only across sequentially timed-out calls, never parallel bursts; a multiplexed transport would require a bounded SemaphoreSlim/queue.
+- ApplicationSectionToolE2ETests: joined the accept loop before iterating heldConnections (removes the latent List<T> race), and added TryDeleteDirectory cleanup for both temp HOME dirs (deadline + transport tests).
+- McpProgressHeartbeatTests: added `because` to the previously-bare deadline ThrowAsync assertion.
+Deferred (unchanged): duplication/magic-string helper extraction (reviewer "Consider"), ADR-Proposed + Open Q1 + ENG-91316 AC re-scope (project/governance decision).
+Verified: clio + clio.tests + clio.mcp.e2e build clean (0 errors); net10.0 Module=McpServer 1386 pass / 1 skip / 0 fail.
+Files: clio/Command/McpServer/Tools/{McpProgressHeartbeat,McpResponseDeadlineExceededException}.cs; clio.mcp.e2e/ApplicationSectionToolE2ETests.cs; clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs

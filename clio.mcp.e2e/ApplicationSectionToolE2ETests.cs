@@ -118,31 +118,36 @@ public sealed class ApplicationSectionToolE2ETests {
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = "unreachable-e2e",
-					["application-code"] = "UsrMissingApp",
-					["caption"] = "Orders",
-					["entity-schema-name"] = "UsrOrders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+		try {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = "unreachable-e2e",
+						["application-code"] = "UsrMissingApp",
+						["caption"] = "Orders",
+						["entity-schema-name"] = "UsrOrders"
+					}
+				},
+				cancellationTokenSource.Token);
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
 
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "classified failures must stay inside the structured payload instead of becoming MCP invocation errors");
-		response.Success.Should().BeFalse(
-			because: "create-app-section cannot succeed against an unreachable environment");
-		response.ErrorClass.Should().Be("transport",
-			because: "an unreachable URI means the request never reached Creatio (ENG-90679 classification)");
-		response.SectionCreated.Should().Be("false",
-			because: "no side effect is possible when the server is unreachable");
-		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
-			because: "the agent needs an actionable next step instead of blind retries");
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "classified failures must stay inside the structured payload instead of becoming MCP invocation errors");
+			response.Success.Should().BeFalse(
+				because: "create-app-section cannot succeed against an unreachable environment");
+			response.ErrorClass.Should().Be("transport",
+				because: "an unreachable URI means the request never reached Creatio (ENG-90679 classification)");
+			response.SectionCreated.Should().Be("false",
+				because: "no side effect is possible when the server is unreachable");
+			response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
+				because: "the agent needs an actionable next step instead of blind retries");
+		}
+		finally {
+			TryDeleteDirectory(tempHome);
+		}
 	}
 
 	[Test]
@@ -226,13 +231,31 @@ public sealed class ApplicationSectionToolE2ETests {
 				because: "the agent must be told to poll the read tools instead of retrying or falling back to create-page");
 		}
 		finally {
+			// Join the accept loop before touching heldConnections: it is the only writer
+			// (heldConnections.Add), so awaiting it first turns the subsequent iteration into a
+			// single-threaded read and removes the latent List<T> data race.
 			await acceptCts.CancelAsync();
+			try {
+				await acceptLoop;
+			}
+			catch (OperationCanceledException) { /* expected on teardown */ }
 			foreach (TcpClient client in heldConnections) {
 				client.Dispose();
 			}
 
 			stallListener.Stop();
+			TryDeleteDirectory(tempHome);
 		}
+	}
+
+	private static void TryDeleteDirectory(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, recursive: true);
+			}
+		}
+		catch (IOException) { /* best-effort cleanup: a held handle must never fail the test */ }
+		catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
 	}
 
 	[Test]

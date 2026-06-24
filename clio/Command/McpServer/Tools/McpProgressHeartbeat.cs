@@ -128,6 +128,18 @@ internal static class McpProgressHeartbeat {
 	/// visible to a later read tool (for example <c>list-app-sections</c>). When the deadline (or
 	/// <paramref name="cancellationToken"/>) wins, the abandoned task's exception is observed in a
 	/// continuation so it never surfaces as an <c>UnobservedTaskException</c>.
+	/// <para>
+	/// <strong>Concurrency assumption (intentionally unbounded).</strong> Each over-deadline call
+	/// detaches its <paramref name="work"/> with no semaphore, queue, or fan-out cap. This is safe
+	/// under clio's current execution model: the MCP server is a single-session, single-client
+	/// stdio process (one agent driving one connection) and <see cref="McpToolExecutionLock"/>
+	/// serialises foreground tool execution. The single client issues calls sequentially and waits
+	/// for each response, so detached work cannot fan out in parallel — it can only accumulate
+	/// across <em>sequentially</em> timed-out create calls (an inherently rare, agent-paced event),
+	/// never as concurrent parallel bursts. Should clio ever move to a multiplexed or multi-client
+	/// transport, this assumption no longer holds and a bounded <see cref="SemaphoreSlim"/>/work-queue
+	/// must gate the detached background work.
+	/// </para>
 	/// </remarks>
 	/// <typeparam name="TResult">The synchronous result type produced by <paramref name="work"/>.</typeparam>
 	/// <param name="server">The active MCP server used to send progress notifications.</param>
