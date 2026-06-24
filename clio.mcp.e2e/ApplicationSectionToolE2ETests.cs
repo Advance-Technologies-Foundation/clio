@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.NUnit;
@@ -141,6 +143,96 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "no side effect is possible when the server is unreachable");
 		response.RetryGuidance.Should().NotBeNullOrWhiteSpace(
 			because: "the agent needs an actionable next step instead of blind retries");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server against a stalling endpoint with a 1s response deadline and verifies create-app-section returns the in-progress envelope before the client ceiling instead of a -32001 transport error.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create returns in-progress when the response deadline elapses")]
+	[AllureDescription("Points the environment at a TCP endpoint that accepts the connection but never responds, sets CLIO_MCP_RESPONSE_DEADLINE_SECONDS=1, invokes create-app-section, and verifies the response deadline yields error-class=creatio-timeout / section-created=in-progress with poll guidance (ENG-91316) rather than letting the call ride to the client's hard ceiling.")]
+	public async Task ApplicationSectionCreate_Should_Return_InProgress_When_Response_Deadline_Elapses() {
+		// Arrange — a loopback listener that accepts the TCP connection but never sends a response,
+		// so the backend call hangs past the tiny response deadline (a refused port would instead
+		// fail fast as a transport error, classified before the deadline).
+		using TcpListener stallListener = new(IPAddress.Loopback, 0);
+		stallListener.Start();
+		int stallPort = ((IPEndPoint)stallListener.LocalEndpoint).Port;
+		using CancellationTokenSource acceptCts = new();
+		List<TcpClient> heldConnections = new();
+		Task acceptLoop = Task.Run(async () => {
+			try {
+				while (!acceptCts.IsCancellationRequested) {
+					TcpClient client = await stallListener.AcceptTcpClientAsync(acceptCts.Token);
+					heldConnections.Add(client); // hold the socket open and never write a response
+				}
+			}
+			catch (OperationCanceledException) { /* expected on teardown */ }
+			catch (ObjectDisposedException) { /* expected when the listener stops */ }
+			catch (SocketException) { /* expected when the listener stops */ }
+		});
+
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-deadline-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		// Fresh clio MCP process reads this at startup, so the static default picks up the 1s override.
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "1";
+		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			$$"""
+			{
+			  "ActiveEnvironmentKey": "stalling-e2e",
+			  "Environments": {
+			    "stalling-e2e": {
+			      "Uri": "http://127.0.0.1:{{stallPort}}",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		try {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = "stalling-e2e",
+						["application-code"] = "UsrStallApp",
+						["caption"] = "Tasks"
+					}
+				},
+				cancellationTokenSource.Token);
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "a response-deadline timeout must stay a structured payload, never a -32001 MCP invocation error");
+			response.Success.Should().BeFalse(
+				because: "the section creation did not finish within the response deadline");
+			response.ErrorClass.Should().Be("creatio-timeout",
+				because: "the deadline path reuses the creatio-timeout class so existing client guidance applies");
+			response.SectionCreated.Should().Be("in-progress",
+				because: "exceeding the response deadline means the section is still being created server-side, not verification-failed");
+			response.RetryGuidance.Should().Contain("list-app-sections",
+				because: "the agent must be told to poll the read tools instead of retrying or falling back to create-page");
+		}
+		finally {
+			await acceptCts.CancelAsync();
+			foreach (TcpClient client in heldConnections) {
+				client.Dispose();
+			}
+
+			stallListener.Stop();
+		}
 	}
 
 	[Test]

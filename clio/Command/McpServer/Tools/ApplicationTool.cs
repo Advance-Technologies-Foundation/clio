@@ -203,11 +203,19 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	internal const string ApplicationSectionCreateToolName = "create-app-section";
 
 	/// <summary>
+	/// Section-insert budget (ms) used when the call runs behind the MCP response deadline. Far
+	/// larger than the synchronous-path 90 s default so the backend section generation — which can
+	/// exceed the client's hard request ceiling on a cold/large stand (ENG-91316) — completes in the
+	/// background after the tool has already returned an "in-progress, poll" envelope.
+	/// </summary>
+	internal const int BackgroundInsertTimeoutMs = 600_000;
+
+	/// <summary>
 	/// Creates a section in an existing Creatio application and returns structured readback data.
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout. On failure the response carries error-class (transport | creatio-timeout | server-error), section-created (true | false | unknown), and retry-guidance — follow that guidance instead of blind retries: on creatio-timeout the operation may still complete server-side, so verify with list-app-sections before retrying.")]
+	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout. If the response is bounded by a deadline before the work finishes it returns error-class=creatio-timeout with section-created=in-progress: the section is still being created server-side — do NOT retry create-app-section (that would duplicate it) and do NOT fall back to create-page; instead poll list-app-sections / get-app-info until the section and its <Code>_ListPage / <Code>_FormPage appear. On failure the response carries error-class (transport | creatio-timeout | server-error), section-created (true | false | unknown | in-progress), and retry-guidance — follow that guidance instead of blind retries.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, code, icon-background, with-mobile-pages (optional). entity-schema-name must reference an existing object (validated before creation); several sections may target the same object, so reuse is allowed. The section code is generated from the caption; a non-Latin caption (for example 'Контакти') cannot produce a valid Latin code, so pass an explicit code such as code='Contacts'. If the object does not exist, creation fails with a 'does not exist' error; on a detail-less rejection a section with that code may already exist — inspect existing sections with list-app-sections.")]
 		[Required]
@@ -222,7 +230,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
 			}
-			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
+			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
@@ -236,9 +244,13 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 						args.WithMobilePages,
 						resolvedIconBackground,
 						args.CaptionCulture,
-						args.Code)),
-				cancellationToken).ConfigureAwait(false);
+						args.Code),
+					BackgroundInsertTimeoutMs),
+				deadline: null,
+				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
+		} catch (McpResponseDeadlineExceededException) {
+			return ApplicationToolHelper.CreateSectionInProgressResponse(args.Caption, args.Code);
 		} catch (ApplicationSectionCreateException ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex);
 		} catch (Exception ex) {

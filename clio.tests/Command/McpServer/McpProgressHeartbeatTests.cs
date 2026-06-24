@@ -141,4 +141,79 @@ public sealed class McpProgressHeartbeatTests {
 		beatAttempts.Should().BeGreaterThanOrEqualTo(1,
 			because: "the heartbeat must keep attempting beats even after a sink failure");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the work result when the deadline-bounded run completes within the response deadline.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldReturnResult_WhenWorkCompletesWithinDeadline() {
+		// Arrange
+		Func<int> work = () => 42;
+
+		// Act
+		int result = await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+			server: null,
+			progressToken: null,
+			operationName: "fast-op",
+			work: work,
+			deadline: TimeSpan.FromSeconds(5),
+			cancellationToken: CancellationToken.None,
+			interval: FastInterval);
+
+		// Assert
+		result.Should().Be(42,
+			because: "work finishing before the deadline must return its value unchanged, like the synchronous path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws McpResponseDeadlineExceededException when work outlives the deadline, yet leaves the work running to completion in the background.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldThrowAndKeepWorkRunning_WhenDeadlineElapses() {
+		// Arrange
+		using ManualResetEventSlim workCompleted = new ManualResetEventSlim(false);
+		Func<int> work = () => {
+			// Outlives the short deadline below, then records that it finished anyway.
+			Thread.Sleep(TimeSpan.FromMilliseconds(300));
+			workCompleted.Set();
+			return 7;
+		};
+
+		// Act
+		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+			server: null,
+			progressToken: null,
+			operationName: "slow-op",
+			work: work,
+			deadline: TimeSpan.FromMilliseconds(60),
+			cancellationToken: CancellationToken.None,
+			interval: FastInterval).ConfigureAwait(false);
+
+		// Assert
+		(await act.Should().ThrowAsync<McpResponseDeadlineExceededException>()
+			.ConfigureAwait(false))
+			.Which.OperationName.Should().Be("slow-op",
+				because: "the deadline exception must name the operation so the tool can build an in-progress envelope");
+		workCompleted.Wait(StopGuard).Should().BeTrue(
+			because: "the deadline must NOT cancel the work — it continues on the long-lived server so a later poll can observe the result");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Propagates a work exception unchanged when the deadline-bounded work throws before the deadline elapses.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldPropagateException_WhenWorkThrowsBeforeDeadline() {
+		// Arrange
+		Func<int> work = () => throw new InvalidOperationException("boom");
+
+		// Act
+		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+			server: null,
+			progressToken: null,
+			operationName: "throwing-op",
+			work: work,
+			deadline: TimeSpan.FromSeconds(5),
+			cancellationToken: CancellationToken.None,
+			interval: FastInterval).ConfigureAwait(false);
+
+		// Assert
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom").ConfigureAwait(false);
+	}
 }

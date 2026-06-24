@@ -54,6 +54,36 @@ internal static class McpProgressHeartbeat {
 	}
 
 	/// <summary>
+	/// Environment variable that overrides <see cref="DefaultResponseDeadline"/>, expressed in
+	/// seconds (invariant culture, accepted range 0 &lt; n ≤ 600). Lets operators tune the response
+	/// deadline to a client's hard request ceiling (for example a larger value for a client that
+	/// permits longer calls). Invalid or out-of-range values fall back to the 150 s default.
+	/// </summary>
+	internal const string ResponseDeadlineOverrideEnvVar = "CLIO_MCP_RESPONSE_DEADLINE_SECONDS";
+
+	/// <summary>
+	/// Default wall-clock budget for the whole MCP <em>response</em> on long-running create tools.
+	/// Chosen below GitHub Copilot CLI's hard ~180 s per-request ceiling (which, unlike an
+	/// inactivity timeout, <em>is not</em> reset by <c>notifications/progress</c> — see
+	/// <c>spec/adr/adr-create-app-section-response-deadline.md</c>, ENG-91316). When the backend
+	/// work exceeds this budget the tool returns an actionable "in-progress, poll" envelope before
+	/// the client gives up with <c>-32001 Request timed out</c>, while the work keeps running on the
+	/// long-lived server. Overridable via <see cref="ResponseDeadlineOverrideEnvVar"/>.
+	/// </summary>
+	internal static readonly TimeSpan DefaultResponseDeadline = ResolveDefaultResponseDeadline();
+
+	private static TimeSpan ResolveDefaultResponseDeadline() {
+		string raw = Environment.GetEnvironmentVariable(ResponseDeadlineOverrideEnvVar);
+		if (!string.IsNullOrWhiteSpace(raw)
+			&& double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
+			&& seconds > 0 && seconds <= 600) {
+			return TimeSpan.FromSeconds(seconds);
+		}
+
+		return TimeSpan.FromSeconds(150);
+	}
+
+	/// <summary>
 	/// Runs <paramref name="work"/> synchronously while emitting <c>notifications/progress</c>
 	/// for the current request every <paramref name="interval"/>. When the caller did not send
 	/// a <paramref name="progressToken"/> (or <paramref name="server"/> is <see langword="null"/>),
@@ -80,6 +110,91 @@ internal static class McpProgressHeartbeat {
 			? null
 			: BuildServerBeat(server, progressToken.Value, operationName, effectiveInterval);
 		return RunWithBeatAsync(beat, work, cancellationToken, effectiveInterval);
+	}
+
+	/// <summary>
+	/// Runs <paramref name="work"/> on a background thread while emitting heartbeats, but bounds the
+	/// <em>response</em> by <paramref name="deadline"/>: if the work finishes first its result (or
+	/// exception) is returned/propagated unchanged; if the deadline elapses first the method throws
+	/// <see cref="McpResponseDeadlineExceededException"/> and <strong>leaves the work running</strong>.
+	/// </summary>
+	/// <remarks>
+	/// This is the hard-ceiling counterpart to <see cref="RunWithProgressAsync{TResult}"/>: heartbeats
+	/// keep inactivity-timeout clients alive, while the deadline lets the tool return an actionable
+	/// "in-progress, poll" envelope before a hard-ceiling client (GitHub Copilot CLI, ~180 s) abandons
+	/// the request with <c>-32001</c>. The work is started on the thread pool with
+	/// <see cref="CancellationToken.None"/> so it survives both the deadline and a client disconnect
+	/// — the clio MCP server is a long-lived process, so the backend operation completes and becomes
+	/// visible to a later read tool (for example <c>list-app-sections</c>). When the deadline (or
+	/// <paramref name="cancellationToken"/>) wins, the abandoned task's exception is observed in a
+	/// continuation so it never surfaces as an <c>UnobservedTaskException</c>.
+	/// </remarks>
+	/// <typeparam name="TResult">The synchronous result type produced by <paramref name="work"/>.</typeparam>
+	/// <param name="server">The active MCP server used to send progress notifications.</param>
+	/// <param name="progressToken">The progress token from the current request, or <see langword="null"/>.</param>
+	/// <param name="operationName">Human-readable operation label used in beats and the deadline exception.</param>
+	/// <param name="work">The synchronous backend operation to execute; must be safe to keep running after the response returns.</param>
+	/// <param name="deadline">Wall-clock budget for the response; defaults to <see cref="DefaultResponseDeadline"/>.</param>
+	/// <param name="cancellationToken">Stops the heartbeat; also ends the wait (the work still continues).</param>
+	/// <param name="interval">Beat cadence; defaults to <see cref="DefaultInterval"/>.</param>
+	/// <returns>The value returned by <paramref name="work"/> when it completes within the deadline.</returns>
+	/// <exception cref="McpResponseDeadlineExceededException">The work did not complete within <paramref name="deadline"/>.</exception>
+	internal static async Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
+		ModelContextProtocol.Server.McpServer server,
+		ProgressToken? progressToken,
+		string operationName,
+		Func<TResult> work,
+		TimeSpan? deadline = null,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		ArgumentNullException.ThrowIfNull(work);
+		TimeSpan effectiveInterval = interval ?? DefaultInterval;
+		TimeSpan effectiveDeadline = deadline ?? DefaultResponseDeadline;
+		Func<int, Task> beat = server is null || progressToken is null
+			? null
+			: BuildServerBeat(server, progressToken.Value, operationName, effectiveInterval);
+
+		// Start the work detached from the request lifetime: it must outlive both the response
+		// deadline and a client disconnect so the backend operation can still complete server-side.
+		Task<TResult> workTask = Task.Run(work, CancellationToken.None);
+
+		using CancellationTokenSource heartbeatCts =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		Task pump = beat is null
+			? Task.CompletedTask
+			: Task.Run(() => PumpAsync(beat, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
+		try {
+			// The delay shares heartbeatCts so the finally below cancels the surviving timer when
+			// work wins the race — no 150 s timer lingers after a fast completion.
+			Task completed = await Task
+				.WhenAny(workTask, Task.Delay(effectiveDeadline, heartbeatCts.Token))
+				.ConfigureAwait(false);
+			if (completed == workTask) {
+				return await workTask.ConfigureAwait(false);
+			}
+
+			// Deadline (or cancellation) won the race. Observe the abandoned task's eventual
+			// exception so it cannot crash the process, then signal the in-progress outcome.
+			ObserveInBackground(workTask);
+			throw new McpResponseDeadlineExceededException(operationName, effectiveDeadline);
+		}
+		finally {
+			await heartbeatCts.CancelAsync().ConfigureAwait(false);
+			try {
+				await pump.ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) {
+				// Expected when the pump observes cancellation on stop.
+			}
+		}
+	}
+
+	private static void ObserveInBackground<TResult>(Task<TResult> task) {
+		_ = task.ContinueWith(
+			static t => _ = t.Exception,
+			CancellationToken.None,
+			TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+			TaskScheduler.Default);
 	}
 
 	/// <summary>

@@ -71,8 +71,16 @@ public interface IApplicationSectionCreateService {
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Section creation request payload.</param>
+	/// <param name="insertTimeoutMsOverride">
+	/// Optional override (in milliseconds) for the section-insert budget. When the call runs behind
+	/// an MCP response deadline that continues the work in the background, the caller passes a
+	/// generous budget so the insert is not aborted at the default 90 s and the section actually
+	/// commits server-side (ENG-91316). When <see langword="null"/> the budget falls back to
+	/// <c>CLIO_CREATE_SECTION_TIMEOUT_SECONDS</c> or the 90 s default.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
-	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request);
+	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null);
 }
 
 /// <summary>
@@ -162,7 +170,8 @@ public sealed class ApplicationSectionCreateService(
 	};
 
 	/// <inheritdoc />
-	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request) {
+	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -224,7 +233,7 @@ public sealed class ApplicationSectionCreateService(
 			throw BuildPreparationFailure(request, preparationFailureClass.Value, exception);
 		}
 		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
-		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds();
+		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds(insertTimeoutMsOverride);
 		string responseBody;
 		try {
 			responseBody = client.ExecutePostRequest(
@@ -469,7 +478,13 @@ public sealed class ApplicationSectionCreateService(
 		}
 	}
 
-	private static int ResolveInsertTimeoutMilliseconds() {
+	private static int ResolveInsertTimeoutMilliseconds(int? insertTimeoutMsOverride = null) {
+		// An explicit override (the MCP background path) wins over the env var and the default: the
+		// response deadline guards the client, so the insert may run long enough to commit the section.
+		if (insertTimeoutMsOverride is > 0) {
+			return insertTimeoutMsOverride.Value;
+		}
+
 		string? raw = Environment.GetEnvironmentVariable(InsertTimeoutEnvironmentVariable);
 		if (int.TryParse(raw, System.Globalization.NumberStyles.Integer,
 				System.Globalization.CultureInfo.InvariantCulture, out int seconds) && seconds > 0) {
