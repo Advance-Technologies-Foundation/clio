@@ -22,20 +22,30 @@ public sealed class CreateEntityBusinessRuleTool(
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates one or more entity-level Freedom UI business rules on a single entity schema in ONE batch call (one configuration rebuild for the whole batch). Use for: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter — limit/restrict a lookup field to records matching a fixed condition by ANY mechanism — attribute value, relative period, fixed time-of-day (datePart), child existence/count, or gating by another field (e.g. 'show only <records> that have at least one related <child>', 'limit a lookup to records whose <field> is filled', 'only records where a status flag is set'). PREFER this tool over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where ...' request on a Freedom UI section/page — entity business rules apply everywhere the lookup is used and are the documented Creatio no-code surface. Phrases like 'business entity rule', 'apply static filter', 'apply-static-filter', 'limit lookup to', 'restrict lookup', 'show only ... that have ...' route here. Pass every rule for the same entity schema in the 'rules' array — the whole batch is saved with a single configuration rebuild, so prefer one batch call over many single-rule calls. A failed rule does not abort the others; the response reports per-rule status. Before calling, read get-guidance business-rules and get-tool-contract for create-entity-business-rules.")]
-	public BusinessRuleBatchResponse BusinessRuleCreate(
+	public object BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, entity-schema-name, rules (all required).")]
 		[Required]
 		CreateEntityBusinessRulesArgs args) =>
 		ExecuteWithCleanLog(() => CreateRules(args));
 
-	private BusinessRuleBatchResponse CreateRules(CreateEntityBusinessRulesArgs args) {
+	private object CreateRules(CreateEntityBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
 			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
+		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+		IEntityBusinessRuleService service;
 		try {
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IEntityBusinessRuleService service = commandResolver.Resolve<IEntityBusinessRuleService>(options);
+			// Resolve the environment BEFORE projecting/saving rules so an unknown or unreachable
+			// environment surfaces as the standard command-execution envelope (exit code 1) referencing
+			// the requested environment, instead of being folded into per-rule batch results that would
+			// serialize with an implicit success exit code (ENG-91830 / ENG-91825).
+			service = commandResolver.Resolve<IEntityBusinessRuleService>(options);
+		} catch (EnvironmentResolutionException exception) {
+			return CommandExecutionResult.FromResolverError(exception);
+		}
+
+		try {
 			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new EntityBusinessRulesBatchRequest(
 				args.PackageName,
 				args.EntitySchemaName,
@@ -584,20 +594,30 @@ public sealed class CreatePageBusinessRuleTool(
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Creates one or more page-level Freedom UI business rules on a single page in ONE batch call (one configuration rebuild for the whole batch) that change page element visibility, editability, or required state. Pass every rule for the same page in the 'rules' array and prefer one batch call over many single-rule calls; a failed rule does not abort the others and the response reports per-rule status. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rules.")]
-	public BusinessRuleBatchResponse BusinessRuleCreate(
+	public object BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rules (all required).")]
 		[Required]
 		CreatePageBusinessRulesArgs args) =>
 		ExecuteWithCleanLog(() => CreateRules(args));
 
-	private BusinessRuleBatchResponse CreateRules(CreatePageBusinessRulesArgs args) {
+	private object CreateRules(CreatePageBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
 			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
+		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+		IPageBusinessRuleService service;
 		try {
-			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			IPageBusinessRuleService service = commandResolver.Resolve<IPageBusinessRuleService>(options);
+			// Resolve the environment BEFORE projecting/saving rules so an unknown or unreachable
+			// environment surfaces as the standard command-execution envelope (exit code 1) referencing
+			// the requested environment, instead of being folded into per-rule batch results that would
+			// serialize with an implicit success exit code (ENG-91830 / ENG-91825).
+			service = commandResolver.Resolve<IPageBusinessRuleService>(options);
+		} catch (EnvironmentResolutionException exception) {
+			return CommandExecutionResult.FromResolverError(exception);
+		}
+
+		try {
 			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new PageBusinessRulesBatchRequest(
 				args.PackageName,
 				args.PageSchemaName,

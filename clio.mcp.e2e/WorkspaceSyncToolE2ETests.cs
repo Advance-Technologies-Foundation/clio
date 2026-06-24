@@ -394,8 +394,12 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 		argsProperties.TryGetProperty("skip-backup", out JsonElement skipBackupProperty).Should().BeTrue(
 			because: "push-workspace callers need an explicit way to disable backup without changing the default behavior");
-		skipBackupProperty.GetProperty("type").GetString().Should().Be("boolean",
-			because: "skip-backup should be modeled as a boolean MCP input");
+		JsonElement skipBackupType = skipBackupProperty.GetProperty("type");
+		IEnumerable<string> declaredTypes = skipBackupType.ValueKind == JsonValueKind.Array
+			? skipBackupType.EnumerateArray().Select(item => item.GetString()!)
+			: [skipBackupType.GetString()!];
+		declaredTypes.Should().Contain("boolean",
+			because: "skip-backup should be modeled as a boolean MCP input (an optional nullable boolean may also advertise 'null')");
 		requiredArgs.Should().NotContain("skip-backup",
 			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
 	}

@@ -100,7 +100,16 @@ namespace Clio.Command {
 		private static string DescribeSchemaType(int schemaType) =>
 			PageSchemaTypeExtensions.FromNumericValue(schemaType).ToLabel();
 
-		private static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
+		/// <summary>
+		/// Validates and parses a schema-type filter value. This is a pure input validation with no
+		/// environment dependency, so callers (e.g. the MCP tool) can reject an invalid schema-type
+		/// before resolving the target environment (ENG-91825 env-validation order).
+		/// </summary>
+		/// <param name="value">The schema-type filter supplied by the caller.</param>
+		/// <param name="schemaType">The parsed schema type when the value is recognized.</param>
+		/// <param name="error">A human-readable error message when the value is not recognized.</param>
+		/// <returns><c>true</c> when the value is a recognized schema-type; otherwise <c>false</c>.</returns>
+		public static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
 			schemaType = default;
 			error = null;
 			switch (value.Trim().ToLowerInvariant()) {

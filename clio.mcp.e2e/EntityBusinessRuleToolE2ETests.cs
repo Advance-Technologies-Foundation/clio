@@ -175,11 +175,13 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["entitySchemaName"] = "UsrOrder",
-				["rules"] = new object[] { CreateApplyFilterRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rules"] = new object[] { CreateApplyFilterRule()
  }
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
