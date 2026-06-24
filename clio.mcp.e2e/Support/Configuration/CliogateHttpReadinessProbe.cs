@@ -130,7 +130,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 			}
 		}
 
-		throw new CliogateReadinessTimeoutException(requestUri.ToString(), lastStatusCode, lastError, _maxAttempts);
+		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(requestUri), lastStatusCode, lastError, _maxAttempts);
 	}
 
 	/// <summary>
@@ -150,6 +150,19 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		string normalizedBase = baseUri.EndsWith('/') ? baseUri : baseUri + "/";
 		string normalizedRoute = relativeRoute.StartsWith('/') ? relativeRoute[1..] : relativeRoute;
 		return new Uri(new Uri(normalizedBase, UriKind.Absolute), normalizedRoute);
+	}
+
+	/// <summary>
+	/// Strips any <c>user:pass@</c> userinfo from the probed URI before it is surfaced in logs or
+	/// the timeout exception, so a base URI carrying credentials cannot leak them into diagnostics.
+	/// </summary>
+	private static string SanitizeUriForDiagnostics(Uri uri) {
+		if (string.IsNullOrEmpty(uri.UserInfo)) {
+			return uri.ToString();
+		}
+
+		UriBuilder builder = new(uri) { UserName = string.Empty, Password = string.Empty };
+		return builder.Uri.ToString();
 	}
 }
 

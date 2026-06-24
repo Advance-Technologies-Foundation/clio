@@ -14,6 +14,12 @@ internal static class ClioCliCommandRunner {
 	private const int CliogateInstallAttempts = 6;
 	private static readonly TimeSpan CliogateInstallDelay = TimeSpan.FromSeconds(10);
 
+	// HTTP-handler readiness budget. This runs AFTER the DataService-level CliogateReadiness*
+	// loop above, so the two budgets are ADDITIVE in the arrange phase: worst-case wait is
+	// (CliogateReadinessAttempts * CliogateReadinessDelay) + this HTTP loop, the latter itself
+	// capped by CliogateHttpReadinessOverallTimeout below. The attempts/delay deliberately mirror
+	// the DataService values (12 × 5s) — keep them in sync if you tune the readiness window so the
+	// two phases stay comparable rather than drifting apart.
 	private const int CliogateHttpReadinessAttempts = 12;
 	private static readonly TimeSpan CliogateHttpReadinessDelay = TimeSpan.FromSeconds(5);
 
@@ -178,6 +184,10 @@ internal static class ClioCliCommandRunner {
 			: $"{environment.Uri.TrimEnd('/')}/0";
 
 		using HttpClientHandler handler = new() {
+			// Self-signed dev/CI stands serve over HTTPS with untrusted certs; this probe is a
+			// read-only, unauthenticated GET that sends no credentials, body, or secrets, so
+			// accepting any server cert here carries no exposure. Mirrors clio's production
+			// HealthCheckCommand, which bypasses validation the same way for the same reason.
 			ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
 			// Observe a 3xx as a redirect (warming up) instead of following it to a login 200,
 			// which would be mistaken for a serving route.

@@ -176,6 +176,70 @@ public sealed class CliogateHttpReadinessProbeTests {
 			because: "the deadline should cut the loop short well before the 1000-attempt budget is exhausted");
 	}
 
+	[Test]
+	[Description("Composes the probe URL against a .NET-Framework base URI that already carries the /0 segment without dropping it.")]
+	public async Task WaitUntilServingAsync_ShouldPreserveNetFrameworkZeroSegment_WhenBaseUriEndsWithZero() {
+		// Arrange
+		const string netFrameworkBaseUri = "https://localhost/0/";
+		using SequencedHttpMessageHandler handler = SequencedHttpMessageHandler.AlwaysReturns(HttpStatusCode.NotFound);
+		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 1);
+
+		// Act
+		Func<Task> act = () => probe.WaitUntilServingAsync(netFrameworkBaseUri, ProbeRoute, CancellationToken.None);
+
+		// Assert
+		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
+			because: "the route never serves, so the probe reports the URI it actually probed")).Which;
+		exception.ProbedUri.Should().Be($"{netFrameworkBaseUri}{ProbeRoute}",
+			because: "the /0 net-framework segment must survive URL composition rather than being dropped by Uri concatenation");
+	}
+
+	[Test]
+	[Description("Strips user:pass userinfo from the probed URI so credentials in the base URI cannot leak into the timeout exception or logs.")]
+	public async Task WaitUntilServingAsync_ShouldStripUserInfoFromProbedUri_WhenBaseUriCarriesCredentials() {
+		// Arrange
+		const string credentialedBaseUri = "https://user:secret@localhost/";
+		using SequencedHttpMessageHandler handler = SequencedHttpMessageHandler.AlwaysReturns(HttpStatusCode.NotFound);
+		ICliogateHttpReadinessProbe probe = CreateProbe(handler, maxAttempts: 1);
+
+		// Act
+		Func<Task> act = () => probe.WaitUntilServingAsync(credentialedBaseUri, ProbeRoute, CancellationToken.None);
+
+		// Assert
+		CliogateReadinessTimeoutException exception = (await act.Should().ThrowAsync<CliogateReadinessTimeoutException>(
+			because: "the route never serves, so the probe reports the URI it probed")).Which;
+		exception.ProbedUri.Should().NotContain("secret",
+			because: "credentials embedded in the base URI must never leak into diagnostics");
+		exception.ProbedUri.Should().NotContain("user:",
+			because: "userinfo must be stripped from the probed URI before it is surfaced");
+		exception.Message.Should().NotContain("secret",
+			because: "the timeout message must not echo credentials from the base URI");
+	}
+
+	[Test]
+	[Description("Surfaces caller cancellation promptly and stops issuing requests instead of swallowing it as a transient failure.")]
+	public async Task WaitUntilServingAsync_ShouldThrowOperationCanceled_WhenCallerCancelsMidWait() {
+		// Arrange
+		using SequencedHttpMessageHandler handler = SequencedHttpMessageHandler.AlwaysReturns(HttpStatusCode.NotFound);
+		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
+			new HttpClient(handler, disposeHandler: false),
+			maxAttempts: 1000,
+			delayBetweenAttempts: TimeSpan.FromMilliseconds(50));
+		using CancellationTokenSource cts = new();
+		cts.CancelAfter(TimeSpan.FromMilliseconds(20));
+
+		// Act
+		Func<Task> act = () => probe.WaitUntilServingAsync(BaseUri, ProbeRoute, cts.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "caller cancellation must propagate as OperationCanceledException, not be swallowed into a readiness timeout");
+		int requestsAtCancellation = handler.RequestCount;
+		await Task.Delay(TimeSpan.FromMilliseconds(100));
+		handler.RequestCount.Should().Be(requestsAtCancellation,
+			because: "the probe must stop issuing requests once the caller cancels rather than continuing the loop");
+	}
+
 	private static ICliogateHttpReadinessProbe CreateProbe(HttpMessageHandler handler, int maxAttempts) =>
 		new CliogateHttpReadinessProbe(
 			new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(5) },
