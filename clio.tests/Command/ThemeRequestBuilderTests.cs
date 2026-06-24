@@ -239,4 +239,21 @@ public class ThemeRequestBuilderFileTests
 		resolved.Should().BeNull(because: "nothing could be read");
 		error.Should().Contain("not found", because: "the diagnostic must explain the file is missing");
 	}
+
+	[Test]
+	[Category("Integration")]
+	[Description("Fails fast when --css-content-file is larger than the 1 MiB cap, without reading the whole file into memory.")]
+	public void TryResolveCssContent_ShouldFail_WhenFileExceedsOneMebibyte() {
+		// Arrange
+		_tempFile = Path.Combine(Path.GetTempPath(), $"clio-theme-oversized-{Guid.NewGuid():N}.css");
+		File.WriteAllText(_tempFile, new string('a', ThemeRequestBuilder.MaxCssContentBytes + 1), Encoding.UTF8);
+
+		// Act
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, _tempFile, out string resolved, out string error);
+
+		// Assert
+		ok.Should().BeFalse(because: "a CSS file above 1 MiB must be rejected before it is loaded into memory");
+		resolved.Should().BeNull(because: "an oversized file must not be read");
+		error.Should().Contain("1 MiB", because: "the diagnostic must name the size limit");
+	}
 }

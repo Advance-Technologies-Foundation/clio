@@ -48,25 +48,29 @@ internal static class ThemeRequestBuilder
 			error = "Theme CSS is required: provide it inline with --css-content or from a file with --css-content-file.";
 			return false;
 		}
-		if (hasFile) {
-			if (!File.Exists(cssContentFile)) {
-				error = $"CSS file not found: '{cssContentFile}'.";
-				return false;
-			}
-			try {
-				resolved = File.ReadAllText(cssContentFile, Encoding.UTF8);
-			}
-			catch (IOException ex) {
-				error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
-				return false;
-			}
-			catch (UnauthorizedAccessException ex) {
-				error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
-				return false;
-			}
+		if (!hasFile) {
+			resolved = cssContent;
 			return true;
 		}
-		resolved = cssContent;
+		if (!File.Exists(cssContentFile)) {
+			error = $"CSS file not found: '{cssContentFile}'.";
+			return false;
+		}
+		try {
+			if (new FileInfo(cssContentFile).Length > MaxCssContentBytes) {
+				error = "Theme CSS content must be at most 1 MiB.";
+				return false;
+			}
+			resolved = File.ReadAllText(cssContentFile, Encoding.UTF8);
+		}
+		catch (IOException ex) {
+			error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
+			return false;
+		}
+		catch (UnauthorizedAccessException ex) {
+			error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
+			return false;
+		}
 		return true;
 	}
 
