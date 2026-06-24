@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
@@ -256,43 +257,64 @@ public sealed class McpProgressHeartbeatTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Invokes the background-fault sink with the unwrapped exception when the detached work faults after the deadline already returned, turning the otherwise-silent failure into a diagnostic trail.")]
-	public async Task RunWithProgressAndDeadlineAsync_ShouldInvokeFaultSink_WhenBackgroundWorkFaultsAfterDeadline() {
+	[Description("Writes the unwrapped fault to stderr (and never crashes the process) when the detached work faults after the deadline already returned, turning the otherwise-silent post-deadline failure into a diagnostic trail.")]
+	public async Task RunWithProgressAndDeadlineAsync_ShouldWriteFaultToStdErr_WhenBackgroundWorkFaultsAfterDeadline() {
 		// Arrange — the work blocks on a gate the test opens only AFTER the deadline has fired, then
 		// faults: the post-deadline background failure mode, reproduced without a wall-clock sleep.
+		// Capture stderr so the otherwise-fire-and-forget diagnostic can be asserted deterministically.
 		using ManualResetEventSlim releaseWork = new ManualResetEventSlim(false);
-		using ManualResetEventSlim faultObserved = new ManualResetEventSlim(false);
-		Exception captured = null;
-		Action<Exception> onFault = ex => {
-			captured = ex;
-			faultObserved.Set();
-		};
-		Func<int> work = () => {
-			releaseWork.Wait(StopGuard);
-			throw new InvalidOperationException("late boom");
-		};
+		TextWriter originalError = Console.Error;
+		using StringWriterWithSignal captured = new StringWriterWithSignal();
+		Console.SetError(captured);
+		try {
+			Func<int> work = () => {
+				releaseWork.Wait(StopGuard);
+				throw new InvalidOperationException("late boom");
+			};
 
-		// Act
-		Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
-			server: null,
-			progressToken: null,
-			operationName: "faulting-bg-op",
-			work: work,
-			deadline: TimeSpan.FromMilliseconds(60),
-			cancellationToken: CancellationToken.None,
-			interval: FastInterval,
-			onBackgroundFault: onFault).ConfigureAwait(false);
+			// Act
+			Func<Task> act = async () => await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
+				server: null,
+				progressToken: null,
+				operationName: "faulting-bg-op",
+				work: work,
+				deadline: TimeSpan.FromMilliseconds(60),
+				cancellationToken: CancellationToken.None,
+				interval: FastInterval).ConfigureAwait(false);
 
-		// Assert
-		await act.Should().ThrowAsync<McpResponseDeadlineExceededException>(
-			because: "the deadline elapses before the work faults, so the caller still receives the in-progress signal").ConfigureAwait(false);
-		// The deadline has been reported; now let the detached work fault and confirm the sink fires.
-		releaseWork.Set();
-		faultObserved.Wait(StopGuard).Should().BeTrue(
-			because: "the background fault sink must fire once the detached work eventually faults");
-		captured.Should().BeOfType<InvalidOperationException>(
-			because: "the sink must receive the unwrapped base exception, not the AggregateException wrapper")
-			.Which.Message.Should().Be("late boom",
-				because: "the original fault detail must reach the diagnostic trail");
+			// Assert
+			await act.Should().ThrowAsync<McpResponseDeadlineExceededException>(
+				because: "the deadline elapses before the work faults, so the caller still receives the in-progress signal").ConfigureAwait(false);
+			// The deadline has been reported; now let the detached work fault and confirm it is logged.
+			releaseWork.Set();
+			captured.Written.Wait(StopGuard).Should().BeTrue(
+				because: "the post-deadline background fault must be written to stderr, not swallowed silently");
+			captured.ToString().Should().Contain("faulting-bg-op",
+				because: "the diagnostic must name the operation so the failure can be correlated");
+			captured.ToString().Should().Contain("late boom",
+				because: "the original fault detail must reach the stderr diagnostic trail");
+		}
+		finally {
+			Console.SetError(originalError);
+		}
+	}
+
+	// StringWriter that signals once anything has been written, so a test can wait for the
+	// fire-and-forget background continuation deterministically instead of polling.
+	private sealed class StringWriterWithSignal : StringWriter {
+		public ManualResetEventSlim Written { get; } = new ManualResetEventSlim(false);
+
+		public override void WriteLine(string value) {
+			base.WriteLine(value);
+			Written.Set();
+		}
+
+		protected override void Dispose(bool disposing) {
+			if (disposing) {
+				Written.Dispose();
+			}
+
+			base.Dispose(disposing);
+		}
 	}
 }

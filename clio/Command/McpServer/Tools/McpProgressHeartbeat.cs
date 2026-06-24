@@ -137,14 +137,14 @@ internal static class McpProgressHeartbeat {
 	/// <param name="deadline">Wall-clock budget for the response; defaults to <see cref="DefaultResponseDeadline"/>.</param>
 	/// <param name="cancellationToken">Stops the heartbeat; also ends the wait (the work still continues).</param>
 	/// <param name="interval">Beat cadence; defaults to <see cref="DefaultInterval"/>.</param>
-	/// <param name="onBackgroundFault">
-	/// Optional callback invoked if the detached <paramref name="work"/> faults <em>after</em> the deadline
-	/// was reported — the exact cold/large-stand failure mode this method exists for. Without it the
-	/// background failure is silent (the task's exception is only observed to suppress
-	/// <c>UnobservedTaskException</c>) and an agent following the "poll until it appears" guidance has no
-	/// signal that creation actually failed. Callers should thread a logger here so the fault is recorded.
-	/// </param>
 	/// <returns>The value returned by <paramref name="work"/> when it completes within the deadline.</returns>
+	/// <remarks>
+	/// If the detached <paramref name="work"/> faults <em>after</em> the deadline was reported — the exact
+	/// cold/large-stand failure mode this method exists for — the fault is written to <c>stderr</c> via
+	/// <see cref="ObserveInBackground"/> so it is not silent. <c>stderr</c> is the stdio-MCP-safe diagnostic
+	/// channel (it never corrupts the protocol stream on <c>stdout</c>), and an agent following the
+	/// "poll until it appears" guidance otherwise has no signal that creation actually failed.
+	/// </remarks>
 	/// <exception cref="McpResponseDeadlineExceededException">The work did not complete within <paramref name="deadline"/> and the request was not cancelled.</exception>
 	/// <exception cref="OperationCanceledException">The request (or server shutdown) cancelled <paramref name="cancellationToken"/> before the work completed — the detached work does not outlive the process, so this is reported distinctly from a deadline.</exception>
 	internal static async Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
@@ -154,8 +154,7 @@ internal static class McpProgressHeartbeat {
 		Func<TResult> work,
 		TimeSpan? deadline = null,
 		CancellationToken cancellationToken = default,
-		TimeSpan? interval = null,
-		Action<Exception> onBackgroundFault = null) {
+		TimeSpan? interval = null) {
 		ArgumentNullException.ThrowIfNull(work);
 		TimeSpan effectiveInterval = interval ?? DefaultInterval;
 		TimeSpan effectiveDeadline = deadline ?? DefaultResponseDeadline;
@@ -183,8 +182,8 @@ internal static class McpProgressHeartbeat {
 			}
 
 			// The wait ended without the work finishing. Observe the abandoned task's eventual
-			// exception so it cannot crash the process (and surface it to the optional fault sink).
-			ObserveInBackground(workTask, onBackgroundFault);
+			// exception so it cannot crash the process, and surface it to stderr for diagnostics.
+			ObserveInBackground(workTask, operationName);
 
 			// Distinguish genuine cancellation/shutdown from a real deadline: if the request was
 			// cancelled, Task.Delay won the race only because heartbeatCts is linked to
@@ -205,22 +204,23 @@ internal static class McpProgressHeartbeat {
 		}
 	}
 
-	private static void ObserveInBackground<TResult>(Task<TResult> task, Action<Exception> onFault = null) {
+	private static void ObserveInBackground<TResult>(Task<TResult> task, string operationName) {
 		_ = task.ContinueWith(
 			t => {
 				// Reading t.Exception observes the fault so it never surfaces as an
-				// UnobservedTaskException; the optional sink turns the otherwise-silent
-				// background failure into a diagnostic trail.
+				// UnobservedTaskException; writing it to stderr turns the otherwise-silent
+				// post-deadline background failure into a diagnostic trail.
 				AggregateException exception = t.Exception;
-				if (onFault is null || exception is null) {
+				if (exception is null) {
 					return;
 				}
 
 				try {
-					onFault(exception.GetBaseException());
+					Console.Error.WriteLine(
+						$"[{operationName}] background operation faulted after the response deadline: {exception.GetBaseException()}");
 				}
 				catch {
-					// The fault sink is best-effort diagnostics: a broken logger must never
+					// stderr diagnostics are best-effort: a closed/redirected stream must never
 					// resurface as an UnobservedTaskException from the very continuation that
 					// exists to suppress one.
 				}

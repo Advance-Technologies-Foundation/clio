@@ -247,8 +247,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 						args.Code),
 					BackgroundInsertTimeoutMs),
 				deadline: null,
-				cancellationToken: cancellationToken,
-				onBackgroundFault: LogBackgroundSectionCreateFault).ConfigureAwait(false);
+				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (McpResponseDeadlineExceededException) {
 			return ApplicationToolHelper.CreateSectionInProgressResponse(args.Caption, args.Code);
@@ -258,16 +257,6 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
 		}
 	}
-
-	/// <summary>
-	/// Records a background <c>create-app-section</c> insert that faulted <em>after</em> the response
-	/// deadline already returned an in-progress envelope. Without this trail the failure is silent and
-	/// an agent following the "poll until the section appears" guidance would never abort. Written to
-	/// stderr so it never corrupts the stdio MCP protocol stream on stdout.
-	/// </summary>
-	private static void LogBackgroundSectionCreateFault(Exception exception) =>
-		Console.Error.WriteLine(
-			$"[{ApplicationSectionCreateToolName}] background section creation faulted after the response deadline: {exception}");
 
 	private static void ValidateSectionCreateArgs(ApplicationSectionCreateArgs args) {
 		if (string.IsNullOrWhiteSpace(args.ApplicationCode)) {
