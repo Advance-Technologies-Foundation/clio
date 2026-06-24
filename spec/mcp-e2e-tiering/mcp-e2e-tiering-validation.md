@@ -91,6 +91,17 @@ tier either self-skips with an explicit `Assert.Ignore` reason
 documented actionable diagnostic ("...need an explicit sandbox environment name"). No
 Creatio state is mutated. These belong on the deploy-backed step, never on the fast gate.
 
+## Acceptance gate for the NoEnvironment tier
+
+The standing pass criterion is **`Total == Passed` AND `Skipped == 0`**, not merely
+`Failed == 0`. A skip is the signature of a false-NoEnvironment test: a misclassified test
+that reaches an environment calls `Assert.Ignore` and is reported as *skipped*, not *failed*,
+so in a partial run a skip masquerades as a pass (exactly the trap that made the first
+~30-test run look green — see the FULL sweep section above). Always run the complete
+env-free filter with no stand configured and confirm the recorded `Skipped` count is `0`
+before treating the tier as green. Apply the same `Skipped == 0` check to any future
+NoEnvironment e2e additions.
+
 ## Notes
 
 - `AssertInfrastructureToolE2ETests` was moved to the Sandbox tier during classification:

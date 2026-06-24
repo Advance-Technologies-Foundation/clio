@@ -84,6 +84,44 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("list-page-templates rejects an invalid schema-type BEFORE resolving the environment (ENG-91825 validation-ordering invariant), so a bad schema-type is reported as a schema-type error instead of being masked by an environment-resolution failure")]
+	public void ListPageTemplates_ShouldRejectInvalidSchemaTypeBeforeResolvingEnvironment_WhenSchemaTypeIsUnknown() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — invalid schema-type paired with an environment that would also fail to resolve.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("not-a-schema-type", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown schema-type is a pure-input failure");
+		response.Error.Should().Contain("Unknown schema-type",
+			because: "the schema-type error must surface instead of an environment-resolution error");
+		commandResolver.DidNotReceive().Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("list-page-templates resolves the environment for a valid schema-type, proving the schema-type gate blocks only invalid input and does not short-circuit the normal resolution path")]
+	public void ListPageTemplates_ShouldResolveEnvironment_WhenSchemaTypeIsValid() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("environment 'does-not-exist' is not registered"));
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — valid schema-type, so the tool proceeds past the gate into environment resolution.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("web", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the environment cannot be resolved");
+		commandResolver.Received(1).Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
