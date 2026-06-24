@@ -1486,8 +1486,6 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must set the chart theme by page surface (dashboard→white, desktop→glassmorphism, home→full-fill), mirroring the indicator policy");
 		article.Text.Should().Contain("glassmorphism",
 			because: "Desktop charts must use the glassmorphism theme");
-		article.Text.Should().Contain("Axis names: keep them empty",
-			because: "the guide must warn that a non-empty yAxis.name breaks the page designer (json-differ needFlatten last-key bug)");
 		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
 			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
 		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",

@@ -109,11 +109,6 @@ public sealed class ChartWidgetGuidanceResource {
 		       **Data labels — show values by DEFAULT.** Set `dataLabel.display: true` on every series unless the user
 		       EXPLICITLY asks not to show values (then set `display: false` or omit `dataLabel`). Applies to all chart types.
 
-		       **Axis names: keep them empty (`name: ""`), especially `scales.yAxis.name`.** A non-empty `yAxis.name`
-		       makes the page designer throw `Required parameter "name" not found` and the page can't be saved/deleted
-		       (order-dependent bug in json-differ `needFlatten`: it honors only an object's LAST key, and `yAxis` is the
-		       last key of `scales`). `xAxis.name` alone is tolerated today but the trigger is key-order-fragile — keep BOTH empty.
-
 		       ## Title and header (never ship a headerless chart)
 
 		       - `config.title` is REQUIRED. Use `#ResourceString(<widgetName>_title)#` AND register that string in the
