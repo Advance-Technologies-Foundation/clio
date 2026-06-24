@@ -174,6 +174,10 @@ public sealed class CliogateHttpReadinessProbeTests {
 			because: "the failure message must explain that the overall readiness deadline, not the attempt count, ended the loop");
 		handler.RequestCount.Should().BeLessThan(1000,
 			because: "the deadline should cut the loop short well before the 1000-attempt budget is exhausted");
+		exception.Message.Should().NotContain("1000 attempt(s)",
+			because: "a deadline-tripped loop must report the attempts actually performed, not the full attempt budget, so 'deadline tripped' is not blurred with 'attempts exhausted'");
+		exception.Message.Should().Contain($"{handler.RequestCount} attempt(s)",
+			because: "the failure message must report the real number of GET attempts made before the deadline ended the loop");
 	}
 
 	[Test]

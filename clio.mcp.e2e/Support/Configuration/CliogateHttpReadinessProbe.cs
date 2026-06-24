@@ -77,6 +77,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		Uri requestUri = BuildRequestUri(baseUri, relativeRoute);
 		HttpStatusCode? lastStatusCode = null;
 		string? lastError = null;
+		int attemptsPerformed = 0;
 
 		using CancellationTokenSource deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		if (_overallTimeout > TimeSpan.Zero) {
@@ -91,6 +92,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 				break;
 			}
 
+			attemptsPerformed++;
 			try {
 				using HttpRequestMessage request = new(HttpMethod.Get, requestUri);
 				using HttpResponseMessage response = await _httpClient.SendAsync(request, probeToken);
@@ -130,7 +132,10 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 			}
 		}
 
-		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(requestUri), lastStatusCode, lastError, _maxAttempts);
+		// Report the attempts actually performed, not _maxAttempts: when the overall deadline trips
+		// the loop breaks early, so reporting the cap would blur "deadline tripped" against
+		// "attempts exhausted". A genuine attempt-budget exhaustion still reports _maxAttempts.
+		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(requestUri), lastStatusCode, lastError, attemptsPerformed);
 	}
 
 	/// <summary>
@@ -139,6 +144,19 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 	/// <c>404</c> (route not yet registered), <c>3xx</c> (redirect to a login/warm-up page) and
 	/// <c>5xx</c> (IIS/ANCM warm-up errors) all mean "not ready yet" and must be retried — accepting
 	/// any of them would reintroduce the false-positive readiness signal ENG-92146 removes.
+	/// <para>
+	/// <strong>Known trade-off — 3xx is deliberately excluded.</strong> On a forms-auth .NET
+	/// Framework topology a <em>ready</em> stand could in principle answer the anonymous probe with a
+	/// <c>302</c> redirect to a login page, which this predicate then treats as "not serving" and
+	/// retries to exhaustion against a healthy environment — the inverse failure mode. We accept that
+	/// risk on purpose: a transient warm-up <c>3xx</c> and a ready-but-gated <c>302</c>-to-login are
+	/// indistinguishable by status alone, and accepting <c>3xx</c> as serving would reopen the exact
+	/// false positive this probe exists to close. The cliogate REST handlers answer the unauthenticated
+	/// GET on <c>GetApiVersion</c> with <c>401</c> (not a redirect) on the .NET Core e2e targets this
+	/// probe runs against. If a forms-auth stand is ever brought into the e2e matrix and a ready app
+	/// there answers <c>302</c>, narrow this to treat a redirect to the login endpoint specifically as
+	/// serving — confirm the real status against that stand first rather than widening blindly.
+	/// </para>
 	/// </summary>
 	private static bool IsServingStatus(HttpStatusCode statusCode) {
 		int code = (int)statusCode;

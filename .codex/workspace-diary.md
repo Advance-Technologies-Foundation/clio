@@ -4330,3 +4330,17 @@ Decision: Applied the low-risk warranted minors: (1) strip user:pass userinfo fr
 Discovery: Earlier "LoopAsync catch(Exception)" minor no longer applies — the HttpListener stub was already removed in 2a87276b. The base-URI /0 helper lives in ClioCliCommandRunner (internal, not unit-reachable from clio.mcp.e2e without restructuring); covered the equivalent composition behavior via the probe's BuildRequestUri instead. The Unit-category-in-non-CI-project placement remains a maintainer decision (already flagged in the threads), left unchanged.
 Files: clio.mcp.e2e/Support/Configuration/CliogateHttpReadinessProbe.cs, clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs, clio.mcp.e2e/CliogateHttpReadinessProbeTests.cs
 Impact: closes the warranted Minor review items with covering tests; no behavior change to the readiness contract, only diagnostics hardening and documentation.
+
+## 2026-06-24 – PR #757 review fixes (b-horodyskyi CHANGES_REQUESTED)
+Context: Automated drive-to-green pass on the cliogate HTTP readiness probe PR.
+Changes (clearly-warranted, low-risk only):
+- CliogateHttpReadinessProbe: track and report the real attempts performed instead of always _maxAttempts, so an overall-deadline cut-off no longer reads as "attempts exhausted" (reviewer Minor).
+- IsServingStatus XML doc: documented the deliberate 3xx exclusion right on the predicate, naming the forms-auth 302-to-login-on-ready-stand inverse failure mode as a known, accepted trade-off pending real-stand confirmation (reviewer's offered "document it" alternative for the Major 3xx point).
+- CliogateHttpReadinessProbeTests: deadline test now asserts the message reports the real attempt count, not the 1000 cap.
+Deferred (author already flagged for maintainer sign-off — left unchanged):
+- Replace hand-rolled `0/` prefix in ClioCliCommandRunner with ServiceUrlBuilder.Build + delete BuildRequestUri (Major maintainability) — coupled cross-cutting refactor.
+- Move the unit test + SequencedHttpMessageHandler to clio.tests via InternalsVisibleTo so it runs in the CI unit gate (Major) — cross-project structural decision.
+- Add wiring test for WaitForCliogateHttpHandlersAsync — depends on the two above.
+- Behavior change to treat 3xx as serving — needs the real GetApiVersion status on the target stand; widening blindly would reopen the false positive ENG-92146 closes.
+Verified: clio.mcp.e2e builds clean (0 errors); net10.0 CliogateHttpReadinessProbeTests 11 pass / 0 fail (net8.0 runtime not installed locally — CI covers it). Pre-existing BindingsModule CLIO005 warnings unrelated.
+Files: clio.mcp.e2e/Support/Configuration/CliogateHttpReadinessProbe.cs; clio.mcp.e2e/CliogateHttpReadinessProbeTests.cs
