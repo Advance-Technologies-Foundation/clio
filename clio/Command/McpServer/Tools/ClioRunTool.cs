@@ -90,9 +90,9 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
 			// the agent can self-correct without an extra discovery round-trip. Only the RANKING (Levenshtein
-			// distance then ordinal) matches ToolContractGetTool.BuildSuggestions; the candidate SOURCE SET is
-			// caller-specific and intentionally divergent — here it is the registry's invokable names + the
-			// reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
+			// distance then ordinal) matches the BuildSuggestions helper in ToolContractGetTool. The candidate
+			// SOURCE SET is caller-specific and intentionally divergent — here it is the registry's invokable
+			// names + the reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
 			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
@@ -422,8 +422,9 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 	}
 
 	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
-	// requested name then ordinally by name. Only this ranking matches ToolContractGetTool.BuildSuggestions;
-	// the candidate source set here is caller-specific (intentionally divergent): the FULL invokable name
+	// requested name then ordinally by name — the same ranking the BuildSuggestions helper in
+	// ToolContractGetTool uses. The candidate source set here is caller-specific (intentionally divergent):
+	// it is the FULL invokable name
 	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
 	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
 	// near-miss never suggests re-entering clio-run / clio-run-destructive.
