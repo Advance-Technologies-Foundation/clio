@@ -76,9 +76,9 @@
     },
     {
       "web": ["crt.DataGrid", "crt.DataTable"],
-      "mobile": ["crt.List"],
+      "mobile": ["crt.List", "crt.ListItem"],
       "category": "AlternativeAvailable",
-      "note": "Web grid maps to the mobile list; web columns do not map 1:1 to mobile list items (itemLayout.body) — finalize via get-component-info."
+      "note": "Web grid → mobile crt.List + crt.ListItem. The crt.ListItem must be added INTO the crt.List's `itemLayout` — it defines the row layout (`title` + `body`). Map each grid column's `code` to a `$<code>` binding: the first column becomes the ListItem `title`, the remaining columns become its `body` rows (`{ \"value\": \"$<code>\" }`); the grid `items` binding carries over to the list `items`. A column's `code` is its bound attribute name. Note: if the mobile template already provides the `List`/`ListItem` elements, configure them by merge-by-name (the row goes on the `ListItem` element) rather than inserting new ones."
     },
     {
       "web": ["crt.FolderTree", "crt.FolderTreeActions"],

@@ -80,7 +80,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			   by iterating elementMap. For each entry act on its operation:
 			   - merge — the element is provided by the mobile template (a "twin", e.g. Tabs→Tabs,
 			     FeedTabContainer→FeedContainer). REUSE the existing mobileName; do NOT insert it. (Insert
-			     vs merge is the #1 mistake — the template already contains these elements.)
+			     vs merge is the #1 mistake — the template already contains these elements.) If the mobile
+			     list template already provides the List / ListItem elements, configure them by MERGE-BY-NAME
+			     (the row goes on the ListItem element: title + body) — do NOT insert a second crt.List and
+			     do NOT put itemLayout inside a merge of the parent List (silent no-op; ListItem is a
+			     separate named element).
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
 			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
 			     carries the type and EVERY source property the mobile component supports — never drop any of
@@ -92,8 +96,10 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     these bindings — paste mobileValues as-is. Then add ONLY
 			     what mobileValues deliberately leaves out:
 			       • the value binding (control, or value for lookups) — type-specific, so it is not prebuilt;
-			       • for a structural mapping (grid -> crt.List), itemLayout.body — build it from the
-			         mobileContracts example.
+			       • for a structural mapping (grid → crt.List + crt.ListItem), build the row: add a crt.ListItem
+			         into the crt.List's itemLayout (title = first column, body = the rest); see the
+			         componentSuggestions note and the mobileContracts example. If the template already provides
+			         the List/ListItem, configure them by merge-by-name instead of inserting (see the merge branch).
 			     If captionResource is present, register key = sourceValue with update-page `resources`
 			     (the key follows "<MobileElementName>_caption"). Consult mobileContracts / get-component-info
 			     (schema-type "mobile") only for those not-prebuilt parts. validate-page is the backstop — it
@@ -165,6 +171,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			─────────────────────────────────────────────────────────────
 			- Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff.
 			- NO handlers, NO validators, NO custom converters in the mobile body.
+			- LIST ROW (grid → crt.List + crt.ListItem): the row layout lives on a crt.ListItem placed in the
+			  crt.List's itemLayout (title = first grid column, body = the rest). If the mobile list template
+			  already provides the List/ListItem elements, configure them by MERGE-BY-NAME (the row goes on the
+			  ListItem element) — NEVER insert a second crt.List and NEVER put itemLayout inside a merge of the
+			  parent List (silent no-op; ListItem is a separate named element).
 			- PAGE-level business rules ARE converted for you in guide.pageBusinessRules: each rule keeps
 			  its condition and only the actions that survive on mobile. Page rules carry ONLY element
 			  actions — hide / show / make-editable / read-only / required / optional — and an action

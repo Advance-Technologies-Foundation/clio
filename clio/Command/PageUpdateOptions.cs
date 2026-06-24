@@ -180,11 +180,16 @@ namespace Clio.Command {
 				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
+				// Auto-split any diff op carrying a nested element config (an object with a `name`) into
+				// separate merge-by-name operations before persisting — the Creatio differ does not apply a
+				// nested element config inside a parent merge. Page-agnostic (web + mobile); no-op otherwise.
+				(string normalizedBody, IReadOnlyList<string> splitWarnings) = PageDiffNormalizer.Normalize(bodyToWrite);
+				bodyToWrite = normalizedBody;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
+				response.Warnings = CombineWarnings(downgradeWarnings, splitWarnings);
 				PopulatePostSaveChecksum(options, context, response);
 				AppendDesignerPresenceWarning(options, response);
 				return true;
@@ -484,6 +489,24 @@ namespace Clio.Command {
 				}
 			}
 			return null;
+		}
+
+		/// <summary>
+		/// Merges insert→merge downgrade warnings with the nested-element-config split notes from
+		/// <see cref="PageDiffNormalizer"/> into a single warnings list (null when both are empty).
+		/// </summary>
+		private static IReadOnlyList<string> CombineWarnings(
+				IReadOnlyList<string> downgradeWarnings, IReadOnlyList<string> splitNotes) {
+			var combined = new List<string>();
+			if (downgradeWarnings is { Count: > 0 }) {
+				combined.AddRange(downgradeWarnings);
+			}
+			if (splitNotes is { Count: > 0 }) {
+				combined.AddRange(splitNotes.Select(s =>
+					$"Split nested element config '{s}' into its own operation before saving — the Creatio differ " +
+					"does not apply a nested element config (an object with a 'name') inside a parent merge or insert."));
+			}
+			return combined.Count > 0 ? combined : null;
 		}
 
 		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, PageSchemaType schemaType,

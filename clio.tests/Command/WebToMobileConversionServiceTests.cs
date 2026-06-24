@@ -136,6 +136,38 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A grid rule mapping to [crt.List, crt.ListItem] surfaces both suggested mobile types and the conversion note; the element map inserts the primary type (crt.List), and the model adds the crt.ListItem row into its itemLayout per the note.")]
+	public void Analyze_ComponentSuggestions_GridMapsToListAndListItem() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Web = ["crt.DataGrid"], Mobile = ["crt.List", "crt.ListItem"], Category = "AlternativeAvailable",
+					Note = "Add a crt.ListItem into the crt.List itemLayout (title + body)."
+				}
+			]
+		};
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null);
+
+		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
+		grid.Category.Should().Be("AlternativeAvailable");
+		grid.SuggestedMobileTypes.Should().Equal("crt.List", "crt.ListItem");
+		grid.Note.Should().Contain("itemLayout");
+		// Element map inserts the primary mobile type; the model adds the ListItem row into its itemLayout.
+		Element(guide, "DataTable").Operation.Should().Be("insert");
+		Element(guide, "DataTable").MobileType.Should().Be("crt.List");
+	}
+
+	[Test]
 	[Description("Many->one mappings (FolderTree + FolderTreeActions -> FolderTreeActions) carry a primaryWebMerge note so the model emits a single merged component.")]
 	public void Analyze_ManyToOne_ProducesPrimaryWebMergeNote() {
 		PageBundleInfo bundle = Bundle("""

@@ -31,19 +31,44 @@ public sealed class PageValidateTool(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
-		if (PageSchemaTypeExtensions.FromBody(args.Body) == PageSchemaType.Mobile) {
+		// Auto-split any diff op carrying a nested element config (an object with a `name`, e.g.
+		// itemLayout: { name: "ListItem", … }) into separate merge-by-name operations — the Creatio
+		// differ does not apply a nested element config inside a parent merge. Applies to web and mobile.
+		(string body, IReadOnlyList<string> splits) = PageDiffNormalizer.Normalize(args.Body);
+		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				args.Body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
+				body, mobileComponentCatalog, webComponentCatalog, mobileResources, cancellationToken).ConfigureAwait(false);
 			return new PageValidateResponse {
 				Valid = mobileResult.ContentOk,
-				Validation = mobileResult
+				Validation = WithSplitWarnings(mobileResult, splits)
 			};
 		}
-		PageSyncValidationResult result = Validate(args.Body, args.Resources);
+		PageSyncValidationResult result = Validate(body, args.Resources);
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
-			Validation = result
+			Validation = WithSplitWarnings(result, splits)
+		};
+	}
+
+	/// <summary>
+	/// Appends an informational warning per nested-element-config split performed by
+	/// <see cref="PageDiffNormalizer"/> so the author sees that the body was normalized.
+	/// </summary>
+	private static PageSyncValidationResult WithSplitWarnings(PageSyncValidationResult result, IReadOnlyList<string> splits) {
+		if (splits is null || splits.Count == 0) {
+			return result;
+		}
+		List<string> warnings = result.Warnings is null ? new List<string>() : new List<string>(result.Warnings);
+		warnings.AddRange(splits.Select(s =>
+			$"Split nested element config '{s}' into its own operation — the Creatio differ does not apply " +
+			"a nested element config (an object with a 'name') inside a parent merge or insert."));
+		return new PageSyncValidationResult {
+			MarkersOk = result.MarkersOk,
+			JsSyntaxOk = result.JsSyntaxOk,
+			ContentOk = result.ContentOk,
+			Errors = result.Errors,
+			Warnings = warnings
 		};
 	}
 
