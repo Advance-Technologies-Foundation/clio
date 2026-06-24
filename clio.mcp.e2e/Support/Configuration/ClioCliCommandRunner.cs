@@ -17,6 +17,15 @@ internal static class ClioCliCommandRunner {
 	private const int CliogateHttpReadinessAttempts = 12;
 	private static readonly TimeSpan CliogateHttpReadinessDelay = TimeSpan.FromSeconds(5);
 
+	// A serving cliogate route answers in well under a second, so a short per-request timeout is
+	// ample. Keeping it low matters: an accept-then-hang host during restart would otherwise burn
+	// the full timeout on every attempt, multiplying the readiness budget into several minutes.
+	private static readonly TimeSpan CliogateHttpRequestTimeout = TimeSpan.FromSeconds(10);
+
+	// Hard ceiling for the whole HTTP-handler readiness loop so the worst case stays bounded
+	// (min(attempt-budget, deadline)) regardless of how long individual requests hang.
+	private static readonly TimeSpan CliogateHttpReadinessOverallTimeout = TimeSpan.FromMinutes(3);
+
 	/// <summary>
 	/// Read-only, idempotent cliogate route used as the HTTP-handler readiness probe.
 	/// It returns the cliogate assembly version (no <c>CheckCanManageSolution</c>, no DB writes),
@@ -169,15 +178,19 @@ internal static class ClioCliCommandRunner {
 			: $"{environment.Uri.TrimEnd('/')}/0";
 
 		using HttpClientHandler handler = new() {
-			ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+			ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+			// Observe a 3xx as a redirect (warming up) instead of following it to a login 200,
+			// which would be mistaken for a serving route.
+			AllowAutoRedirect = false
 		};
 		using HttpClient httpClient = new(handler) {
-			Timeout = TimeSpan.FromSeconds(30)
+			Timeout = CliogateHttpRequestTimeout
 		};
 		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
 			httpClient,
 			CliogateHttpReadinessAttempts,
-			CliogateHttpReadinessDelay);
+			CliogateHttpReadinessDelay,
+			CliogateHttpReadinessOverallTimeout);
 		await probe.WaitUntilServingAsync(baseUri, CliogateProbeRoute, cancellationToken);
 	}
 
