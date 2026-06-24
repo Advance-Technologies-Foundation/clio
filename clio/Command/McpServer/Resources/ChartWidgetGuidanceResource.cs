@@ -58,15 +58,24 @@ public sealed class ChartWidgetGuidanceResource {
 		       - Each entry in `config.series[]` is independent: its own type, color, label, aggregation, and
 		         filter — so multiple series with DIFFERENT aggregation functions are supported.
 		       - `series[*].color` colors only the DATA MARKS (bars/lines/slices). It is INDEPENDENT of `config.color`
-		         (the title/header accent — see Title and header). Changing one NEVER changes the other; never copy one
-		         color into the other.
+		         (the title/header accent — see Title and header). REQUIRED for cartesian series
+		         (bar/horizontal-bar/line/spline/area/scatter) — omit it and the series renders BLACK; doughnut/tsfunnel
+		         ignore it and auto-color slices from the palette.
 		       - Aggregation: COUNT aggregates `Id`; SUM/AVG/MIN/MAX use the explicit numeric column (date is
-		         also valid for MIN/MAX), never `Id`. The exact `aggregation.column.expression` shape and enum
-		         values are owned by the `esq` guidance.
+		         also valid for MIN/MAX), never `Id`. MIN/MAX on a DATE column are valid but render as near-equal
+		         bars at the axis baseline (misleading) — for a date range prefer a numeric measure or a table. The
+		         exact `aggregation.column.expression` shape and enum values are owned by the `esq` guidance.
 		       - Grouping is SHARED across all series and is either by value or by date part (never mixed).
 		         Group Month together with Year unless the user insists on Month only. The exact grouping
 		         column shape (single column for by-value; a date-part array for by-date-part) is in the
 		         `get-component-info` documentation.
+		       - For a by-date-part (time) chart the date COLUMN is an authoring choice. WHEN THE ENTITY HAS a
+		         business/event date that matches the user's intent (e.g. RegisteredOn, OrderDate, ResolvedOn,
+		         DueDate), PREFER it over the audit columns CreatedOn/ModifiedOn for "new / over time / dynamics"
+		         metrics: CreatedOn/ModifiedOn record when the ROW WAS WRITTEN, so on seeded/migrated/bulk-loaded
+		         data they cluster at the data-load date and the chart reflects ingestion, not the business timeline
+		         (structurally valid, so nothing flags it). If CreatedOn is the only date, or the user means
+		         record-creation time, use it.
 		       - Sorting: emit `seriesOrder` ONLY when the user explicitly asks to sort (by count = `by-aggregation-value`,
 		         by name/category = `by-grouping-value`; asc/desc per request). Otherwise OMIT it — a by-value (categorical)
 		         chart keeps the data source's natural order (the lookup's own order, stable across records); never impose a
@@ -86,18 +95,13 @@ public sealed class ChartWidgetGuidanceResource {
 		       omit it and the chart shows ALL rows, not just the current record's.
 
 		       Preferred — the mechanism an OOB detail and the OOB IndicatorWidget use (see `related-list`):
-		       declare the child->master relation in each series' `data.providing.dependencies`; the runtime
-		       builds the ESQ filter AND waits for the record to load. No handler, no seeded filter, no
-		       `filterAttributes`.
-
-		       "dependencies": [ { "attributePath": "<chart-entity FK to the page record>", "relationPath": "<primaryDataSourceName>.Id" } ]
-
-		       Read `<primaryDataSourceName>` from the page modelConfigDiff (e.g. "PDS", or "ContactDS" on a
-		       Contact page); `attributePath` is the chart entity's lookup column to that record (e.g. "Requester").
-
-		       Alternative (designer-style): set `config.sectionBindingColumn: { "path": "<FK>" }` AND the view-level
-		       sibling `sectionBindingColumnRecordId: "$Id"` (next to `config`, not inside it). BOTH are required
-		       together — with only one, the runtime skips the filter. Prefer the `dependencies` form for consistency.
+		       declare the child->master relation in each series' `data.providing.dependencies` (the exact shape is
+		       in the `get-component-info` documentation, "Filter by page data"); the runtime builds the ESQ filter
+		       AND waits for the record to load. No handler, no seeded filter, no `filterAttributes`. Read
+		       `<primaryDataSourceName>` from the page modelConfigDiff (e.g. "PDS", or "ContactDS" on a Contact
+		       page); `attributePath` is the chart entity's lookup column to that record (e.g. "Requester"). The
+		       designer-style `config.sectionBindingColumn` + view-level `sectionBindingColumnRecordId: "$Id"`
+		       alternative (both required together) is documented there too; prefer the `dependencies` form.
 
 		       ## Display settings — applicability by chart type
 
@@ -132,18 +136,17 @@ public sealed class ChartWidgetGuidanceResource {
 		       it is a chart-widget series). If the user named a style/theme in the prompt (plain white, fully colored,
 		       glass, or an explicit theme value), use that and IGNORE these defaults.
 
-		       `config.color` is REQUIRED on EVERY chart — a visible `WidgetColor` token (default "dark-blue"). It colors
-		       the title on `without-fill` and the card on `full-fill`; an omitted color defaults to white and makes a
-		       without-fill title white-on-white (invisible — see Title and header). On Home guess it from other
-		       components; for glassmorphism mirror the indicator color; otherwise "dark-blue" is a safe default.
+		       `config.color` is REQUIRED (see Title and header). It colors the title on `without-fill` and the card on
+		       `full-fill`. On Home guess it from other components; for glassmorphism mirror the indicator color;
+		       otherwise "dark-blue" is a safe default.
 
 		       - **Dashboards** (page inheriting `BaseDashboardTemplate`): plain-white card policy — `theme`: "without-fill".
 		         This WINS even if the dashboard sits on a Home page or Desktop. See the `dashboards` guidance.
 		       - **Desktops** (`BaseDesktop` in the page hierarchy): `layout.color`: "transparent", `theme`: "glassmorphism".
 		       - **Home pages** (`BaseHomePage` in the page hierarchy): `theme`: "full-fill"; guess the color from other
-		         components on the page. Never use a transparent color unless the user asked for glassmorphism.
+		         components on the page.
 		       - **List pages and Form pages** (everything else): `theme`: "without-fill". Never use a transparent color
-		         unless the user asked for glassmorphism.
+		         unless the user explicitly asked for glassmorphism (applies to all surfaces).
 
 		       ## Placement and preserving existing widgets
 
@@ -161,7 +164,9 @@ public sealed class ChartWidgetGuidanceResource {
 		         per-page id), NOT the top `Main` (the template's locked frame) — else the chart can't be moved, resized,
 		         or deleted in the designer. `parentName: "FixedGridSlot_qwe4asds"`. See `page-modification`.
 		       - Before saving, validate each series' aggregation + filter with `execute-esq` against the
-		         target environment to confirm the returned data matches the intended metric.
+		         target environment to confirm the returned data matches the intended metric. For a by-date-part
+		         chart, sanity-check the periods against the real data — a single period is FINE when the data
+		         genuinely spans one; suspect the date column only if you expected a spread but got the load date.
 		       """
 	};
 
