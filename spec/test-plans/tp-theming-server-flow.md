@@ -134,8 +134,8 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 - **Steps / Expected**:
   - `{"success":false,"errorInfo":{"errorCode":"X","message":"boom"}}` → returns `true`, `errorMessage == "boom"`.
   - `{"success":true}` → returns `false`.
-  - empty string / whitespace → returns `false`.
-  - non-JSON (`"OK"`) → returns `false` (tolerated).
+  - empty string / whitespace → returns `false` (empty body tolerated as success).
+  - non-JSON (`"OK"`) → returns `true`, `errorMessage` is the `Unexpected response from server: <body>` diagnostic (mirrors delete-package).
   - **No logger writes on any path** — the parser is silent (assert via a substitute logger never being passed/called; the helper takes no logger). Name e.g. `TryGetFailure_ShouldReturnTrueWithMessage_WhenSuccessIsFalse`.
 
 #### TC-U-07 — Auto-UUID re-validation (defence in depth)
@@ -175,14 +175,14 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 - **Steps**: `Execute` with `--package-name <missing>`.
 - **Expected**: `Logger.WriteError` contains the error; `CommandSuccess == false`; exit code 1; `ExecutePostRequest` to `CreateTheme` **never called** (no `null` UId sent). Name e.g. `Execute_ShouldFailWithoutHttp_WhenPackageNameUnresolved`.
 
-#### TC-U-12 — create response parsing (success / success=false / empty / non-JSON)
+#### TC-U-12 — create response parsing (success / success=false / empty→success / non-JSON→failure)
 - **Level**: Unit · **File**: `CreateThemeCommand.Tests.cs` · **Module**: Command
 - **Traces**: FR-09, S2-AC-07, AC-09, R-01, R-02
 - **Steps / Expected**:
   - `{"success":true}` → exit 0; CLI path `WriteInfo("Created theme '<id>'")` printed (R-02).
   - `{"success":false,"errorInfo":{"message":"no permission"}}` (license/op missing, AC-09) → exit 1; `WriteError` contains `no permission`.
-  - empty body → exit 0 (tolerated).
-  - non-JSON body → exit 0 (tolerated).
+  - empty body → exit 0 (tolerated as success).
+  - non-JSON body → exit 1; `WriteError` names the unexpected non-JSON response (the create did not reach the service).
 - Also assert CSS mutual-exclusion / missing-file / FR-10 violation through the command (delegated to TC-I-04/05 for real file I/O) → `Error:` + **no HTTP** (AC-06/07/08).
 
 ### Story 3 — `update-theme` + `delete-theme` commands
@@ -207,7 +207,7 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 #### TC-U-16 — update response parsing + `WriteError` on failure
 - **Level**: Unit · **File**: `UpdateThemeCommand.Tests.cs` · **Module**: Command
 - **Traces**: FR-09, S3-AC-06, R-07, AC-09
-- **Steps / Expected**: `success:false` → `Logger.WriteError(...)` (NOT `WriteInfo`) + exit 1; `success:true` → exit 0; empty / non-JSON → exit 0 (tolerated).
+- **Steps / Expected**: `success:false` → `Logger.WriteError(...)` (NOT `WriteInfo`) + exit 1; `success:true` → exit 0; empty → exit 0 (tolerated); non-JSON → exit 1 (`WriteError` names the unexpected non-JSON response).
 
 #### TC-U-17 — delete route build + `{ id }` body
 - **Level**: Unit · **File**: `clio.tests/Command/DeleteThemeCommand.Tests.cs` · **Module**: Command
@@ -221,7 +221,7 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 - **Traces**: FR-03, S3-AC-05, OQ-02, R-07
 - **Preconditions**: client returns `{"success":false,"errorInfo":{"message":"theme not found"}}`.
 - **Steps**: `Execute` with an id the server rejects.
-- **Expected**: `Logger.WriteError` contains the message; exit 1 (no existence pre-check; server error is a failure, not a no-op). `success:true`/empty/non-JSON → exit 0. Name e.g. `ProceedResponse_ShouldExitNonZero_WhenDeleteIdUnknown`.
+- **Expected**: `Logger.WriteError` contains the message; exit 1 (no existence pre-check; server error is a failure, not a no-op). `success:true`/empty → exit 0; non-JSON → exit 1 (unexpected non-JSON response). Name e.g. `ProceedResponse_ShouldExitNonZero_WhenDeleteIdUnknown`.
 
 ### Story 4 — MCP tools
 
@@ -287,7 +287,7 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 #### TC-U-22 — token catalog NOT restated; shared sections survive
 - **Level**: Unit · **File**: `GuidanceGetToolTests.cs` (extend) · **Module**: McpServer
 - **Traces**: FR-15, S5-AC-05, CM-03, RR-02
-- **Steps / Expected**: the guide does **not** embed `--crt-*` token names/values (guards CM-03 / single source of truth); the shared "Source of truth — @creatio-devkit/theming", "List themes", and "Get / set the default theme" sections are still present. Name e.g. `GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming`.
+- **Steps / Expected**: the guide does **not** embed `--crt-*` token names/values (guards CM-03 / single source of truth); the shared "Source of truth — @creatio/theming", "List themes", and "Get / set the default theme" sections are still present. Name e.g. `GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming`.
 
 ### Story 6 — docs (only if an automated gate exists)
 

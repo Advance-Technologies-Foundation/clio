@@ -510,7 +510,7 @@ stories:
     blocks: []
 
   # --- theming-clio-devflow stories (ENG-90636 — Theming with AI, Clio dev flow, Contour A), added 2026-06-18 ---
-  # Delegate ownership model (ADR D1): npm package @creatio-devkit/theming owns template + guides;
+  # Delegate ownership model (ADR D1): npm package @creatio/theming owns template + guides;
   # clio adds only clear-themes-cache (CLI + env-aware MCP tool), a thin `theming` guidance pointer, and npm wiring.
   # R2 RESOLVED 2026-06-18 via resolution (a): the platform exposes a NATIVE endpoint ThemeService.svc/ClearThemesCache
   # (IThemeService). KnownRoute.ClearThemesCache = 43 -> "ServiceModel/ThemeService.svc/ClearThemesCache". No ClioGate
@@ -567,7 +567,7 @@ stories:
     cap: [CAP-03, CAP-04]
     depends_on: []
     blocks: []
-    note: "Independent of the R2 open dependency. Thin `theming` MCP guidance resource at docs://mcp/guides/theming (mirror WorkspaceUiProjectGuidanceResource) + GuidanceCatalog entry — orchestration pointer only, no token catalog (C1), references AI_GUIDES_INDEX.md (R3); theme authoring is delivered via get-guidance theming (NO bespoke AGENTS.md theme section). @creatio-devkit/theming stays a clio/tpl/ui-project devDependency — it is the design-token catalog @creatio-devkit/common's REMOTE_COMPONENT_STYLING guide points to (needed for component styling) as well as the theme-authoring source (version pinned once package ships — R3); plain packages npm i on demand. Unit (catalog resolves `theming`, URI, no-token-catalog guard) + mandatory clio.mcp.e2e get-guidance theming discovery — E2E NOT in CI (manual)."
+    note: "Independent of the R2 open dependency. Thin `theming` MCP guidance resource at docs://mcp/guides/theming (mirror WorkspaceUiProjectGuidanceResource) + GuidanceCatalog entry — orchestration pointer only, no token catalog (C1), references AI_GUIDES_INDEX.md (R3); theme authoring is delivered via get-guidance theming (NO bespoke AGENTS.md theme section). @creatio/theming stays a clio/tpl/ui-project devDependency — it is the design-token catalog @creatio-devkit/common's REMOTE_COMPONENT_STYLING guide points to (needed for component styling) as well as the theme-authoring source (version pinned once package ships — R3); plain packages npm i on demand. Unit (catalog resolves `theming`, URI, no-token-catalog guard) + mandatory clio.mcp.e2e get-guidance theming discovery — E2E NOT in CI (manual)."
 
   - id: story-theming-clio-devflow-5
     title: "Prototype removal verification + docs / capability map"
@@ -648,7 +648,7 @@ stories:
     ac: [AC-04, AC-05, AC-09, AC-ERR]
     depends_on: [story-theming-server-flow-1]
     blocks: [story-theming-server-flow-4]
-    note: "Two RemoteCommand shells, simpler ProceedResponse log-envelope shape (no data method — create-only asymmetry, D5). update-theme: full overwrite, body {id,caption,cssClassName,cssContent} with NO packageUId (cannot re-home, R-09 AC-04 unit assertion); --id/--caption/--css-class-name/css all required; CSS resolution + FR-10 validation before HTTP. delete-theme: body {id}, NOT idempotent — server success:false (unknown id) -> fail, no pre-check (OQ-02, AC-05). Both ProceedResponse call Logger.WriteError on success:false (R-07); only success:false is a failure, empty/non-JSON tolerated (FR-09). NO --package-name on either. DI + Program wiring. FULL-SUITE TRIGGER (BindingsModule/Program — RR-01)."
+    note: "Two RemoteCommand shells, simpler ProceedResponse log-envelope shape (no data method — create-only asymmetry, D5). update-theme: full overwrite, body {id,caption,cssClassName,cssContent} with NO packageUId (cannot re-home, R-09 AC-04 unit assertion); --id/--caption/--css-class-name/css all required; CSS resolution + FR-10 validation before HTTP. delete-theme: body {id}, NOT idempotent — server success:false (unknown id) -> fail, no pre-check (OQ-02, AC-05). Both ProceedResponse call Logger.WriteError on success:false (R-07); success:false and non-empty non-JSON bodies are failures, only an empty body is tolerated as success (FR-09). NO --package-name on either. DI + Program wiring. FULL-SUITE TRIGGER (BindingsModule/Program — RR-01)."
 
   - id: story-theming-server-flow-4
     title: "create / update / delete-theme env-aware MCP tools (six variants)"

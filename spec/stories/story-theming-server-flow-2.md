@@ -58,8 +58,9 @@ to chain `update-theme` / `delete-theme` / set-default
   `ThemeRequestBuilder` (Story 1) fails first: clio prints `Error: …`, sets `CommandSuccess = false`, exits
   non-zero, and issues **no** HTTP call. (FR-04, FR-10, R-04, R-05.)
 - [ ] **AC-07** — Given the response is parsed, when handled, then `ThemeServiceResponseParser.TryGetFailure`
-  (Story 1) treats only an explicit `success:false` as failure (surface `errorInfo.message`), and tolerates an
-  empty / non-JSON body as success (FR-09). On a `success:false` from a caller lacking the license/operation
+  (Story 1) treats an explicit `success:false` and a non-empty non-JSON body as failures (surface
+  `errorInfo.message` or the unexpected-non-JSON diagnostic), and tolerates only an empty body as success (FR-09).
+  On a `success:false` from a caller lacking the license/operation
   (AC-09), clio surfaces `Error: {errorInfo.message}` and exits non-zero.
 - [ ] **AC-08** — Given the MCP tool needs a non-logging path, when `CreateThemeCommand` exposes
   `virtual bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage)`, then
@@ -139,7 +140,7 @@ Pattern to follow: `ListThemesCommand` (silent `TryGetAvailableThemes` + logging
 | Type | What to test | File |
 |------|-------------|------|
 | Unit `[Category("Unit")]` | route build (`KnownRoute.CreateTheme` → `ServiceModel/ThemeService.svc/CreateTheme`, NetCore + `0/` NetFW); camelCase body `{id,caption,cssClassName,cssContent,packageUId}` (escaped per R-10); `--id` omitted → auto-UUID matches `^[A-Za-z0-9_-]+$` and is the body id; `--package-name` omitted → no `packageUId` key in the body | `clio.tests/Command/CreateThemeCommand.Tests.cs` |
-| Unit `[Category("Unit")]` | `--package-name` resolves via `QueryPackageUId` → sent UId; `QueryPackageUId` error → `Error:` + `CommandSuccess=false` + **no HTTP** (R-03); CSS mutual-exclusion / missing-file / FR-10 violation → `Error:` + no HTTP (AC-06/07/08); `success:false` → `Error: errorInfo.message` + exit 1 (AC-09); empty/non-JSON tolerated | `clio.tests/Command/CreateThemeCommand.Tests.cs` |
+| Unit `[Category("Unit")]` | `--package-name` resolves via `QueryPackageUId` → sent UId; `QueryPackageUId` error → `Error:` + `CommandSuccess=false` + **no HTTP** (R-03); CSS mutual-exclusion / missing-file / FR-10 violation → `Error:` + no HTTP (AC-06/07/08); `success:false` → `Error: errorInfo.message` + exit 1 (AC-09); empty→success, non-JSON→`Error:` + exit 1 | `clio.tests/Command/CreateThemeCommand.Tests.cs` |
 | Unit `[Category("Unit")]` | `TryCreateTheme` returns `(true,id)` on success and `(false,error)` on each failure path, writing **nothing** to the logger (R-01 / CM-02); CLI `ExecuteRemoteCommand` prints `Created theme '<id>'` on success (R-02) | `clio.tests/Command/CreateThemeCommand.Tests.cs` |
 | Integration `[Category("Integration")]` | `--css-content-file` UTF-8 read end-to-end through the command (real temp file); missing/unreadable file → `Error:` no HTTP | `clio.tests/Command/CreateThemeCommand.Tests.cs` (`[Category("Integration")]` cases) |
 

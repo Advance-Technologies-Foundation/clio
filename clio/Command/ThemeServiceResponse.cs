@@ -33,8 +33,11 @@ internal sealed record ThemeServiceErrorInfo
 }
 
 /// <summary>
-/// Parses a native <c>ThemeService</c> <c>BaseResponse</c> body: only an explicit <c>success:false</c> is a
-/// failure; an empty or non-JSON body is tolerated as success so a contract drift does not surface as a false negative.
+/// Parses a native <c>ThemeService</c> <c>BaseResponse</c> body. An explicit <c>success:false</c> is a failure,
+/// and so is a non-empty body that is not valid JSON: ThemeService always answers with a JSON <c>BaseResponse</c>,
+/// so a non-JSON payload (e.g. an authentication-redirect login page or a proxy/error page) means the request
+/// never reached the service and the operation must not be reported as successful. Only a genuinely empty body
+/// is tolerated as success (the contract default).
 /// </summary>
 internal static class ThemeServiceResponseParser
 {
@@ -47,12 +50,13 @@ internal static class ThemeServiceResponseParser
 	/// </summary>
 	/// <param name="response">The raw response body returned by the ThemeService endpoint.</param>
 	/// <param name="errorMessage">
-	/// On an explicit failure, the server-provided <c>errorInfo.message</c> (may be <c>null</c> when the server
-	/// omits the block); otherwise <c>null</c>.
+	/// On an explicit <c>success:false</c>, the server-provided <c>errorInfo.message</c> (may be <c>null</c> when
+	/// the server omits the block); on a non-empty, non-JSON body, an "Unexpected response from server"
+	/// diagnostic carrying the raw body; otherwise <c>null</c>.
 	/// </param>
 	/// <returns>
-	/// <c>true</c> when the body carries an explicit <c>success:false</c>; <c>false</c> for <c>success:true</c>,
-	/// an empty body, or a non-JSON body.
+	/// <c>true</c> when the body carries an explicit <c>success:false</c> or is a non-empty, non-JSON body;
+	/// <c>false</c> for <c>success:true</c> or an empty body.
 	/// </returns>
 	public static bool TryGetFailure(string response, out string errorMessage) {
 		errorMessage = null;
@@ -64,7 +68,8 @@ internal static class ThemeServiceResponseParser
 			parsed = JsonSerializer.Deserialize<ThemeServiceResponse>(response, ResponseJsonOptions);
 		}
 		catch (JsonException) {
-			return false;
+			errorMessage = $"Unexpected response from server: {response}";
+			return true;
 		}
 		if (parsed?.Success == false) {
 			errorMessage = parsed.ErrorInfo?.Message;

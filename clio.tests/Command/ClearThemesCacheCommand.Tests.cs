@@ -119,8 +119,8 @@ public class ClearThemesCacheCommandTestCase : BaseCommandTests<ClearThemesCache
 	}
 
 	[Test, Category("Unit")]
-	[Description("Treats a non-JSON or empty response body as success to avoid false negatives if the contract evolves.")]
-	public void ClearThemesCache_ReturnsSuccess_WhenResponseBodyIsNotParseableJson() {
+	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the clear never reached the service.")]
+	public void ClearThemesCache_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -130,7 +130,24 @@ public class ClearThemesCacheCommandTestCase : BaseCommandTests<ClearThemesCache
 		int exitCode = _command.Execute(new ClearThemesCacheOptions());
 
 		// Assert
+		exitCode.Should().Be(1,
+			because: "a non-JSON body signals the clear did not reach ThemeService and must surface as a failure");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Unexpected response from server")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Treats an empty response body as success (the contract default), so a minimal success response is not misread as a failure.")]
+	public void ClearThemesCache_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		int exitCode = _command.Execute(new ClearThemesCacheOptions());
+
+		// Assert
 		exitCode.Should().Be(0,
-			because: "a non-JSON body must not be misread as a failure");
+			because: "an empty body is the contract default for a successful clear");
 	}
 }

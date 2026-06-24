@@ -36,7 +36,7 @@ write half of the catalog so a vibe-coder can manage themes server-side via the 
   Success metric **SM-03**: `get-guidance theming` describes the server flow (create / update /
   delete on an environment) and routes the agent to it from "Which flow"; a discovery test asserts
   the entry resolves.
-  Counter **CM-03**: the guidance does NOT restate the `@creatio-devkit/theming` token catalog or
+  Counter **CM-03**: the guidance does NOT restate the `@creatio/theming` token catalog or
   authoring rules — it stays a thin pointer (single source of truth preserved, per ENG-90636 C1).
 
 ## Non-goals
@@ -79,7 +79,7 @@ write half of the catalog so a vibe-coder can manage themes server-side via the 
 | FR-06 | `update-theme` requires `--id` plus `--caption`, `--css-class-name`, and CSS content (full overwrite); it has NO package parameter. | Must |
 | FR-07 | `delete-theme` requires `--id` only and no other bespoke flags. | Must |
 | FR-08 | `create-theme` accepts an optional `--package-name` (a package NAME), resolved to its UId via `PageSchemaMetadataHelper.QueryPackageUId`; when omitted, omit the `packageUId` key entirely so the server falls back to the `CurrentPackageId` system setting. `update-theme` and `delete-theme` have no package parameter. | Must |
-| FR-09 | All three commands treat ONLY an explicit `success:false` in the `BaseResponse` as a failure; an empty or non-JSON body is tolerated as success (mirror `clear-themes-cache`). On failure, surface `errorInfo.message`. | Must |
+| FR-09 | All three commands treat an explicit `success:false` in the `BaseResponse` as a failure (surface `errorInfo.message`). A genuinely empty body is tolerated as success (the contract default); a non-empty body that is **not** valid JSON is a failure — ThemeService always answers with a JSON `BaseResponse`, so a non-JSON payload (e.g. an auth-redirect login page or a proxy/error page) means the request never reached the service and must not be reported as success. | Must |
 | FR-10 | Client-side input validation enforces the server contract before sending: `id` `^[A-Za-z0-9_-]+$` ≤100; `caption` required in the request ≤250 (auto-derived from css-class-name on create when the flag is omitted); `cssClassName` `^[A-Za-z][A-Za-z0-9_-]*$` ≤100; `cssContent` required (empty string allowed, null not) ≤1 MiB. Invalid input fails fast with a user-friendly `Error:` and a non-zero exit, without an HTTP call. | Should |
 | FR-11 | Add three env-aware MCP tools — `create-theme`, `update-theme`, `delete-theme` — each exposing the two standard connection-mode variants (`-by-environment` and `-by-credentials`), executed via the env-aware `BaseTool` path (`InternalExecute<TCommand>`). The MCP tools take inline `cssContent` only (no `--css-content-file` equivalent). | Must |
 | FR-12 | MCP safety flags: create = `ReadOnly=false, Destructive=false, Idempotent=false`; update = `ReadOnly=false, Destructive=false, Idempotent=true`; delete = `ReadOnly=false, Destructive=true, Idempotent=false`; `OpenWorld=false` on all three. Tool descriptions route the agent to `get-guidance theming`. | Must |
@@ -202,7 +202,7 @@ All flags: **kebab-case only** (CLIO001 enforced). No existing flags renamed; no
 
 | Level | Category | What to cover | Where |
 |-------|----------|--------------|-------|
-| Unit | `[Category("Unit")]` | Per command: route build (new `KnownRoute` → `ServiceModel/ThemeService.svc/<Method>`, `0/`-prefixed on NetFW), request-body construction (camelCase keys; `packageUId` key omitted when no `--package-name`; auto-UUID), `--css-content` vs `--css-content-file` mutual exclusion + file read, FR-10 validation, `BaseResponse` parsing (success / success=false+errorInfo / empty / non-JSON). | `clio.tests/Command/{Create,Update,Delete}ThemeCommand*.Tests.cs` |
+| Unit | `[Category("Unit")]` | Per command: route build (new `KnownRoute` → `ServiceModel/ThemeService.svc/<Method>`, `0/`-prefixed on NetFW), request-body construction (camelCase keys; `packageUId` key omitted when no `--package-name`; auto-UUID), `--css-content` vs `--css-content-file` mutual exclusion + file read, FR-10 validation, `BaseResponse` parsing (success / success=false+errorInfo / empty body→success / non-empty non-JSON→failure). | `clio.tests/Command/{Create,Update,Delete}ThemeCommand*.Tests.cs` |
 | Unit | `[Category("Unit")]` | Per MCP tool: arg mapping, env-aware `InternalExecute<TCommand>` selection, safety flags (FR-12), description routes to `get-guidance theming`. | `clio.tests/Command/McpServer/{Create,Update,Delete}ThemeToolTests.cs` |
 | Unit | `[Category("Unit")]` | `get-guidance theming` resolves; server-flow section present; token catalog not restated (CM-03). | `clio.tests/Command/McpServer/GuidanceGetToolTests.cs` (extend) |
 | E2E (MCP) | `clio.mcp.e2e` (NOT in CI — manual) | All six tool variants advertised by the real `clio mcp-server` with correct safety flags; representative create/update/delete round-trip. | `clio.mcp.e2e/` |

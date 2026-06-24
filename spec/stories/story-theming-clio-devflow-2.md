@@ -29,7 +29,7 @@ The platform already exposes a native, purpose-built endpoint, so **no ClioGate 
 
 **What was actually done (instead of the ClioGate body):**
 - `KnownRoute.ClearThemesCache = 42` → `ServiceModel/ThemeService.svc/ClearThemesCache` in `clio/Common/ServiceUrlBuilder.cs` (native ThemeService route, NOT `/rest/CreatioApiGateway/...`).
-- `ClearThemesCacheCommand.ProceedResponse` parses the `BaseResponse` (case-insensitive `success`; surfaces `errorInfo.message` on `success=false`; tolerates non-JSON bodies as success).
+- `ClearThemesCacheCommand.ProceedResponse` parses the `BaseResponse` (case-insensitive `success`; surfaces `errorInfo.message` on `success=false`; tolerates an empty body as success but treats a non-empty non-JSON body as a failure).
 - **No** `cliogate/Files/cs/CreatioApiGateway.cs` change, **no** cliogate version bump, **no** `[RequiresPackage("cliogate", …)]` on `ClearThemesCacheOptions`.
 - The R1 full-`ClearRedisDb` fallback was **not needed**.
 
@@ -79,7 +79,7 @@ Pattern to follow: ClioGate `CallGate` invocation in `clio/Package/PackageUnlock
 
 | Type | What to test | File |
 |------|-------------|------|
-| Unit `[Category("Unit")]` | command POSTs to `ServiceModel/ThemeService.svc/ClearThemesCache` and maps `BaseResponse` (`success` / `success=false`+`errorInfo` / non-JSON) — supersedes the obsolete `[RequiresPackage]`-drift check | `clio.tests/Command/ClearThemesCacheCommand.Tests.cs` |
+| Unit `[Category("Unit")]` | command POSTs to `ServiceModel/ThemeService.svc/ClearThemesCache` and maps `BaseResponse` (`success` / `success=false`+`errorInfo` / empty→success / non-JSON→failure) — supersedes the obsolete `[RequiresPackage]`-drift check | `clio.tests/Command/ClearThemesCacheCommand.Tests.cs` |
 | Integration `[Category("Integration")]` | gz artifact carries the bumped version (descriptor read) — only if a deterministic FS check is feasible | `clio.tests/...Tests.cs` |
 | E2E `[Category("E2E")]` (manual, NOT in CI) | deploy bumped cliogate to a live stand, push a theme change, call `clear-themes-cache`, verify visible-after-reload AND non-theme Redis state survives (AC-01/AC-02) | manual stand verification (record evidence in Dev Agent Record) |
 

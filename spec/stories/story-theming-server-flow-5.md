@@ -51,7 +51,7 @@ a workspace, while clio never restates the design-token catalog
   ("If you delete the theme that is currently the default…") already in the "Get / set the default theme" section
   — it does not duplicate that caveat. (D6.2.)
 - [ ] **AC-05** — Given the shared sections, when compared to the shipped guide, then "Source of truth —
-  @creatio-devkit/theming", "List themes", and "Get / set the default theme" are **unchanged**, and the new
+  @creatio/theming", "List themes", and "Get / set the default theme" are **unchanged**, and the new
   section does **not** restate the `--crt-*` token catalog or authoring rules — it stays a thin pointer (CM-03 /
   single source of truth, per ENG-90636 C1). (FR-15, AC-11, CM-03.)
 - [ ] **AC-ERR** — Given the existing `get-guidance theming` discovery test, when run after the edit, then it
@@ -69,7 +69,7 @@ discovery tests are shared with ENG-90636 and must stay green).
 2. Add a **"No-code / server flow"** body section after the existing "Workspace / dev flow" section, with the
    five bullets in AC-03 (prerequisites; create / restyle / delete via the `*-theme-by-environment` tools; confirm
    with `list-themes-by-environment`) and the cross-reference to the default-theme caveat (AC-04).
-3. Keep **"Source of truth — @creatio-devkit/theming"**, **"List themes"**, and **"Get / set the default theme"**
+3. Keep **"Source of truth — @creatio/theming"**, **"List themes"**, and **"Get / set the default theme"**
    unchanged. **Do not restate** the token catalog or authoring rules (CM-03).
 
 **No `GuidanceCatalog.cs` change** — the `["theming"]` entry already exists and resolves to the same

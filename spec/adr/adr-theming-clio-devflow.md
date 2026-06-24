@@ -11,13 +11,13 @@
 
 ## Context
 
-A coding agent driving the Creatio AI Toolkit must create / re-tokenize a custom theme and ship it to an environment through clio's dev/workspace flow (Contour A). The theme **template** and **authoring guides** now ship in the npm package `@creatio-devkit/theming`; the ENG-89624 / ENG-90889 prototype embedded both in clio, which is no longer the right source of truth. The prototype also activated a new theme bluntly via `clear-redis-db` (a full Redis flush). This ADR records the already-decided architecture for reshaping that prototype: clio **delegates** all theme authoring to the npm package and contributes only orchestration guidance, npm wiring, transport, and one new capability — a **surgical theme-cache clear**.
+A coding agent driving the Creatio AI Toolkit must create / re-tokenize a custom theme and ship it to an environment through clio's dev/workspace flow (Contour A). The theme **template** and **authoring guides** now ship in the npm package `@creatio/theming`; the ENG-89624 / ENG-90889 prototype embedded both in clio, which is no longer the right source of truth. The prototype also activated a new theme bluntly via `clear-redis-db` (a full Redis flush). This ADR records the already-decided architecture for reshaping that prototype: clio **delegates** all theme authoring to the npm package and contributes only orchestration guidance, npm wiring, transport, and one new capability — a **surgical theme-cache clear**.
 
 All decisions below were made and locked during clarification; this ADR records them faithfully and is not re-opening them.
 
 ## Decision
 
-clio adopts the **Delegate ownership model**: it does NOT embed the theme template or the creation/design-token guides and adds NO `new-theme` scaffold command/tool. The coding agent reads the template + guides from `node_modules/@creatio-devkit/theming` and writes the theme files itself. clio adds exactly one new capability — a surgical `clear-themes-cache` command (CLI + env-aware MCP tool + ClioGate endpoint) replacing the prototype's full-Redis flush — plus a thin `theming` MCP guidance pointer and npm wiring in the ui-project template. Scope is **Contour A only**; server-side ThemeService CRUD (Contour B) is a separate ticket.
+clio adopts the **Delegate ownership model**: it does NOT embed the theme template or the creation/design-token guides and adds NO `new-theme` scaffold command/tool. The coding agent reads the template + guides from `node_modules/@creatio/theming` and writes the theme files itself. clio adds exactly one new capability — a surgical `clear-themes-cache` command (CLI + env-aware MCP tool + ClioGate endpoint) replacing the prototype's full-Redis flush — plus a thin `theming` MCP guidance pointer and npm wiring in the ui-project template. Scope is **Contour A only**; server-side ThemeService CRUD (Contour B) is a separate ticket.
 
 ---
 
@@ -25,12 +25,12 @@ clio adopts the **Delegate ownership model**: it does NOT embed the theme templa
 
 ### D1 — Ownership model: Delegate (LOCKED)
 
-clio owns orchestration, npm wiring, transport, and theme-cache activation. The npm package `@creatio-devkit/theming` owns the theme template (`theme.{json,css}.tpl`), the creation guide, the design-token catalog, the fonts guide, and the token-usage policy. The agent copies the template out of `node_modules` and fills the placeholders (`<%themeId%>` / `<%themeCaption%>` / `<%themeCssClass%>`) into `Files/themes/<cssClassName>/` itself. The theme descriptor is `{id, caption, cssClassName}` with **no `code` field** — satisfied by the package's `theme.json.tpl`; clio authors no descriptor template.
+clio owns orchestration, npm wiring, transport, and theme-cache activation. The npm package `@creatio/theming` owns the theme template (`theme.{json,css}.tpl`), the creation guide, the design-token catalog, the fonts guide, and the token-usage policy. The agent copies the template out of `node_modules` and fills the placeholders (`<%themeId%>` / `<%themeCaption%>` / `<%themeCssClass%>`) into `Files/themes/<cssClassName>/` itself. The theme descriptor is `{id, caption, cssClassName}` with **no `code` field** — satisfied by the package's `theme.json.tpl`; clio authors no descriptor template.
 
 | Concern | Owner |
 |---|---|
-| Theme template (`theme.{json,css}.tpl`) | `@creatio-devkit/theming` (node_modules) — agent copies |
-| Creation guide, design-token catalog, fonts guide, token-usage policy | `@creatio-devkit/theming` — clio only points to it |
+| Theme template (`theme.{json,css}.tpl`) | `@creatio/theming` (node_modules) — agent copies |
+| Creation guide, design-token catalog, fonts guide, token-usage policy | `@creatio/theming` — clio only points to it |
 | Orchestration (register env → ensure pkg → npm i → scaffold from package → push → clear theme cache) | clio — thin MCP guidance (`get-guidance theming`) |
 | Transport: deploy | clio — existing `push-workspace` / `pushw`, `push-pkg` |
 | Activation: theme cache invalidation | clio — NEW `clear-themes-cache` |
@@ -50,10 +50,10 @@ A surgical theme-only cache invalidation replaces the prototype's blunt `clear-r
 
 ### D3 — Delegate guidance + npm wiring (LOCKED)
 
-- **Thin MCP guidance resource** `theming` at `docs://mcp/guides/theming`, mirroring `clio/Command/McpServer/Resources/WorkspaceUiProjectGuidanceResource.cs` and registered in `clio/Command/McpServer/Resources/GuidanceCatalog.cs` (entry point for the agent = `get-guidance theming`). Its text is the ENG-88812 orchestration prompt only: ensure `@creatio-devkit/theming` is installed → read `node_modules/@creatio-devkit/theming/AI_GUIDES_INDEX.md` → `THEMING_CREATION_AI_GUIDE.md` + `THEMING_DESIGN_TOKENS_AI_GUIDE.md` + `templates/` → copy `theme.{json,css}.tpl` into `Files/themes/<cssClassName>/` and fill placeholders → `push-workspace` / `push-pkg` → `clear-themes-cache`. It **does NOT restate** the token catalog or creation guide; pointers reference `AI_GUIDES_INDEX.md` (version-agnostic) so they track the published naming.
-- **npm dependency** — keep `@creatio-devkit/theming` in `clio/tpl/ui-project/package.json` devDependencies: it is the `--crt-*` design-token catalog component styling consumes (per `@creatio-devkit/common`'s REMOTE_COMPONENT_STYLING guide) as well as the theme-authoring source (version pinned in `clio/tpl/ui-project/package.json`).
-- **`AGENTS.md`** — NO bespoke theme section. Theme authoring is delivered via the `get-guidance theming` MCP entry; the existing component-styling pointer (→ `@creatio-devkit/common`) already reaches the `@creatio-devkit/theming` design-token catalog transitively (a theme is not a remote module).
-- **Plain-package case** — for a non-ui-project package, the `theming` guidance instructs the agent to drop a minimal `package.json` and run `npm i @creatio-devkit/theming` so `node_modules` exists.
+- **Thin MCP guidance resource** `theming` at `docs://mcp/guides/theming`, mirroring `clio/Command/McpServer/Resources/WorkspaceUiProjectGuidanceResource.cs` and registered in `clio/Command/McpServer/Resources/GuidanceCatalog.cs` (entry point for the agent = `get-guidance theming`). Its text is the ENG-88812 orchestration prompt only: ensure `@creatio/theming` is installed → read `node_modules/@creatio/theming/AI_GUIDES_INDEX.md` → `THEMING_CREATION_AI_GUIDE.md` + `THEMING_DESIGN_TOKENS_AI_GUIDE.md` + `templates/` → copy `theme.{json,css}.tpl` into `Files/themes/<cssClassName>/` and fill placeholders → `push-workspace` / `push-pkg` → `clear-themes-cache`. It **does NOT restate** the token catalog or creation guide; pointers reference `AI_GUIDES_INDEX.md` (version-agnostic) so they track the published naming.
+- **npm dependency** — keep `@creatio/theming` in `clio/tpl/ui-project/package.json` devDependencies: it is the `--crt-*` design-token catalog component styling consumes (per `@creatio-devkit/common`'s REMOTE_COMPONENT_STYLING guide) as well as the theme-authoring source (version pinned in `clio/tpl/ui-project/package.json`).
+- **`AGENTS.md`** — NO bespoke theme section. Theme authoring is delivered via the `get-guidance theming` MCP entry; the existing component-styling pointer (→ `@creatio-devkit/common`) already reaches the `@creatio/theming` design-token catalog transitively (a theme is not a remote module).
+- **Plain-package case** — for a non-ui-project package, the `theming` guidance instructs the agent to drop a minimal `package.json` and run `npm i @creatio/theming` so `node_modules` exists.
 
 ### D4 — Scope: Contour A only (LOCKED)
 
@@ -73,7 +73,7 @@ Under Delegate, no embedded theme content survives. Remove / do not port:
 
 | Option | Pros | Cons | Status |
 |--------|------|------|--------|
-| **A: Delegate** (chosen) — package owns template + guides; clio adds only `clear-themes-cache`, thin `theming` pointer, npm wiring | Single source of truth; no duplication/drift; clio stays transport+orchestration; agent edits palettes anyway | Requires `@creatio-devkit/theming` present in `node_modules`; pointer must track published guide names | **Chosen** |
+| **A: Delegate** (chosen) — package owns template + guides; clio adds only `clear-themes-cache`, thin `theming` pointer, npm wiring | Single source of truth; no duplication/drift; clio stays transport+orchestration; agent edits palettes anyway | Requires `@creatio/theming` present in `node_modules`; pointer must track published guide names | **Chosen** |
 | B: Hybrid — a clio `new-theme` command that reads the `.tpl` from `node_modules` | Deterministic scaffold step inside clio | Couples clio C# to the node_modules path / macros / package version; determinism buys little since the agent re-tokenizes palettes afterward regardless | Rejected |
 | C: Self-contained — keep the prototype's embedded template + guidance | No npm dependency at author time | Duplicates the package; diverges over time; contradicts "template ships in npm" (the explicit reshaping driver) | Rejected |
 
@@ -106,7 +106,7 @@ For theme-cache activation, the prototype's full `ClearRedisDb` is rejected as t
 | `clio/Command/McpServer/Resources/GuidanceCatalog.cs` | Add `["theming"] = Create("theming", "<desc>", ThemingGuidanceResource.Guide)` |
 | `cliogate/Files/cs/CreatioApiGateway.cs` | ~~New `[WebInvoke] ClearThemesCache`~~ — **superseded by R2**: native `ThemeService.svc/ClearThemesCache` used, no ClioGate change |
 | `clio/cliogate/cliogate.gz` | ~~Rebuilt after cliogate bump~~ — **superseded by R2**: no cliogate change |
-| `clio/tpl/ui-project/package.json` | Add `@creatio-devkit/theming` to devDependencies (design-token catalog for component styling + theme authoring) |
+| `clio/tpl/ui-project/package.json` | Add `@creatio/theming` to devDependencies (design-token catalog for component styling + theme authoring) |
 | `clio/tpl/ui-project/AGENTS.md` | Unchanged — no theme section (theme authoring via `get-guidance theming`) |
 | `clio/Commands.md` | Add `clear-themes-cache` to overview/index |
 | `clio/Wiki/WikiAnchors.txt` | Add `clear-themes-cache` anchor |
@@ -156,9 +156,9 @@ No new bespoke flags are introduced; verb and alias are kebab-case. CLIO001 has 
 
 | Layer | Framework | What to cover | File |
 |-------|----------|--------------|------|
-| Unit | NSubstitute / `BaseCommandTests<ClearThemesCacheOptions>` | route build (`KnownRoute.ClearThemesCache → ServiceModel/ThemeService.svc/ClearThemesCache`, `0/`-prefixed on NetFW), `ServicePath`, `BaseResponse` parsing (success / success=false+errorInfo / non-JSON) | `clio.tests/Command/ClearThemesCacheCommand.Tests.cs` |
+| Unit | NSubstitute / `BaseCommandTests<ClearThemesCacheOptions>` | route build (`KnownRoute.ClearThemesCache → ServiceModel/ThemeService.svc/ClearThemesCache`, `0/`-prefixed on NetFW), `ServicePath`, `BaseResponse` parsing (success / success=false+errorInfo / empty→success / non-JSON→failure) | `clio.tests/Command/ClearThemesCacheCommand.Tests.cs` |
 | Unit | NSubstitute | MCP arg mapping + env-aware `InternalExecute<TCommand>` selection, safety flags | `clio.tests/Command/McpServer/ClearThemesCacheToolTests.cs` |
-| Unit | NSubstitute | `get-guidance theming` resolves; article URI = `docs://mcp/guides/theming`; delegates to `@creatio-devkit/theming` | `clio.tests/Command/McpServer/GuidanceGetToolTests.cs` |
+| Unit | NSubstitute | `get-guidance theming` resolves; article URI = `docs://mcp/guides/theming`; delegates to `@creatio/theming` | `clio.tests/Command/McpServer/GuidanceGetToolTests.cs` |
 | Integration | Real FS / stub | template-copy + push flow as needed | `clio.tests/...Tests.cs` |
 | E2E | clio.mcp.e2e | `clear-themes-cache` tool against real `clio mcp-server`; `get-guidance theming` discovery | `clio.mcp.e2e/...` |
 
@@ -169,12 +169,12 @@ All unit tests use `[Category("Unit")]`, `MethodName_ShouldExpectedBehavior_When
 ## Consequences
 
 - **Positive**
-  - Single source of truth: the template + guides live once in `@creatio-devkit/theming`; no clio/package drift.
+  - Single source of truth: the template + guides live once in `@creatio/theming`; no clio/package drift.
   - clio's surface stays small — one verb, one MCP tool, one thin guidance pointer, npm wiring — and the embedded `new-theme` stack is retired (net code reduction).
   - Theme activation becomes surgical (theme-only eviction) instead of a full Redis flush, so unrelated cached state survives.
   - The `theming` guidance points at `AI_GUIDES_INDEX.md`, so it tracks the package's published guide naming without clio edits.
 - **Trade-offs / costs**
-  - Authoring now depends on `@creatio-devkit/theming` being present in `node_modules` (ui-project devDependency, or a minimal `package.json` + `npm i` for plain packages). Pointers are version-agnostic (they reference `AI_GUIDES_INDEX.md`); the dependency version is pinned in `package.json`.
+  - Authoring now depends on `@creatio/theming` being present in `node_modules` (ui-project devDependency, or a minimal `package.json` + `npm i` for plain packages). Pointers are version-agnostic (they reference `AI_GUIDES_INDEX.md`); the dependency version is pinned in `package.json`.
   - Activation depends on the platform's native `ThemeService.svc/ClearThemesCache` endpoint (present in supported Creatio versions); the caller needs the `CanCustomizeBranding` license + `CanManageThemes` system operation at runtime. No cliogate re-deploy is required (R2).
 - **Breaking change**: No. New verb + alias, additive `KnownRoute`, additive MCP tool/resource, additive npm wiring. Removal of the never-merged prototype `new-theme` stack and embedded theme content has no public-surface impact (it never shipped). No `RELEASE.md` migration entry required beyond a standard "added `clear-themes-cache`" note.
 
@@ -187,7 +187,7 @@ All unit tests use `[Category("Unit")]`, `MethodName_ShouldExpectedBehavior_When
   - **Outcome:** `KnownRoute.ClearThemesCache = 42` is wired to `ServiceModel/ThemeService.svc/ClearThemesCache` (NOT the ClioGate `/rest/CreatioApiGateway/...` route the draft assumed). **No ClioGate method is added, no cliogate version bump, and no `[RequiresPackage("cliogate", …)]` gate** on `ClearThemesCacheOptions`. `ClearThemesCacheCommand.ProceedResponse` parses the `BaseResponse` (case-insensitive `success`; surfaces `errorInfo.message` on failure). The R1 full-`ClearRedisDb` fallback was therefore **not needed**.
   - The earlier draft route value `/rest/CreatioApiGateway/ClearThemesCache` and the ClioGate-method / cliogate-bump notes elsewhere in this ADR are **superseded** by this resolution.
   - All other wiring (route enum, CLI command, MCP tool, docs, tests, npm pointers) was unblocked from the start and is implemented.
-- **R3 — Package guide naming.** Canonical guides in `@creatio-devkit/theming` are the `THEMING_*`-prefixed files; the older `THEME_CREATION_AI_GUIDE.md` / `DESIGN_TOKENS_AI_GUIDE.md` in dist are stale. Pointers reference `AI_GUIDES_INDEX.md` so they track the guide naming without clio edits; the dependency version is pinned in `package.json`.
+- **R3 — Package guide naming.** Canonical guides in `@creatio/theming` are the `THEMING_*`-prefixed files; the older `THEME_CREATION_AI_GUIDE.md` / `DESIGN_TOKENS_AI_GUIDE.md` in dist are stale. Pointers reference `AI_GUIDES_INDEX.md` so they track the guide naming without clio edits; the dependency version is pinned in `package.json`.
 
 ---
 
@@ -208,7 +208,7 @@ All unit tests use `[Category("Unit")]`, `MethodName_ShouldExpectedBehavior_When
 - [x] **No** ClioGate method, **no** cliogate bump, **no** `[RequiresPackage]` — superseded by R2 (runtime auth via `CanCustomizeBranding` + `CanManageThemes`)
 - [x] MCP tool uses env-aware `InternalExecute<TCommand>`; registered via `McpFeatureToggleFilter.RegisterEnabledPrimitives` (`IEnumerable<Type>`)
 - [x] `theming` guidance is a thin pointer (no token catalog restated); registered in `GuidanceCatalog`
-- [x] `@creatio-devkit/theming` in `clio/tpl/ui-project/package.json` devDependencies (styling + theme-authoring catalog); no bespoke theme section in `AGENTS.md` (theme authoring via `get-guidance theming`)
+- [x] `@creatio/theming` in `clio/tpl/ui-project/package.json` devDependencies (styling + theme-authoring catalog); no bespoke theme section in `AGENTS.md` (theme authoring via `get-guidance theming`)
 - [x] Prototype stack absent (D5 — branch fresh off master); CLIO005 clean
 - [x] Error messages user-friendly; no raw `HttpClient` (uses `IApplicationClient`); no bare `catch (Exception)` (catches `JsonException` specifically)
 - [x] `clio.mcp.e2e` coverage added (both tools advertised); live theme-activation E2E is manual (not in CI) — **pending**

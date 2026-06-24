@@ -105,7 +105,8 @@ namespace Clio.Command
 				parsed = JsonSerializer.Deserialize<ListThemesResponse>(response, ResponseJsonOptions);
 			}
 			catch (JsonException) {
-				return true;
+				errorMessage = $"Unexpected response from server: {response}";
+				return false;
 			}
 			if (parsed is null) {
 				return true;

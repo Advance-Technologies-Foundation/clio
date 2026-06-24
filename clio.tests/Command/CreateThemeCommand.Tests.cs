@@ -217,8 +217,8 @@ public class CreateThemeCommandTestCase : BaseCommandTests<CreateThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Treats a non-JSON response body as success to avoid false negatives if the contract evolves.")]
-	public void CreateTheme_ReturnsSuccess_WhenResponseBodyIsNotParseableJson() {
+	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the create never reached the service.")]
+	public void CreateTheme_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
@@ -229,7 +229,8 @@ public class CreateThemeCommandTestCase : BaseCommandTests<CreateThemeOptions>
 		int exitCode = _command.Execute(ValidOptions());
 
 		// Assert
-		exitCode.Should().Be(0, because: "a non-JSON body must not be misread as a failure");
+		exitCode.Should().Be(1, because: "a non-JSON body signals the create did not reach ThemeService and must surface as a failure");
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("Unexpected response from server")));
 	}
 
 	[Test, Category("Unit")]

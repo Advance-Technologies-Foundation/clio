@@ -103,8 +103,8 @@ public class DeleteThemeCommandTestCase : BaseCommandTests<DeleteThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Treats a non-JSON response body as success to avoid false negatives if the contract evolves.")]
-	public void DeleteTheme_ReturnsSuccess_WhenResponseBodyIsNotParseableJson() {
+	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the delete never reached the service.")]
+	public void DeleteTheme_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("DeleteTheme")), Arg.Any<string>(),
@@ -115,6 +115,7 @@ public class DeleteThemeCommandTestCase : BaseCommandTests<DeleteThemeOptions>
 		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "ocean-theme" });
 
 		// Assert
-		exitCode.Should().Be(0, because: "a non-JSON body must not be misread as a failure");
+		exitCode.Should().Be(1, because: "a non-JSON body signals the delete did not reach ThemeService and must surface as a failure");
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("Unexpected response from server")));
 	}
 }

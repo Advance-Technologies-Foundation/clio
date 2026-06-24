@@ -97,9 +97,11 @@ Each command derives from `RemoteCommand<TOptions>`, mirroring `ClearThemesCache
   call"). `RemoteCommand.Execute` then returns exit 1 because `CommandSuccess == false`.
 - **Response parsing — shared `ThemeServiceResponse` + one parse helper.** All three `ProceedResponse` overrides
   parse the identical `BaseResponse { success, errorInfo:{ errorCode, message } }` with the exact ListThemes /
-  ClearThemesCache approach: `JsonSerializerOptions { PropertyNameCaseInsensitive = true }`; treat **only an
-  explicit `success:false` as failure** (surface `errorInfo.message`); tolerate empty / non-JSON body as success
-  (FR-09). To avoid 3× duplication, extract a shared `ThemeServiceResponse` record + a static
+  ClearThemesCache approach: `JsonSerializerOptions { PropertyNameCaseInsensitive = true }`; treat an
+  **explicit `success:false` as failure** (surface `errorInfo.message`); tolerate an **empty** body as success
+  (contract default) but treat a **non-empty, non-JSON** body as a failure — ThemeService always answers with
+  JSON, so a non-JSON payload (e.g. an auth-redirect login page) means the request never reached the service and
+  must not be reported as success; the diagnostic surfaces the raw response, matching `delete-package` (FR-09). To avoid 3× duplication, extract a shared `ThemeServiceResponse` record + a static
   `ThemeServiceResponseParser.TryGetFailure(string response, out string errorMessage)` in
   `clio/Command/ThemeServiceResponse.cs`. `ListThemesCommand` and `ClearThemesCacheCommand` keep their private
   copies as shipped (do not refactor the siblings — they are out of scope per the PRD non-goal "will not change
@@ -211,7 +213,7 @@ Edit `ThemingGuidanceResource.Guide` (do not rewrite it):
      reference the existing default-theme caveat ("If you delete the theme that is currently the default…") already
      in the "Get / set the default theme" section.
    - Confirm with `list-themes-by-environment`.
-3. Keep the shared **"Source of truth — @creatio-devkit/theming"**, **"List themes"**, and
+3. Keep the shared **"Source of truth — @creatio/theming"**, **"List themes"**, and
    **"Get / set the default theme"** sections unchanged. **Do not restate** the `--crt-*` token catalog or
    authoring rules — the section stays a thin pointer (CM-03 / single source of truth).
 
@@ -268,7 +270,7 @@ extend it to assert the server-flow text is present and the token catalog is *no
 | `clio/docs/commands/delete-theme.md` | Detailed GitHub docs |
 | `clio.tests/Command/CreateThemeCommand.Tests.cs` | Unit: route build, camelCase body, auto-UUID, packageUId key omitted when no --package-name, css mutual-exclusion, FR-10 validation, `BaseResponse` parse |
 | `clio.tests/Command/UpdateThemeCommand.Tests.cs` | Unit: route build, full-overwrite body (no package), css resolution, validation, parse |
-| `clio.tests/Command/DeleteThemeCommand.Tests.cs` | Unit: route build, `{ id }` body, success:false→fail, empty/non-JSON tolerated |
+| `clio.tests/Command/DeleteThemeCommand.Tests.cs` | Unit: route build, `{ id }` body, success:false→fail, empty→success, non-JSON→fail |
 | `clio.tests/Command/McpServer/CreateThemeToolTests.cs` | Unit: arg mapping, env-aware resolution, structured result carries id, flags |
 | `clio.tests/Command/McpServer/UpdateThemeToolTests.cs` | Unit: arg mapping, env-aware `InternalExecute`, flags (Idempotent=true) |
 | `clio.tests/Command/McpServer/DeleteThemeToolTests.cs` | Unit: arg mapping, env-aware `InternalExecute`, flags (Destructive=true) |
@@ -367,7 +369,7 @@ All long names are kebab-case (CLIO001 — FR-19). No existing flags renamed; no
 
 | Layer | Framework | What to cover | File(s) |
 |-------|-----------|---------------|---------|
-| Unit | `BaseCommandTests<TOptions>` + NSubstitute | route build (`KnownRoute.{Create,Update,Delete}Theme` → `ServiceModel/ThemeService.svc/<Method>`, `0/`-prefixed on NetFW); camelCase request body; create auto-UUID + packageUId key omitted when no `--package-name` (sent only when `--package-name`→UId resolves); css `--css-content` xor `--css-content-file`; FR-10 validation (regex/length/empty-ok-null-not); `ThemeServiceResponse` parse (success / success=false+errorInfo / empty / non-JSON) | `clio.tests/Command/{Create,Update,Delete}ThemeCommand.Tests.cs` |
+| Unit | `BaseCommandTests<TOptions>` + NSubstitute | route build (`KnownRoute.{Create,Update,Delete}Theme` → `ServiceModel/ThemeService.svc/<Method>`, `0/`-prefixed on NetFW); camelCase request body; create auto-UUID + packageUId key omitted when no `--package-name` (sent only when `--package-name`→UId resolves); css `--css-content` xor `--css-content-file`; FR-10 validation (regex/length/empty-ok-null-not); `ThemeServiceResponse` parse (success / success=false+errorInfo / empty→success / non-empty non-JSON→failure) | `clio.tests/Command/{Create,Update,Delete}ThemeCommand.Tests.cs` |
 | Unit | NSubstitute | MCP arg mapping; env-aware resolution (generic `EnvironmentOptions` arm); create structured result carries id; safety flags (FR-12); description → `get-guidance theming` | `clio.tests/Command/McpServer/{Create,Update,Delete}ThemeToolTests.cs` |
 | Unit | NSubstitute | `get-guidance theming` resolves; server-flow section present; token catalog not restated | `clio.tests/Command/McpServer/GuidanceGetToolTests.cs` (extend) |
 | Integration | Real FS temp files | `--css-content-file` UTF-8 read; missing/unreadable file → `Error:` no HTTP | `clio.tests/Command/{Create,Update}ThemeCommand.Tests.cs` (`[Category("Integration")]` cases) |
@@ -484,7 +486,7 @@ escaping is fine and tests should match it.)
 - [ ] `KnownRoute.CreateTheme = 44` / `UpdateTheme = 45` / `DeleteTheme = 46` map to `ServiceModel/ThemeService.svc/<Method>`
 - [ ] Request bodies built by serializing a record (camelCase) — no string interpolation; `cssContent` escaping verified
 - [ ] CSS resolution + mutual-exclusion + FR-10 validation run *before* any HTTP call (fail fast with `Error:`)
-- [ ] `ProceedResponse` parses the shared `ThemeServiceResponse`; only `success:false` is a failure; empty/non-JSON tolerated
+- [ ] `ProceedResponse` parses the shared `ThemeServiceResponse`; `success:false` and non-empty non-JSON bodies are failures; only an empty body is tolerated as success
 - [ ] `create-theme` returns the effective id (generated when `--id` omitted); MCP create result carries it
 - [ ] `delete-theme` is NOT idempotent (no pre-check; server error → exit 1); MCP `Idempotent=false`
 - [ ] MCP safety flags per FR-12; `OpenWorld=false`; descriptions route to `get-guidance theming`

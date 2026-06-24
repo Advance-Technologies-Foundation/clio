@@ -27,7 +27,7 @@ after pushing a package and running `clear-themes-cache` I can confirm a theme i
 
 - [x] **AC-01** — Given the CLI command, when inspected, then it derives from `RemoteCommand<ListThemesOptions>` (verb `list-themes`, alias `get-themes`), posts to `ServiceModel/ThemeService.svc/GetAvailableThemes` via `KnownRoute.GetAvailableThemes = 42`, and has **no** `[RequiresPackage]` (native endpoint; runtime auth = `CanCustomizeBranding`).
 - [x] **AC-02** — Given a successful `ListResponse`, when parsed, then every `values[]` entry is exposed with all four descriptor fields (`id`, `caption`, `cssClassName`, `cssFilePath`) and printed as a table; an empty `values[]` (e.g. an unlicensed caller) is success with an empty list, not an error.
-- [x] **AC-03** — Given an explicit `success=false` response, when handled, then the command exits non-zero and surfaces `errorInfo.message`; a non-JSON / empty body is tolerated as an empty catalog (mirrors `clear-themes-cache` `ProceedResponse`).
+- [x] **AC-03** — Given an explicit `success=false` response, when handled, then the command exits non-zero and surfaces `errorInfo.message`; an empty body is tolerated as an empty catalog, but a non-empty non-JSON body is a failure (mirrors `clear-themes-cache` `ProceedResponse`).
 - [x] **AC-04** — Given the MCP tool, when inspected, then it derives from `BaseTool<ListThemesOptions>`, resolves the per-call environment (`ResolveCommand<ListThemesCommand>`), reads the catalog through the command's **non-logging** `TryGetAvailableThemes` data method, and returns **structured JSON** `{ success, themes:[{id,caption,cssClassName,cssFilePath}] }` (not a log-message envelope). Safety flags `ReadOnly=true`, `Destructive=false`, `Idempotent=true`; connection-mode names `list-themes-by-environment` and `list-themes-by-credentials` (kebab-case).
 - [x] **AC-05** — Given the MCP server starts, when tools are registered, then both tools are registered via assembly scan through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (the `IEnumerable<Type>` seam) — no `Type[]`, no `*FromAssembly`. (E2E asserts both names are advertised; manual run — E2E not in CI.)
 - [x] **AC-ERR** — Given an MCP call with no resolvable environment / empty required argument, when the tool runs, then it returns a graceful `{ success:false, error }` result, not an unhandled exception.
@@ -48,7 +48,7 @@ Key files:
 
 | Type | What to test | File |
 |------|-------------|------|
-| Unit `[Category("Unit")]` | request URL (NetFW/NetCore), values parsing → `Themes`, empty list, `success=false` → error, non-JSON tolerance | `clio.tests/Command/ListThemesCommand.Tests.cs` |
+| Unit `[Category("Unit")]` | request URL (NetFW/NetCore), values parsing → `Themes`, empty list, `success=false` → error, empty→empty catalog, non-JSON→error | `clio.tests/Command/ListThemesCommand.Tests.cs` |
 | Unit `[Category("Unit")]` | MCP arg mapping → `ListThemesOptions`; env-aware command resolution; structured success/failure mapping; safety flags; empty-arg failure | `clio.tests/Command/McpServer/ListThemesToolTests.cs` |
 | E2E `[Category("E2E")]` (manual, NOT in CI) | real `clio mcp-server` advertises both `list-themes-by-environment` / `list-themes-by-credentials` | `clio.mcp.e2e/ListThemesToolE2ETests.cs` |
 

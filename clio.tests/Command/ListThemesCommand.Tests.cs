@@ -128,8 +128,8 @@ public class ListThemesCommandTestCase : BaseCommandTests<ListThemesOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Treats a non-JSON or empty response body as an empty catalog to avoid false negatives if the contract evolves.")]
-	public void ListThemes_ReturnsEmptyList_WhenResponseBodyIsNotParseableJson() {
+	[Description("Fails the read when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the request never reached the service.")]
+	public void ListThemes_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -139,8 +139,26 @@ public class ListThemesCommandTestCase : BaseCommandTests<ListThemesOptions> {
 		int exitCode = _command.Execute(new ListThemesOptions());
 
 		// Assert
+		exitCode.Should().Be(1,
+			because: "a non-JSON body signals the read did not reach ThemeService and must surface as a failure");
+		_command.Themes.Should().BeEmpty(because: "a failed read must not expose any themes");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Unexpected response from server")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Treats an empty response body as an empty catalog (the contract default), so a minimal response is not misread as a failure.")]
+	public void ListThemes_ReturnsEmptyList_WhenResponseBodyIsEmpty() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		int exitCode = _command.Execute(new ListThemesOptions());
+
+		// Assert
 		exitCode.Should().Be(0,
-			because: "a non-JSON body must not be misread as a failure");
-		_command.Themes.Should().BeEmpty(because: "an unparseable body yields no themes");
+			because: "an empty body is the contract default and yields an empty catalog");
+		_command.Themes.Should().BeEmpty(because: "an empty body yields no themes");
 	}
 }

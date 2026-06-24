@@ -60,8 +60,8 @@ an environment with no workspace and no push
 ### shared (both verbs)
 
 - [ ] **AC-06** — Given the response is parsed, when handled, then each `ProceedResponse` override uses the
-  shared `ThemeServiceResponseParser.TryGetFailure` (Story 1): only an explicit `success:false` is a failure;
-  empty / non-JSON body is tolerated as success (FR-09). On `success:false` (e.g. caller lacks the license /
+  shared `ThemeServiceResponseParser.TryGetFailure` (Story 1): an explicit `success:false` and a non-empty
+  non-JSON body are failures; only an empty body is tolerated as success (FR-09). On `success:false` (e.g. caller lacks the license /
   operation — AC-09), the override calls `Logger.WriteError(...)` (**not** `WriteInfo`) so the failure is carried
   as an error and the exit code is non-zero (R-07, mirrors `ClearThemesCacheCommand`).
 - [ ] **AC-07** — Given the verbs and DI wiring, when `clio --help` / the parser lists verbs, then both
@@ -127,8 +127,8 @@ log-envelope idiom that R-07 mirrors); `ListThemesCommand` for the `RemoteComman
 
 | Type | What to test | File |
 |------|-------------|------|
-| Unit `[Category("Unit")]` | update: route build (`KnownRoute.UpdateTheme`, NetCore + `0/` NetFW); body `{id,caption,cssClassName,cssContent}` with **no `packageUId` key** (R-09); CSS resolution + FR-10 validation → `Error:` no HTTP on failure; `success:false` → `WriteError` + exit 1 (R-07); empty/non-JSON tolerated | `clio.tests/Command/UpdateThemeCommand.Tests.cs` |
-| Unit `[Category("Unit")]` | delete: route build (`KnownRoute.DeleteTheme`, NetCore + `0/` NetFW); body `{ id }`; `success:false` (unknown id) → `WriteError` + exit 1 (not idempotent — OQ-02); empty/non-JSON tolerated; id FR-10 validation | `clio.tests/Command/DeleteThemeCommand.Tests.cs` |
+| Unit `[Category("Unit")]` | update: route build (`KnownRoute.UpdateTheme`, NetCore + `0/` NetFW); body `{id,caption,cssClassName,cssContent}` with **no `packageUId` key** (R-09); CSS resolution + FR-10 validation → `Error:` no HTTP on failure; `success:false` → `WriteError` + exit 1 (R-07); empty→success, non-JSON→`WriteError` + exit 1 | `clio.tests/Command/UpdateThemeCommand.Tests.cs` |
+| Unit `[Category("Unit")]` | delete: route build (`KnownRoute.DeleteTheme`, NetCore + `0/` NetFW); body `{ id }`; `success:false` (unknown id) → `WriteError` + exit 1 (not idempotent — OQ-02); empty→success, non-JSON→`WriteError` + exit 1; id FR-10 validation | `clio.tests/Command/DeleteThemeCommand.Tests.cs` |
 | Integration `[Category("Integration")]` | update `--css-content-file` UTF-8 read end-to-end (real temp file); missing/unreadable file → `Error:` no HTTP | `clio.tests/Command/UpdateThemeCommand.Tests.cs` (`[Category("Integration")]` cases) |
 
 - Use `BaseCommandTests<UpdateThemeOptions>` / `BaseCommandTests<DeleteThemeOptions>` as fixture bases; resolve
@@ -145,7 +145,7 @@ log-envelope idiom that R-07 mirrors); `ListThemesCommand` for the `RemoteComman
 - [ ] All new CLI option long-names kebab-case (FR-19); no `[FeatureToggle]`, no `[RequiresPackage]`, no ClioGate (D1)
 - [ ] `update-theme` body is `{id,caption,cssClassName,cssContent}` with **no `packageUId`** (full overwrite, no re-home — R-09); CSS resolution + FR-10 validation run before HTTP
 - [ ] `delete-theme` body is `{ id }`, **not idempotent** (server `success:false` → fail, no pre-check — OQ-02)
-- [ ] Both `ProceedResponse` overrides call `Logger.WriteError` on `success:false` (R-07); only `success:false` is a failure; empty/non-JSON tolerated (FR-09)
+- [ ] Both `ProceedResponse` overrides call `Logger.WriteError` on `success:false` (R-07); `success:false` and non-empty non-JSON bodies are failures; only an empty body is tolerated as success (FR-09)
 - [ ] Bodies are serialized camelCase records (no string interpolation — R-10)
 - [ ] `UpdateThemeCommand` / `DeleteThemeCommand` registered in `BindingsModule.cs` + wired in `Program.cs`
 - [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`

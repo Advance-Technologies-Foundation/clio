@@ -61,8 +61,9 @@ the FR-10 contract, and the success/failure parse implemented and proven exactly
   the auto-UUID is re-validated, defence in depth.)
 - [ ] **AC-09** — Given `ThemeServiceResponseParser.TryGetFailure(response, out errorMessage)`, when the body is
   `{"success":false,"errorInfo":{"errorCode":"X","message":"boom"}}`, then it returns `true` with
-  `errorMessage = "boom"`; when the body is `success:true`, empty, or non-JSON, then it returns `false` (tolerated
-  as success) and writes **nothing** to any logger (silent parser — R-01, FR-09, mirrors `clear-themes-cache`).
+  `errorMessage = "boom"`; when the body is `success:true` or empty, then it returns `false` (tolerated as
+  success); when the body is a non-empty, non-JSON payload, then it returns `true` with `errorMessage` naming the
+  unexpected non-JSON response. In all cases it writes **nothing** to any logger (silent parser — R-01, FR-09).
 - [ ] **AC-ERR** — Given any `ThemeRequestBuilder` failure (missing/oversized field, bad regex, missing/dual CSS),
   when surfaced by a caller, then the message is a user-friendly `Error: …` candidate string (no stack trace, no
   bare `catch (Exception)`); the helper performs no HTTP and no logging itself.
@@ -104,7 +105,7 @@ registration).
 // ThemeServiceResponse { bool? Success; ThemeServiceErrorInfo ErrorInfo }  (ErrorInfo { errorCode, message })
 // internal static bool ThemeServiceResponseParser.TryGetFailure(string response, out string errorMessage)
 //   JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-//   only explicit success:false → failure (out errorInfo.message); empty / non-JSON / success:true → false
+//   success:false OR non-empty non-JSON → failure (out errorMessage); empty / success:true → false
 //   WRITES NOTHING to any logger — logging is the caller's job (R-01)
 ```
 Do **NOT** refactor `ListThemesCommand` / `ClearThemesCacheCommand` to use this — they keep their shipped private
@@ -121,7 +122,7 @@ Pattern to follow: `ListThemesCommand`'s private `TryParseThemes` silent-parse s
 |------|-------------|------|
 | Unit `[Category("Unit")]` | `Build(KnownRoute.{Create,Update,Delete}Theme)` → `ServiceModel/ThemeService.svc/<Method>` (NetCore) and `0/`-prefixed (NetFW); existing theme-route builds unchanged (RR-03) | `clio.tests/Common/ServiceUrlBuilderTests.cs` (extend) |
 | Unit `[Category("Unit")]` | `ThemeRequestBuilder`: css resolution matrix (both-null→err, both-present→err, inline-empty→ok, inline-value→ok); FR-10 validation (id/caption/cssClassName regex+length, cssContent null→err / empty→ok / >1 MiB→err); auto-UUID passes id regex (R-06) | `clio.tests/Command/ThemeRequestBuilderTests.cs` |
-| Unit `[Category("Unit")]` | `ThemeServiceResponseParser.TryGetFailure`: success:false+message→(true,"boom"); success:true→false; empty→false; non-JSON→false; **no logger writes** (silent — R-01) | `clio.tests/Command/ThemeServiceResponseParserTests.cs` |
+| Unit `[Category("Unit")]` | `ThemeServiceResponseParser.TryGetFailure`: success:false+message→(true,"boom"); success:true→false; empty→false; non-JSON→(true, body surfaced); **no logger writes** (silent — R-01) | `clio.tests/Command/ThemeServiceResponseParserTests.cs` |
 | Integration `[Category("Integration")]` | `ThemeRequestBuilder.ResolveCss` reads a real UTF-8 temp file verbatim; missing/unreadable path → error, no throw; empty file → valid `""` | `clio.tests/Command/ThemeRequestBuilderTests.cs` (`[Category("Integration")]` cases) |
 
 - Body/string assertions that touch serialized JSON must expect `System.Text.Json` escaping of non-ASCII and
@@ -136,7 +137,7 @@ Pattern to follow: `ListThemesCommand`'s private `TryParseThemes` silent-parse s
 - [ ] Code compiles without Roslyn analyzer warnings (CLIO001-CLIO004; CLIO005 clean — helpers are static utilities, not DI registrations)
 - [ ] `KnownRoute.CreateTheme = 44` / `UpdateTheme = 45` / `DeleteTheme = 46` map to `ServiceModel/ThemeService.svc/<Method>`; no gap reuse (OQ-05)
 - [ ] `ThemeRequestBuilder` is `internal static` (no DI), enforces the full FR-10 contract incl. the 1 MiB cap and the empty-vs-absent CSS matrix (R-05); generated UUID re-validated (R-06)
-- [ ] `ThemeServiceResponseParser.TryGetFailure` is silent (no logger), treats only `success:false` as failure, tolerates empty/non-JSON (R-01, FR-09)
+- [ ] `ThemeServiceResponseParser.TryGetFailure` is silent (no logger); `success:false` and non-empty non-JSON bodies are failures; only an empty body is tolerated as success (R-01, FR-09)
 - [ ] Shipped `ListThemesCommand` / `ClearThemesCacheCommand` NOT refactored (PRD non-goal)
 - [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] Targeted tests run: `dotnet test --filter "Category=Unit&(Module=Command|Module=Common)"`; **full unit suite also run** (`Common/ServiceUrlBuilder.cs` touched — smart-regression rule 4 / RR-03)

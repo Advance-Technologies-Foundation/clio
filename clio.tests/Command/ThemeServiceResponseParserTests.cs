@@ -51,14 +51,30 @@ public class ThemeServiceResponseParserTests
 	[Category("Unit")]
 	[TestCase("", TestName = "TryGetFailure tolerates an empty body")]
 	[TestCase("   ", TestName = "TryGetFailure tolerates a whitespace body")]
-	[TestCase("OK", TestName = "TryGetFailure tolerates a non-JSON body")]
-	[Description("Treats an empty or non-JSON body as success to avoid false negatives if the contract evolves.")]
-	public void TryGetFailure_ShouldReportNoFailure_WhenBodyEmptyOrNonJson(string response) {
+	[Description("Treats an empty body as success (the contract default), so a minimal success response is not misread as a failure.")]
+	public void TryGetFailure_ShouldReportNoFailure_WhenBodyEmpty(string response) {
 		// Act
 		bool failed = ThemeServiceResponseParser.TryGetFailure(response, out string errorMessage);
 
 		// Assert
-		failed.Should().BeFalse(because: "a body that cannot be parsed as a failure response must not be misread as a failure");
+		failed.Should().BeFalse(because: "an empty body is the contract default for a successful write");
 		errorMessage.Should().BeNull(because: "no failure means no error message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("OK", TestName = "TryGetFailure fails on a plain non-JSON body")]
+	[TestCase("<html><body>Sign in</body></html>", TestName = "TryGetFailure fails on an HTML login page")]
+	[Description("Reports a failure when a non-empty body is not valid JSON: ThemeService always answers with a JSON BaseResponse, so a non-JSON payload means the request hit an auth redirect or proxy error and never reached the service.")]
+	public void TryGetFailure_ShouldReportFailure_WhenBodyIsNonEmptyNonJson(string response) {
+		// Act
+		bool failed = ThemeServiceResponseParser.TryGetFailure(response, out string errorMessage);
+
+		// Assert
+		failed.Should().BeTrue(because: "a non-JSON body signals the request did not reach ThemeService and must not be reported as success");
+		errorMessage.Should().Contain("Unexpected response from server",
+			because: "the parser mirrors delete-package's unexpected-response diagnostic");
+		errorMessage.Should().Contain(response,
+			because: "the unexpected body must be surfaced so the caller can see what actually came back");
 	}
 }
