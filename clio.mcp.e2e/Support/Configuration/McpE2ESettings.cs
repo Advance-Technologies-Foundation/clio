@@ -16,6 +16,13 @@ internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
 	/// <summary>
+	/// When set, the harness re-registers the sandbox env at this URL via reg-web-app before tests,
+	/// so it targets the freshly-deployed stand instead of a stale registration.
+	/// In CI set via <c>McpE2E__Sandbox__EnvironmentUrl=%DeployedUrl%</c>.
+	/// </summary>
+	public string? EnvironmentUrl { get; set; }
+
+	/// <summary>
 	/// Absolute path to the Creatio installation root for the sandbox environment.
 	/// Required by ClearRedis and other tests that read ConnectionStrings.config.
 	/// Set via McpE2E__Sandbox__EnvironmentPath environment variable in CI,

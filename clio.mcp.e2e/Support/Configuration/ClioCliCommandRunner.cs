@@ -111,6 +111,14 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
+		// Re-register the sandbox env at the freshly-deployed URL FIRST, before we ping/login it. In CI
+		// the env name ("dev") is registered ahead of time but its stored URL is stale (the build's
+		// real URL is only known at runtime, exposed as the TeamCity param DeployedUrl). Correcting the
+		// URL here — using the configured Sandbox.EnvironmentUrl, NOT the env's own stored URL — points
+		// the subsequent login-readiness gate and install-gate at the right stand instead of a default
+		// localhost that returns 404 and cascades to ~30 fixtures.
+		await ReRegisterSandboxEnvironmentAsync(settings, environmentName, cancellationToken);
+
 		// Gate on an AUTHENTICATED login before attempting install-gate. install-gate's first action
 		// is CreatioClient.Login; on a stand that was just deployed that login throws a WebException
 		// (connect/timeout while warming up) and the whole arrange phase collapses. Waiting until the
@@ -166,6 +174,63 @@ internal static class ClioCliCommandRunner {
 			because:
 			$"cliogate must be installed before MCP tests that require it. " +
 			$"install stderr: {lastInstallResult.StandardError}. install stdout: {lastInstallResult.StandardOutput}");
+	}
+
+	/// <summary>
+	/// Re-registers the sandbox env at the configured <see cref="SandboxSettings.EnvironmentUrl"/> via
+	/// <c>reg-web-app</c> so the suite targets the freshly-deployed stand instead of a stale (default
+	/// localhost) registration. When no URL override is configured this is a no-op, preserving the
+	/// behavior local/manual setups rely on. The env's existing credentials are reused
+	/// (<see cref="RegisteredClioEnvironmentSettingsResolver.Resolve"/>); no <c>--IsNetCore</c> flag is
+	/// passed so clio auto-detects the runtime against the live stand (see
+	/// <c>RegAppCommand.ResolveIsNetCore</c>). On failure the full stdout/stderr is written to
+	/// <see cref="TestContext.Out"/>, mirroring the install-gate diagnostics, before asserting exit 0.
+	/// </summary>
+	private static async Task ReRegisterSandboxEnvironmentAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		string? environmentUrl = settings.Sandbox.EnvironmentUrl;
+		if (string.IsNullOrWhiteSpace(environmentUrl)) {
+			// No URL override: keep the existing registration untouched so local/manual runs that
+			// point the sandbox at their own stand are unaffected.
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] no Sandbox.EnvironmentUrl configured; skipping re-registration of '{environmentName}' (using the existing registration).");
+			return;
+		}
+
+		// Reuse the env's already-registered credentials; the only thing we are correcting is the URL.
+		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+
+		ClioCliCommandResult result = await RunAsync(
+			settings,
+			["reg-web-app", environmentName, "-u", environmentUrl, "-l", environment.Login, "-p", environment.Password],
+			cancellationToken: cancellationToken);
+
+		if (result.ExitCode != 0) {
+			// Emit the COMPLETE captured output before asserting: FluentAssertions truncates long
+			// assertion messages and would otherwise hide the real reg-web-app failure (e.g. the
+			// runtime auto-detection HTTP error). TestContext output is not truncated.
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] exit code: {result.ExitCode}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] command: clio {result.Arguments}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] full stdout:{System.Environment.NewLine}{result.StandardOutput}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] full stderr:{System.Environment.NewLine}{result.StandardError}");
+		}
+
+		result.ExitCode.Should().Be(0,
+			because:
+			$"the sandbox env '{environmentName}' must be re-registered at the deployed URL before login/install. " +
+			$"reg-web-app stdout: {result.StandardOutput}. reg-web-app stderr: {result.StandardError}");
+
+		// Read back the runtime clio auto-detected so the CI log records exactly what the subsequent
+		// gates will target (env name + corrected URL + resolved IsNetCore).
+		EnvironmentSettings registered = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+		TestContext.Out.WriteLine(
+			$"[reg-web-app] re-registered '{environmentName}' at {environmentUrl} (auto-detected IsNetCore={registered.IsNetCore}).");
 	}
 
 	/// <summary>
