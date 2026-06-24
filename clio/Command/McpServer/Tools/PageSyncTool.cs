@@ -59,7 +59,12 @@ public sealed class PageSyncTool(
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
 		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
 			server, args, pages, prePass, cancellationToken);
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults);
+		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Resolve the
+		// merged type definitions once here on the async entry, then reuse them across the synchronous
+		// per-page deterministic triage in ExecuteSyncBatch. Null when the registry is unavailable (fail-open).
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions =
+			await ChartWidgetValidation.ResolveTypeDefinitionsAsync(webComponentCatalog, cancellationToken).ConfigureAwait(false);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
@@ -142,7 +147,8 @@ public sealed class PageSyncTool(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyList<PageSamplingReview?> samplingResults) {
+		IReadOnlyList<PageSamplingReview?> samplingResults,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
 		// Step 1: Materialise EVERY deterministic failure (syntax, regex
@@ -173,6 +179,11 @@ public sealed class PageSyncTool(
 			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
 			if (deterministicFailure != null) {
 				results.Add(deterministicFailure);
+				continue;
+			}
+			PageSyncPageResult chartFailure = TryMaterialiseChartWidgetFailure(page, validate, chartTypeDefinitions);
+			if (chartFailure != null) {
+				results.Add(chartFailure);
 				continue;
 			}
 			results.Add(null);
@@ -308,6 +319,36 @@ public sealed class PageSyncTool(
 	// here (they are validated inside the lock by MobilePageValidation).
 	// Precedence on overlap: regex wins over lint — its wording is what
 	// existing tests and operator habits depend on.
+	// Registry-driven chart-widget required-field check, materialised into the same per-page failure
+	// shape as TryMaterialiseDeterministicFailure. Web-only (mobile bodies carry no chart widgets) and
+	// fail-open when the registry was unavailable (chartTypeDefinitions == null). The type definitions
+	// are resolved once on the async entry (SyncPages) so this stays a synchronous per-page check.
+	private static PageSyncPageResult TryMaterialiseChartWidgetFailure(
+		PageSyncPageInput page,
+		bool validate,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
+		if (!validate || chartTypeDefinitions is null ||
+		    PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			return null;
+		}
+		SchemaValidationResult chartResult =
+			SchemaValidationService.ValidateChartWidgetConfig(page.Body, chartTypeDefinitions);
+		if (chartResult.IsValid) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = false,
+				Errors = chartResult.Errors
+			},
+			Error = "Client-side validation failed: " + string.Join("; ", chartResult.Errors)
+		};
+	}
+
 	private static PageSyncPageResult TryMaterialiseDeterministicFailure(
 		PageSyncPageInput page,
 		PageSyncPrePassEntry entry,

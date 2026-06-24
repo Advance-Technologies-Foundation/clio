@@ -1486,8 +1486,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must set the chart theme by page surface (dashboard→white, desktop→glassmorphism, home→full-fill), mirroring the indicator policy");
 		article.Text.Should().Contain("glassmorphism",
 			because: "Desktop charts must use the glassmorphism theme");
-		article.Text.Should().Contain("Axis captions: keep",
-			because: "the guide must warn that a non-empty axis caption breaks the page designer's diff");
+		article.Text.Should().Contain("Axis names: keep them empty",
+			because: "the guide must warn that a non-empty yAxis.name breaks the page designer (json-differ needFlatten last-key bug)");
 		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
 			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
 		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",
@@ -1498,8 +1498,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must set a flex-container height floor so a chart does not collapse");
 		article.Text.Should().Contain("INDEPENDENT of `config.color`",
 			because: "the guide must separate series color (data marks) from config.color (title) so a series-color change does not recolor the title");
-		article.Text.Should().Contain("REQUIRES a `column` wrapper",
-			because: "the guide must warn that aggregation fields go under aggregation.column (not directly on aggregation), else the chart renders empty (0%)");
+		article.Text.Should().Contain("aggregation.column.expression",
+			because: "the guide keeps the aggregation column path and enum rules; the structural aggregation.column nesting is now enforced by the registry-driven chart-widget validator");
 		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
 			because: "the guide must steer Desktop chart placement into the exact editable slot FixedGridSlot_qwe4asds (CentralAreaDesktopTemplate), not the Main frame");
 		article.Text.Should().Contain("show values by DEFAULT",

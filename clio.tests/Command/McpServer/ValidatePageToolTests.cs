@@ -130,6 +130,12 @@ public sealed class ValidatePageToolTests {
 			because: "the error should identify the disallowed 'converters' key");
 	}
 
+	// Chart-widget validation moved to a registry-driven walk (SchemaValidationService.ValidateChartWidgetConfig
+	// + ChartWidgetValidation) that needs the component catalog. It is unit-tested against a registry fixture in
+	// SchemaValidationServiceTests; an end-to-end tool test would require stubbing IComponentInfoCatalog
+	// (ComponentCatalogState.GlobalReferences + per-component References), which the substituted catalog here
+	// does not provide — so the empty-catalog path is fail-open (no chart error) by design.
+
 	[Test]
 	[Description("Returns all errors when mobile body contains multiple disallowed sections.")]
 	public async System.Threading.Tasks.Task ValidatePage_WhenMobileBodyContainsMultipleDisallowedSections_ReturnsAllErrors() {

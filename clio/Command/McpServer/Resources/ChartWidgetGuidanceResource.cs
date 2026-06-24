@@ -62,10 +62,7 @@ public sealed class ChartWidgetGuidanceResource {
 		         color into the other.
 		       - Aggregation: COUNT aggregates `Id`; SUM/AVG/MIN/MAX use the explicit numeric column (date is
 		         also valid for MIN/MAX), never `Id`. The exact `aggregation.column.expression` shape and enum
-		         values are owned by the `esq` guidance. `aggregation` REQUIRES a `column` wrapper exactly like
-		         `grouping.column`: the order/visible fields and `expression` go under `aggregation.column`, NOT
-		         directly under `aggregation`. Omit the wrapper and the widget computes no aggregate — every group
-		         renders 0 (a blank "0%" chart) even though the data exists. Mirror the `grouping.column` nesting.
+		         values are owned by the `esq` guidance.
 		       - Grouping is SHARED across all series and is either by value or by date part (never mixed).
 		         Group Month together with Year unless the user insists on Month only. The exact grouping
 		         column shape (single column for by-value; a date-part array for by-date-part) is in the
@@ -112,9 +109,10 @@ public sealed class ChartWidgetGuidanceResource {
 		       **Data labels — show values by DEFAULT.** Set `dataLabel.display: true` on every series unless the user
 		       EXPLICITLY asks not to show values (then set `display: false` or omit `dataLabel`). Applies to all chart types.
 
-		       **Axis captions: keep `scales.xAxis.name` / `scales.yAxis.name` EMPTY (`""`).** A non-empty axis name
-		       breaks the page designer — its diff keys items by `name`, so a named axis makes save/load throw
-		       `Required parameter "name" not found`. Real charts persist `name: ""`; never put a caption string there.
+		       **Axis names: keep them empty (`name: ""`), especially `scales.yAxis.name`.** A non-empty `yAxis.name`
+		       makes the page designer throw `Required parameter "name" not found` and the page can't be saved/deleted
+		       (order-dependent bug in json-differ `needFlatten`: it honors only an object's LAST key, and `yAxis` is the
+		       last key of `scales`). `xAxis.name` alone is tolerated today but the trigger is key-order-fragile — keep BOTH empty.
 
 		       ## Title and header (never ship a headerless chart)
 

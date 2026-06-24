@@ -226,6 +226,18 @@ public sealed class PageUpdateTool(
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
+		// Registry-driven chart-widget validation needs the async, version-scoped component catalog.
+		// Sync-over-async is deadlock-free here under the McpToolExecutionLock (no SynchronizationContext),
+		// the same pattern the mobile branch above uses. Fail-open inside when the registry is unavailable.
+		SchemaValidationResult chartResult = ChartWidgetValidation
+			.ValidateAsync(options.Body, webComponentCatalog, CancellationToken.None)
+			.GetAwaiter().GetResult();
+		if (!chartResult.IsValid) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Validation failed: " + string.Join("; ", chartResult.Errors)
+			}, null);
+		}
 		return (null, webWarnings);
 	}
 
