@@ -1970,7 +1970,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON — the upstream ENG-89796 syntax gate catches this as a JavaScript syntax error and surfaces the exact line/column, which is more actionable than the legacy markers-only message")]
+	[Description("PageUpdateTool.UpdatePage rejects a page body where a JSON marker section contains malformed JSON — when the markers themselves are intact the marker/content validator is preferred over the generic ENG-89796 syntax message, so the error names the specific SCHEMA_* section the caller must fix")]
 	[Category("Unit")]
 	public void PageUpdateTool_UpdatePage_Rejects_Body_With_Malformed_Json_Marker() {
 		// Arrange
@@ -1992,10 +1992,8 @@ public class PageToolsTests
 		// Assert
 		response.Success.Should().BeFalse(
 			because: "update-page must reject page bodies where JSON marker sections contain malformed JSON");
-		response.Error.Should().Contain("JavaScript syntax error",
-			because: "the upstream syntax validator catches malformed marker content as a JS parse failure — this is the deterministic ENG-89796 gate that surfaces the exact line/column to the operator");
-		response.Error.Should().Contain("NOT sent to Creatio",
-			because: "the operator must know that the broken body did not reach the server, without needing to inspect logs");
+		response.Error.Should().Contain("Invalid JSON in SCHEMA_VIEW_CONFIG_DIFF",
+			because: "when the SCHEMA_* markers are intact the marker/content validator is preferred over the generic syntax message, so the error names the exact section with the malformed JSON");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
 			because: "validation must fail before any remote call is made to Creatio");
 	}
@@ -4301,8 +4299,8 @@ public class PageToolsTests
 			// Assert
 			response.Success.Should().BeFalse(
 				because: "validation must run against the body loaded from BodyFile, not be skipped because inline body is empty");
-			response.Error.Should().Contain("JavaScript syntax error",
-				because: "the malformed marker JSON is caught by the upstream ENG-89796 syntax gate as a JS parse failure with the exact line/column from the resolved file content");
+			response.Error.Should().Contain("Invalid JSON in SCHEMA_VIEW_CONFIG_DIFF",
+				because: "malformed JSON inside an otherwise-intact SCHEMA_* marker is now reported against the specific marker (the marker/content validator is preferred over the generic ENG-89796 syntax message when marker integrity holds) so the caller knows exactly which section to fix");
 			applicationClient.ReceivedCalls().Should().BeEmpty(
 				because: "no save attempt may be made when validation fails");
 		}

@@ -1,0 +1,35 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    get-identity-service-config - Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST
+
+DESCRIPTION
+    Reads the OAuth IdentityService configuration of a Creatio environment over REST without any
+    filesystem or database access, so it works against remote/cloud environments. It reads the
+    OAuth20IdentityServerUrl and OAuth20IdentityServerClientId system settings; when the URL is
+    empty it derives the IdentityService host by inserting "-is" into the first label of the
+    Creatio host (for example 186843-crm-bundle.creatio.com becomes
+    186843-crm-bundle-is.creatio.com).
+
+    It reports identityServerUrl, source (setting, derived, or none), the token endpoint
+    ({base}/connect/token), the discovery endpoint ({base}/.well-known/openid-configuration), and
+    whether the discovery document is reachable. Use it first when configuring server-to-server
+    OAuth on a remote Creatio.
+
+SYNOPSIS
+    clio get-identity-service-config -e ENVIRONMENT
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered Creatio environment to inspect.
+
+EXAMPLES
+    # Read the IdentityService configuration of a registered environment.
+    clio get-identity-service-config -e c-dev
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    This command is read-only; it does not modify Creatio or clio settings.
