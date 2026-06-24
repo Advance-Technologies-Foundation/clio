@@ -10,11 +10,26 @@ namespace Clio.Command.BusinessRules;
 /// </summary>
 public interface IPageBusinessRuleService {
 	/// <summary>
-	/// Creates a new page business rule in the target package and page schema.
+	/// Creates a single page business rule in the target package and page schema.
 	/// </summary>
+	/// <remarks>
+	/// This single-rule overload backs the <c>create-page-business-rule</c> CLI command; the MCP tool
+	/// uses the batch <see cref="Create(PageBusinessRulesBatchRequest)"/> overload exclusively (a single
+	/// MCP rule is sent as a one-element batch).
+	/// </remarks>
 	/// <param name="request">Page business-rule creation input.</param>
 	/// <returns>Generated metadata about the created rule.</returns>
 	BusinessRuleCreateResult Create(PageBusinessRuleCreateRequest request);
+
+	/// <summary>
+	/// Creates multiple page business rules on the same package and page schema in a single add-on
+	/// round-trip (one <c>SaveSchema</c> + cache reset + configuration rebuild for the whole batch).
+	/// Per-rule validation/conversion failures are isolated and reported; the remaining rules are
+	/// still saved.
+	/// </summary>
+	/// <param name="request">Batch page business-rule creation input.</param>
+	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
+	IReadOnlyList<BusinessRuleBatchItemResult> Create(PageBusinessRulesBatchRequest request);
 }
 
 /// <summary>
@@ -24,6 +39,15 @@ public sealed record PageBusinessRuleCreateRequest(
 	string PackageName,
 	string PageSchemaName,
 	BusinessRule Rule
+);
+
+/// <summary>
+/// Describes the package, page schema, and business-rule definitions to create in one batch.
+/// </summary>
+public sealed record PageBusinessRulesBatchRequest(
+	string PackageName,
+	string PageSchemaName,
+	IReadOnlyList<BusinessRule> Rules
 );
 
 internal sealed class PageBusinessRuleService(
@@ -52,6 +76,44 @@ internal sealed class PageBusinessRuleService(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			request.Rule,
 			[createdRule]);
+	}
+
+	public IReadOnlyList<BusinessRuleBatchItemResult> Create(PageBusinessRulesBatchRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		BusinessRuleBatchValidation.RequireBatchFields(
+			request.PackageName, request.PageSchemaName, "page-schema-name", request.Rules);
+
+		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.PageSchemaName, packageUId);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = attributeProvider.GetAttributes(
+			pageContext.Bundle,
+			packageUId);
+		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+
+		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
+		var pending = new List<(int Index, string Caption, string RuleName)>();
+		var toAppend = new List<BusinessRuleMetadataDto>();
+
+		for (int index = 0; index < request.Rules.Count; index++) {
+			BusinessRule rule = request.Rules[index];
+			string caption = rule?.Caption ?? string.Empty;
+			try {
+				ArgumentNullException.ThrowIfNull(rule);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
+				BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+				pending.Add((index, caption, createdRule.Name));
+				toAppend.Add(createdRule);
+			} catch (Exception exception) {
+				results[index] = new BusinessRuleBatchItemResult(caption, false, null, exception.Message);
+			}
+		}
+
+		if (toAppend.Count > 0) {
+			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
+			BusinessRuleBatchSave.StampOutcome(results, pending, () => businessRuleAddonService.AppendRules(addonRequest, toAppend));
+		}
+
+		return results;
 	}
 
 	private static void ValidateCreateRequest(PageBusinessRuleCreateRequest request) {

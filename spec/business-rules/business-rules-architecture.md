@@ -231,5 +231,5 @@ flowchart LR
 
 - Entry point: [README.md](C:/Projects/clio/spec/business-rules/README.md)
 - Product spec: [business-rules-spec.md](C:/Projects/clio/spec/business-rules/business-rules-spec.md)
-- Capability doc: [create-entity-business-rule-spec.md](C:/Projects/clio/spec/business-rules/create-entity-business-rule-spec.md)
+- Capability doc: [create-entity-business-rules-spec.md](C:/Projects/clio/spec/business-rules/create-entity-business-rules-spec.md)
 - Previous design note: [design.md](C:/Projects/clio/spec/business-rules/design.md)
