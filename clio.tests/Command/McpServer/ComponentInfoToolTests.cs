@@ -1059,6 +1059,10 @@ public sealed class ComponentInfoToolTests {
 			because: "the routing message must name the matched composite");
 		response.Error.Should().Contain("composite=",
 			because: "the agent must be routed to the composite-discovery path, not left to hand-build the detail");
+		response.Error.Should().Contain("REQUIRED",
+			because: "the routing directive must be a hard stop, not a soft suggestion an agent can bypass");
+		response.Error.Should().Contain("Do NOT synthesize",
+			because: "the message must explicitly forbid synthesizing the composite structure from memory or docs");
 		response.Composites.Should().NotBeNull();
 		response.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
 			because: "the matched composite is surfaced so the agent can fetch its assembly recipe");
