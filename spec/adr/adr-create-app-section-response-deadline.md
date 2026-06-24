@@ -117,6 +117,13 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
   no new operation-handle registry or cross-call state store is introduced.
 - The long-lived-process assumption is documented; if the server is restarted mid-flight the worst
   case is the same as today (section may or may not exist) and the agent's poll detects the truth.
+- On the MCP/background path each success-path readback HTTP call is bounded by a finite per-request
+  budget (`ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs`, 30 s — mirrors the recovery-readback
+  budget), so a wedged readback (one Creatio accepts but never answers) cannot park a thread-pool worker
+  and HTTP connection for the life of the long-lived process — closing the residual ENG-91316 hang risk
+  on the detached continuation. The synchronous CLI path keeps the patient `Timeout.Infinite` readback. A
+  cumulative cap across the 15-attempt poll loop stays intentionally absent: each call is now individually
+  bounded and the agent polls `list-app-sections` regardless, so abandoning a hung readback is low-harm.
 
 ---
 

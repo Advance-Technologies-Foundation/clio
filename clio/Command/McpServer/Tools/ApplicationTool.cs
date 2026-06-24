@@ -211,6 +211,16 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 	internal const int BackgroundInsertTimeoutMs = 600_000;
 
 	/// <summary>
+	/// Per-request readback budget (ms) for the background/MCP path. Because the continuation runs
+	/// detached on <c>Task.Run(work, CancellationToken.None)</c> — designed to outlive both the response
+	/// deadline and a client disconnect — a success-path readback that Creatio accepts but never answers
+	/// would otherwise hold a thread-pool worker and HTTP connection for the life of the long-lived server
+	/// process. Bounding each readback HTTP call (mirrors the 30 s recovery-readback budget) caps that:
+	/// a wedged readback is abandoned and the agent verifies via <c>list-app-sections</c> regardless (ENG-91316).
+	/// </summary>
+	internal const int BackgroundReadbackTimeoutMs = 30_000;
+
+	/// <summary>
 	/// Creates a section in an existing Creatio application and returns structured readback data.
 	/// </summary>
 	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
@@ -245,7 +255,8 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 						resolvedIconBackground,
 						args.CaptionCulture,
 						args.Code),
-					BackgroundInsertTimeoutMs),
+					BackgroundInsertTimeoutMs,
+					BackgroundReadbackTimeoutMs),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
