@@ -150,7 +150,8 @@ public abstract class BaseTool<T>(
 			logger.PreserveMessages = true;
 			try {
 				int exitCode = command.Execute(options);
-				IReadOnlyList<LogMessage> flushedMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
+				IReadOnlyList<LogMessage> flushedMessages = SanitizeForSerialization(
+					logger.FlushAndSnapshotMessages(clearMessages: true));
 				messagesToForward = flushedMessages;
 				executionResult = new CommandExecutionResult(
 					exitCode,
@@ -159,7 +160,8 @@ public abstract class BaseTool<T>(
 					CorrelationId: correlationId);
 			}
 			catch (Exception e) {
-				List<LogMessage> priorLogs = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+				List<LogMessage> priorLogs = [.. SanitizeForSerialization(
+					logger.FlushAndSnapshotMessages(clearMessages: true))];
 				messagesToForward = priorLogs;
 				executionResult = CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
@@ -171,5 +173,22 @@ public abstract class BaseTool<T>(
 		// tool invocations on stdio I/O performed by SendNotificationAsync.
 		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
 		return executionResult;
+	}
+
+	// The MCP SDK serializes the returned CommandExecutionResult with System.Text.Json, which walks
+	// LogMessage.Value (typed object). A TableMessage carries a raw ConsoleTable whose object graph
+	// reaches System.Text.Encoding.Preamble (a ReadOnlySpan<byte> ref struct) — System.Text.Json throws
+	// on that, and the SDK turns the throw into IsError=true (e.g. experimental list-features, ENG-92149).
+	// Project every non-string Value to its rendered string form (the same text the console writes via
+	// table.ToString()) before it enters the serialized envelope. This is general — any LogMessage with a
+	// non-serializable Value is made safe — and console rendering is untouched because the console reads
+	// from the live ConsoleLogger buffer, not this detached MCP snapshot.
+	private static IReadOnlyList<LogMessage> SanitizeForSerialization(IReadOnlyList<LogMessage> messages) {
+		foreach (LogMessage message in messages) {
+			if (message.Value is not (null or string)) {
+				message.Value = message.Value.ToString();
+			}
+		}
+		return messages;
 	}
 }
