@@ -220,6 +220,6 @@ public sealed class RelatedListGuidanceResource {
 	/// Returns the canonical guidance article for adding and filtering a Freedom UI related/child list (detail).
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "related-list-guidance")]
-	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite (fetched via get-component-info), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) master-detail wiring — no handler.")]
+	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.")]
 	public ResourceContents GetGuide() => Guide;
 }
