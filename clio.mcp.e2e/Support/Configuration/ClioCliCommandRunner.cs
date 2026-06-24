@@ -118,6 +118,14 @@ internal static class ClioCliCommandRunner {
 		// fails with a credentials-specific diagnostic instead of a misleading install-gate failure.
 		await WaitForLoginReadinessAsync(settings, environmentName, cancellationToken);
 
+		// Re-register the env fresh so its stored IsNetCore is auto-detected against the LIVE stand
+		// before install-gate runs. install-gate uploads the package through ServiceUrlBuilder.Build,
+		// which prepends the `0/` workspace alias only when IsNetCore == false; a stale registration
+		// with the wrong runtime targets a non-existent URL and the upload fails with HTTP 404 (so
+		// cliogate never installs and ~30 fixtures cascade). reg-web-app with no --IsNetCore flag makes
+		// clio probe the stand and overwrite the stored runtime — see RegAppCommand.ResolveIsNetCore.
+		await ReRegisterEnvironmentWithRuntimeAutoDetectionAsync(settings, environmentName, cancellationToken);
+
 		ClioCliCommandResult? lastInstallResult = null;
 		for (int attempt = 0; attempt < CliogateInstallAttempts; attempt++) {
 			lastInstallResult = await RunAsync(
@@ -166,6 +174,71 @@ internal static class ClioCliCommandRunner {
 			because:
 			$"cliogate must be installed before MCP tests that require it. " +
 			$"install stderr: {lastInstallResult.StandardError}. install stdout: {lastInstallResult.StandardOutput}");
+	}
+
+	/// <summary>
+	/// Re-registers <paramref name="environmentName"/> via <c>reg-web-app</c> using the credentials/URI
+	/// already stored for it, but WITHOUT an explicit <c>--IsNetCore</c> flag, so clio auto-detects the
+	/// runtime against the live stand and overwrites the persisted <c>IsNetCore</c>. This corrects a
+	/// stale/wrong runtime on the registered env that would otherwise make install-gate upload the
+	/// package to a URL missing (or wrongly carrying) the <c>0/</c> workspace alias and fail with HTTP
+	/// 404. The resolved env name, URI, and <c>IsNetCore</c> are logged BEFORE and AFTER re-registration
+	/// to <see cref="TestContext.Out"/> so a CI run shows the before→after runtime flip (or proves
+	/// auto-detection wrong). Runs AFTER the login-readiness gate and BEFORE the install-gate loop.
+	/// </summary>
+	private static async Task ReRegisterEnvironmentWithRuntimeAutoDetectionAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		// Read the env exactly as the rest of the harness does (same appsettings.json source as the
+		// probe URL resolver below) to reuse its URI/credentials for the fresh registration.
+		EnvironmentSettings registeredEnvironment =
+			RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+		TestContext.Out.WriteLine(
+			$"[reg-web-app] before re-registration: environment '{environmentName}', "
+			+ $"uri '{registeredEnvironment.Uri}', IsNetCore {registeredEnvironment.IsNetCore}");
+
+		// No -i/--IsNetCore: with a URI present and the flag absent, RegAppCommand.ResolveIsNetCore
+		// runs EnvironmentRuntimeDetectionService against the live stand and persists the detected
+		// runtime. No --check-login either: the login-readiness gate already proved the stand is
+		// loginable, and reg-web-app performs no interactive prompts of its own, so this is safe and
+		// non-interactive. Passing -i here would short-circuit detection and defeat the fix.
+		ClioCliCommandResult registrationResult = await RunAsync(
+			settings,
+			[
+				"reg-web-app", environmentName,
+				"-u", registeredEnvironment.Uri,
+				"-l", registeredEnvironment.Login,
+				"-p", registeredEnvironment.Password
+			],
+			cancellationToken: cancellationToken);
+
+		if (registrationResult.ExitCode != 0) {
+			// Emit the COMPLETE captured output before asserting: FluentAssertions truncates long
+			// assertion messages and would otherwise hide the real auto-detection failure (e.g. an
+			// ambiguous/unreachable probe). TestContext output is not truncated. Mirrors the
+			// install-gate / login-readiness diagnostics above.
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] exit code: {registrationResult.ExitCode}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] command: clio {registrationResult.Arguments}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] full stdout:{System.Environment.NewLine}{registrationResult.StandardOutput}");
+			TestContext.Out.WriteLine(
+				$"[reg-web-app] full stderr:{System.Environment.NewLine}{registrationResult.StandardError}");
+		}
+
+		registrationResult.ExitCode.Should().Be(0,
+			because:
+			$"re-registering '{environmentName}' must succeed so install-gate targets the correct "
+			+ $"runtime-specific URL. reg-web-app stdout: {registrationResult.StandardOutput}. "
+			+ $"reg-web-app stderr: {registrationResult.StandardError}");
+
+		EnvironmentSettings reResolvedEnvironment =
+			RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+		TestContext.Out.WriteLine(
+			$"[reg-web-app] after re-registration: environment '{environmentName}', "
+			+ $"uri '{reResolvedEnvironment.Uri}', IsNetCore {reResolvedEnvironment.IsNetCore}");
 	}
 
 	/// <summary>
