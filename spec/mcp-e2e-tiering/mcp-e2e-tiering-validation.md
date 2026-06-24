@@ -59,14 +59,23 @@ run 15628876), which partially overturns the "most of the 61 need a stand" read.
 These match the ENG-91830 ("return a structured error, not a protocol exception") and
 ENG-91825 (env-validation-order) themes.
 
-## Next iteration to make the tier green
-1. Reclassify the 3 host-infra tests (B) per-test to Sandbox.
-2. Fix the ~11 contract failures (C) locally — or, where a test genuinely needs cliogate to
-   bind, demote that specific test to Sandbox after confirming on a stand.
-3. Re-run; the tier goes green after #756 merges into the integration branch + cluster (C)
-   is fixed.
+## Iteration applied — RESULT
 
-The tier-tagging scaffolding (this PR) stands; tier greenness is the follow-up above.
+The next-iteration plan below was executed in this branch:
+1. Reclassified the 3 host-infra tests (B) per-test to Sandbox.
+2. Fixed the ~11 contract failures (C) locally (BusinessRule env-resolution envelope,
+   list-page-templates schema-type pre-validation, and test-assertion drift).
+
+**Post-fix full sweep: 1 failed / 166 passed / 167 total** (29m47s, env-free, net10.0).
+The single remaining failure is `Tool_ShouldListFeatureFlags_WhenNoArgumentsSupplied`
+(group A) — fixed by PR #756, which is not in this isolated branch. The tier is therefore
+green once #756 lands in the integration branch (expected 167/167). Total dropped 170→167
+because the 3 host-infra tests moved to the Sandbox tier.
+
+### Original (pre-fix) iteration plan, for reference
+1. Reclassify the 3 host-infra tests (B) per-test to Sandbox. ✓
+2. Fix the ~11 contract failures (C) locally. ✓
+3. Re-run; tier green after #756 merges + cluster (C) fixed. ✓ (166/167; #756 pending)
 
 ## Sandbox tier (skipped / fail-fast locally without a stand)
 
