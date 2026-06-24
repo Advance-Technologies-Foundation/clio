@@ -76,7 +76,7 @@ public sealed class CreatePageBusinessRuleCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when required execution input is missing");
-		pageBusinessRuleService.DidNotReceiveWithAnyArgs().Create(default!);
+		pageBusinessRuleService.DidNotReceiveWithAnyArgs().Create(default(PageBusinessRuleCreateRequest)!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains(expectedMessage)));
 	}
 

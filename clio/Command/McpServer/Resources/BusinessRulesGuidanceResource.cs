@@ -38,7 +38,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Business rules are created via dedicated MCP tools, not by editing page schema bodies or writing JavaScript.
 
 		       Required MCP contract check
-		       - Before creating or modifying business rules (calling `create-entity-business-rule`, `create-page-business-rule`, etc) call `get-tool-contract` to get more information about contract and see examples.
+		       - Before creating or modifying business rules (calling `create-entity-business-rules`, `create-page-business-rules`, etc) call `get-tool-contract` to get more information about contract and see examples.
 
 		       State-changing actions are one-way
 		       - Actions that change field or element state (visibility, editability, or required state) apply only when their condition is met.
@@ -49,7 +49,7 @@ public sealed class BusinessRulesGuidanceResource {
 
 		       1. Entity-level business rules
 		          - Scope: operate on entity schema attributes (columns).
-		          - Tool: `create-entity-business-rule`
+		          - Tool: `create-entity-business-rules`
 		          - Supported actions: make-editable, make-read-only, make-required, make-optional, set-values, apply-filter, apply-static-filter.
 		          - Use when the rule should apply everywhere the entity is used, regardless of which page displays it.
 		          - `apply-filter` targets one lookup field, compares it to one source lookup field on the current record, and may auto-generate child clear/populate rules.
@@ -62,7 +62,7 @@ public sealed class BusinessRulesGuidanceResource {
 
 		       2. Page-level business rules
 		          - Scope: operate on page elements (UI controls from viewConfig) and page attributes (from viewModelConfig).
-		          - Tool: `create-page-business-rule`
+		          - Tool: `create-page-business-rules`
 		          - Supported actions: hide-element, show-element, make-editable, make-read-only, make-required, make-optional.
 		          - Use when the rule should apply only on a specific page.
 		          - Element names come from `get-page` bundle.viewConfig (recursive). Attribute names come from bundle.viewModelConfig.attributes.
@@ -82,7 +82,7 @@ public sealed class BusinessRulesGuidanceResource {
 		          - dependent lookups (filter lookup A by the current value of another lookup B on the same record) → apply-filter.
 		          - restrict which records a lookup OFFERS by a fixed condition ("only contacts that have a mobile phone", "only accounts where Type = Customer", "only active users", "show the <Field> field only for <records> where ...", "only <records> that have more than N <children>") → apply-static-filter. The condition group may be empty (always filter) or gated ("WHEN field X is Y, limit lookup Z to ...").
 		            - This holds for ANY constraint mechanism, not a fixed list of phrases — classify the requirement into one mechanism and map it to a filter field: attribute value -> a value leaf; now-relative period -> a date macro (valueMacros); fixed calendar/clock part such as a time of day -> datePart; existence/count of related child records -> backwardReferenceFilters; dependent on another field's value -> the gate (X = Y) in the rule's condition group. Every one of these is apply-static-filter, never a handler/crt.InitRequest. Map the mechanism, not the wording; see `business-rule-filters` for the field-by-field contract.
-		            - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rule` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
+		            - DISAMBIGUATION: this is NOT the same as the page DataSource `staticFilters` / `filterConfig` array inside a Freedom UI `body.js`. To restrict what a lookup/field shows, do NOT hand-edit `body.js`, `filterConfig`, `dataSourceFilters`, or `modelConfig` — use `create-entity-business-rules` with apply-static-filter. The entity rule applies everywhere the lookup is used and is the supported no-code surface; manual `body.js` filter editing is page-scoped, brittle, and bypasses validation.
 		            - DISAMBIGUATION (restriction vs visibility): a phrase like "show the <LookupField> only for <records> where <condition>" / "show the Assignee field only for contacts where Age = 30" means RESTRICT which records the lookup OFFERS (apply-static-filter on that lookup, rooted on its reference schema), NOT toggle the field's visibility. Do NOT set the field `visible:false`, do NOT use hide-element/show-element, and do NOT add a page attribute for this. hide-element/show-element are only for requirements about the field itself appearing or disappearing (e.g. "hide the Discount field when Type = Internal"), never about which records a lookup lists. For "...Assignee only for contacts where Age = 30": targetAttribute = the Assignee lookup, filter = { logicalOperation: AND, filters: [ { columnPath: "Age", comparisonType: "EQUAL", value: 30 } ] } (root schema Contact, inferred).
 
 		       D. NOT a business rule:
@@ -93,7 +93,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       When in doubt, prefer a business rule over a handler for conditional visibility/editability/required/value logic.
 
 		       Workflow
-		       1. Call `get-tool-contract` for `create-entity-business-rule` or `create-page-business-rule`.
+		       1. Call `get-tool-contract` for `create-entity-business-rules` or `create-page-business-rules`.
 		       2. Read entity schema columns with `get-entity-schema-column-properties` or page structure with `get-page`.
 		       3. Determine whether the rule is entity-level or page-level.
 		       4. For state-changing requirements, decide whether the state must also return through an explicit inverse rule.
@@ -101,7 +101,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       6. Build the condition group and actions.
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
-		       7. Call `create-entity-business-rule` or `create-page-business-rule`.
+		       7. Call `create-entity-business-rules` or `create-page-business-rules`.
 		       8. Verify by checking the entity or page on the environment.
 
 		       Common mistakes to avoid
