@@ -25,11 +25,11 @@ a regular CLI verb. It supports two modes:
 
 ### Composites and `compositeOnly`
 
-Some Designer elements (e.g. "Expanded list", "Attachments", "Next steps") are
-not standalone components but pre-built combinations of several components, so
-they have no `componentType` of their own. They are surfaced in a top-level
-`composites` array (`{ caption, description, docs }`) in list mode, and fetched
-by caption with `--composite "<caption>"`, which returns a `mode:"composite"`
+Some Designer elements are not standalone components but pre-built combinations
+of several components, so they have no `componentType` of their own. They are
+surfaced in a top-level `composites` array (`{ caption, description, docs }`) in
+list mode — read that array to discover which composites exist for the resolved
+version — and fetched by caption with `--composite "<caption>"`, which returns a `mode:"composite"`
 response carrying the composite's assembly docs. A `--composite` lookup whose
 docs all fail to load sets `documentationUnavailable: true` so a transient docs
 fetch failure is distinguishable from a composite that genuinely ships no docs.
@@ -74,7 +74,7 @@ when it is published for the component:
 
 - `whenToUse` / `whenNotToUse` — one-line "pick this when…" / "do NOT pick
   this when…" guidance. Use them to choose between visually similar
-  components (e.g. `crt.Gallery` vs `crt.DataGrid` vs `crt.List`).
+  components that look alike but differ in behavior.
 - `synonyms` / `useCases` — alternate names and concrete scenarios. These are
   also folded into `--search` matching, so an informal term like `table`
   surfaces `crt.DataGrid`.
