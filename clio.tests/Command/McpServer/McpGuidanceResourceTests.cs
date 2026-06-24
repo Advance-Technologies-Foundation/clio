@@ -1672,4 +1672,57 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Uri.Should().Be("docs://mcp/guides/business-rule-filters",
 			because: "the article URI in the catalog must match the resource URI");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for external server-to-server OAuth callers using client ID and client secret credentials.")]
+	public void ServerToServerOAuthGuidanceResource_Should_Return_Canonical_Client_Credentials_Guide() {
+		// Arrange
+		ServerToServerOAuthGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the server-to-server OAuth guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/server-to-server-oauth",
+			because: "the resource should expose a stable MCP URI for OAuth client-credentials guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the OAuth guide should be discoverable as plain text");
+		article.Text.Should().Contain("create-server-to-server-oauth-app",
+			because: "the guide should connect credential usage to the MCP setup tool");
+		article.Text.Should().Contain("/connect/token",
+			because: "the guide should show the IdentityService token endpoint");
+		article.Text.Should().Contain("grant_type=client_credentials",
+			because: "the guide should show the exact OAuth grant used by server-to-server apps");
+		article.Text.Should().Contain("Authorization: Bearer",
+			because: "the guide should show how to send the access token to Creatio APIs");
+		article.Text.Should().Contain("DataService/json/SyncReply/SelectQuery",
+			because: "the guide should include a concrete Creatio API request example");
+		article.Text.Should().Contain("does not use refresh tokens",
+			because: "the guide should prevent callers from looking for a refresh-token flow that is not configured");
+		article.Text.Should().Contain("mint a new token",
+			because: "the guide should explain the correct token-expiry recovery path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes server-to-server-oauth so AI callers can retrieve external OAuth credential usage guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Server_To_Server_OAuth_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("server-to-server-oauth", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose server-to-server-oauth so get-guidance can return it by name");
+		entry.Name.Should().Be("server-to-server-oauth",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("client_credentials",
+			because: "the catalog description should identify the server-to-server OAuth grant");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/server-to-server-oauth",
+			because: "the article URI in the catalog must match the resource URI");
+	}
 }

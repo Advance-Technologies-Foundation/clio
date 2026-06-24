@@ -65,6 +65,12 @@ internal sealed class CommandHelpCatalog {
 			["dataservice"] = "Send a Creatio DataService request",
 			["deploy-application"] = "Copy an application package between Creatio environments",
 			["deploy-creatio"] = "Install Creatio from a distribution package",
+			["deploy-identity"] = "Deploy IdentityService to IIS and connect it to a Creatio environment",
+			["get-identity-service-config"] = "Read or derive the OAuth IdentityService configuration of a Creatio environment over REST",
+			["resolve-oauth-system-user"] = "Resolve a Creatio system user (id or name) for OAuth app binding over REST",
+			["create-oauth-technical-user"] = "Create a Creatio technical system user for OAuth over REST",
+			["create-server-to-server-oauth-app"] = "Create a server-to-server (client_credentials) OAuth app in Creatio over REST",
+			["verify-oauth-app"] = "Verify a server-to-server OAuth app: acquire a token and run a bearer DataService smoke test",
 			["delete-schema"] = "Delete a schema from a workspace package",
 			["delete-app-section"] = "Delete a section from an existing installed application",
 			["deactivate-pkg"] = "Deactivate a package in Creatio",
@@ -196,12 +202,18 @@ internal sealed class CommandHelpCatalog {
 			"compare-web-farm-node",
 			"create-k8-files",
 			"delete-infrastructure",
+			"create-oauth-technical-user",
+			"create-server-to-server-oauth-app",
 			"deploy-creatio",
+			"deploy-identity",
 			"deploy-infrastructure",
 			"get-build-info",
+			"get-identity-service-config",
 			"manage-windows-features",
 			"open-k8-files",
-			"restore-db"
+			"resolve-oauth-system-user",
+			"restore-db",
+			"verify-oauth-app"
 		];
 
 	private static readonly HashSet<string> LocalInstanceCommands =

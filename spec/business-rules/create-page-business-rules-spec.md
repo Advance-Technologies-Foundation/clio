@@ -1,4 +1,4 @@
-# create-page-business-rule
+# create-page-business-rules
 
 ## Purpose
 
