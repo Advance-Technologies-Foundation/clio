@@ -169,11 +169,12 @@ public sealed class McpProgressHeartbeatTests {
 	[Category("Unit")]
 	[Description("Throws McpResponseDeadlineExceededException when work outlives the deadline, yet leaves the work running to completion in the background.")]
 	public async Task RunWithProgressAndDeadlineAsync_ShouldThrowAndKeepWorkRunning_WhenDeadlineElapses() {
-		// Arrange
+		// Arrange — the work blocks on a gate the test opens only AFTER the deadline has fired, so
+		// the work provably outlives the deadline without a wall-clock sleep (deterministic on any agent).
+		using ManualResetEventSlim releaseWork = new ManualResetEventSlim(false);
 		using ManualResetEventSlim workCompleted = new ManualResetEventSlim(false);
 		Func<int> work = () => {
-			// Outlives the short deadline below, then records that it finished anyway.
-			Thread.Sleep(TimeSpan.FromMilliseconds(300));
+			releaseWork.Wait(StopGuard);
 			workCompleted.Set();
 			return 7;
 		};
@@ -193,6 +194,8 @@ public sealed class McpProgressHeartbeatTests {
 			.ConfigureAwait(false))
 			.Which.OperationName.Should().Be("slow-op",
 				because: "the deadline exception must name the operation so the tool can build an in-progress envelope");
+		// The deadline has fired; now let the still-running work finish and confirm it was never cancelled.
+		releaseWork.Set();
 		workCompleted.Wait(StopGuard).Should().BeTrue(
 			because: "the deadline must NOT cancel the work — it continues on the long-lived server so a later poll can observe the result");
 	}
@@ -223,13 +226,14 @@ public sealed class McpProgressHeartbeatTests {
 	[Category("Unit")]
 	[Description("Propagates an OperationCanceledException instead of a fabricated deadline when the request is cancelled before the work completes, because the detached work does not survive server shutdown.")]
 	public async Task RunWithProgressAndDeadlineAsync_ShouldThrowCancellation_WhenRequestCancelledBeforeWorkCompletes() {
-		// Arrange
+		// Arrange — the work blocks on a gate that is never opened, so the only way the wait ends is
+		// via cancellation, not completion (no wall-clock sleep, deterministic on any agent).
 		using CancellationTokenSource cts = new CancellationTokenSource();
 		using ManualResetEventSlim workStarted = new ManualResetEventSlim(false);
+		using ManualResetEventSlim neverReleased = new ManualResetEventSlim(false);
 		Func<int> work = () => {
 			workStarted.Set();
-			// Outlives the cancellation below so the wait ends via cancellation, not completion.
-			Thread.Sleep(TimeSpan.FromMilliseconds(300));
+			neverReleased.Wait(StopGuard);
 			return 1;
 		};
 
@@ -254,7 +258,9 @@ public sealed class McpProgressHeartbeatTests {
 	[Category("Unit")]
 	[Description("Invokes the background-fault sink with the unwrapped exception when the detached work faults after the deadline already returned, turning the otherwise-silent failure into a diagnostic trail.")]
 	public async Task RunWithProgressAndDeadlineAsync_ShouldInvokeFaultSink_WhenBackgroundWorkFaultsAfterDeadline() {
-		// Arrange
+		// Arrange — the work blocks on a gate the test opens only AFTER the deadline has fired, then
+		// faults: the post-deadline background failure mode, reproduced without a wall-clock sleep.
+		using ManualResetEventSlim releaseWork = new ManualResetEventSlim(false);
 		using ManualResetEventSlim faultObserved = new ManualResetEventSlim(false);
 		Exception captured = null;
 		Action<Exception> onFault = ex => {
@@ -262,8 +268,7 @@ public sealed class McpProgressHeartbeatTests {
 			faultObserved.Set();
 		};
 		Func<int> work = () => {
-			// Outlive the short deadline, then fault — the post-deadline background failure mode.
-			Thread.Sleep(TimeSpan.FromMilliseconds(200));
+			releaseWork.Wait(StopGuard);
 			throw new InvalidOperationException("late boom");
 		};
 
@@ -281,6 +286,8 @@ public sealed class McpProgressHeartbeatTests {
 		// Assert
 		await act.Should().ThrowAsync<McpResponseDeadlineExceededException>(
 			because: "the deadline elapses before the work faults, so the caller still receives the in-progress signal").ConfigureAwait(false);
+		// The deadline has been reported; now let the detached work fault and confirm the sink fires.
+		releaseWork.Set();
 		faultObserved.Wait(StopGuard).Should().BeTrue(
 			because: "the background fault sink must fire once the detached work eventually faults");
 		captured.Should().BeOfType<InvalidOperationException>(
