@@ -123,6 +123,50 @@ public sealed class ClioRunDispatchTests {
 			target: null,
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
+	// A typed-POCO failure envelope that parks its raw failure detail under NON-"error" field names
+	// (message + detail) — the long tail that IsFailureResult detects (success:false) but which the
+	// narrow error-only redactor used to pass through verbatim. The backstop must now scrub these too.
+	public sealed record PocoMessageFailureEnvelope(bool Success, string Message, string Detail);
+
+	[McpServerToolType]
+	private static class PocoMessageFailureToolType {
+		internal const string SensitiveMessage = "Failed to connect to prod-db.internal:1433 while opening the pool";
+		internal const string SensitiveDetail = "see /Library/Logs/clio/trace.log for the full stack";
+
+		[McpServerTool(Name = "poco-message-failure-tool", Destructive = false)]
+		[System.ComponentModel.Description("Returns a typed POCO failure envelope whose detail lives under message/detail, not error.")]
+		public static PocoMessageFailureEnvelope ReturnFailure([System.ComponentModel.Description("payload")] string value) =>
+			new(Success: false, Message: SensitiveMessage, Detail: SensitiveDetail);
+	}
+
+	private static McpServerTool BuildPocoMessageFailureTool() =>
+		McpServerTool.Create(
+			typeof(PocoMessageFailureToolType).GetMethod(nameof(PocoMessageFailureToolType.ReturnFailure))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
+	// A typed-POCO failure whose sensitive detail is NESTED under a non-"error" key inside a child
+	// object, exercising the StructuredContent recursion path (RedactStructuredErrorFields) rather
+	// than only the top-level text-content redaction.
+	public sealed record NestedFailureDetail(string Reason);
+	public sealed record PocoNestedFailureEnvelope(bool Success, NestedFailureDetail Inner);
+
+	[McpServerToolType]
+	private static class PocoNestedFailureToolType {
+		internal const string SensitiveReason = "host unreachable: 10.0.0.5:1433";
+
+		[McpServerTool(Name = "poco-nested-failure-tool", Destructive = false)]
+		[System.ComponentModel.Description("Returns a typed POCO failure envelope whose detail is nested under a non-error key.")]
+		public static PocoNestedFailureEnvelope ReturnFailure([System.ComponentModel.Description("payload")] string value) =>
+			new(Success: false, Inner: new NestedFailureDetail(SensitiveReason));
+	}
+
+	private static McpServerTool BuildPocoNestedFailureTool() =>
+		McpServerTool.Create(
+			typeof(PocoNestedFailureToolType).GetMethod(nameof(PocoNestedFailureToolType.ReturnFailure))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
+
 	// RequestContext's constructor rejects a null server, so build an uninitialized instance (the
 	// executor reuses this context and only sets Params/MatchedPrimitive before InvokeAsync).
 	private static RequestContext<CallToolRequestParams> CallContext() =>
@@ -475,6 +519,49 @@ public sealed class ClioRunDispatchTests {
 			because: "a successful payload's legitimate URL data must survive — the backstop only touches failure content");
 		text.Should().NotContain("[redacted",
 			because: "no redaction placeholder may appear in a successful envelope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Scrubs a typed-POCO failure envelope whose sensitive detail is parked under non-'error' keys (message/detail): the result is classified a failure by success:false, so the backstop must redact every failure-bearing field, not only one literally named 'error'.")]
+	public async Task RunAsync_ShouldRedactFailureFields_WhenFailureDetailIsUnderMessageOrDetail() {
+		// Arrange
+		RegisterTool("poco-message-failure-tool", BuildPocoMessageFailureTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("poco-message-failure-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().NotContain("prod-db.internal:1433",
+			because: "a scheme-less host:port carried under the 'message' field of a failure envelope must be redacted");
+		text.Should().NotContain("/Library/Logs/clio/trace.log",
+			because: "an absolute path carried under the 'detail' field of a failure envelope must be redacted");
+		text.Should().Contain("[redacted",
+			because: "the failure fields are rewritten with stable placeholders rather than passed through");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Scrubs a NESTED failure-bearing field (reason inside a child object) via the StructuredContent recursion path, proving the broadened predicate is wired into RedactStructuredErrorFields and not only the top-level redaction.")]
+	public async Task RunAsync_ShouldRedactNestedFailureField_WhenDetailIsUnderNestedReasonKey() {
+		// Arrange
+		RegisterTool("poco-nested-failure-tool", BuildPocoNestedFailureTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("poco-nested-failure-tool", args, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		string text = ErrorText(result);
+		text.Should().NotContain("10.0.0.5:1433",
+			because: "an ip:port nested under a non-error 'reason' key must be reached by the structured-content recursion and redacted");
+		string structured = result.StructuredContent?.GetRawText() ?? string.Empty;
+		structured.Should().NotContain("10.0.0.5:1433",
+			because: "the StructuredContent graph must be rewritten too so the host does not read the raw value from the structured payload");
+		(text + structured).Should().Contain("[redacted",
+			because: "the nested failure field is rewritten with a stable placeholder");
 	}
 
 	[Test]

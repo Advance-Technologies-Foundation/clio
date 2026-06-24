@@ -141,14 +141,35 @@ namespace Clio.Command {
 					})
 					.ToList();
 				// The capped data query cannot reveal how many pages matched in total, so a caller
-				// could not otherwise tell a 50-item page from a complete result. Query the full
-				// match count separately and surface total + truncated so truncation is observable.
-				int total = QueryTotalPageCount(url, packageName, nameFilter, options.UId, pages.Count);
+				// could not otherwise tell a 50-item page from a complete result. Only when the page
+				// is provably full (count >= the cap) is a separate COUNT(Id) round-trip worth its
+				// cost: a short page (count < cap) is already complete, so issuing the count there is
+				// pure waste. When the page IS capped and the count query fails, we cannot prove
+				// completeness, so the result must be reported as truncated.
+				int total;
+				bool truncated;
+				if (pages.Count < effectiveLimit) {
+					total = pages.Count;
+					truncated = false;
+				}
+				else {
+					(bool countSucceeded, int countTotal) = QueryTotalPageCount(url, packageName, nameFilter, options.UId, pages.Count);
+					if (countSucceeded) {
+						total = Math.Max(countTotal, pages.Count);
+						truncated = total > pages.Count;
+					}
+					else {
+						// The page filled the cap but the supplementary count failed, so completeness
+						// is unprovable — surface it as truncated rather than wrongly claiming a full set.
+						total = pages.Count;
+						truncated = true;
+					}
+				}
 				response = new PageListResponse {
 					Success = true,
 					Count = pages.Count,
 					Total = total,
-					Truncated = total > pages.Count,
+					Truncated = truncated,
 					Pages = pages
 				};
 				return true;
@@ -182,11 +203,13 @@ namespace Clio.Command {
 
 		/// <summary>
 		/// Queries the full number of pages matching the same filters as the data query (ignoring
-		/// the result cap) via a COUNT(Id) aggregation. Best-effort: when the count query fails or
-		/// returns an unexpected shape, falls back to <paramref name="returnedCount"/> so the
-		/// response never claims fewer pages than were actually returned.
+		/// the result cap) via a COUNT(Id) aggregation. Returns whether the count was obtained and the
+		/// resulting total. When the count query fails or returns an unexpected shape, returns
+		/// <c>Succeeded:false</c> with <paramref name="returnedCount"/> so the caller can decide how to
+		/// surface the unprovable case (a capped page becomes truncated) instead of silently claiming
+		/// the result is complete.
 		/// </summary>
-		private int QueryTotalPageCount(string url, string packageName, string nameFilter, string uId, int returnedCount) {
+		private (bool Succeeded, int Total) QueryTotalPageCount(string url, string packageName, string nameFilter, string uId, int returnedCount) {
 			try {
 				var countQuery = new JObject {
 					["rootSchemaName"] = "SysSchema",
@@ -211,18 +234,18 @@ namespace Clio.Command {
 				string countResponseJson = _applicationClient.ExecutePostRequest(url, countQuery.ToString(Formatting.None));
 				var countResponse = JObject.Parse(countResponseJson);
 				if (!(countResponse[SuccessKey]?.Value<bool>() ?? false)) {
-					return returnedCount;
+					return (false, returnedCount);
 				}
 				JToken recordCount = (countResponse["rows"] as JArray)?.FirstOrDefault()?["RecordCount"];
 				if (recordCount is not null && int.TryParse(recordCount.ToString(), out int total)) {
-					return Math.Max(total, returnedCount);
+					return (true, Math.Max(total, returnedCount));
 				}
-				return returnedCount;
+				return (false, returnedCount);
 			}
 			catch (Newtonsoft.Json.JsonException) {
 				// A malformed count body is informational only; never fail the whole listing because
 				// the supplementary count could not be parsed.
-				return returnedCount;
+				return (false, returnedCount);
 			}
 		}
 

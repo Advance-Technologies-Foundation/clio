@@ -302,8 +302,17 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		return true;
 	}
 
-	private static bool IsErrorFieldName(string key) =>
-		string.Equals(key, "error", StringComparison.OrdinalIgnoreCase);
+	// The failure-bearing field names a long-tail tool may use to carry the raw failure detail. A
+	// result is classified a failure once (IsFailureResult); the redaction backstop must then scrub
+	// EVERY field a tool might have parked that detail in — not just one literally named "error" —
+	// because the raw text (hosts, URIs, paths, credentials) leaks the same regardless of the key.
+	// Matched case-insensitively.
+	private static readonly System.Collections.Generic.HashSet<string> FailureFieldNames =
+		new(StringComparer.OrdinalIgnoreCase) {
+			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason"
+		};
+
+	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
 
 	// Unwraps to the inner-most exception's message so the surfaced detail is the actual failure cause
 	// rather than a generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.

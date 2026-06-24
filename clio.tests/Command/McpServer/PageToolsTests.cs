@@ -567,7 +567,9 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
-		applicationClient.Received(2).ExecutePostRequest(
+		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// the supplementary count round-trip is skipped — only the single data query carries the filter.
+		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -614,9 +616,11 @@ public class PageToolsTests
 		response.Success.Should().BeTrue("because the page query succeeded after package resolution");
 		response.Pages.Should().ContainSingle("because one page row was returned");
 		response.Pages[0].SchemaName.Should().Be("UsrTodo_FormPage");
-		applicationClient.Received(4).ExecutePostRequest(
+		// app lookup + GetApplicationPackages + the single page data query = 3 calls. The page returns
+		// one row (1 < limit 50), so it is provably complete and the supplementary count query is skipped.
+		applicationClient.Received(3).ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		applicationClient.Received(2).ExecutePostRequest(
+		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("UsrTodo")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -750,6 +754,135 @@ public class PageToolsTests
 		response.Total.Should().Be(1, "because the count query confirms only one page matches");
 		response.Truncated.Should().BeFalse(
 			"because total equals count, so the result is complete");
+	}
+
+	[Test]
+	[Description("TryListPages issues the supplementary count query and reports truncated=true only when the page is capped (count == effectiveLimit) and the count succeeds")]
+	public void TryListPages_WhenPageIsCappedAndCountSucceeds_ReportsTotalAndTruncated() {
+		// Arrange — Limit equals the row count, so the page is provably capped and the count query runs
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" },
+				new JObject { ["Name"] = "Page2", ["UId"] = "uid-2", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 42 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 2 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the capped listing query itself succeeded");
+		response.Total.Should().Be(42, "because the count query reports the full number of matching pages");
+		response.Truncated.Should().BeTrue(
+			"because the page was capped and the count proves more pages match than were returned");
+		applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages skips the supplementary count round-trip when the page is provably complete (count < effectiveLimit) and reports truncated=false")]
+	public void TryListPages_WhenPageIsNotCapped_SkipsCountQueryAndReportsNotTruncated() {
+		// Arrange — only one row returned for a limit of 50, so the result is provably complete
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query succeeded");
+		response.Total.Should().Be(1, "because a short page is complete, so total equals the returned count");
+		response.Truncated.Should().BeFalse("because a page shorter than the limit cannot be truncated");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=true when the page is capped but the supplementary count query returns success:false, because completeness is unprovable on a capped page")]
+	public void TryListPages_WhenPageIsCappedAndCountReturnsUnsuccessful_ReportsTruncated() {
+		// Arrange — capped page, count query responds success:false
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject { ["success"] = false };
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 1 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the data query succeeded even though the count query failed");
+		response.Total.Should().Be(1, "because a failed count falls back to the returned count");
+		response.Truncated.Should().BeTrue(
+			"because a capped page whose count cannot be confirmed must be reported as possibly incomplete");
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=true when the page is capped but the supplementary count query returns malformed JSON, because completeness is unprovable on a capped page")]
+	public void TryListPages_WhenPageIsCappedAndCountReturnsMalformedJson_ReportsTruncated() {
+		// Arrange — capped page, count query responds with unparseable JSON (JsonException branch)
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), "{ this is not valid json ");
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 1 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the malformed count body must never fail the whole listing");
+		response.Total.Should().Be(1, "because an unparseable count falls back to the returned count");
+		response.Truncated.Should().BeTrue(
+			"because a capped page whose count could not be parsed must be reported as possibly incomplete");
 	}
 
 	[Test]

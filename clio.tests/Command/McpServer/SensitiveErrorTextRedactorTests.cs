@@ -132,4 +132,122 @@ public sealed class SensitiveErrorTextRedactorTests {
 		result.Should().NotContain("Creatio_Prod", because: "the database name must not leak");
 		result.Should().NotContain("p@ss", because: "the connection-string password must not leak");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a scheme-less host:port endpoint (a DNS name + port) that UriRegex never matches because there is no scheme://.")]
+	public void Redact_ShouldRedactSchemeLessHostAndPort() {
+		// Arrange
+		const string message = "Failed to open a connection to prod-db.internal:1433 after 30s.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("prod-db.internal:1433",
+			because: "a scheme-less host:port endpoint discloses internal infrastructure and must be redacted");
+		result.Should().Contain("after 30s",
+			because: "the trailing logical detail must survive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a scheme-less IPv4 address with a port.")]
+	public void Redact_ShouldRedactIpv4AddressAndPort() {
+		// Arrange
+		const string message = "Timeout connecting to 10.0.0.5:1433.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("10.0.0.5:1433",
+			because: "a raw IP:port endpoint discloses internal infrastructure and must be redacted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a Bearer token surfaced in an Authorization header value.")]
+	public void Redact_ShouldRedactBearerToken() {
+		// Arrange
+		const string message = "Request rejected. Authorization: Bearer abc123.def456.ghi789secret returned 401.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("abc123.def456.ghi789secret",
+			because: "the bearer token value must not leak");
+		result.Should().Contain("returned 401",
+			because: "the trailing logical detail must survive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a JWT-shaped value (three base64url segments starting with eyJ) even when it is not behind a key or Bearer prefix.")]
+	public void Redact_ShouldRedactBareJwt() {
+		// Arrange
+		const string message =
+			"Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N is expired.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("eyJhbGciOiJIUzI1NiJ9",
+			because: "the JWT header segment must not leak");
+		result.Should().NotContain("eyJzdWIiOiIxMjM0NTY3ODkwIn0",
+			because: "the JWT payload segment must not leak");
+		result.Should().Contain("is expired",
+			because: "the trailing logical detail must survive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a POSIX absolute path under a newly-covered system root such as /Library.")]
+	public void Redact_ShouldRedactLibrarySystemPath() {
+		// Arrange
+		const string message = "Cannot read /Library/Logs/clio/trace.log.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("/Library/Logs/clio/trace.log",
+			because: "an absolute path under /Library is a disclosure vector and must be redacted");
+		result.Should().Contain("[redacted-path]",
+			because: "the path is replaced by a stable placeholder");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a POSIX absolute path under a container root such as /app.")]
+	public void Redact_ShouldRedactContainerRootPath() {
+		// Arrange
+		const string message = "Module /app/config/appsettings.json could not be loaded.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("/app/config/appsettings.json",
+			because: "an absolute path under the /app container root must be redacted");
+		result.Should().Contain("[redacted-path]",
+			because: "the path is replaced by a stable placeholder");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not over-redact a safe /DataService/ URL path prefix, which is a public API route and not a sensitive filesystem path.")]
+	public void Redact_ShouldNotRedactDataServiceUrlPath() {
+		// Arrange
+		const string message = "Endpoint /DataService/json/SyncReply/SelectQuery returned no body.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().Be(message,
+			because: "a known-safe API URL path prefix must be left intact so the agent's diagnostic detail survives");
+	}
 }
