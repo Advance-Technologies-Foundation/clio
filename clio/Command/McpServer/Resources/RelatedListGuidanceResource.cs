@@ -43,12 +43,8 @@ public sealed class RelatedListGuidanceResource {
 		       handler, a seeded empty-Guid filter, or a `filterAttributes` entry to scope by the record — those
 		       are not how the platform does it and they break (see Common mistakes).
 
-		       There is NO single "detail" component — use the "Expanded list" composite
-		       - There is no single "detail" component type. The designer's "Expanded list" detail is a COMPOSITE.
-		         Do NOT reconstruct it from memory or from raw types: fetch the canonical recipe with
-		         `get-component-info composite="Expanded list"` and build the structure from THAT — it is the
-		         source of truth for how the composite is assembled.
-		         Use `get-component-info` list mode to confirm live component names against the target environment.
+		       There is NO single "detail" component — the "Expanded list" composite (fetched above) is the
+		       structure; do not look for a single "detail" component type or hand-assemble one from raw types.
 		       - Slot-init footgun (the #1 detail break): every container node you INSERT in `viewConfigDiff` MUST
 		         initialize its content-slot array in `values` (e.g. `"items": []`); the recipe and
 		         `page-modification` show the exact slots per container. A slot-less container is not treated as a
