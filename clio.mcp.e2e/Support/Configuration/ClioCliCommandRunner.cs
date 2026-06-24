@@ -129,7 +129,21 @@ internal static class ClioCliCommandRunner {
 
 		lastInstallResult.Should().NotBeNull(
 			because: "cliogate installation should capture the last install result for diagnostics");
-		lastInstallResult!.ExitCode.Should().Be(0,
+
+		// Emit the COMPLETE captured stdout+stderr to the test log before asserting. FluentAssertions
+		// truncates long assertion messages, which previously hid the real install-gate failure
+		// (e.g. the CreatioClient.Login HTTP status / "Unable to connect" / 401). TestContext output is
+		// not truncated, so this guarantees the full clio error is visible in the CI run.
+		TestContext.Out.WriteLine(
+			$"[install-gate] exit code: {lastInstallResult!.ExitCode}");
+		TestContext.Out.WriteLine(
+			$"[install-gate] command: clio {lastInstallResult.Arguments}");
+		TestContext.Out.WriteLine(
+			$"[install-gate] full stdout:{System.Environment.NewLine}{lastInstallResult.StandardOutput}");
+		TestContext.Out.WriteLine(
+			$"[install-gate] full stderr:{System.Environment.NewLine}{lastInstallResult.StandardError}");
+
+		lastInstallResult.ExitCode.Should().Be(0,
 			because:
 			$"cliogate must be installed before MCP tests that require it. " +
 			$"install stderr: {lastInstallResult.StandardError}. install stdout: {lastInstallResult.StandardOutput}");
