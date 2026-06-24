@@ -289,7 +289,9 @@ internal static class ApplicationToolHelper {
 			RetryGuidance: "The section creation is still running on the server. Do NOT retry create-app-section "
 				+ "(a retry would create a duplicate section) and do NOT fall back to create-page. Wait a "
 				+ "short while, then poll list-app-sections and get-app-info until the section and its "
-				+ "generated List and Form pages appear; only then continue.");
+				+ "generated List and Form pages appear; only then continue. If the section still does not "
+				+ "appear after several minutes of polling, the background creation has failed (not merely "
+				+ "slowed) and a single retry of create-app-section is then safe.");
 	}
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextResponse(ApplicationSectionUpdateContextResponse response) {
