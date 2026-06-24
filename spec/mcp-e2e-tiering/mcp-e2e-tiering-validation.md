@@ -19,20 +19,54 @@ dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj -f net10.0
 Result: 0 errors. (Pre-existing `CLIO005` warnings originate in `clio/`, not in the tagged
 e2e test files.)
 
-## NoEnvironment tier (fast, env-free gate)
+## NoEnvironment tier — FULL sweep result
 
 ```
 dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -f net10.0 --no-build \
   --filter "Category=McpE2E.NoEnvironment"
 ```
 
-Outcome: green. With the sandbox neutralized, the NoEnvironment tier passes with
-**0 failures and 0 (env-gated) skips** — every result is `Passed`. The one host-infra
-failure observed during classification (`AssertInfrastructure_Should_Return_Full_Structured_Result`,
-`assert-infrastructure` returning `InternalError` with no Docker/k8s tooling) was reclassified
-into the Sandbox tier, which restored a clean NoEnvironment run. Each test spawns a fresh
-clio MCP child over stdio (~10-19s/test), so the full 171-test sweep is slow but
-deterministic.
+**Outcome (full sweep, 30m45s): 15 failed / 155 passed / 170 total — NOT yet green.**
+A partial run (first ~30) was all-green and was initially mistaken for the full result;
+the complete sweep shows the tier still needs an iteration. The 15 failures split into
+three kinds:
+
+### A. Fixed by a sibling PR (1)
+- `Tool_ShouldListFeatureFlags_WhenNoArgumentsSupplied` — fails only because this branch is
+  off `master` and lacks PR #756 (ENG-92149, the MCP table-serialization fix). Passes once
+  #756 is in the integration branch. Correctly classified NoEnvironment.
+
+### B. Mis-classified host-infra → must move to Sandbox (3)
+All fail with `McpProtocolException: Request failed (remote)` — they probe host infra/k8s
+exactly like `assert-infrastructure` (already Sandbox). Reclassify **per-test** (the files
+may also hold genuinely env-free advertise tests that should stay NoEnvironment):
+- `DeployCreatio_Should_Not_Return_Scheduled_Maintenance_Response`
+- `RestoreDb_Should_Return_Log_File_Path_On_Failure`
+- `ShowPassingInfrastructure_Should_Return_Structured_Result`
+
+### C. Genuine env-free contract failures (~11)
+Reproducible with **no Creatio at all** — a locally fixable contract cluster, not stand-gated.
+These overlap the CI "61" (e.g. the BusinessRule `_Report_Invalid_Environment` set was in
+run 15628876), which partially overturns the "most of the 61 need a stand" read.
+- `BusinessRuleCreate_Should_Bind_{ApplyFilter,RoleGate,SetValues,SysValue,ShowElement}_Payload_And_Report_Invalid_Environment`
+  (×6; all `Expected callResult.IsError not to be True ... but found True`)
+- `PageTemplatesListTool_Should_Reject_Invalid_Schema_Type`
+- `PageValidateTool_Should_Accept_Inserted_Field_With_AutoProvided_Label`
+- `SettingsHealth_Should_Report_Repaired_Status_When_Active_Environment_Key_Is_Invalid`
+- `ToolContractGet_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type`
+- `PushWorkspace_Tool_Should_Advertise_Optional_SkipBackup_Argument`
+
+These match the ENG-91830 ("return a structured error, not a protocol exception") and
+ENG-91825 (env-validation-order) themes.
+
+## Next iteration to make the tier green
+1. Reclassify the 3 host-infra tests (B) per-test to Sandbox.
+2. Fix the ~11 contract failures (C) locally — or, where a test genuinely needs cliogate to
+   bind, demote that specific test to Sandbox after confirming on a stand.
+3. Re-run; the tier goes green after #756 merges into the integration branch + cluster (C)
+   is fixed.
+
+The tier-tagging scaffolding (this PR) stands; tier greenness is the follow-up above.
 
 ## Sandbox tier (skipped / fail-fast locally without a stand)
 
@@ -50,8 +84,7 @@ Creatio state is mutated. These belong on the deploy-backed step, never on the f
 
 ## Notes
 
-- `AssertInfrastructureToolE2ETests` was moved to the Sandbox tier: its arrange is
-  environment-free, but the `assert-infrastructure` tool probes host infrastructure
+- `AssertInfrastructureToolE2ETests` was moved to the Sandbox tier during classification:
+  its arrange is environment-free, but `assert-infrastructure` probes host infrastructure
   (Kubernetes/Docker/local DB/filesystem) and returns `InternalError` when that tooling is
-  absent. Per the classification rule, host-infra-dependent tests default to Sandbox so the
-  NoEnvironment gate stays deterministically green.
+  absent. The B-group above is the same class, caught by the full sweep.
