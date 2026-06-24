@@ -79,6 +79,18 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		_overallTimeout = overallTimeout;
 	}
 
+	/// <summary>Result of a single probe attempt, driving the polling loop.</summary>
+	private enum ProbeOutcome {
+		/// <summary>The route returned a serving status — stop and succeed.</summary>
+		Serving,
+
+		/// <summary>The route is not serving yet (404/3xx/5xx, timeout, or transport error) — retry.</summary>
+		Retry,
+
+		/// <summary>The overall readiness deadline tripped — stop and fail.</summary>
+		DeadlineExceeded
+	}
+
 	/// <inheritdoc />
 	public async Task WaitUntilServingAsync(string requestUri, CancellationToken cancellationToken) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
@@ -101,40 +113,20 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 			}
 
 			attemptsPerformed++;
-			try {
-				using HttpRequestMessage request = new(HttpMethod.Get, probedUri);
-				using HttpResponseMessage response = await _httpClient.SendAsync(request, probeToken);
-				lastStatusCode = response.StatusCode;
-				lastError = null;
-				if (IsServingStatus(response.StatusCode)) {
-					return;
-				}
-			} catch (HttpRequestException exception) {
-				// Connection refused / DNS failures while Creatio restarts are transient — keep retrying.
-				lastStatusCode = null;
-				lastError = exception.Message;
-			} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
-				// The caller cancelled — surface it rather than retrying.
-				throw;
-			} catch (OperationCanceledException) {
-				// Per-request timeout or the overall deadline (not the caller cancelling).
-				lastStatusCode = null;
-				if (deadlineCts.IsCancellationRequested) {
-					lastError = OverallDeadlineExceededMessage();
-					break;
-				}
+			(ProbeOutcome outcome, lastStatusCode, lastError) =
+				await ProbeOnceAsync(probedUri, probeToken, cancellationToken, deadlineCts);
+			if (outcome == ProbeOutcome.Serving) {
+				return;
+			}
 
-				lastError = "request timed out";
+			if (outcome == ProbeOutcome.DeadlineExceeded) {
+				break;
 			}
 
 			if (attempt < _maxAttempts - 1) {
-				try {
-					await Task.Delay(_delayBetweenAttempts, probeToken);
-				} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
-					throw;
-				} catch (OperationCanceledException) {
-					// Overall deadline tripped during the inter-attempt delay.
-					lastError = OverallDeadlineExceededMessage();
+				string? delayError = await DelayBeforeNextAttemptAsync(probeToken, cancellationToken);
+				if (delayError is not null) {
+					lastError = delayError;
 					break;
 				}
 			}
@@ -144,6 +136,50 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 		// the loop breaks early, so reporting the cap would blur "deadline tripped" against
 		// "attempts exhausted". A genuine attempt-budget exhaustion still reports _maxAttempts.
 		throw new CliogateReadinessTimeoutException(SanitizeUriForDiagnostics(probedUri), lastStatusCode, lastError, attemptsPerformed);
+	}
+
+	/// <summary>
+	/// Issues a single GET and classifies the result, translating transport failures and the
+	/// per-request timeout into a retry while letting caller cancellation propagate.
+	/// </summary>
+	private async Task<(ProbeOutcome Outcome, HttpStatusCode? StatusCode, string? Error)> ProbeOnceAsync(
+		Uri probedUri,
+		CancellationToken probeToken,
+		CancellationToken cancellationToken,
+		CancellationTokenSource deadlineCts) {
+		try {
+			using HttpRequestMessage request = new(HttpMethod.Get, probedUri);
+			using HttpResponseMessage response = await _httpClient.SendAsync(request, probeToken);
+			ProbeOutcome outcome = IsServingStatus(response.StatusCode) ? ProbeOutcome.Serving : ProbeOutcome.Retry;
+			return (outcome, response.StatusCode, null);
+		} catch (HttpRequestException exception) {
+			// Connection refused / DNS failures while Creatio restarts are transient — keep retrying.
+			return (ProbeOutcome.Retry, null, exception.Message);
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// The caller cancelled — surface it rather than retrying.
+			throw;
+		} catch (OperationCanceledException) {
+			// Per-request timeout or the overall deadline (not the caller cancelling).
+			return deadlineCts.IsCancellationRequested
+				? (ProbeOutcome.DeadlineExceeded, null, OverallDeadlineExceededMessage())
+				: (ProbeOutcome.Retry, null, "request timed out");
+		}
+	}
+
+	/// <summary>
+	/// Waits between attempts, returning <c>null</c> to continue or the deadline message when the
+	/// overall deadline trips during the delay. Caller cancellation propagates as a thrown exception.
+	/// </summary>
+	private async Task<string?> DelayBeforeNextAttemptAsync(CancellationToken probeToken, CancellationToken cancellationToken) {
+		try {
+			await Task.Delay(_delayBetweenAttempts, probeToken);
+			return null;
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		} catch (OperationCanceledException) {
+			// Overall deadline tripped during the inter-attempt delay.
+			return OverallDeadlineExceededMessage();
+		}
 	}
 
 	private string OverallDeadlineExceededMessage() =>
@@ -192,7 +228,7 @@ internal sealed class CliogateHttpReadinessProbe : ICliogateHttpReadinessProbe {
 /// <summary>
 /// Raised when the cliogate HTTP route keeps returning HTTP 404 (or is unreachable) after all retries.
 /// </summary>
-internal sealed class CliogateReadinessTimeoutException : Exception {
+public sealed class CliogateReadinessTimeoutException : Exception {
 	/// <summary>
 	/// Initializes a new instance of the <see cref="CliogateReadinessTimeoutException"/> class.
 	/// </summary>
