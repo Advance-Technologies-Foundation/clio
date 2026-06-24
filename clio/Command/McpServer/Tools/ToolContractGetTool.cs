@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
 using ModelContextProtocol.Server;
@@ -120,10 +121,10 @@ public sealed class ToolContractGetTool {
 	/// (the bound nested value) is used instead.
 	/// </summary>
 	private static string? TryRecoverFlatDetail(ToolContractGetArgs args) {
-		Dictionary<string, System.Text.Json.JsonElement>? overflow = args.ExtensionData;
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
 		if (overflow is null
-			|| !overflow.TryGetValue(DetailParam, out System.Text.Json.JsonElement value)
-			|| value.ValueKind != System.Text.Json.JsonValueKind.String) {
+			|| !overflow.TryGetValue(DetailParam, out JsonElement value)
+			|| value.ValueKind != JsonValueKind.String) {
 			return null;
 		}
 		string? detail = value.GetString();
@@ -141,7 +142,7 @@ public sealed class ToolContractGetTool {
 		if (args.ToolNames is { Count: > 0 }) {
 			return null;
 		}
-		Dictionary<string, System.Text.Json.JsonElement>? overflow = args.ExtensionData;
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
 		if (overflow is null || overflow.Count == 0) {
 			return null;
 		}
@@ -149,7 +150,7 @@ public sealed class ToolContractGetTool {
 		// name-bearing key, so exclude it before deciding whether the remaining keys are all flat
 		// tool-name keys. This lets {"tool-names":[...],"detail":"full"} flat calls recover the names
 		// instead of mis-reporting `tool-names` as an unknown arg.
-		List<KeyValuePair<string, System.Text.Json.JsonElement>> nameEntries = overflow
+		List<KeyValuePair<string, JsonElement>> nameEntries = overflow
 			.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
 			.ToList();
 		if (nameEntries.Count == 0 || !nameEntries.All(pair => FlatToolNameKeys.Contains(pair.Key))) {
@@ -171,12 +172,12 @@ public sealed class ToolContractGetTool {
 	/// string nor an array (a malformed name-bearing key), signalling the caller to abandon recovery so
 	/// the request falls through to the alias error path; otherwise returns <c>true</c>.
 	/// </summary>
-	private static bool TryAppendFlatToolName(System.Text.Json.JsonElement value, List<string> recovered) {
+	private static bool TryAppendFlatToolName(JsonElement value, List<string> recovered) {
 		switch (value.ValueKind) {
-			case System.Text.Json.JsonValueKind.String:
+			case JsonValueKind.String:
 				AddIfNotBlank(value.GetString(), recovered);
 				return true;
-			case System.Text.Json.JsonValueKind.Array:
+			case JsonValueKind.Array:
 				AppendStringArrayItems(value, recovered);
 				return true;
 			default:
@@ -190,9 +191,9 @@ public sealed class ToolContractGetTool {
 	/// Appends every string item of a JSON array <paramref name="array"/> to <paramref name="recovered"/>,
 	/// skipping non-string items and blank values.
 	/// </summary>
-	private static void AppendStringArrayItems(System.Text.Json.JsonElement array, List<string> recovered) {
-		foreach (System.Text.Json.JsonElement item in array.EnumerateArray()) {
-			if (item.ValueKind == System.Text.Json.JsonValueKind.String) {
+	private static void AppendStringArrayItems(JsonElement array, List<string> recovered) {
+		foreach (JsonElement item in array.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.String) {
 				AddIfNotBlank(item.GetString(), recovered);
 			}
 		}
@@ -212,7 +213,7 @@ public sealed class ToolContractGetTool {
 		// A recognized flat `detail` key is already recovered by TryRecoverFlatDetail, so drop it from the
 		// overflow before the alias check to avoid reporting it as an unknown arg. Any OTHER unknown key
 		// still produces the helpful teaching error.
-		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? overflow = args.ExtensionData;
+		IReadOnlyDictionary<string, JsonElement>? overflow = args.ExtensionData;
 		if (overflow is not null && overflow.ContainsKey(DetailParam)) {
 			overflow = overflow
 				.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
@@ -232,8 +233,8 @@ public sealed record ToolContractGetArgs(
 	[property: Description("Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index of all tools; 'full' returns the full contracts of all tools (legacy behavior).")]
 	string? Detail = null
 ) {
-	[System.Text.Json.Serialization.JsonExtensionData]
-	public Dictionary<string, System.Text.Json.JsonElement>? ExtensionData { get; init; }
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 public sealed record ToolContractGetResponse(

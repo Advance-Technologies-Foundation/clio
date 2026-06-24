@@ -89,9 +89,10 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
-			// the agent can self-correct without an extra discovery round-trip. Source set mirrors the
-			// index/named path (registry's invokable names + reflection catalog), deduped case-insensitively,
-			// ranked by Levenshtein distance then ordinal — same ranking as ToolContractGetTool.BuildSuggestions.
+			// the agent can self-correct without an extra discovery round-trip. Only the RANKING (Levenshtein
+			// distance then ordinal) matches ToolContractGetTool.BuildSuggestions; the candidate SOURCE SET is
+			// caller-specific and intentionally divergent — here it is the registry's invokable names + the
+			// reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
 			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
@@ -421,10 +422,11 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 	}
 
 	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
-	// requested name then ordinally by name (mirrors ToolContractGetTool.BuildSuggestions). The source is
-	// the FULL invokable name set — the registry's invokable names (the hidden long tail clio-run targets)
-	// unioned with the reflection catalog — deduped case-insensitively. The executor names themselves are
-	// excluded so a near-miss never suggests re-entering clio-run / clio-run-destructive.
+	// requested name then ordinally by name. Only this ranking matches ToolContractGetTool.BuildSuggestions;
+	// the candidate source set here is caller-specific (intentionally divergent): the FULL invokable name
+	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
+	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
+	// near-miss never suggests re-entering clio-run / clio-run-destructive.
 	private IReadOnlyList<string> BuildSuggestions(string requestedName) {
 		return toolRegistry.ToolNames
 			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
