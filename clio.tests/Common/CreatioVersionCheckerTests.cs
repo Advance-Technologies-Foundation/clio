@@ -35,6 +35,10 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[RequiresCreatioVersion("10.0.0", Hint = TestHint)]
 	private sealed class ClassRequirementWithHintOptions { }
 
+	// Misuse: a malformed minimum version is a developer error in the attribute declaration.
+	[RequiresCreatioVersion("10.x")]
+	private sealed class MalformedMinVersionOptions { }
+
 	// Property-level requirement: enforced only when the bool flag is true.
 	private sealed class PropertyRequirementOptions {
 		[RequiresCreatioVersion("10.0.0")]
@@ -220,6 +224,23 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 			.WithMessage("*Target*",
 				because: "the misused property must be named so the developer can fix it");
 		_creatioVersionProviderMock.DidNotReceive().GetCoreVersion();
+	}
+
+	[Test]
+	[Description("EnsureRequirements fails fast with InvalidOperationException when the attribute declares a malformed minimum version (developer error, not version-too-old).")]
+	public void EnsureRequirements_ShouldThrowInvalidOperation_WhenMinVersionIsMalformed() {
+		// Arrange
+		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new MalformedMinVersionOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a malformed attribute MinVersion is a developer error and must not be conflated with an unmet environment version")
+			.WithMessage("*10.x*",
+				because: "the invalid value must be named so the developer can fix the attribute declaration");
 	}
 
 	[Test]

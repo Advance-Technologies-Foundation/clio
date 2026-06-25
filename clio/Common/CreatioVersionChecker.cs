@@ -133,12 +133,14 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 	}
 
 	// Parses the requirement's minimum version. System.Version already treats missing components as
-	// zero, so "10" and "10.0.0.0" denote the same floor.
+	// zero, so "10" and "10.0.0.0" denote the same floor. A malformed MinVersion is a DEVELOPER error
+	// in the attribute declaration — it must fail fast as such and must NOT be conflated with
+	// version-too-old (an older environment) or version-undeterminable (an unknown environment).
 	private static Version ParseMinVersion(string minVersion) {
 		if (!Version.TryParse(minVersion, out Version min)) {
-			throw new CreatioVersionRequirementException(
-				$"The [RequiresCreatioVersion] requirement has an invalid minimum version '{minVersion}'.",
-				CreatioVersionRequirementException.VersionTooOldCode);
+			throw new InvalidOperationException(
+				$"[RequiresCreatioVersion] declares an invalid minimum version '{minVersion}'. " +
+				"Specify a valid dotted version such as \"10.0.0\".");
 		}
 		return min;
 	}
