@@ -2,7 +2,6 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -207,23 +206,23 @@ public sealed class PageBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact page show/hide rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact page rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact page show/hide rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact page rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertPageRuleExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			target.RootSchemaUId,
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement",
 			[target.ElementName],
 			target.AttributeName,

@@ -444,8 +444,8 @@ public sealed class ApplicationSectionToolE2ETests {
 		response.Error.Should().NotBe("InsertQuery failed.",
 			because: "the opaque legacy fallback must be replaced with a diagnostic message");
 		response.Error.Should().MatchRegex(
-			"(?is)(--code|explicit code|no Latin|Latin letters)",
-			because: "the failure should tell the caller to supply an explicit Latin code");
+			"(?is)(--code|explicit code|no Latin|Latin letters|non-Latin characters)",
+			because: "the failure should be actionable: either ask the caller to supply an explicit Latin code, or report that the caption contains non-Latin characters. Which message fires is stand-culture-dependent (a live culture-resolver decides), so the assertion accepts both actionable forms");
 	}
 
 	[Category("McpE2E.Sandbox")]

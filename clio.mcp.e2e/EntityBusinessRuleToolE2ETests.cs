@@ -1,6 +1,5 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
-using Clio.Common;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -336,23 +335,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact entity rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact entity rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
 			["Name"],
 			"Name",
@@ -390,21 +389,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact system-variable rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact system-variable rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact system-variable rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact system-variable rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleSysValueConditionExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Owner",
 			"CurrentUserContact",
 			"Lookup",
@@ -443,21 +444,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact role-gate rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact role-gate rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact role-gate rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact role-gate rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleRoleGateConditionExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"CurrentUserRoles",
 			11,
 			RoleGateRoleId,
@@ -496,23 +499,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact apply-filter rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the apply-filter rule family should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful apply-filter creation should report the generated parent rule name");
+			because: "a valid Contact apply-filter rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single apply-filter parent rule should be created in the configured Creatio sandbox (clear/populate children are generated server-side and are not separate batch items)");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the apply-filter payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated parent rule name");
 		await BusinessRuleAddonReadback.AssertEntityApplyFilterRuleFamilyExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"City",
 			"Country",
 			"Country",
