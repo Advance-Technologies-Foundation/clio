@@ -230,7 +230,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Web-only sections and multiple data sources are surfaced (not stripped) and reflected in constraints.")]
+	[Description("Web-only sections and ALL data sources are surfaced (not stripped); mobile supports the same multi-data-source structure, so there is no 'keep only the primary' constraint.")]
 	public void Analyze_WebOnlySectionsAndDataSources_AreSurfaced() {
 		PageBundleInfo bundle = Bundle(
 			"""
@@ -249,7 +249,8 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.WebOnlySections.Should().Contain("handlers").And.Contain("validators");
 		guide.WebOnlySections.Should().NotContain("converters");
 		guide.DataSources.Should().BeEquivalentTo("PDS", "SecondDS");
-		guide.Constraints.Should().Contain(c => c.Contains("MULTIPLE data sources"));
+		guide.Constraints.Should().NotContain(c => c.Contains("MULTIPLE data sources") || c.Contains("SINGLE data source"),
+			because: "mobile supports the same data-source structure as web — no multi-DS limitation is imposed");
 		guide.Constraints.Should().Contain(c => c.Contains("business rules"));
 	}
 
@@ -269,7 +270,6 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.NextSteps.Should().NotBeEmpty();
 		guide.NextSteps.Should().Contain(s => s.Contains("create-page"));
 		guide.Constraints.Should().Contain(c => c.Contains("Scaffold"));
-		guide.Constraints.Should().Contain(c => c.Contains("SINGLE data source"));
 	}
 
 	[Test]

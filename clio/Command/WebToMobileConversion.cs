@@ -147,7 +147,7 @@ public static class WebToMobileAnalysisService {
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
-			Constraints = BuildConstraints(dataSources.Count > 1, webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -582,12 +582,11 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static List<string> BuildConstraints(
-		bool multipleDataSources, IReadOnlyList<string> webOnlySections,
+		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
-			"Mobile pages support a SINGLE data source per page.",
 			"No handlers, no validators, no custom converters in a mobile body. Re-implement conditional visibility / required / read-only / set-value logic as entity-level business rules (create-entity-business-rule). Reference only OOTB converters inline in binding expressions.",
 			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
 		};
@@ -604,9 +603,6 @@ public static class WebToMobileAnalysisService {
 				"viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
 				"used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
 				"converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
-		}
-		if (multipleDataSources) {
-			constraints.Add("The source page declares MULTIPLE data sources — keep only the primary one on the mobile page and review the rest.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");

@@ -254,7 +254,6 @@ Facts derived from source verification (not prescriptive rules — see `MobilePa
 
 - Mobile pages use web templates with `schemaType=10`; web templates have `schemaType=9`.
 - All five templates provide `crt.Scaffold` as the root element.
-- The mobile designer sets `disableMultiDataSource: true` — one data source per page.
 - The mobile designer maps `Boolean` data type to `crt.Toggle`, not `crt.Checkbox`.
 - Mobile page templates inject nodes (Scaffold, buttons, containers) that appear in `bundle.json`.
 - The mobile component registry is separate from web; not all `crt.*` web components are available.

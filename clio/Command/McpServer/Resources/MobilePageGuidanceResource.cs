@@ -103,7 +103,7 @@ public sealed class MobilePageGuidanceResource {
 		         - What was requested.
 		         - Why mobile cannot do it (cite the rule: e.g. "validators are not supported
 		           on mobile", "crt.DataGrid is web-only", "page body must not declare
-		           handlers", "only one data source per page").
+		           handlers").
 		         - The closest supported alternative, if any (e.g. entity-level business rule
 		           via `create-entity-business-rule`, an OOTB converter from the allowed list,
 		           a remote handler the user must implement separately and reference by name).
@@ -187,10 +187,12 @@ public sealed class MobilePageGuidanceResource {
 		       - Patch it:  { "operation": "merge", "name": "Scaffold", "values": { ... } }
 		       - Add child: { "operation": "insert", ..., "parentName": "Scaffold", "propertyName": "items" }
 
+		       viewConfigDiff INSERTS ADDRESS THE SLOT BY propertyName ONLY — never use "path" in a
+		       viewConfigDiff insert (e.g. NOT "path": ["tools"]; use "propertyName": "tools"). "path" is
+		       the addressing mechanism for viewModelConfigDiff / modelConfigDiff only; a viewConfigDiff
+		       insert that uses "path" is silently dropped by the differ.
+
 		       ─────────────────────────────────────────────────────────────
-		       ONE DATA SOURCE PER PAGE (designer constraint)
-		       ─────────────────────────────────────────────────────────────
-		       The mobile designer disables multi-data-source. Define only one data source in modelConfigDiff.
 
 		       ─────────────────────────────────────────────────────────────
 		       COMPONENT REGISTRY — MOBILE COMPONENTS ONLY (CRITICAL)

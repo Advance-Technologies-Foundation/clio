@@ -171,6 +171,10 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			─────────────────────────────────────────────────────────────
 			- Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff.
 			- NO handlers, NO validators, NO custom converters in the mobile body.
+			- viewConfigDiff INSERTS address the slot by parentName + propertyName ONLY — never use "path" in a
+			  viewConfigDiff insert (e.g. NOT "path": ["tools"]; use "propertyName": "tools"). "path" is valid
+			  only in viewModelConfigDiff / modelConfigDiff; a viewConfigDiff insert that uses "path" is silently
+			  dropped by the differ.
 			- LIST ROW (grid → crt.List + crt.ListItem): the row layout lives on a crt.ListItem placed in the
 			  crt.List's itemLayout (title = first grid column, body = the rest). If the mobile list template
 			  already provides the List/ListItem elements, configure them by MERGE-BY-NAME (the row goes on the
@@ -198,8 +202,6 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  layout — applying only one leaves fields pinned to their old cells. The mobile runtime reflows children
 			  by `row` / `column` (one item per cell; `colSpan` / `rowSpan` are serialized as 1 for designer parity
 			  but not honored per-item). adaptiveLayout is a PROPOSAL — let the user adjust or decline it at the gate.
-			- One data source per page. If the web page used several (see guide.dataSources), keep only
-			  the primary one.
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
 			  registry) — paste it verbatim and add only the value binding. validate-page is the backstop and

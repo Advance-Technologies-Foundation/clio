@@ -58,6 +58,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("The bundled grid → list component rule maps a web grid to [crt.List, crt.ListItem] and its note explains the crt.ListItem goes into the crt.List itemLayout.")]
+	public void LoadBundled_GridRuleMapsToListAndListItem() {
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		ComponentEquivalenceRule grid = rules.Components.First(c => c.Web.Contains("crt.DataGrid"));
+		grid.Mobile.Should().Contain("crt.List");
+		grid.Mobile.Should().Contain("crt.ListItem");
+		grid.Note.Should().Contain("itemLayout");
+	}
+
+	[Test]
 	[Description("ParseStream supports many-to-many component equivalence rules (lists on both sides).")]
 	public void ParseStream_SupportsManyToManyComponentRule() {
 		const string json = """
