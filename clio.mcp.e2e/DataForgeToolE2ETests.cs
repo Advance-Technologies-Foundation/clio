@@ -18,6 +18,11 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("dataforge")]
 [NonParallelizable]
+[Ignore("ENG-92457: DataForge similarity index never becomes Ready on the freshly-deployed sandbox " +
+	"(status=Unavailable, data/lookups-readiness=False), so the similarity-search reads (find-tables, " +
+	"find-lookups, get-relations) burn the full DataForgeReadinessGate ceiling (~300s each, ~900s total) " +
+	"and the whole fixture is the slowest in the suite. Temporarily disabled until ENG-92457 makes the gate " +
+	"fail fast and/or seeds the index during arrange.")]
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
