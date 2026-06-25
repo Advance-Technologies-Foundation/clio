@@ -71,9 +71,10 @@ public sealed class PageModificationGuidanceResource {
 		       0. WEB, MOBILE, OR BOTH (see Step 0): decide whether the requirement targets web, mobile, or both (default to web if unspecified); edit each affected page's web and/or mobile variant accordingly.
 		       1. `list-pages` — discover the page schema name.
 		       2. `get-page` — read `raw.body` (the editable replacing schema body) and `page` metadata.
-		       3. Edit `raw.body` as needed.
-		       4. `update-page` or `sync-pages` — save the modified body back.
-		       5. Optionally use `verify: true` in `update-page` to read back the page metadata after saving.
+		       3. `get-component-info` — for each component type you will insert, call it for that exact type and treat its response (including its embedded `documentation`) as the authoritative source for how to insert and configure the component. Build the insert from that response, not from this guide or from memory. See the COMPONENT-TYPE VERIFICATION step above.
+		       4. Edit `raw.body` as needed.
+		       5. `update-page` or `sync-pages` — save the modified body back.
+		       6. Optionally use `verify: true` in `update-page` to read back the page metadata after saving.
 
 		       get-page response structure
 		       - `page` — metadata of the editable replacing schema: `schemaName`, `schemaUId`, `packageName`, `packageUId`, `parentSchemaName`.
@@ -171,10 +172,10 @@ public sealed class PageModificationGuidanceResource {
 
 		       Finding a container for a new component (parentName)
 		       - Never guess a container name. Use `bundle.containers` from `get-page` — a flat list of all containers discovered in `viewConfig`.
-		       - Each entry exposes: `name` (value to use as `parentName`), `type` (e.g. `crt.FlexContainer`, `crt.Grid`), `childCount` (existing siblings), `path` (ancestor chain, useful for disambiguation when the same `name` appears in multiple branches).
+		       - Each entry exposes: `name` (value to use as `parentName`), `type` (the container's live `crt.*` type as it appears in the page — call `get-component-info` for that type to learn how to insert into it), `childCount` (existing siblings), `path` (ancestor chain, useful for disambiguation when the same `name` appears in multiple branches).
 		       - Pick a container whose `path` matches the visual region you want to modify and whose `childCount` > 0 for consistency (existing sibling confirms the container is usable).
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
-		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
+		       - For how to insert and configure any `crt.*` component — including the child-collection slots a container exposes — `get-component-info` is the authoritative source. Call it for the exact type and build the insert from its response and embedded `documentation`; do not author component shape from this guide or from memory.
 
 		       Inserted-field contract for a new data-bound field control
 		       """
@@ -347,7 +348,7 @@ public sealed class PageModificationGuidanceResource {
 		       - `type` (the component type inside `values`) MUST be a type you confirmed exists via `get-component-info` for the target environment — see the mandatory COMPONENT-TYPE VERIFICATION STOP above. Never invent or guess a `crt.*` type; an unknown type saves successfully but renders as a broken placeholder. If no catalog component matches the requirement, stop and ask the user (use an existing component, or build a custom one).
 		       - `name` is the unique component id inside the hierarchy. Prefix custom components with `Usr` or project-specific prefix to avoid collisions. For entity-bound FormPage fields, the `control` binding uses the view-model attribute key — commonly `$PDS_<Column>` for designer-generated attributes against the primary data source, but may be `$Usr<Column>`, `$PageParameters_<Name>`, or another prefix depending on how the attribute was defined. Copy the attribute key from the existing binding rather than constructing one from the column name; use `get-component-info` for ready-to-use examples.
 		       - `parentName` must match an existing container name from `bundle.viewConfig`.
-		       - `propertyName` is usually `items` for containers.
+		       - `propertyName` is usually `items` for containers. For the exact slot a given component exposes and how to populate it, read that component's `get-component-info` contract (see "Finding a container for a new component").
 		       - `index` is the insertion position within `parentName.items[]`.
 		       - `visible` is a view-engine property, not a component-specific one. It can appear in the `values` object of ANY view element alongside `type` and element-specific properties. Accepts `true`, `false`, or a binding expression (e.g. `"$SomeAttr | crt.InvertBooleanValue"`). Applies equally to web and mobile.
 		       - User-visible string values inside `values` (`label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button captions, tab/group titles — examples, not an exhaustive list; the rule covers ANY string-like property the runtime renders to the user) MUST be authored as `$Resources.Strings.<Key>` bindings, not inline string literals. Read `page-schema-resources` first to decide whether the key requires explicit registration via the `resources` parameter (DS-bound attributes auto-provide the caption; custom keys must be registered).
