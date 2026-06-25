@@ -84,7 +84,7 @@ internal static class GuidanceCatalog {
 				DashboardGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
-				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the ExpansionPanel + DataGrid composite, the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
+				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite recipe (via get-component-info composite), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
 				RelatedListGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
@@ -92,7 +92,7 @@ internal static class GuidanceCatalog {
 				AgentExecutionGuidanceResource.Guide),
 			["deploy-lifecycle"] = Create(
 				"deploy-lifecycle",
-				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio, plus build discovery, registration, and cliogate installation.",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
@@ -131,7 +131,13 @@ internal static class GuidanceCatalog {
 				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
 				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
 				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
-				IdentityAssertionGuidanceResource.Guide)
+				IdentityAssertionGuidanceResource.Guide),
+			["server-to-server-oauth"] = Create(
+				"server-to-server-oauth",
+				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
+				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
+				+ "Creatio APIs with an Authorization: Bearer token.",
+				ServerToServerOAuthGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

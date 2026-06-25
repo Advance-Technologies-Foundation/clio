@@ -29,6 +29,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
 	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
+	private static readonly string ServerToServerOAuthUri = BuildGuideUri("server-to-server-oauth");
 	private static readonly string ConfigurationWebServiceDtoPatternsUri =
 		BuildReferenceUri("configuration-webservice", "dto-patterns");
 	private static readonly string ConfigurationWebServiceStatusCodePatternsUri =
@@ -71,6 +72,7 @@ public sealed class McpGuidanceResourceE2ETests {
 				AgentExecutionUri,
 				SupportModeUri,
 				BusinessRulesUri,
+				ServerToServerOAuthUri,
 				ConfigurationWebServiceDtoPatternsUri,
 				ConfigurationWebServiceStatusCodePatternsUri,
 				ConfigurationWebServiceCompositionRootPatternUri,
@@ -85,7 +87,7 @@ public sealed class McpGuidanceResourceE2ETests {
 
 		resources.Select(resource => resource.Uri).Should().Contain(
 			expectedStaticUris.Concat(expectedGeneratedUris),
-			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules and reference resources");
+			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
 	}
 
 	[Test]
@@ -817,6 +819,32 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the validator guide should use the canonical numeric `.value` field in the async syssettings example");
 		article.Text.Should().Contain("setAttributePropertyValue(...)",
 			because: "the validator guide should redirect dynamic UI-state logic away from validators without pointing to removed handler or converter guides");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the server-to-server OAuth guidance article")]
+	[Description("Verifies that the MCP server exposes the server-to-server OAuth guide with token minting, bearer requests, and no-refresh-token guidance.")]
+	public async Task McpServer_Should_Return_Server_To_Server_OAuth_Guidance() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(ServerToServerOAuthUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the server-to-server OAuth guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(ServerToServerOAuthUri,
+			because: "the returned article should preserve the stable OAuth guidance URI");
+		article.Text.Should().Contain("grant_type=client_credentials",
+			because: "the guide should show how outside callers mint server-to-server tokens");
+		article.Text.Should().Contain("Authorization: Bearer",
+			because: "the guide should show how outside callers authenticate Creatio API requests");
+		article.Text.Should().Contain("does not use refresh tokens",
+			because: "the guide should explicitly describe the no-refresh-token expiry model");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
