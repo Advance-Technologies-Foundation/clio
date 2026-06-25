@@ -36,7 +36,7 @@ public sealed class DashboardGuidanceResource {
 		       `crt.IndicatorWidget` generation contract (aggregate, static filter, intent -> config translation)
 		       and its exact style theme values read the dedicated `indicator-widget` guidance and call
 		       `get-component-info`. For surrounding page structure, fields, containers, and accessibility/contrast
-		       defer to the general Freedom UI page guidance (`page-modification` and the UI guidelines).
+		       defer to the general Freedom UI page guidance (`page-modification`).
 
 		       It also documents one dashboard-specific structural detail found nowhere else: the auto-generated
 		       hidden page data source (`DashboardDS`) that widgets filter by — see the section below.

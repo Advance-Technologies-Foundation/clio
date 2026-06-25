@@ -168,6 +168,7 @@ For every touched command, verify and update all relevant files:
 - Treat unit tests in `clio.tests` as necessary but insufficient for MCP tool changes; mapping-only coverage does not complete the task.
 - If no MCP artifact exists for a touched command, explicitly check whether one should be added and mention the result in the change summary.
 - If MCP artifacts are still accurate after review, explicitly state "MCP reviewed, no update required" in the change summary/PR description.
+- If you changed a command's rule or behavior, review the matching guidance article in `GuidanceCatalog` AND its trigger line in the relevant tool `[Description]`. `McpServerInstructions.cs` carries only a mandatory pointer to the `routing` guide (`get-guidance name=routing`); the routing table itself (guide **names** only) lives in `Resources\RoutingGuidanceResource.cs`, and detailed rules live once in each guide (`Resources\*GuidanceResource.cs`) — never duplicate guide content in the instructions or the routing map. When you add or rename a guide, update the routing map row that points at it.
 
 ## Skill to use
 
