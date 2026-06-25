@@ -1314,7 +1314,7 @@ internal static class ToolContractCatalog {
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'server-error' (Creatio rejected the operation — fix inputs or server state first)."),
-				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', or 'unknown'."),
+				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
 				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
 			),
 			CommonErrorContract,
@@ -3717,11 +3717,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildComponentInfo() {
 		return new ToolContractDefinition(
 			ComponentInfoTool.ToolName,
-			"Returns a flat list of Freedom UI component summaries or the full contract for one component type.",
+			"Returns a flat list of Freedom UI component summaries, the full contract for one component type, or the assembly recipe for a composite Designer element.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist. Mutually exclusive with 'composite'."),
+					Field("composite", StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -3729,6 +3730,13 @@ internal static class ToolContractCatalog {
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
 					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
 					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [ComponentTypeFieldName, "composite"],
+						Context: "'component-type' and 'composite' are mutually exclusive — pass one or the other, not both.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3736,10 +3744,13 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("mode", StringType, "detail or list."),
-				Field(CountFieldName, NumberType, "Number of matching components."),
+				Field("mode", StringType, "detail, list, or composite."),
+				Field(CountFieldName, NumberType, "Number of matching components or composites."),
 				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
-				Field("componentType", StringType, "Component type echoed back in detail mode."),
+				Field("composites", ArrayType, "Composite Designer elements in list mode, each with caption and optional description. Fetch a composite's assembly recipe with composite=\"<caption>\"."),
+				Field("caption", StringType, "Composite caption echoed back in composite detail mode."),
+				Field("documentation", StringType, "Composite assembly recipe markdown in composite detail mode."),
+				Field("componentType", StringType, "Component type echoed back in component detail mode."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
@@ -3762,11 +3773,24 @@ internal static class ToolContractCatalog {
 				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
 					[ComponentTypeFieldName] = "crt.Toggle",
 					["schema-type"] = "mobile"
+				}),
+				Example("Get the assembly recipe for a composite Designer element", new Dictionary<string, object?> {
+					["composite"] = "Expanded list"
 				})
 			],
-			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),
+			Flow([ComponentInfoTool.ToolName],
+				"Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types. "
+				+ "Use with composite=\"<caption>\" (not component-type) to get the authoritative assembly recipe for a composite Designer element "
+				+ "(e.g. 'Expanded list', 'Attachments', 'Next steps') — composites have no componentType and must be fetched by caption."),
 			[],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"Hand-building a composite structure from memory, raw component docs, or guidance articles",
+					"The 'documentation' field of a composite detail response contains the complete, authoritative assembly recipe. "
+					+ "Do NOT synthesize the structure from memory or other sources — those are incomplete and will produce a broken result. "
+					+ "Follow the documentation field verbatim.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageUpdate() {

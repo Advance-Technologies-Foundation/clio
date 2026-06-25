@@ -2056,4 +2056,55 @@ public sealed class ToolContractGetToolTests {
 		contract.Description.Should().StartWith("Stops Creatio instance by environment name",
 			because: "the full contract still leads with the tool's functional description before the appended note");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical get-component-info contract with composite= in the input schema, "
+		+ "composite-mode output fields, a composite example, and a synthesize anti-pattern. "
+		+ "Agents that call get-tool-contract to introspect get-component-info must see composite= "
+		+ "so they know to call composite=\"Expanded list\" instead of component-type=\"Expanded list\".")]
+	public void ToolContractGet_Should_Return_ComponentInfo_Contract_With_Composite_Parameter() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ComponentInfoTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-component-info is a canonical clio MCP tool and must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ComponentInfoTool.ToolName,
+			because: "the contract name must stay stable for clients that bootstrap from the contract tool");
+
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "composite",
+			because: "agents calling get-tool-contract must see composite= so they know the parameter exists "
+				+ "and call composite=\"Expanded list\" instead of component-type=\"Expanded list\"");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "component-type",
+			because: "the component-type parameter must remain documented alongside composite");
+		contract.InputSchema.Validators.Should().NotBeNull(
+			because: "composite and component-type are mutually exclusive and the constraint must be machine-readable");
+		contract.InputSchema.Validators!.Should().Contain(v =>
+				v.Fields != null && v.Fields.Contains("composite") && v.Fields.Contains("component-type"),
+			because: "the mutually-exclusive validator must name both fields so agents know they cannot be combined");
+
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "documentation",
+			because: "composite detail mode returns the assembly recipe in the documentation field");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "composites",
+			because: "list mode returns a composites array so agents can discover composite captions");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "caption",
+			because: "composite detail mode echoes the matched composite caption");
+
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("composite"),
+			because: "the contract must include a composite= example so agents have a concrete call to follow");
+
+		contract.AntiPatterns.Should().NotBeNull(
+			because: "an anti-pattern is required to stop agents from synthesizing the composite structure from memory");
+		contract.AntiPatterns!.Should().Contain(p =>
+				p.Why.Contains("synthesize", StringComparison.OrdinalIgnoreCase) ||
+				p.Pattern.Contains("synthesize", StringComparison.OrdinalIgnoreCase),
+			because: "the anti-pattern must explicitly warn against synthesizing instead of following the documentation field");
+	}
 }

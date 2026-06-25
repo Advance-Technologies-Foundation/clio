@@ -39,13 +39,6 @@ public sealed class ComponentInfoTool(
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
-	/// Upper bound on the "did you mean" entries returned when a requested <c>component-type</c>
-	/// is unknown. Keeps the not-found envelope a small, actionable shortlist instead of echoing
-	/// the full ~199-item catalog as "suggestions".
-	/// </summary>
-	private const int MaxNotFoundSuggestions = 8;
-
-	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
@@ -203,27 +196,13 @@ public sealed class ComponentInfoTool(
 		}
 
 		string requestedType = args.ComponentType.Trim();
-		IReadOnlyList<ComponentRegistryEntry> suggestions =
-			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
-		// Carry composites on the not-found response too, so both mode:"list" shapes
-		// (normal list and component-not-found suggestions) surface composites uniformly.
-		IReadOnlyList<CompositeDefinition> notFoundComposites =
-			ComponentInfoGrouping.FilterComposites(state.Composites, args.Search);
-		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
-			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{requestedType}' was not found. "
-				+ $"Showing the {suggestions.Count} closest known type(s) — pass one of these as 'component-type', "
-				+ "or omit 'component-type' to list the full catalog.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions),
-			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
-			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom,
-			ResolvedFromReason = resolvedFromReason
-		};
+		// Name/description-first resolution: when the exact type id misses, the requested label may
+		// be a composite ("Expanded list") the agent reached for as if it were a component. The shared
+		// factory matches components by name/description first, then routes to composite="<caption>"
+		// when the label names a composite. Shared with the CLI verb so both resolve identically.
+		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			state.Entries, state.Composites, requestedType, args.Search,
+			state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 	}
 
 	/// <summary>

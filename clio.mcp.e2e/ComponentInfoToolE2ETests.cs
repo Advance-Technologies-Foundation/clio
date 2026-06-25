@@ -448,6 +448,55 @@ public sealed class ComponentInfoToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("ENG-91469 name->composite resolution over the wire: passing a composite's CAPTION as component-type (the label an agent reaches for, not --composite) returns a not-found envelope that ROUTES to composite=\"<caption>\". Points the real clio process at a local registry fixture that ships a composite. Mandatory MCP e2e for the changed tool (AGENTS.md).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info routes a composite caption passed as component-type to the composite recipe")]
+	[AllureDescription("Starts the real clio MCP server pointed at a local registry fixture with one composite, requests it via component-type (not --composite), and verifies the not-found response routes the caller to composite=\"<caption>\".")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Composite_Should_Route_To_Composite_Over_The_Wire() {
+		// Arrange — a registry fixture that ships a resolvable composite; docs:[] keeps it offline.
+		string fixturePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-composite-route-{Guid.NewGuid():N}.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.ExpansionPanel", "category": "containers", "description": "Collapsible panel.", "container": true, "properties": {} }
+		  ],
+		  "composites": [
+		    { "caption": "E2E Route Probe", "description": "An expansion panel assembled for the e2e routing test.", "docs": [] }
+		  ]
+		}
+		""";
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+			// Act — the composite CAPTION passed as component-type (NOT the composite arg).
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["component-type"] = "E2E Route Probe" });
+
+			// Assert — no such component, but the label names a composite, so route there.
+			response.Success.Should().BeFalse(
+				because: "'E2E Route Probe' is a composite caption, not a component type");
+			response.Mode.Should().Be("list",
+				because: "a not-found component-type returns the list-shaped envelope");
+			response.Error.Should().Contain("composite=",
+				because: "the caller must be routed to the composite-discovery path instead of hand-building");
+			response.Error.Should().Contain("E2E Route Probe",
+				because: "the routing message names the matched composite caption");
+			response.Composites.Should().NotBeNull();
+			response.Composites!.Select(composite => composite.Caption).Should().Contain("E2E Route Probe",
+				because: "the matched composite is surfaced for the caller to fetch over the wire");
+		}
+		finally {
+			File.Delete(fixturePath);
+		}
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
