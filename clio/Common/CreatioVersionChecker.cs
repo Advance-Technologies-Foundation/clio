@@ -98,13 +98,13 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 			case CreatioVersionResolutionStatus.ProbeFailed:
 				// Fail-closed: the version check could not be performed because no source responded. This
 				// is a CONNECTIVITY / ACCESS failure, not an out-of-date platform — say so, and do NOT tell
-				// the user to update Creatio.
+				// the user to update Creatio. The attribute Hint ("how to satisfy the version requirement",
+				// e.g. "update Creatio") is coherent only on the too-old branch, so it is deliberately NOT
+				// appended here.
 				throw new CreatioVersionRequirementException(
-					AppendHint(
-						$"Could not perform the Creatio platform version check for the target environment " +
-						$"(it could not be reached, or access was denied). This command requires " +
-						$"{strictest.MinVersion} or later — verify connectivity and permissions, then retry.",
-						strictest.Hint),
+					$"Could not perform the Creatio platform version check for the target environment " +
+					$"(it could not be reached, or access was denied). This command requires " +
+					$"{strictest.MinVersion} or later — verify connectivity and permissions, then retry.",
 					CreatioVersionRequirementException.VersionCheckFailedCode);
 
 			case CreatioVersionResolutionStatus.ReachableWithoutVersion:

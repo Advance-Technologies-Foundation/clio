@@ -183,6 +183,26 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("EnsureRequirements does NOT append the attribute Hint to the version-check-failed message: the Hint ('how to satisfy the version requirement') is coherent only on the too-old branch, not on a connectivity/access failure.")]
+	public void EnsureRequirements_ShouldNotAppendHint_WhenProbeFailedAndHintSet() {
+		// Arrange
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ProbeFailed());
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new ClassRequirementWithHintOptions());
+
+		// Assert
+		CreatioVersionRequirementException exception = act.Should()
+			.Throw<CreatioVersionRequirementException>(because: "an uncheckable environment must fail closed even when a Hint is set")
+			.Which;
+		exception.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionCheckFailedCode,
+			because: "a no-response environment reports version-check-failed regardless of any declared Hint");
+		exception.Message.Should().NotContain(TestHint,
+			because: "the update-style Hint must NOT be appended to a connectivity/access failure message");
+	}
+
+	[Test]
 	[Description("EnsureRequirements appends the attribute Hint to the version-too-old message when a Hint is set.")]
 	public void EnsureRequirements_ShouldAppendHint_WhenVersionTooOldAndHintSet() {
 		// Arrange
