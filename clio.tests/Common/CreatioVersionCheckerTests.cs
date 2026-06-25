@@ -51,6 +51,14 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 		public string Target { get; set; }
 	}
 
+	// Two requirements: a class-level floor of 10.0.0 plus a property-level floor of 11.0.0 triggered by
+	// the bool flag. The strictest (11.0.0) is the one that must be enforced and reported.
+	[RequiresCreatioVersion("10.0.0")]
+	private sealed class MultiRequirementOptions {
+		[RequiresCreatioVersion("11.0.0")]
+		public bool UseGatedPath { get; set; }
+	}
+
 	#endregion
 
 	#region Methods: Protected
@@ -270,6 +278,80 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 
 		// Assert
 		actual.Should().BeTrue(because: "an equal version satisfies a minimum-version requirement");
+	}
+
+	[Test]
+	[Description("EnsureRequirements does not throw for a 3-part development build (0.0.0) — the dev-build bypass recognises a 3-part build (Revision -1) as well as a 4-part 0.0.0.0.")]
+	public void EnsureRequirements_ShouldNotThrow_WhenCurrentVersionIsThreePartDevBuild() {
+		// Arrange
+		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(0, 0, 0));
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new ClassRequirementOptions());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a 3-part 0.0.0 (Revision -1) is a development build and must be treated as compatible with any requirement");
+	}
+
+	[Test]
+	[Description("IsCompatible throws InvalidOperationException on a malformed minVersion (developer error), exactly as EnsureRequirements classifies it — it must not silently return false.")]
+	public void IsCompatible_ShouldThrowInvalidOperation_WhenMinVersionIsMalformed() {
+		// Arrange
+		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.IsCompatible("10.x");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a malformed minimum version is a developer error and must fail fast, never be conflated with an incompatible environment")
+			.WithMessage("*10.x*",
+				because: "the invalid value must be named so the developer can fix the call site");
+	}
+
+	[Test]
+	[Description("EnsureRequirements enforces the STRICTEST of multiple triggered requirements: with a 10.0.0 class floor and a triggered 11.0.0 property floor on an env running 10.5, it throws version-too-old reporting 11.0.0 (the max).")]
+	public void EnsureRequirements_ShouldThrowVersionTooOldAgainstStrictest_WhenMultipleRequirementsTriggered() {
+		// Arrange
+		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 5, 0));
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new MultiRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		CreatioVersionRequirementException exception = act.Should()
+			.Throw<CreatioVersionRequirementException>(
+				because: "10.5.0 satisfies the 10.0.0 class floor but not the stricter triggered 11.0.0 property floor")
+			.Which;
+		exception.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionTooOldCode,
+			because: "the strictest triggered requirement is unmet so the version-too-old code must be reported");
+		exception.Message.Should().Contain("11.0.0",
+			because: "the message must name the strictest required floor (11.0.0), not the weaker first-declared 10.0.0");
+	}
+
+	[Test]
+	[Description("EnsureRequirements names the STRICTEST floor in the undeterminable message: with a 10.0.0 class floor and a triggered 11.0.0 property floor and an undeterminable env, the message names 11.0.0.")]
+	public void EnsureRequirements_ShouldReportStrictestInUndeterminableMessage_WhenMultipleRequirementsTriggered() {
+		// Arrange
+		_creatioVersionProviderMock.GetCoreVersion().Returns((Version)null);
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new MultiRequirementOptions { UseGatedPath = true });
+
+		// Assert
+		CreatioVersionRequirementException exception = act.Should()
+			.Throw<CreatioVersionRequirementException>(
+				because: "an undeterminable version must fail closed regardless of how many requirements are triggered")
+			.Which;
+		exception.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionUndeterminableCode,
+			because: "an undeterminable version must report the version-undeterminable error code");
+		exception.Message.Should().Contain("11.0.0",
+			because: "the undeterminable message must name the strictest required floor (11.0.0), not the weaker first-declared 10.0.0");
 	}
 
 	#endregion

@@ -10,8 +10,8 @@ namespace Clio.Common;
 /// and from its <c>bool</c> option properties (property-level — enforced only when the flag is
 /// <c>true</c>), resolves the environment's core version through <see cref="ICreatioVersionProvider"/>,
 /// and — when a triggered requirement is unmet — throws a
-/// <see cref="CreatioVersionRequirementException"/>. A development build (<c>0.0.0.0</c>) is treated as
-/// compatible, and an undeterminable version fails closed (denies execution).
+/// <see cref="CreatioVersionRequirementException"/>. A development build (<c>0.0.0</c> / <c>0.0.0.0</c>)
+/// is treated as compatible, and an undeterminable version fails closed (denies execution).
 /// </remarks>
 public interface ICreatioVersionChecker
 {
@@ -51,9 +51,14 @@ public interface ICreatioVersionChecker
 	/// </param>
 	/// <returns>
 	/// <c>true</c> when the environment's core version is greater than or equal to
-	/// <paramref name="minVersion"/>, or when the environment reports a development build (<c>0.0.0.0</c>);
-	/// <c>false</c> when the version is lower than required, undeterminable, or
-	/// <paramref name="minVersion"/> is not a valid version string.
+	/// <paramref name="minVersion"/>, or when the environment reports a development build (<c>0.0.0</c> /
+	/// <c>0.0.0.0</c>); <c>false</c> when the version is lower than required or undeterminable.
 	/// </returns>
+	/// <exception cref="System.InvalidOperationException">
+	/// Thrown when <paramref name="minVersion"/> is not a valid dotted version string. A malformed floor
+	/// is a developer error in the requirement declaration and is classified identically to the malformed
+	/// case in <see cref="EnsureRequirements"/> — it never degrades to <c>false</c>. An undeterminable
+	/// environment version, by contrast, returns <c>false</c> and never throws.
+	/// </exception>
 	bool IsCompatible(string minVersion);
 }

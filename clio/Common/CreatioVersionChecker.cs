@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 
 namespace Clio.Common;
@@ -7,14 +8,6 @@ namespace Clio.Common;
 /// <inheritdoc cref="ICreatioVersionChecker"/>
 public sealed class CreatioVersionChecker : ICreatioVersionChecker
 {
-
-	#region Constants: Private
-
-	// A development build reports this version; treat it as compatible with any requirement so local
-	// dev environments are never gated (mirrors DataForgePlatformVersionGuard.DevBuildVersion).
-	private static readonly Version DevBuildVersion = new(0, 0, 0, 0);
-
-	#endregion
 
 	#region Fields: Private
 
@@ -66,10 +59,18 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 	private static string AppendHint(string message, string hint) =>
 		string.IsNullOrEmpty(hint) ? message : $"{message}{Environment.NewLine}{hint}";
 
+	// A development build is treated as compatible with any requirement so local dev environments are
+	// never gated (mirrors DataForgePlatformVersionGuard's dev-build bypass). Recognises BOTH a 4-part
+	// "0.0.0.0" (Build 0, Revision 0) AND a 3-part "0.0.0" (Build 0, Revision -1 — System.Version leaves
+	// an unspecified component at -1), so the bypass does not hinge on how many components were reported.
+	private static bool IsDevBuild(Version v) =>
+		v.Major == 0 && v.Minor == 0 && v.Build <= 0 && v.Revision <= 0;
+
 	#endregion
 
 	#region Methods: Public
 
+	/// <inheritdoc/>
 	public void EnsureRequirements(object optionsInstance) {
 		ArgumentNullException.ThrowIfNull(optionsInstance);
 		Type optionsType = optionsInstance.GetType();
@@ -82,40 +83,46 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 			return;
 		}
 
+		// Parse EVERY triggered MinVersion up front (also validating each — a malformed floor fails fast
+		// as a developer error before any environment lookup) and enforce the STRICTEST one: with several
+		// requirements active the highest floor is the only one that matters, and reporting it gives the
+		// user the version they actually need.
+		RequiresCreatioVersionAttribute strictest = triggered
+			.OrderByDescending(requirement => ParseMinVersion(requirement.MinVersion))
+			.First();
+		Version requiredVersion = ParseMinVersion(strictest.MinVersion);
+
 		Version currentVersion = _creatioVersionProvider.GetCoreVersion();
 
 		// Fail-closed: an undeterminable version must deny execution rather than run against an unknown
-		// platform.
+		// platform. Report the strictest floor so the user sees the real requirement.
 		if (currentVersion is null) {
-			RequiresCreatioVersionAttribute firstRequirement = triggered[0];
 			throw new CreatioVersionRequirementException(
 				$"Could not determine the Creatio platform version of the target environment; " +
-				$"this command requires {firstRequirement.MinVersion} or later.",
+				$"this command requires {strictest.MinVersion} or later.",
 				CreatioVersionRequirementException.VersionUndeterminableCode);
 		}
 
-		// Dev-build bypass: a development build (0.0.0.0) satisfies every requirement.
-		if (currentVersion == DevBuildVersion) {
+		// Dev-build bypass: a development build satisfies every requirement.
+		if (IsDevBuild(currentVersion)) {
 			return;
 		}
 
-		foreach (RequiresCreatioVersionAttribute requirement in triggered) {
-			Version minVersion = ParseMinVersion(requirement.MinVersion);
-			if (currentVersion < minVersion) {
-				throw new CreatioVersionRequirementException(
-					AppendHint(
-						$"This command requires Creatio {requirement.MinVersion} or later. " +
-						$"The target environment runs {currentVersion}. Update Creatio and retry.",
-						requirement.Hint),
-					CreatioVersionRequirementException.VersionTooOldCode);
-			}
+		if (currentVersion < requiredVersion) {
+			throw new CreatioVersionRequirementException(
+				AppendHint(
+					$"This command requires Creatio {strictest.MinVersion} or later. " +
+					$"The target environment runs {currentVersion}. Update Creatio and retry.",
+					strictest.Hint),
+				CreatioVersionRequirementException.VersionTooOldCode);
 		}
 	}
 
+	/// <inheritdoc/>
 	public bool IsCompatible(string minVersion) {
-		if (!Version.TryParse(minVersion, out Version min)) {
-			return false;
-		}
+		// A malformed floor is a DEVELOPER error and must fail fast (InvalidOperationException), exactly
+		// as EnsureRequirements classifies it — never silently reported as "not compatible".
+		Version min = ParseMinVersion(minVersion);
 
 		Version currentVersion = _creatioVersionProvider.GetCoreVersion();
 		// Undeterminable version is not compatible — but never throws (mirrors the EnsureRequirements
@@ -124,8 +131,8 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 			return false;
 		}
 
-		// Dev-build bypass: a development build (0.0.0.0) is compatible with any requirement.
-		if (currentVersion == DevBuildVersion) {
+		// Dev-build bypass: a development build is compatible with any requirement.
+		if (IsDevBuild(currentVersion)) {
 			return true;
 		}
 

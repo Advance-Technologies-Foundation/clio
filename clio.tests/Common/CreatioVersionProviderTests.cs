@@ -129,7 +129,7 @@ public sealed class CreatioVersionProviderTests
 	}
 
 	[Test]
-	[Description("A dev-build coreVersion '0.0.0.0' is returned as EXACTLY new Version(0,0,0,0) (all four components), so the checker's exact-equality dev-build bypass engages and a dev stand is never gated.")]
+	[Description("A dev-build coreVersion '0.0.0.0' is parsed verbatim into a 4-part new Version(0,0,0,0), so the checker's dev-build bypass engages and a dev stand is never gated.")]
 	public void GetCoreVersion_ShouldReturnExactlyZeroVersion_WhenCoreVersionIsDevBuildSentinel() {
 		// Arrange
 		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "0.0.0.0" } } }""");
@@ -140,9 +140,45 @@ public sealed class CreatioVersionProviderTests
 
 		// Assert
 		result.Should().Be(new Version(0, 0, 0, 0),
-			because: "the dev-build bypass is an exact 4-component Version equality; the provider must yield 0.0.0.0 verbatim, not a 3-part 0.0.0, or a dev stand would silently fail closed");
+			because: "the provider must parse the dev-build sentinel verbatim so the checker's dev-build bypass recognises it");
 		result.Revision.Should().Be(0,
-			because: "a 4-part 0.0.0.0 must parse with an explicit Revision component (0.0.0 would have Revision -1 and break the exact-equality bypass)");
+			because: "a 4-part 0.0.0.0 parses with an explicit Revision component of 0 (the checker now also accepts a 3-part 0.0.0, but the provider returns whatever the environment reports)");
+	}
+
+	[Test]
+	[Description("A non-degrading exception (InvalidOperationException) thrown by the client PROPAGATES out of GetCoreVersion — the narrowed catch must not swallow unexpected exceptions into a null (undeterminable) version.")]
+	public void GetCoreVersion_ShouldPropagate_WhenClientThrowsNonTransportException() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new InvalidOperationException("unexpected programming error"));
+		CreatioVersionProvider provider = CreateProvider(client);
+
+		// Act
+		Action act = () => provider.GetCoreVersion();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an unexpected exception family is not a transport/parse failure and must propagate, never be soft-degraded to a null version");
+	}
+
+	[Test]
+	[Description("A transport exception (HttpRequestException) from the primary probe still soft-degrades: the provider falls through to the secondary cliogate GetSysInfo and returns its version rather than throwing.")]
+	public void GetCoreVersion_ShouldDegradeToFallthrough_WhenPrimaryProbeThrowsTransportException() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("application info unavailable"));
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "SysInfo": { "CoreVersion": "8.2.0.100" } }""");
+		CreatioVersionProvider provider = CreateProvider(client);
+
+		// Act
+		Version result = provider.GetCoreVersion();
+
+		// Assert
+		result.Should().Be(new Version(8, 2, 0, 100),
+			because: "a transport exception is a soft-degradable family, so the primary probe degrades to the secondary source as before the catch was narrowed");
 	}
 
 	[Test]

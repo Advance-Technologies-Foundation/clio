@@ -164,6 +164,19 @@ from "clio itself failed, retrying the same call won't help" (`-1`). Source of t
 `EnvironmentResolutionException` so it is never conflated with an unexpected `InvalidOperationException`
 from the DI container.
 
+#### Version gate (exit 78)
+
+A command declaring `[RequiresCreatioVersion]` adds one more **expected, caller-actionable** outcome
+on top of the `0`/`1`/`-1` contract: when the target environment runs an older core version than the
+command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
+returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
+`CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
+in the message. This refusal path is covered at the **unit** level (the `BaseTool` tests). An
+**end-to-end** refusal test is a deliberate, documented harness gap: it is deferred until a real
+shipping command actually carries `[RequiresCreatioVersion]`, at which point e2e coverage, the docs,
+and the MCP tool contract for that command become mandatory. This mirrors the package-gate posture —
+the gate logic is unit-proven now, and e2e lands with the first command that exercises it.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.

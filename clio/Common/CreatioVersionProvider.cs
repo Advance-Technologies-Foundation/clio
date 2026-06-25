@@ -1,5 +1,10 @@
 using System;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Clio.Common;
 
@@ -74,80 +79,77 @@ public sealed class CreatioVersionProvider : ICreatioVersionProvider
 		return Version.TryParse(rawVersion.Trim(), out Version parsed) ? parsed : null;
 	}
 
-	// cliogate GetSysInfo SECONDARY probe (admin-gated, defense-in-depth). Any failure class (HTTP error,
-	// timeout, connection refused, cliogate not installed → HTML/404, permission denied for a non-admin,
-	// unexpected shape) must yield null so the resolver ultimately reports an undeterminable version
-	// rather than letting a raw stack trace escape the dispatch gate.
+	// cliogate GetSysInfo SECONDARY probe (admin-gated, defense-in-depth). Only the transport/parse
+	// exception families that legitimately mean "this environment did not answer with a usable version"
+	// are soft-degraded to null (HttpRequestException, TaskCanceledException, TimeoutException,
+	// WebException, SocketException, IOException, JsonException) — e.g. HTTP error, timeout, connection
+	// refused, cliogate not installed → HTML/404, permission denied for a non-admin, malformed body.
+	// Any OTHER exception (fatal CLR errors, unexpected programming errors) PROPAGATES by design: it must
+	// not be silently swallowed into an undeterminable version.
 	private string TryGetSysInfoCoreVersion(IServiceUrlBuilder serviceUrlBuilder) {
 		try {
 			string url = serviceUrlBuilder.Build(CreatioServicePaths.GetSysInfo);
 			string response = _applicationClient.ExecuteGetRequest(url);
 			return TryExtractSysInfoCoreVersion(response);
 		}
-		// Broad catch is intentional: this is a soft probe. Every transport/parse failure must degrade
-		// to the fallback (and ultimately null), never surface as an exception at the dispatch gate.
-		catch (Exception) {
+		catch (Exception ex) when (IsSoftDegradable(ex)) {
 			return null;
 		}
 	}
 
 	// ApplicationInfoService PRIMARY probe — ungated, needs only an authenticated session, so it works for
 	// any user (incl. non-admins and cliogate-less environments). Same soft-failure contract as the
-	// secondary probe.
+	// secondary probe: only the transport/parse families are degraded to null; anything else propagates.
 	private string TryGetApplicationInfoCoreVersion(IServiceUrlBuilder serviceUrlBuilder) {
 		try {
 			string url = serviceUrlBuilder.Build(CreatioServicePaths.GetApplicationInfo);
 			string response = _applicationClient.ExecutePostRequest(url, "{}");
 			return TryExtractApplicationInfoCoreVersion(response);
 		}
-		// Broad catch is intentional: see TryGetSysInfoCoreVersion.
-		catch (Exception) {
+		catch (Exception ex) when (IsSoftDegradable(ex)) {
 			return null;
 		}
 	}
+
+	// The transport/parse exception families that should soft-degrade a probe to null (undeterminable),
+	// rather than crash the dispatch gate. Everything else is unexpected and must propagate.
+	private static bool IsSoftDegradable(Exception ex) =>
+		ex is HttpRequestException
+			or TaskCanceledException
+			or TimeoutException
+			or WebException
+			or SocketException
+			or IOException
+			or JsonException;
 
 	// Extracts SysInfo.CoreVersion from the cliogate GetSysInfo response. Returns null on any missing
 	// node or non-string value.
-	private static string TryExtractSysInfoCoreVersion(string rawJson) {
-		if (string.IsNullOrWhiteSpace(rawJson)) {
-			return null;
-		}
-		try {
-			using JsonDocument document = JsonDocument.Parse(rawJson);
-			JsonElement root = document.RootElement;
-			if (root.ValueKind != JsonValueKind.Object
-				|| !root.TryGetProperty("SysInfo", out JsonElement sysInfo)
-				|| sysInfo.ValueKind != JsonValueKind.Object
-				|| !sysInfo.TryGetProperty("CoreVersion", out JsonElement coreVersion)
-				|| coreVersion.ValueKind != JsonValueKind.String) {
-				return null;
-			}
-			return coreVersion.GetString();
-		}
-		catch (JsonException) {
-			return null;
-		}
-	}
+	private static string TryExtractSysInfoCoreVersion(string rawJson) =>
+		TryExtractStringAtPath(rawJson, "SysInfo", "CoreVersion");
 
 	// Extracts applicationInfo.sysValues.coreVersion from the ApplicationInfoService response. Returns
 	// null on any missing node or non-string value.
-	private static string TryExtractApplicationInfoCoreVersion(string rawJson) {
+	private static string TryExtractApplicationInfoCoreVersion(string rawJson) =>
+		TryExtractStringAtPath(rawJson, "applicationInfo", "sysValues", "coreVersion");
+
+	// Walks the given object path through the parsed JSON, requiring every intermediate segment to be a
+	// JSON object and the leaf to be a JSON string. Returns the leaf string, or null on any missing
+	// segment, wrong value kind, empty input, or malformed JSON (JsonException).
+	private static string TryExtractStringAtPath(string rawJson, params string[] path) {
 		if (string.IsNullOrWhiteSpace(rawJson)) {
 			return null;
 		}
 		try {
 			using JsonDocument document = JsonDocument.Parse(rawJson);
-			JsonElement root = document.RootElement;
-			if (root.ValueKind != JsonValueKind.Object
-				|| !root.TryGetProperty("applicationInfo", out JsonElement appInfo)
-				|| appInfo.ValueKind != JsonValueKind.Object
-				|| !appInfo.TryGetProperty("sysValues", out JsonElement sysValues)
-				|| sysValues.ValueKind != JsonValueKind.Object
-				|| !sysValues.TryGetProperty("coreVersion", out JsonElement coreVersion)
-				|| coreVersion.ValueKind != JsonValueKind.String) {
-				return null;
+			JsonElement current = document.RootElement;
+			for (int i = 0; i < path.Length; i++) {
+				if (current.ValueKind != JsonValueKind.Object
+					|| !current.TryGetProperty(path[i], out JsonElement next)) {
+					return null;
+				}
+				current = next;
 			}
-			return coreVersion.GetString();
+			return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
 		}
 		catch (JsonException) {
 			return null;
