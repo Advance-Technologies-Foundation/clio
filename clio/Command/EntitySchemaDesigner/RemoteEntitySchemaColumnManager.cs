@@ -155,7 +155,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.Indexed,
 			column.IsValueCloneable,
 			column.IsTrackChangesInDB,
-			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(column.DefValue),
+			EntitySchemaDesignerSupport.CreateDefaultValueConfig(column.DefValue)?.Source,
 			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(column.DefValue),
 			column.ReferenceSchema?.Name,
 			column.List,
@@ -902,7 +902,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			?? throw new EntitySchemaDesignerException(
 				$"Column '{options.ColumnName}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
-			column.DefValue = null;
+			column.DefValue = new EntitySchemaColumnDefValueDto { ValueSourceType = EntitySchemaColumnDefSource.None };
 			return;
 		}
 		defaultValueConfig = _defaultValueSourceResolver.Resolve(

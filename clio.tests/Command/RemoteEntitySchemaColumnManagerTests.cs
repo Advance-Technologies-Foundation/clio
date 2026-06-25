@@ -1134,8 +1134,10 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.Name == "Name");
-		savedColumn.DefValue.Should().BeNull(
-			because: "explicit None should clear the persisted default value instead of preserving stale data");
+		savedColumn.DefValue.Should().NotBeNull(
+			because: "clearing must send an explicit None default-value DTO; a null DefValue is silently preserved (left as the stale Const) by the EntitySchemaDesigner server");
+		savedColumn.DefValue!.ValueSourceType.Should().Be(EntitySchemaColumnDefSource.None,
+			because: "an explicit None ValueSourceType is the marker the server honors to drop the previously persisted default");
 	}
 
 	[Test]
