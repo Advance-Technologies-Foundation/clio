@@ -120,9 +120,17 @@ public sealed class ClearRedisToolE2ETests {
 			_seedKey = $"{settings.Sandbox.SeedKeyPrefix}:{Guid.NewGuid():N}";
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 
-			RedisSandboxClient redis = await RedisSandboxClient.ConnectAsync(_sandboxContext.RedisConnectionString);
-			await redis.SeedKeyAsync(_seedKey, "seeded-by-clio-mcp-e2e");
-			(await redis.KeyExistsAsync(_seedKey)).Should().BeTrue(
+			// Guard every Redis arrange step with the wall-clock token via WaitAsync. The sandbox
+			// Redis may accept the TCP connection from a CI agent yet never service commands (wrong
+			// instance, auth handshake stall), and StackExchange.Redis does not always honor its own
+			// timeouts in that state. WaitAsync cancels the AWAIT when the token fires regardless of
+			// whether the underlying client observes cancellation, so a stuck step FAILS the test
+			// fast instead of freezing the whole e2e build (which has no per-test hang guard).
+			RedisSandboxClient redis = await RedisSandboxClient
+				.ConnectAsync(_sandboxContext.RedisConnectionString)
+				.WaitAsync(cancellationTokenSource.Token);
+			await redis.SeedKeyAsync(_seedKey, "seeded-by-clio-mcp-e2e").WaitAsync(cancellationTokenSource.Token);
+			(await redis.KeyExistsAsync(_seedKey).WaitAsync(cancellationTokenSource.Token)).Should().BeTrue(
 				because: "the test must prove clear-redis removes data that was present before the MCP call");
 
 			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
@@ -284,9 +292,18 @@ public sealed class ClearRedisToolE2ETests {
 	public async Task TearDownAsync() {
 		try {
 			if (!string.IsNullOrWhiteSpace(_seedKey) && _sandboxContext is not null) {
-				await using RedisSandboxClient redis = await RedisSandboxClient.ConnectAsync(_sandboxContext.RedisConnectionString);
-				await redis.DeleteKeyIfExistsAsync(_seedKey);
+				// Bound the cleanup the same way as arrange: a teardown that hangs on an unreachable
+				// sandbox Redis would freeze the suite just as surely as a hung test body.
+				using CancellationTokenSource teardownTimeout = new(TimeSpan.FromSeconds(30));
+				await using RedisSandboxClient redis = await RedisSandboxClient
+					.ConnectAsync(_sandboxContext.RedisConnectionString)
+					.WaitAsync(teardownTimeout.Token);
+				await redis.DeleteKeyIfExistsAsync(_seedKey).WaitAsync(teardownTimeout.Token);
 			}
+		}
+		catch (OperationCanceledException) {
+			// Cleanup best-effort: the seeded key has a test prefix and will not affect other tests.
+			TestContext.Out.WriteLine("clear-redis e2e teardown timed out reaching the sandbox Redis; leaving the seeded key for the next deploy to discard.");
 		}
 		finally {
 			_seedKey = null;
