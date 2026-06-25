@@ -6,7 +6,6 @@ using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.ScenarioHandlers;
-using MediatR;
 using OneOf;
 using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -18,7 +17,7 @@ namespace Clio.Common.DeploymentStrategies;
 /// </summary>
 public class IISDeploymentStrategy : IDeploymentStrategy
 {
-	private readonly IMediator _mediator;
+	private readonly ICreateIISSiteHandler _createIISSiteHandler;
 	private readonly ILogger _logger;
 	private readonly IAbstractionsFileSystem _fileSystem;
 	private readonly IWindowsFeatureManager _windowsFeatureManager;
@@ -27,12 +26,12 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 	/// Initializes a new instance of the IISDeploymentStrategy class.
 	/// </summary>
 	public IISDeploymentStrategy(
-		IMediator mediator,
+		ICreateIISSiteHandler createIISSiteHandler,
 		ILogger logger,
 		IAbstractionsFileSystem fileSystem,
 		IWindowsFeatureManager windowsFeatureManager)
 	{
-		_mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
+		_createIISSiteHandler = createIISSiteHandler ?? throw new ArgumentNullException(nameof(createIISSiteHandler));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_windowsFeatureManager = windowsFeatureManager ?? throw new ArgumentNullException(nameof(windowsFeatureManager));
@@ -86,7 +85,7 @@ public class IISDeploymentStrategy : IDeploymentStrategy
 				}
 			};
 
-			OneOf<BaseHandlerResponse, HandlerError> result = await _mediator.Send(request);
+			OneOf<BaseHandlerResponse, HandlerError> result = await _createIISSiteHandler.Handle(request);
 			if (result.Value is HandlerError error) {
 				_logger.WriteError(error.ErrorDescription);
 				return 1;

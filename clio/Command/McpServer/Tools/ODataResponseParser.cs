@@ -47,8 +47,14 @@ internal static class ODataResponseParser {
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
 				return ODataWriteResponse.Failure(serverError);
 			}
-			string? id = root.TryGetProperty("Id", out JsonElement idEl) && idEl.ValueKind == JsonValueKind.String
-				? idEl.GetString()
+			// The primary key is normally a GUID string, but some entities key on a numeric column;
+			// accept either representation so a created record is never misreported as a failure.
+			string? id = root.TryGetProperty("Id", out JsonElement idEl)
+				? idEl.ValueKind switch {
+					JsonValueKind.String => idEl.GetString(),
+					JsonValueKind.Number => idEl.GetRawText(),
+					_ => null
+				}
 				: null;
 			if (string.IsNullOrEmpty(id)) {
 				return ODataWriteResponse.Failure($"OData create did not return a record Id. Response: {Truncate(json)}");

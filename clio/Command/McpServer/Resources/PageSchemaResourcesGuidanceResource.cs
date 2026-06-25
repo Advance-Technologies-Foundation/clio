@@ -28,6 +28,15 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       Author user-visible string values as localizable-string bindings, not inline literals. The rule covers any string-like property the runtime renders to the user (e.g. `label`, `caption`, `title`, `tooltip`, `placeholder`, `description`, button/tab/group captions, validator and dialog messages — non-exhaustive). Inline literals are fine for non-displayed values: type/schema/attribute names, enum-like state values (`labelPosition`, `size`, `direction`, …), and binding/converter expressions. Applies equally to web and mobile.
 
 		       ─────────────────────────────────────────────────────────────
+		       ENFORCEMENT — HARD REJECT (not advisory)
+		       ─────────────────────────────────────────────────────────────
+
+		       `update-page`, `sync-pages`, and `validate-page` REJECT a body that sets `label`, `caption`, `title`, `tooltip`, or `placeholder` to an inline string literal anywhere in `viewConfigDiff` (including nested child components). The save fails with a diagnostic naming the node, the property, and the literal. To pass, author the value as `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid column captions and validator messages) and register the key where the platform does not auto-provide it. `description` is NOT hard-rejected (it also names non-display metadata), but localize it too when it is user-visible. A value that begins with `$` (any binding expression) or that is a non-string (e.g. `placeholder: false`) is never treated as a literal.
+
+		       CREATION RULE — POPULATE THE DEFAULT-LANGUAGE VALUE
+		       When you introduce a NEW user-visible string (a placeholder, a custom title, a button caption, …) you must seed its default-language text yourself: choose a `<Key>`, point the property at `$Resources.Strings.<Key>`, and register `{"<Key>": "<the exact text you would have typed inline>"}` through the `resources` parameter. That registered value becomes the default-language entry in the page's `localizableStrings`; without it the binding resolves to an empty caption. Example: a placeholder you would have written as `"name@firm.com"` becomes `placeholder: "$Resources.Strings.EmailField_placeholder"` plus `resources: '{"EmailField_placeholder": "name@firm.com"}'`.
+
+		       ─────────────────────────────────────────────────────────────
 		       THE DECISION ALGORITHM
 		       ─────────────────────────────────────────────────────────────
 
@@ -45,14 +54,14 @@ public sealed class PageSchemaResourcesGuidanceResource {
 		       Same key name can require registration on one page and not on another. Prefixes (`PDS_`, `PageParameters_`, `MyDs_`, `AttachmentListDS_`, or none) are NOT signals — only the underlying DS binding matters.
 
 		       KEY NAMING for data-bound controls — two distinct cases:
-		       - AUTO-PROVIDED caption (DS-bound attribute, default caption, register nothing): the label key must be the ENTITY COLUMN CODE — the LAST segment of the binding attribute's `modelConfig.path` — NOT the view model attribute name. The platform resolves auto-provided captions by column code only. Examples: attribute `$PDS_UsrStatus` (path `PDS.UsrStatus`) → label `$Resources.Strings.UsrStatus`; attribute `$UsrName` (path `PDS.UsrName`) → label `$Resources.Strings.UsrName`. The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided.
+		       - AUTO-PROVIDED caption (DS-bound attribute, default caption, register nothing): the label key must be the VIEW-MODEL ATTRIBUTE NAME — the same attribute the control binds to — and that attribute must have a DS-bound `modelConfig.path`. The platform resolves the caption from the column the attribute points to. The attribute name is whatever the page declares (`PDS_UsrStatus`, `UsrName`, `Name123`, a designer hash-suffixed `PDS_UsrColumn2_r2s859x`) — all auto-provide as long as the label key equals the attribute name. Examples: attribute `$PDS_UsrStatus` (path `PDS.UsrStatus`) → label `$Resources.Strings.PDS_UsrStatus`; attribute `$Name123` (path `PDS.Name`) → label `$Resources.Strings.Name123`. The bare entity column code is NOT auto-provided unless it equals the attribute name — e.g. `$Resources.Strings.UsrStatus` renders blank for a `PDS_UsrStatus` attribute.
 		       - EXPLICITLY REGISTERED caption (you pass a `resources` entry): the label key and the `resources` key must be identical; you control both. You may use the binding attribute name or any other key. Example: `resources: '{"PDS_UsrStatus": "Status"}'` paired with label `$Resources.Strings.PDS_UsrStatus`.
-		       For `operation:"insert"`, update-page rejects an inserted field whose label is neither auto-provided (column-code key) nor explicitly registered — the attribute-name key form (`PDS_<columnCode>`) only works when you register it.
+		       For `operation:"insert"`, update-page rejects an inserted field whose label is neither auto-provided (label key equal to the DS-bound binding attribute) nor explicitly registered — the bare column-code key form only works when it equals the attribute name or you register it.
 
 		       PAIRED EXAMPLES — same field, opposite handling depending on the page
 		       - Page A has `PDS_UsrStatus` bound to DS column `PDS.UsrStatus`, default caption:
-		         ✅ Bind `$Resources.Strings.UsrStatus` (column-code form) and pass nothing — platform auto-provides the caption from the entity column.
-		         ❌ Bind `$Resources.Strings.PDS_UsrStatus` and pass nothing — NOT auto-provided (key is not the column code); on `operation:"insert"` this is rejected, and the label renders blank otherwise.
+		         ✅ Bind `$Resources.Strings.PDS_UsrStatus` (the DS-bound attribute name) and pass nothing — platform auto-provides the caption from the entity column.
+		         ❌ Bind `$Resources.Strings.UsrStatus` (the bare column code) and pass nothing — NOT auto-provided (the key is not a DS-bound attribute name); on `operation:"insert"` this is rejected, and the label renders blank otherwise.
 		         ✅ `resources: '{"PDS_UsrStatus": "Custom status caption"}'` paired with label `$Resources.Strings.PDS_UsrStatus` ONLY to deliberately override with a custom caption under that key.
 		       - Page B has `UsrLocalFlag` declared in `viewModelConfigDiff` with no DS binding:
 		         ✅ `resources: '{"UsrLocalFlag": "Local flag"}'` — required, or `$Resources.Strings.UsrLocalFlag` will not resolve.
@@ -65,7 +74,7 @@ public sealed class PageSchemaResourcesGuidanceResource {
 
 		       | Scenario | Reference syntax | Pass `resources` param? |
 		       | --- | --- | --- |
-		       | Key is the entity column code of a DS-bound attribute on the page, default caption acceptable | `$Resources.Strings.<columnCode>` (last path segment, NOT the `PDS_`-prefixed attribute name) | NO — platform auto-provides |
+		       | Key is the name of a DS-bound attribute on the page (the control's binding attribute), default caption acceptable | `$Resources.Strings.<attributeName>` (the binding attribute, any prefix/suffix — NOT the bare column code) | NO — platform auto-provides |
 		       | DS-bound attribute, overriding the caption (any key form) | `$Resources.Strings.<Key>` | YES — register the same key with the override value |
 		       | Key has NO matching DS-bound attribute (custom tab/group title, button caption, custom grid column, free-form `viewModelConfigDiff` attribute) | `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for grid column captions by convention) | YES — must register with an explicit value |
 		       | Validator error message | `#ResourceString(<Key>)#` (macro form required) | YES — always register with an explicit value |

@@ -36,6 +36,11 @@ clio create-sql-schema [options]
 
 --description                      Optional schema description
 
+--caption-culture                  Override the culture for the generated schema
+                                   caption (e.g. en-US, uk-UA). Precedence:
+                                   override > the connected user's profile
+                                   culture (see get-user-culture) > en-US.
+
 --uri                    -u       Application uri
 
 --Password               -p       User password
@@ -59,6 +64,10 @@ clio create-sql-schema --schema-name UsrCleanupStaleRows --package-name Custom -
 clio sql-schema-create --schema-name UsrCleanupStaleRows --package-name Custom --description "Nightly cleanup" -e dev
 # Create with a description using the alias
 ```
+
+## Notes
+
+- The schema caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
 
 ## Reporting Bugs
 

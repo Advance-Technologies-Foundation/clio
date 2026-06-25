@@ -35,7 +35,8 @@ public sealed class SqlSchemaCreateCommandTests {
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/CreateNewSchema").Returns(CreateNewSchemaUrl);
 		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
-		_command = new SqlSchemaCreateCommand(_applicationClient, _serviceUrlBuilder, _logger);
+		_command = new SqlSchemaCreateCommand(_applicationClient, _serviceUrlBuilder, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
 	}
 
 	[Test]

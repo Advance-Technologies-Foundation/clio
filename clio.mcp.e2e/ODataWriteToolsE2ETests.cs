@@ -45,7 +45,8 @@ public sealed class ODataWriteToolsE2ETests {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = invalidEnvironmentName,
 					["entity"] = "Contact",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
+ }
 				}
 			},
 			arrange.CancellationTokenSource.Token);
@@ -54,6 +55,35 @@ public sealed class ODataWriteToolsE2ETests {
 		callResult.IsError.Should().NotBeTrue();
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain(invalidEnvironmentName);
+	}
+
+	[Test]
+	[Description("Binds a multi-row odata-create batch through the real MCP server and reports a request-level invalid-environment failure.")]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create MCP tool binds a multi-row batch")]
+	public async Task ODataCreate_Should_Bind_Multiple_Rows_Batch_And_Report_Invalid_Environment() {
+		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-batch-env-{Guid.NewGuid():N}";
+
+		CallToolResult callResult = await arrange.Session.CallToolAsync(
+			ODataCreateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["rows"] = new object[] {
+						new Dictionary<string, object?> { ["Name"] = "e2e batch 1" },
+						new Dictionary<string, object?> { ["Name"] = "e2e batch 2" }
+					}
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		ODataCreateBatchResponse response = EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid two-row batch payload should bind and return the structured batch response");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the missing environment fails the whole batch before any row is attempted");
 	}
 
 	[Test]
@@ -70,7 +100,8 @@ public sealed class ODataWriteToolsE2ETests {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",
 					["entity"] = "Contact",
 					["id"] = "all",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
+ }
 				}
 			},
 			arrange.CancellationTokenSource.Token);

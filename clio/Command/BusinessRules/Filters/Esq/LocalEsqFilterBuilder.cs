@@ -25,13 +25,16 @@ internal sealed class LocalEsqFilterBuilder {
 
 	private readonly ILookupValueResolver? _lookupResolver;
 	private readonly SchemaAwareFilterValidator _schemaValidator;
+	private readonly Func<DateTimeOffset> _now;
 
 	public LocalEsqFilterBuilder(
 		IFilterSchemaProvider schemaProvider,
-		ILookupValueResolver? lookupResolver) {
+		ILookupValueResolver? lookupResolver,
+		Func<DateTimeOffset>? nowProvider = null) {
 		ArgumentNullException.ThrowIfNull(schemaProvider);
 		_lookupResolver = lookupResolver;
 		_schemaValidator = new SchemaAwareFilterValidator(schemaProvider);
+		_now = nowProvider ?? (() => DateTimeOffset.Now);
 	}
 
 	public string Build(StaticFilterGroup group, string rootSchemaName) {
@@ -81,6 +84,10 @@ internal sealed class LocalEsqFilterBuilder {
 
 		if (StaticFilterConstants.UnaryComparisons.Contains(comparison)) {
 			return BuildIsNullFilter(comparison, normalizedColumnPath);
+		}
+
+		if (!string.IsNullOrWhiteSpace(leaf.DatePart)) {
+			return BuildDatePartCompareFilter(comparison, normalizedColumnPath, column, leaf);
 		}
 
 		if (!string.IsNullOrWhiteSpace(leaf.ValueMacros)) {
@@ -133,13 +140,23 @@ internal sealed class LocalEsqFilterBuilder {
 		Guid id = ResolveLookupId(rawValue, column);
 		string idString = id.ToString("D");
 		string? displayName = GuidRegex.IsMatch(rawValue) ? null : rawValue;
-		// When the caller passed a GUID directly we still try to enrich Name/displayValue from the lookup
-		// so the stored value matches the platform-canonical form (Name + displayValue alongside Id + value).
+		// When the caller passed a GUID directly we enrich Name/displayValue from the lookup so the stored value
+		// matches the platform-canonical form (Name + displayValue alongside Id + value).
 		if (displayName is null
 			&& _lookupResolver is not null
 			&& !string.IsNullOrEmpty(column.ReferenceSchemaName)
 			&& _lookupResolver.TryResolveDisplayNameById(column.ReferenceSchemaName!, id, out string? resolved)) {
 			displayName = resolved;
+		}
+
+		// A Lookup filter value MUST carry Name/displayValue: the Freedom UI lookup control reads them off the
+		// parameter value and fails to render an Id-only value. Enrichment is therefore mandatory, not best-effort.
+		if (string.IsNullOrEmpty(displayName)) {
+			throw new ArgumentException(
+				$"filter: could not resolve the display name for Lookup value '{idString}' on schema "
+				+ $"'{column.ReferenceSchemaName}'. A Lookup filter value must carry Name/displayValue or the Freedom UI "
+				+ "lookup control fails to render it. Pass the lookup's display name instead of a raw GUID (clio resolves "
+				+ "the Id and keeps the name), or verify the GUID exists in that schema.");
 		}
 
 		return new EsqParameterExpressionDto {
@@ -186,6 +203,60 @@ internal sealed class LocalEsqFilterBuilder {
 				Parameter = new EsqParameterDto {
 					DataValueType = (int)valueDataType,
 					Value = parameterValue
+				}
+			}
+		};
+	}
+
+	private EsqCompareFilterDto BuildDatePartCompareFilter(
+		string comparison, string columnPath, FilterSchemaColumn column, StaticFilterLeaf leaf) {
+		DatePartCatalog.TryResolve(leaf.DatePart!, out EsqDatePartType partType,
+			out DatePartCatalog.DatePartValueKind valueKind);
+		JsonElement value = leaf.Value!.Value;
+		EsqDatePartFunctionExpressionDto leftExpression = new() {
+			DatePartType = (int)partType,
+			FunctionArgument = new EsqColumnExpressionDto { ColumnPath = columnPath }
+		};
+
+		if (valueKind == DatePartCatalog.DatePartValueKind.Time) {
+			// HourMinute compares the extracted time-of-day against a Time parameter. The Freedom UI lookup
+			// control needs a FULL datetime, not a bare "HH:mm": it reads a local `value` (a quote-wrapped ISO
+			// string) to render and a UTC `dateValue` for the query. A bare time renders as a placeholder. The
+			// date is just a carrier (HourMinute extraction ignores it); we use today's date in the host TZ so
+			// `value` (local) and `dateValue` (UTC) stay self-consistent.
+			TimeSpan timeOfDay = ParseTimeOfDay(value.GetString());
+			DateTimeOffset now = _now();
+			DateTime localDateTime = now.Date + timeOfDay;
+			DateTimeOffset localOffset = new(localDateTime, now.Offset);
+			string localIso = localDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+			string utcIso = localOffset.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+			return new EsqCompareFilterDto {
+				ComparisonType = MapLeafComparisonToEsq(comparison),
+				TrimDateTimeParameterToDate = true,
+				LeftExpression = leftExpression,
+				IsAggregative = false,
+				DataValueType = column.DataValueTypeCode > 0 ? column.DataValueTypeCode : null,
+				RightExpression = new EsqParameterExpressionDto {
+					Parameter = new EsqParameterDto {
+						DataValueType = (int)EsqDataValueType.Time,
+						DateValue = utcIso,
+						// The platform stores the local datetime as a quote-wrapped JSON string literal.
+						Value = "\"" + localIso + "\""
+					}
+				}
+			};
+		}
+
+		// Calendar/clock parts (Day/Week/Month/Year/Weekday/Hour) compare the extracted integer part against an
+		// Integer parameter (e.g. Year EQUAL 2021, Day EQUAL 14, Hour EQUAL 11). The leaf carries no dataValueType
+		// of its own — the integer lives in the right parameter.
+		return new EsqCompareFilterDto {
+			ComparisonType = MapLeafComparisonToEsq(comparison),
+			LeftExpression = leftExpression,
+			RightExpression = new EsqParameterExpressionDto {
+				Parameter = new EsqParameterDto {
+					DataValueType = (int)EsqDataValueType.Integer,
+					Value = value.GetInt64()
 				}
 			}
 		};
@@ -375,5 +446,20 @@ internal sealed class LocalEsqFilterBuilder {
 		string inner = referenceColumnPath.Trim('[', ']');
 		string[] parts = inner.Split(':');
 		return (parts[0], parts[1]);
+	}
+
+	private static TimeSpan ParseTimeOfDay(string? raw) {
+		if (!string.IsNullOrWhiteSpace(raw)) {
+			if (TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out TimeSpan parsed)) {
+				return parsed;
+			}
+
+			if (DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsedDateTime)) {
+				return parsedDateTime.TimeOfDay;
+			}
+		}
+
+		throw new ArgumentException(
+			$"filter: datePart HourMinute value '{raw}' is not a valid time of day (use \"HH:mm\" or \"HH:mm:ss\").");
 	}
 }

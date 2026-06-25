@@ -26,8 +26,21 @@ public sealed class ComponentInfoCommandTests {
 	[
 	  {"componentType":"crt.TabContainer","category":"containers","description":"Tab body.","container":true,"properties":{"caption":{"type":"string","description":"Tab caption."}}},
 	  {"componentType":"crt.Input","category":"fields","description":"Text input.","container":false,"properties":{}},
-	  {"componentType":"crt.Button","category":"interactive","description":"Menu button.","container":false,"properties":{}}
+	  {"componentType":"crt.Button","category":"interactive","description":"Menu button.","whenToUse":"Use to trigger an action or open a menu.","whenNotToUse":"Not for navigation links.","container":false,"properties":{}}
 	]
+	""";
+
+	private const string CompositeRegistry = """
+	{
+	  "components": [
+	    {"componentType":"crt.ExpansionPanel","category":"containers","description":"Collapsible panel.","container":true,"properties":{}},
+	    {"componentType":"crt.NextSteps","category":"interactive","description":"Next steps widget.","compositeOnly":true,"container":false,"properties":{}}
+	  ],
+	  "composites": [
+	    {"caption":"Next steps","description":"Expansion panel wrapping a crt.NextSteps list.","docs":["docs/expansion-panel-next-steps.component.md"]},
+	    {"caption":"Expanded list","description":"Expansion panel with a crt.DataGrid.","docs":["docs/expansion-panel-expanded-list.component.md"]}
+	  ]
+	}
 	""";
 
 	[Test]
@@ -105,8 +118,8 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
-	[Description("When the catalog returns a different version than what was requested the response says latest-fallback.")]
-	public async Task Reports_Latest_Fallback_When_Catalog_Falls_Back() {
+	[Description("When the requested version is known but its exact catalog is unavailable, the client serves 'latest' and the response reports 'environment-superset' with a soft caveat — the version is not uncertain but the catalog is approximate.")]
+	public async Task Reports_EnvironmentSuperset_When_Version_Known_But_Catalog_Falls_Back() {
 		using CapturedLogger logger = new();
 		ComponentInfoCommand command = CreateCommand(logger, fallbackVersion: "latest");
 
@@ -115,8 +128,12 @@ public sealed class ComponentInfoCommandTests {
 
 		exit.Should().Be(0);
 		ComponentInfoResponse parsed = ParseJson(logger.Captured);
-		parsed.ResolvedTargetVersion.Should().Be("latest");
-		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromLatestFallback);
+		parsed.ResolvedTargetVersion.Should().Be("latest",
+			because: "the response must echo the catalog version actually loaded by the client");
+		parsed.ResolvedFrom.Should().Be(ComponentInfoResolution.ResolvedFromEnvironmentSuperset,
+			because: "the version was known but the exact catalog was absent, so 'environment-superset' signals an approximate catalog");
+		parsed.VersionWarning.Should().Be(ComponentInfoResolution.EnvironmentSupersetWarning,
+			because: "a soft caveat must be surfaced so the agent checks critical components against the actual environment");
 	}
 
 	[Test]
@@ -164,6 +181,23 @@ public sealed class ComponentInfoCommandTests {
 		logger.Captured.Should().NotStartWith("{", because: "the pretty renderer does not emit JSON");
 		logger.Captured.Should().Contain("componentType:");
 		logger.Captured.Should().Contain("crt.TabContainer");
+	}
+
+	[Test]
+	[Description("--pretty wires the Solution A selection-metadata through the CLI verb: the whenToUse line reaches the human detail view. Full per-line rendering parity (all six fields, both appliesToCustomEntities arms, the '; ' vs ', ' joins) is covered directly in ComponentInfoPrettyRenderer_Should_Render_All_Selection_Metadata_Lines.")]
+	public async Task Emits_Selection_Metadata_In_Pretty_Detail() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommand(logger);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0,
+			because: "rendering an existing component in --pretty mode is a successful invocation");
+		logger.Captured.Should().Contain("whenToUse:",
+			because: "the --pretty detail view must label the selection guidance like the JSON response surfaces it");
+		logger.Captured.Should().Contain("Use to trigger an action or open a menu.",
+			because: "the published @whenToUse text must reach the human CLI surface, not just JSON");
 	}
 
 	[Test]
@@ -363,6 +397,267 @@ public sealed class ComponentInfoCommandTests {
 			because: "the sample registry does not declare content.docs[] for crt.TabContainer");
 		docsClient.Requests.Should().BeEmpty(
 			because: "no content.docs[] means the docs pipeline must not run at all (no wasted HTTP calls)");
+	}
+
+	[Test]
+	[Description("--composite with a known caption emits a mode:composite detail with the composite's docs and exits 0.")]
+	public async Task Returns_Composite_Detail_When_Composite_Known() {
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\nAssemble the panel.");
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Composite = "Next steps" }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("composite", because: "a composite lookup returns the dedicated composite mode");
+		parsed.Caption.Should().Be("Next steps", because: "the response echoes the matched composite caption");
+		parsed.Documentation.Should().Contain("# Next steps",
+			because: "the CLI verb must surface the composite's assembly docs the same way the MCP tool does");
+	}
+
+	[Test]
+	[Description("--composite with an unknown caption exits 1 and names the caption in the error.")]
+	public async Task Returns_Exit_Code_1_For_Unknown_Composite() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Composite = "Does Not Exist" }, CancellationToken.None);
+
+		exit.Should().Be(1);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		parsed.Mode.Should().Be("composite", because: "the failure stays in composite mode");
+		parsed.Error.Should().Contain("Does Not Exist",
+			because: "the not-found error must echo the requested caption so the caller can correct it");
+	}
+
+	[Test]
+	[Description("Name-first resolution (CLI parity with the MCP tool): a component-type that names a COMPOSITE caption ('Expanded list') is not a dead end — the not-found response routes to composite=\"<caption>\" and surfaces the matched composite, instead of leaving the agent to hand-build the detail.")]
+	public async Task Unknown_ComponentType_Matching_Composite_Caption_Routes_To_Composite() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "Expanded list" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'Expanded list' is not a component type, so the lookup fails");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("Expanded list",
+			because: "the routing message must name the matched composite");
+		parsed.Error.Should().Contain("composite=",
+			because: "the CLI must route to the composite-discovery path, mirroring the MCP tool");
+		parsed.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
+			because: "the matched composite is surfaced so the caller can fetch its assembly recipe");
+	}
+
+	[Test]
+	[Description("CLI parity with ComponentInfoTool_Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions: a component-type that matches neither a component nor a composite falls back to closest-type suggestions (exit 1, no composite route). Covers the FilterEntries -> shared SuggestForUnknown behavioral delta on the CLI not-found path.")]
+	public async Task Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.TotallyMadeUp" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "a type matching neither a component nor a composite is a lookup failure");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("crt.TotallyMadeUp", because: "the failure must echo the missing type");
+		parsed.Error.Should().NotContain("composite=",
+			because: "no composite matches, so the CLI must not fabricate a composite route");
+		parsed.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
+	[Test]
+	[Description("CLI parity, branch 1 (hasComponentMatch): a component-type that substring-matches a component's name/description but is not an exact type and matches no composite surfaces those components with the 'by name/description' message — not the composite route, not the distance fallback.")]
+	public async Task Unknown_ComponentType_Matching_Component_By_Description_Surfaces_Name_Matches() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// "widget" substring-matches crt.NextSteps ("Next steps widget.") in the composite registry,
+		// but is not an exact type and matches no composite caption.
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "widget" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'widget' is not an exact component type");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("by name/description",
+			because: "the CLI name-match branch must use its own wording, mirroring the MCP tool");
+		parsed.Error.Should().NotContain("composite=", because: "'widget' matches no composite");
+		parsed.Error.Should().NotContain("closest known type", because: "a name match must not degrade to the distance branch");
+		parsed.Items!.Select(item => item.ComponentType).Should().Contain("crt.NextSteps",
+			because: "the component whose description contains the query is surfaced");
+	}
+
+	[Test]
+	[Description("CLI parity for multi-composite routing (RC-C5): when a query matches multiple composites by description, the routing response surfaces all matched composite captions in the error and Items is empty. Pins the multi-match branch for the CLI surface.")]
+	public async Task Unknown_ComponentType_Matching_Multiple_Composites_Routes_With_All_Captions() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// "Expansion panel" substring-matches both composites by description but matches no component.
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "Expansion panel" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'Expansion panel' is not a component type");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("composite=",
+			because: "the query matches composites by description, triggering the routing directive");
+		parsed.Error.Should().Contain("'Next steps'",
+			because: "every matched composite caption must be listed in the error");
+		parsed.Error.Should().Contain("'Expanded list'",
+			because: "every matched composite caption must be listed in the error");
+		parsed.Composites!.Count.Should().Be(2,
+			because: "both matched composites are surfaced on the routing branch");
+		parsed.Items.Should().BeNullOrEmpty(
+			because: "the routing branch must not populate component suggestions");
+	}
+
+	[Test]
+	[Description("--composite with an unknown caption + --pretty surfaces the actionable not-found message (with known captions) and exits 1 — it is NOT silently empty. Render prints 'Error: <message>' for any unsuccessful response before AppendComposite early-returns, so the JSON path's known-captions hint reaches the pretty surface too.")]
+	public async Task Pretty_Output_Surfaces_Composite_NotFound_Message() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Composite = "Definitely Missing", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(1,
+			because: "an unknown composite caption is a lookup failure on the --pretty surface too, not exit 0");
+		logger.Captured.Should().NotBeNullOrWhiteSpace(
+			because: "the not-found message must not be silently swallowed in --pretty");
+		logger.Captured.Should().Contain("Definitely Missing",
+			because: "the rendered error echoes the requested caption so the caller can correct it");
+		logger.Captured.Should().Contain("known composites",
+			because: "the actionable known-captions hint that the JSON path delivers must also reach the --pretty surface via the error line");
+	}
+
+	[Test]
+	[Description("--composite combined with a positional component-type is rejected as mutually exclusive and exits 1.")]
+	public async Task Returns_Exit_Code_1_When_Composite_And_ComponentType_Both_Provided() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.NextSteps", Composite = "Next steps" },
+			CancellationToken.None);
+
+		exit.Should().Be(1);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse(because: "composite and component-type cannot be combined");
+		parsed.Error.Should().Contain("mutually exclusive",
+			because: "the guard must name the conflict so the caller passes only one");
+	}
+
+	[Test]
+	[Description("List mode over a registry with composites surfaces a non-empty composites[] in the JSON response alongside the component items.")]
+	public async Task Returns_Composites_In_List_Mode() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(new ComponentInfoCommandOptions(), CancellationToken.None);
+
+		exit.Should().Be(0);
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Mode.Should().Be("list");
+		parsed.Composites.Should().NotBeNull(because: "the registry declares a top-level composites array");
+		parsed.Composites!.Select(c => c.Caption).Should().Contain("Next steps").And.Contain("Expanded list",
+			because: "list mode must surface every composite so the catalog reveals them in one call");
+	}
+
+	[Test]
+	[Description("--composite --pretty renders the composite's caption, description, and docs — not the '(no components)' list fallthrough.")]
+	public async Task Pretty_Output_Renders_Composite_Detail() {
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\nAssemble the panel.");
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Composite = "Next steps", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("composite:", because: "the pretty renderer must label the composite block");
+		logger.Captured.Should().Contain("Next steps");
+		logger.Captured.Should().Contain("# Next steps",
+			because: "the composite's assembly docs must render under --pretty");
+		logger.Captured.Should().NotContain("(no components)",
+			because: "a composite response must not fall through to the empty-list rendering");
+	}
+
+	[Test]
+	[Description("List --pretty renders a 'composites:' section listing each composite caption.")]
+	public async Task Pretty_Output_Renders_Composites_Section_In_List_Mode() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("composites:",
+			because: "the pretty renderer must label the composites section in list mode");
+		logger.Captured.Should().Contain("Next steps").And.Contain("Expanded list",
+			because: "every composite caption must be listed under --pretty");
+	}
+
+	[Test]
+	[Description("Detail --pretty of a composite-only component renders the compositeOnly marker so the safety signal is visible on stdout.")]
+	public async Task Pretty_Output_Renders_CompositeOnly_In_Detail() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.NextSteps", Pretty = true }, CancellationToken.None);
+
+		exit.Should().Be(0);
+		logger.Captured.Should().Contain("compositeOnly:",
+			because: "the pretty detail renderer must surface the composite-only safety signal");
 	}
 
 	private static ComponentInfoCommand CreateCommand(

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.BusinessRules;
 using Clio.Common;
@@ -20,15 +21,17 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 	public void SetUp() {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
-		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		_applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\"}]}");
+		_serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns("http://creatio/DataService/json/SyncReply/SelectQuery");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[{\"Id\":\"11111111-1111-1111-1111-111111111111\"}],\"success\":true}");
 		_validator = new BusinessRuleLookupReferenceValidator(_applicationClient, _serviceUrlBuilder);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Checks lookup condition and set-values constants against their referenced lookup schemas through OData.")]
+	[Description("Checks lookup condition and set-values constants against their referenced lookup schemas through an ESQ SelectQuery.")]
 	public void Validate_Should_Check_Lookup_Condition_And_SetValues_Constants() {
 		// Arrange
 		BusinessRule rule = CreateLookupRule(
@@ -39,29 +42,52 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 		// Act
 		_validator.Validate(rule, attributeMap);
 
-		// Assert
-		_serviceUrlBuilder.Received(1).Build(
-			BusinessRuleLookupReferenceValidator.BuildLookupExistsPath(
-				"Contact",
-				Guid.Parse("11111111-1111-1111-1111-111111111111")));
-		_serviceUrlBuilder.Received(1).Build(
-			BusinessRuleLookupReferenceValidator.BuildLookupExistsPath(
-				"Account",
-				Guid.Parse("22222222-2222-2222-2222-222222222222")));
-		_applicationClient.Received(2).ExecuteGetRequest(
+		// Assert — both the condition and the set-values lookup are validated via the DataService SelectQuery route
+		_serviceUrlBuilder.Received(2).Build(ServiceUrlBuilder.KnownRoute.Select);
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default!, default, default, default);
+		// The condition lookup (Contact) and the set-values lookup (Account) are each queried by Id
+		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
-			30_000,
-			1,
-			1);
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Contact\"")
+				&& body.Contains("11111111-1111-1111-1111-111111111111")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Account\"")
+				&& body.Contains("22222222-2222-2222-2222-222222222222")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// The Id (Guid primary key) filter must use the Guid data value type (0), not Text (1).
+		// Parse the captured request bodies rather than substring-matching so the assertion is
+		// robust to JSON formatting (indentation, property order) changes.
+		List<string> postedBodies = _applicationClient.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Select(call => (string)call.GetArguments()[1]!)
+			.ToList();
+		postedBodies.Should().HaveCount(2,
+			because: "both lookup references are validated with a SelectQuery POST");
+		foreach (string body in postedBodies) {
+			using JsonDocument document = JsonDocument.Parse(body);
+			JsonElement idFilter = document.RootElement
+				.GetProperty("filters").GetProperty("items")
+				.EnumerateObject().First().Value;
+			int dataValueType = idFilter
+				.GetProperty("rightExpression").GetProperty("parameter")
+				.GetProperty("dataValueType").GetInt32();
+			dataValueType.Should().Be(0,
+				because: "the Id primary-key filter must use the Guid data value type (0), not Text (1)");
+		}
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Reports a clear validation error when a lookup constant is a valid GUID but no referenced record exists.")]
-	public void Validate_Should_Reject_Missing_Lookup_Record() {
-		// Arrange
-		_applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"value\":[]}");
+	[Description("Surfaces a server-side SelectQuery failure as the module's ArgumentException contract, not a raw InvalidOperationException.")]
+	public void Validate_Should_Surface_Server_Failure_As_ArgumentException() {
+		// Arrange — SelectQuery returns a failure envelope (ExecuteSelectQuery throws InvalidOperationException)
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"server boom\"}}");
 		BusinessRule rule = CreateLookupRule(
 			conditionValue: "11111111-1111-1111-1111-111111111111",
 			setValue: "22222222-2222-2222-2222-222222222222");
@@ -71,7 +97,28 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("*record '11111111-1111-1111-1111-111111111111' was not found in lookup schema 'Contact'*odata-read*",
+			.WithMessage("*could not be verified*server boom*",
+				because: "PageBusinessRuleValidator only catches ArgumentException, so server failures must be translated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a clear validation error when a lookup constant is a valid GUID but no referenced record exists.")]
+	public void Validate_Should_Reject_Missing_Lookup_Record() {
+		// Arrange — SelectQuery succeeds but returns no rows
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		BusinessRule rule = CreateLookupRule(
+			conditionValue: "11111111-1111-1111-1111-111111111111",
+			setValue: "22222222-2222-2222-2222-222222222222");
+
+		// Act
+		Action act = () => _validator.Validate(rule, CreateAttributeMap());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*record '11111111-1111-1111-1111-111111111111' was not found in lookup schema 'Contact'*execute-esq*",
 				because: "coding agents should receive an actionable message that points them to lookup Id resolution");
 	}
 
@@ -102,7 +149,8 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 		_validator.Validate(rule, CreateAttributeMap());
 
 		// Assert
-		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default!, default, default, default);
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			default!, default!, default, default, default);
 	}
 
 	[Test]
@@ -125,7 +173,7 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 		// Assert
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("rule.condition.conditions[*].rightExpression.value references lookup attribute 'Owner', but its reference schema cannot be resolved.",
-				because: "existence validation needs the target lookup schema name to build a deterministic OData query");
+				because: "existence validation needs the target lookup schema name to build a deterministic SelectQuery");
 	}
 
 	private static BusinessRule CreateLookupRule(string conditionValue, string setValue) =>

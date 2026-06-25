@@ -21,17 +21,20 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 
 			       Canonical flow
 			       - Prefer `discover -> inspect -> mutate -> verify` for minimal edits to an existing app.
+			       - To discover the target app, prefer `find-app` — it searches application name/code/description and section captions and returns the matching app(s) WITH their sections in a single call, replacing a `list-apps` + per-app `list-app-sections` scan. Fall back to `list-apps` only for a full unfiltered enumeration.
 			       - For section creation in an existing app, prefer `list-apps -> get-app-info -> create-app-section -> get-app-info`.
 			       - For section metadata updates in an existing app, prefer `list-apps -> get-app-info -> update-app-section`.
 			       - For listing sections of an existing app, prefer `list-apps -> get-app-info -> list-app-sections`.
 			       - For deleting a section from an existing app, prefer `list-apps -> get-app-info -> list-app-sections -> delete-app-section`.
 			       - Prefer `list-pages -> get-page -> sync-pages -> get-page` as the canonical page workflow, including single-page saves when the caller wants the clio-advertised path.
 			       - Read before write, and read back after mutations when the tool or workflow allows it.
+			       - The application tools (`create-app-section`, `update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`) are long-running backend calls that stream `notifications/progress`. Await completion; a progress notification is not a stall, so do not cancel/retry or fall back to raw SQL or manual UI on a perceived client timeout.
 			       - For canonical data-binding workflow selection, call `get-guidance` with `name` set to `data-bindings`.
 			       - For seeding, listing, or updating Creatio system settings (sys-settings), call `get-guidance` with `name` set to `sys-settings`.
 			       - For the full DataForge orchestration protocol (layers 0–4, failure rules, stale index recovery), call `get-guidance` with `name` set to `dataforge-orchestration`.
 
 			       Discover the target app
+			       - Prefer `find-app` with `search-pattern` to map an imprecise or partial app name (e.g. "Customer Request Management") to its real code (e.g. `CrtCaseManagementApp`) in a single call; it matches the application name, code, description, and section captions, and returns each match together with its sections. Omit the pattern to list all apps with their sections.
 			       - Use `list-apps` when you do not yet know the installed application code or need to confirm candidates.
 			       - Wrap MCP tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "code": "..."}}`); do not flatten or rename canonical fields.
 			       - Use `get-app-info` after `list-apps` to confirm the primary package and entity context for the target app.
@@ -45,6 +48,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - When entity-schema-name is omitted, Creatio derives both the section code and the new entity code from the caption (e.g. caption "Customer Profile" → section code and entity code "{prefix}CustomerProfile"). Choose the caption that produces the desired {prefix}<PascalCase> entity name — where {prefix} is the active SchemaNamePrefix; read it from the `schema-name-prefix` field returned by `get-app-info`, or call `get-schema-name-prefix` before `get-app-info` when the prefix is needed earlier.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `create-app-section`.
 			       - When reusing an existing entity schema, provide `entity-schema-name`. Otherwise omit that field and let Creatio create a new object for the section.
+			       - When `create-app-section` fails, read `error-class` before deciding what to do next: `transport` means the request never reached Creatio (retry is safe); `creatio-timeout` means Creatio produced no response within the budget and the section may still be created server-side — wait, run `list-app-sections`, and retry only if the section is still absent; `server-error` means Creatio rejected the operation (fix inputs or server state first). The `section-created` field reports the verified side-effect state (`true`/`false`/`unknown`). Follow the returned `retry-guidance` and never blind-retry the same call.
 			       - `update-app-section` accepts `application-code` and `section-code` as the existing-section selector pair.
 			       - `update-app-section` is a partial scalar update. Pass only the top-level fields that should change: `caption`, `description`, `icon-id`, and `icon-background`.
 			       - Do not send `title-localizations`, `description-localizations`, `caption-localizations`, or `name-localizations` to `update-app-section`.
@@ -57,14 +61,15 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `get-page` to inspect the merged page bundle and retrieve the raw editable page body.
 			       - For writes, send the full `raw.body` string back to `sync-pages` or `update-page`; do not send `bundle` or `bundle.viewConfig` as the body payload.
 			       - Use `get-component-info` when `get-page` shows unfamiliar `crt.*` component types before editing nested config or child collections.
-			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions keyed by the entity column code: `$Resources.Strings.<columnCode>` where `<columnCode>` is the LAST segment of the binding attribute's `modelConfig.path` (e.g. `$Resources.Strings.UsrStatus` for path `PDS.UsrStatus`). The path-with-underscores form `$Resources.Strings.PDS_UsrStatus` is NOT auto-provided; on `operation:"insert"` it is rejected unless registered explicitly via the `resources` parameter.
+			       - For standard data-bound form fields, bind `control` or `value` directly to `$Name` or `$PDS_*` attributes and prefer datasource captions keyed by the view-model attribute name: `$Resources.Strings.<bindingAttribute>` — the SAME attribute the control binds to, which must have a DS-bound `modelConfig.path` (e.g. `$Resources.Strings.PDS_UsrStatus` for a `$PDS_UsrStatus` control, or `$Resources.Strings.Name` for `$Name`). The platform auto-provides the caption from the bound column. The bare entity column code is NOT auto-provided unless it equals the attribute name; on `operation:"insert"` a label that is neither the binding-attribute key nor registered is rejected.
 			       - Do not route standard field bindings through proxy attributes (e.g. binding a control to `$UsrStatus` while declaring a separate proxy attribute whose underlying view model path is `PDS.UsrStatus`). A plain attribute name like `$UsrName` is itself valid when it is directly bound to a DS column; the anti-pattern is duplicating an already-DS-bound attribute under a different name.
 			       - Reserve `Usr*_label` and `Usr*_caption` resource keys for custom standalone UI with explicit `resources`; do not use those shortcuts as datasource field captions.
 			       - When a page tool needs `resources`, pass a JSON object string rather than a nested object payload.
 			       - Absence of a tab, detail, or grid on the page does not prove the backing entity is missing. Resolve the backing schema from runtime app context before planning new schema work.
 
 			       Inspect schema before editing
-			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation.
+			       - Use `get-entity-schema-properties` for machine-readable schema inspection before planning a schema mutation. Call it WITHOUT `package-name` to read the merged/effective schema (columns from ALL packages). Custom columns are frequently added in a package other than the one that defines the schema, so the merged view is the reliable way to discover them.
+			       - Do NOT treat an empty column list (or `own-column-count: 0`) from a single-package read as proof a column is missing. If you queried with a `package-name`, re-read without it, or use `find-entity-schema` to find the package that customizes the schema, before concluding a field must be created.
 			       - Use `get-entity-schema-column-properties` when the change is scoped to one existing column and you need current metadata first.
 
 			       Preferred minimal mutations
@@ -73,6 +78,7 @@ public sealed class ExistingAppMaintenanceGuidanceResource {
 			       - Use `modify-entity-schema-column` for a single-column schema change when the target schema and column are already known.
 			       - Use `sync-schemas` when the work spans multiple ordered schema steps, mixes create/update/seed operations, or must stay batched.
 			       - `sync-schemas` requests use `operations[*].type`. Responses also use `type`; do not send `operations[*].operation` in requests.
+			       - The column shape returned by `get-app-info` round-trips into `sync-schemas update-entity` without field translation: a column read as `{name, type (or data-value-type), reference-schema-name (or reference-schema), required (or is-required), caption}` can be sent back inside an `update-operations` entry — just add the `action` verb (`modify`/`remove`). To add columns, drop the read/create-shape objects into the operation's `columns` array (no `action` needed) — the scalar `caption` is promoted to `title-localizations` automatically — and they are treated as an implicit add-batch.
 			       - Treat `create-lookup`, `create-entity-schema`, `update-entity-schema`, `create-data-binding-db`, and `update-page` as fallback-oriented tools when the preferred batched workflow is not the right fit for the requested scope.
 			       - For standalone lookup seeding or local binding artifacts in an MCP workflow, follow `get-guidance` with `name` set to `data-bindings`.
 			       - When that guide resolves to a DB-first binding path, prefer `create-data-binding-db` or `upsert-data-binding-row-db` over direct SQL commands.

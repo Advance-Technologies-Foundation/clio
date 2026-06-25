@@ -39,7 +39,7 @@ public sealed class MobilePageGuidanceResource {
 
 		       | Web-guide section | On mobile |
 		       | --- | --- |
-		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`), page-level `business-rules` (`create-page-business-rule`) | Applies with mobile-specific limits |
+		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rules`), page-level `business-rules` (`create-page-business-rules`) | Applies with mobile-specific limits |
 		       | PRE-EDIT: `page-schema-converters` | Concept only — page body must not declare a `converters` section; reference OOTB converters inline (see below) or an already-existing custom converter in a remote module |
 		       | PRE-EDIT: `page-schema-handlers` | Concept only — page body must not declare a `handlers` section; only reference an already-existing remote handler when the user explicitly asks |
 		       | PRE-EDIT: `page-schema-validators`, `page-schema-creatio-devkit-common` | Does NOT apply — no validator support on mobile (even OOTB), no devkit-common AMD dependency |
@@ -49,10 +49,10 @@ public sealed class MobilePageGuidanceResource {
 		       | Body formatting (match existing indentation, do not reformat existing code) | Applies in full — mobile JSON bodies are also saved verbatim; match the indentation style already present in the page |
 		       | Known limitations (fail-closed design-package resolution on writes, best-effort fallback on reads) | Applies in full |
 		       | `bundle.json` shape and `jq` recipes | Applies, with one caveat: `handlers` / `converters` / `validators` source strings are always empty (`'[]'` / `'{}'`) because mobile bodies do not author these sections |
-		       | Rules for viewConfigDiff: `operation`, `name`, `parentName`, `propertyName`, `index`, view-engine `visible` property, user-visible string → `$Resources.Strings.*` rule | Applies in full |
-		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — use `get-component-info schema-type: "mobile"` instead. Notably Boolean maps to `crt.Toggle` on mobile, not `crt.Checkbox` |
+		       | Web `Rules for viewConfigDiff` section — every bullet EXCEPT the FormPage `DataValueType → component` mapping in the next row (i.e. `operation` / `name` / `parentName` / `propertyName` / `index`, the view-engine `visible` property, and the user-visible string → `$Resources.Strings.*` rule) | Applies in full |
+		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — pick the control from the MOBILE registry via `get-component-info schema-type: "mobile"`; the COMPONENT REGISTRY section below is the authoritative type list (note the canonical gotcha: Boolean → `crt.Toggle`, not `crt.Checkbox`) |
 		       | Finding a container for a new component (`parentName`) | Applies in full — same `bundle.containers` lookup; common mobile container types: `crt.Scaffold` (root), `crt.GridContainer`, `crt.FlexContainer`, `crt.TabPanel`, `crt.TabContainer`, `crt.ExpansionPanel` |
-		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb | Applies, with mobile-specific merge rules and AMD-marker exception — see WRITE MODES section below |
+		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb, and the own-body `insert`-to-`merge`/`move`/`remove` downgrade warning | Applies, but mobile bodies have no handlers/converters/validators sections (those merge rules do not apply) and the append fragment is plain JSON, not AMD (see BODY FORMAT below) |
 
 		       If a web guide tells you to add a section this mobile guide forbids (validators / inline handlers or converters declared in the page body / AMD deps), the mobile rule wins.
 
@@ -61,12 +61,12 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       Mobile Freedom UI pages do support business rules. Business rule generation works
 		       identically to web — mobile pages do not affect how rules are created or stored.
-		       The same `create-page-business-rule` / `create-entity-business-rule` tools produce
+		       The same `create-page-business-rules` / `create-entity-business-rules` tools produce
 		       valid rules for both web and mobile pages without any mobile-specific parameters.
 
 		       Read `business-rules` for rule semantics; this guide adds only the mobile-specific boundary:
-		         - Use `create-page-business-rule` for UI state changes on one mobile page.
-		         - Use `create-entity-business-rule` when the rule should apply everywhere the entity is used,
+		         - Use `create-page-business-rules` for UI state changes on one mobile page.
+		         - Use `create-entity-business-rules` when the rule should apply everywhere the entity is used,
 		           or when the user needs validation-like enforcement that mobile page bodies cannot provide.
 		         - Business rules are separate artifacts. Do not implement business-rule logic in the mobile page
 		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
@@ -105,19 +105,9 @@ public sealed class MobilePageGuidanceResource {
 		           on mobile", "crt.DataGrid is web-only", "page body must not declare
 		           handlers", "only one data source per page").
 		         - The closest supported alternative, if any (e.g. entity-level business rule
-		           via `create-entity-business-rule`, an OOTB converter from the allowed list,
+		           via `create-entity-business-rules`, an OOTB converter from the allowed list,
 		           a remote handler the user must implement separately and reference by name).
 		         - Stop and ask the user how to proceed before writing the body.
-
-		       ─────────────────────────────────
-		       WRITE MODES (mobile specifics)
-		       ─────────────────────────────────
-		       Append mode IS supported on mobile (see `MergeMobile` in PageBodyMerger.cs). Compared to web append:
-		         - `viewConfigDiff` — concat + dedupe by `name` (incoming wins, same as web).
-		         - `viewModelConfigDiff` and `modelConfigDiff` — plain concat (no dedupe — there is no key to dedupe on).
-		         - `handlers` / `converters` / `validators` merge rules from web DO NOT APPLY (those sections are absent from mobile bodies).
-		         - An incoming body that uses the full `viewModelConfig` or `modelConfig` form (instead of the `*Diff` form) is rejected — use replace mode in that case.
-		         - AMD MARKERS DO NOT APPLY: append takes a plain JSON fragment containing whichever of the three top-level `*Diff` arrays you want to merge; missing keys are skipped.
 
 		       ─────────────────────────────────
 		       BODY FORMAT — plain JSON, not AMD
@@ -134,6 +124,7 @@ public sealed class MobilePageGuidanceResource {
 		       DO NOT add: "handlers", "converters", "validators" — these are AMD/web-only constructs.
 		       DO NOT wrap the body in define(...).
 		       DO NOT add any AMD marker pairs (SCHEMA_DEPS, SCHEMA_VIEW_CONFIG_DIFF, etc.).
+		       For append mode, send a fragment containing only the `*Diff` arrays you want to merge; missing keys are skipped.
 
 		       ─────────────────────────────────────────────────────────────
 		       VALIDATORS, CONVERTERS, HANDLERS — mobile constraints
@@ -143,7 +134,7 @@ public sealed class MobilePageGuidanceResource {
 		         Mobile pages do not support validators at all, including OOTB validators.
 		         Do not add a "validators" section. Do not reference any validator (custom or OOTB)
 		         from a mobile page body. If the user asks for validation, implement it via entity-level
-		         business rules (`create-entity-business-rule`) instead.
+		         business rules (`create-entity-business-rules`) instead.
 
 		       Converters — OOTB inline, or reference an existing custom converter:
 		         Do not add a "converters" section to the page body.
@@ -227,6 +218,15 @@ public sealed class MobilePageGuidanceResource {
 		         crt.DataGrid, crt.HtmlEditor, crt.PasswordInput, crt.EncryptedInput,
 		         crt.ColorPicker, crt.TagSelect, crt.MultiSelect, crt.IFrame,
 		         crt.Chat, crt.Dashboards
+
+		       VERIFY, DON'T DOWNGRADE. Neither list above is exhaustive — `get-component-info
+		       schema-type: "mobile"` is the authoritative source for what runs on mobile. A type
+		       existing on web does NOT make it web-only: if it IS in the mobile catalog it IS
+		       implemented, so use it (the inverse of the NO INVENTION rule above). When a column
+		       has a specific data type (phone, email, number, date, etc.), do NOT default it to a
+		       generic input out of caution — check the catalog you already retrieved and PREFER
+		       the matching specialized input. Fall back to a generic input only when the catalog
+		       has no specialized match.
 
 		       ─────────────────────────────────────────────────────────────
 		       ADAPTIVE BREAKPOINTS
@@ -410,13 +410,14 @@ public sealed class MobilePageGuidanceResource {
 		       ── Business process ────────────────────────────────────────
 
 		       crt.RunBusinessProcessRequest
-		         Starts a business process.
-		         params: processName (string, required),
-		                 processParameters? (Record<string, unknown>),
-		                 recordIdProcessParameterName? (string),
-		                 showNotification? (boolean),
-		                 notificationText? (string),
-		                 saveAtProcessStart? (boolean)
+		         Starts a business process. processName AND processRunType are both REQUIRED
+		         (e.g. 'ForTheSelectedPage' for the current record; 'RegardlessOfThePage' for none).
+		         "For the selected page" maps to processRunType: 'ForTheSelectedPage' — setting
+		         recordIdProcessParameterName alone does NOT select the run type.
+		         FULL parameter contract is the run-process-button guide (single source of truth):
+		         call get-guidance run-process-button and resolve the process with get-process-signature
+		         FIRST. Keys in processParameters / parameterMappings / recordIdProcessParameterName are
+		         process parameter CODES, NOT captions — a wrong code is silently dropped.
 
 		       ── Files ───────────────────────────────────────────────────
 

@@ -17,10 +17,12 @@ public static class SchemaValidationService
 	private const string SchemaConvertersMarker = "SCHEMA_CONVERTERS";
 	internal const string SchemaHandlersMarker = "SCHEMA_HANDLERS";
 	private const string ValuesPropertyName = "values";
+	private const string OperationPropertyName = "operation";
 	private const string AttributesPropertyName = "attributes";
 	private const string ValidatorsPropertyName = "validators";
 	private const string ParamsPropertyName = "params";
 	private const string TypePropertyName = "type";
+	private const string LabelPropertyName = "label";
 	private const string ViewConfigDiffPropertyName = "viewConfigDiff";
 	private const string ViewModelConfigDiffPropertyName = "viewModelConfigDiff";
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
@@ -63,8 +65,32 @@ public static class SchemaValidationService
 
 	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>
+	/// Matches a reactive view-model context attribute read of the form
+	/// <c>$context["Attr"]</c> or <c>request.$context["Attr"]</c>, capturing an optional
+	/// immediately-preceding <c>await</c> keyword so the validator can tell awaited reads
+	/// from un-awaited ones. The <c>name</c> group holds the attribute name.
+	/// </summary>
+	private static readonly Regex ContextBracketReadPattern = new(
+		@"(?<await>\bawait\s+)?(?:request\s*\.\s*)?\$context\s*\[\s*(?<quote>[""'])(?<name>[^""']+)\k<quote>\s*\]",
+		RegexOptions.Compiled | RegexOptions.CultureInvariant,
+		RegexTimeout);
+
 	private static readonly Regex ResourceStringPattern = new(
 		@"^#ResourceString\(([^)]+)\)#$",
+		RegexOptions.Compiled,
+		RegexTimeout);
+
+	/// <summary>
+	/// Matches a <c>#ResourceString(Key)#</c> localization macro anywhere within a value (unanchored).
+	/// Unlike <see cref="ResourceStringPattern"/> (which requires the whole value to be exactly the
+	/// macro), this recognises a resource reference that is concatenated with other text or wrapped in
+	/// another macro — most notably the platform's <c>#MacrosTemplateString(…#ResourceString(Key)#…)#</c>
+	/// form, the dominant OOTB caption shape. Used by <see cref="IsInlineUserVisibleTextLiteral"/> so a
+	/// localized-but-wrapped value is not misclassified as a hardcoded inline literal.
+	/// </summary>
+	private static readonly Regex ResourceStringReferencePattern = new(
+		@"#ResourceString\(([^)]+)\)#",
 		RegexOptions.Compiled,
 		RegexTimeout);
 	private const string ResourceBindingPrefix = "$Resources.Strings.";
@@ -90,27 +116,79 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// Canonical clause stating the binding half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/> and the per-field diagnostic in
+	/// <c>AppendBindingDeclarationError</c>, so the rule an agent is told is identical to the rule
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> rejects on.
+	/// </summary>
+	internal const string InsertedFieldBindingClause =
+		"the body must declare the control's binding attribute in viewModelConfigDiff with a " +
+		"DS-bound modelConfig.path, or the control has no data source";
+
+	/// <summary>
+	/// Canonical clause stating the label half of the inserted-field contract. Authored ONCE here
+	/// and reused by <see cref="InsertedFieldContractSummary"/>. The resource nuance (prefixes, and
+	/// why the bare column code is not the key unless it equals the attribute name) lives in the
+	/// <c>page-schema-resources</c> guide, not here.
+	/// </summary>
+	internal const string InsertedFieldLabelClause =
+		"the label must resolve — prefer the auto-provided form: set it to " +
+		"$Resources.Strings.<bindingAttribute> (the control's own DS-bound attribute) and the platform " +
+		"supplies the caption with no registration; pass the key via the 'resources' parameter only to " +
+		"override the caption or for a non-DS-bound key. See the page-schema-resources guide for the full rule";
+
+	/// <summary>
 	/// Canonical statement of the inserted-field contract enforced by
-	/// <see cref="ValidateInsertedFieldSelfConsistency"/>. Surfaced to MCP agents from
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/>, composed from the shared
+	/// <see cref="InsertedFieldBindingClause"/> and <see cref="InsertedFieldLabelClause"/> so it
+	/// cannot drift from the diagnostics that reuse the same clauses. Surfaced to MCP agents from
 	/// <c>get-component-info</c>, <c>update-page</c> tool [Description], and the
-	/// <c>page-modification</c> guidance resource so all three describe the same rule in
-	/// identical words. Keep this <c>const</c> so it stays usable inside <c>[Description]</c>
-	/// attributes (which only accept compile-time constant expressions).
+	/// <c>page-modification</c> guidance resource so all describe the same rule in identical words.
+	/// Keep this <c>const</c> so it stays usable inside <c>[Description]</c> attributes (which only
+	/// accept compile-time constant expressions).
 	/// </summary>
 	internal const string InsertedFieldContractSummary =
 		"Standard field components (crt.Input, crt.NumberInput, crt.Checkbox, crt.ComboBox, " +
 		"crt.PhoneInput, crt.EmailInput, crt.DateTimePicker, crt.WebInput, crt.RichTextEditor, " +
 		"crt.ColorPicker, crt.ImageInput, crt.FileInput, crt.EncryptedInput, crt.Slider) inserted " +
-		"via operation:\"insert\" in viewConfigDiff require the SAME update-page call to also " +
-		"include (a) a viewModelConfigDiff entry that declares the control's binding attribute " +
-		"with a modelConfig.path to the entity column, and (b) the label resource — either passed " +
-		"in the 'resources' parameter, or set to $Resources.Strings.<columnCode> where " +
-		"<columnCode> is the LAST segment of the binding attribute's modelConfig.path. Auto-provide " +
-		"is keyed by entity column code, not by view-model attribute name; the path-with-" +
-		"underscores form $Resources.Strings.PDS_<columnCode> is NOT auto-provided. Payloads that " +
-		"violate this contract are rejected at update-page validation time; the diagnostic names " +
-		"the offending field, attribute, and section. The contract does NOT apply to " +
-		"operation:\"merge\" (parent schemas may legitimately provide the attribute and resource).";
+		"via operation:\"insert\" in viewConfigDiff are validated for self-consistency in the SAME " +
+		"update-page call: (a) " + InsertedFieldBindingClause + "; and (b) " + InsertedFieldLabelClause +
+		". Violations are rejected at update-page validation time; the diagnostic names the offending " +
+		"field, attribute, and section. This contract does NOT apply to operation:\"merge\" — a parent " +
+		"schema or the current body may legitimately provide the attribute and resource.";
+
+	/// <summary>
+	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
+	/// localizable-string bindings (<c>$Resources.Strings.&lt;Key&gt;</c> or the
+	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro), never as inline string literals. Enforced by
+	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile). The set is deliberately limited to
+	/// properties that are unambiguously rendered to the user; overloaded keys such as <c>description</c>
+	/// (which also names non-display metadata on entity columns, components, and APIs) are intentionally
+	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
+	/// </summary>
+	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
+		LabelPropertyName,
+		"caption",
+		"title",
+		"tooltip",
+		"placeholder"
+	};
+
+	/// <summary>
+	/// Canonical clause describing the localizable-text rule enforced by
+	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
+	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
+	/// update-page / sync-pages / validate-page tool descriptions and the <c>page-schema-resources</c>
+	/// guidance, so the rule the validator rejects on is stated in identical words everywhere. Kept
+	/// <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// </summary>
+	internal const string LocalizableTextLiteralClause =
+		"user-visible text on a view node (label, caption, title, tooltip, placeholder) must be a " +
+		"localizable-string binding, not an inline literal: bind it via $Resources.Strings.<Key> and " +
+		"register the key with its default-language value through the 'resources' parameter " +
+		"(e.g. resources: '{\"<Key>\": \"<text>\"}'), or use the #ResourceString(<Key>)# macro form for " +
+		"data-grid column captions and validator messages";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -143,6 +221,9 @@ public static class SchemaValidationService
 		SchemaValidationResult labelBindingResult = ValidateMobileStandardFieldBindings(body, explicitResources);
 		if (!labelBindingResult.IsValid) errors.AddRange(labelBindingResult.Errors);
 		warnings.AddRange(labelBindingResult.Warnings);
+
+		SchemaValidationResult textLiteralResult = ValidateMobileLocalizableTextLiterals(body);
+		if (!textLiteralResult.IsValid) errors.AddRange(textLiteralResult.Errors);
 
 		return (errors, warnings);
 	}
@@ -310,7 +391,7 @@ public static class SchemaValidationService
 				$"Attribute '{attr.Name}' binds a 'validators' property. " +
 				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
 				"Remove the validators binding and implement field-level validation via " +
-				"entity-level business rules (create-entity-business-rule).");
+				"entity-level business rules (create-entity-business-rules).");
 		}
 	}
 
@@ -409,14 +490,14 @@ public static class SchemaValidationService
 		if (entry.ValueKind != JsonValueKind.Object) {
 			return;
 		}
-		bool hasOperation = entry.TryGetProperty("operation", out _);
+		bool hasOperation = entry.TryGetProperty(OperationPropertyName, out _);
 		bool hasName = entry.TryGetProperty("name", out _);
 		if (hasOperation && hasName) {
 			return;
 		}
 		result.IsValid = false;
 		var missing = new List<string>(2);
-		if (!hasOperation) missing.Add("operation");
+		if (!hasOperation) missing.Add(OperationPropertyName);
 		if (!hasName) missing.Add("name");
 		result.Errors.Add(
 			$"viewConfigDiff entry at index {index} is missing required " +
@@ -559,6 +640,83 @@ public static class SchemaValidationService
 			return false;
 		}
 		return SdkUsagePattern.IsMatch(convertersContent);
+	}
+
+	/// <summary>
+	/// Detects reactive context attribute reads of the form <c>$context["Attr"]</c> or
+	/// <c>request.$context["Attr"]</c> that are NOT preceded by <c>await</c>, anywhere in the
+	/// page body (handler bodies, converters, and free module-scope helper functions alike).
+	/// </summary>
+	/// <remarks>
+	/// In a Freedom UI page body the bracket accessor on <c>$context</c> is asynchronous: it
+	/// returns a <c>Promise</c>, so the read MUST be awaited (<c>await request.$context["Attr"]</c>).
+	/// An un-awaited read yields a <c>Promise</c> object instead of the value; because a Promise is
+	/// always truthy and never nullish, it silently breaks the surrounding expression — most often a
+	/// <c>?? fallback</c> chain that never reaches its fallback, a comparison that is always false, or
+	/// an argument passed on un-resolved. The mistake is valid JavaScript, so neither marker, JSON,
+	/// nor JS-syntax validation catches it; this heuristic does.
+	/// <para>
+	/// All findings are WARNINGS, not errors. The check is a regex heuristic over raw text, so it
+	/// cannot exclude an occurrence inside a string literal or comment, and it does not resolve a
+	/// <c>$context</c> handle aliased to another variable. It therefore advises rather than blocks,
+	/// matching the fail-open posture of <see cref="ValidateSchemaDepsCompleteness"/>. Bracket reads
+	/// used as an assignment target (<c>$context["X"] = ...</c>) are skipped because that is a write,
+	/// not a read; the dedicated write API is <c>$context.set(...)</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is always valid; its warnings list one entry per
+	/// distinct attribute name read without <c>await</c>.
+	/// </returns>
+	public static SchemaValidationResult ValidateContextAccessAwait(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		var reported = new HashSet<string>(StringComparer.Ordinal);
+		try {
+			foreach (Match match in ContextBracketReadPattern.Matches(jsBody)) {
+				if (match.Groups["await"].Success) {
+					continue;
+				}
+				if (IsAssignmentTarget(jsBody, match.Index + match.Length)) {
+					continue;
+				}
+				string attributeName = match.Groups["name"].Value;
+				if (!reported.Add(attributeName)) {
+					continue;
+				}
+				result.Warnings.Add(
+					$"Page body reads '$context[\"{attributeName}\"]' without 'await'. Reactive context attribute reads " +
+					"are asynchronous and return a Promise; an un-awaited read yields a Promise object — always truthy and " +
+					"never nullish — which silently breaks '??' fallbacks, comparisons, and arguments built from it. " +
+					$"Change it to 'await $context[\"{attributeName}\"]' (e.g. 'const x = arg ?? (await $context[\"{attributeName}\"]) ?? fallback;'). " +
+					"Call get-guidance with name 'page-schema-handlers' for the read/write contract.");
+			}
+		} catch (RegexMatchTimeoutException) {
+			// Advisory heuristic: a pathological body that trips the regex timeout must fail open, not
+			// surface as a hard error. update-page's ValidateWebPageBody calls this directly (RunContentValidation
+			// is only a short-circuit, not a timeout guard), so the fail-open guard belongs here.
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Reports whether the first non-whitespace character at or after <paramref name="indexAfterRead"/>
+	/// begins a plain assignment (<c>=</c> not followed by <c>=</c> or <c>&gt;</c>), which marks the
+	/// preceding bracket access as a write target rather than an un-awaited read.
+	/// </summary>
+	private static bool IsAssignmentTarget(string jsBody, int indexAfterRead) {
+		int i = indexAfterRead;
+		while (i < jsBody.Length && char.IsWhiteSpace(jsBody[i])) {
+			i++;
+		}
+		if (i >= jsBody.Length || jsBody[i] != '=') {
+			return false;
+		}
+		// Distinguish assignment '=' from comparison '=='/'===' and arrow '=>', which are reads.
+		return i + 1 >= jsBody.Length || (jsBody[i + 1] != '=' && jsBody[i + 1] != '>');
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {
@@ -784,6 +942,38 @@ public static class SchemaValidationService
 		return SchemaHandlerValidationService.Validate(jsBody);
 	}
 
+	/// <summary>
+	/// Body-only structural validation for <c>crt.RunBusinessProcessRequest</c> buttons:
+	/// every such button must carry a non-empty <c>processName</c> AND a non-empty
+	/// <c>processRunType</c>. Both are required by the request contract; omitting
+	/// <c>processRunType</c> does not error at runtime but silently runs the process without the
+	/// intended record context (the same silent-misbehavior class as a wrong parameter code).
+	/// Parameter-code correctness is validated separately against the live process signature
+	/// (it needs the environment).
+	/// </summary>
+	public static SchemaValidationResult ValidateRunProcessButtonStructure(string jsBody) {
+		SchemaValidationResult result = new() { IsValid = true };
+		foreach (RunProcessButtonConfig config in RunProcessButtonConfigReader.Read(jsBody)) {
+			string buttonLabel = string.IsNullOrWhiteSpace(config.ButtonName)
+				? "a crt.RunBusinessProcessRequest button"
+				: $"run-process button '{config.ButtonName}'";
+			if (string.IsNullOrWhiteSpace(config.ProcessName)) {
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} is missing the required 'processName' (the process schema code). "
+					+ "Resolve it with get-process-signature and set params.processName.");
+			}
+			if (string.IsNullOrWhiteSpace(config.ProcessRunType)) {
+				result.IsValid = false;
+				result.Errors.Add(
+					$"{buttonLabel} is missing the required 'processRunType' "
+					+ "('RegardlessOfThePage', 'ForTheSelectedPage', or 'ForTheSelectedRecords'). "
+					+ "Without it the process does not run against the intended record context.");
+			}
+		}
+		return result;
+	}
+
 	private static bool ValidateMarkers(
 		string jsBody,
 		IEnumerable<string> markers,
@@ -947,13 +1137,14 @@ public static class SchemaValidationService
 			return result;
 		}
 		HashSet<string> declaredAttributes = CollectDeclaredViewModelAttributes(jsBody);
+		HashSet<string> properlyNestedAttributes = CollectProperlyNestedViewModelAttributes(jsBody);
 		Dictionary<string, string> modelPaths = CollectViewModelPaths(jsBody);
 		using (vcdDoc) {
 			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
-				ValidateInsertedFieldEntry(entry, declaredAttributes, modelPaths, explicitResources, result);
+				ValidateInsertedFieldEntry(entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, result);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -962,16 +1153,163 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	/// <summary>
+	/// Validates that user-visible text properties (<see cref="LocalizableTextProperties"/>) inside a web
+	/// page body's <c>viewConfigDiff</c> are authored as localizable-string bindings rather than inline
+	/// literals. Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree (including nested
+	/// child components) so a panel title, tab caption, or input placeholder set as a plain string is
+	/// rejected regardless of nesting depth.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when any targeted text property carries an
+	/// inline literal. Binding forms (<c>$Resources.Strings.*</c> and any other <c>$</c>-prefixed
+	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
+	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
+	/// accepted; non-string and empty values are ignored.
+	/// </returns>
+	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			ScanViewConfigDiffForTextLiterals(vcdDoc.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>
+	/// directly from the plain-JSON mobile page root instead of a marker-delimited section; the literal
+	/// rule is identical.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> with the same contract as the web variant.</returns>
+	public static SchemaValidationResult ValidateMobileLocalizableTextLiterals(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				ScanViewConfigDiffForTextLiterals(viewConfigDiff, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanViewConfigDiffForTextLiterals(JsonElement viewConfigDiff, SchemaValidationResult result) {
+		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+			    values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+			ScanNodeForTextLiterals(values, ownerName, result);
+		}
+	}
+
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.Value.ValueKind == JsonValueKind.String &&
+					    LocalizableTextProperties.Contains(property.Name) &&
+					    IsInlineUserVisibleTextLiteral(property.Value.GetString())) {
+						result.Errors.Add(BuildTextLiteralError(currentName, property.Name, property.Value.GetString()!));
+					}
+					ScanNodeForTextLiterals(property.Value, currentName, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForTextLiterals(item, ownerName, result);
+				}
+				break;
+		}
+	}
+
+	private static bool TryGetNodeName(JsonElement element, out string name) {
+		name = string.Empty;
+		if (element.TryGetProperty("name", out JsonElement nameElement) &&
+		    nameElement.ValueKind == JsonValueKind.String &&
+		    !string.IsNullOrWhiteSpace(nameElement.GetString())) {
+			name = nameElement.GetString()!;
+			return true;
+		}
+		return false;
+	}
+
+	private static bool IsInlineUserVisibleTextLiteral(string? value) {
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+		if (IsBindingExpression(value)) {
+			return false;
+		}
+		// A value that references a #ResourceString(Key)# macro anywhere is localized — bare,
+		// concatenated, or wrapped (e.g. #MacrosTemplateString(#ResourceString(Key)#)#, the dominant
+		// OOTB caption form). Only a value with no resource reference at all is a hardcoded literal.
+		return !ResourceStringReferencePattern.IsMatch(value);
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="value"/> is a Freedom UI binding expression — a <c>$</c>
+	/// immediately followed by an identifier character (covers <c>$Resources.Strings.*</c>, <c>$Email</c>,
+	/// <c>$PageParameters_*</c>, converter pipelines, …). A bare <c>$</c> followed by a space or digit
+	/// (for example a literal price placeholder "<c>$120</c>") is NOT a binding and stays subject to the
+	/// inline-literal check.
+	/// </summary>
+	private static bool IsBindingExpression(string value) =>
+		value.Length >= 2 && value[0] == '$' && (char.IsLetter(value[1]) || value[1] == '_');
+
+	private static string BuildTextLiteralError(string ownerName, string property, string value) {
+		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+		string shown = value.Length > 60 ? value[..60] + "…" : value;
+		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
+			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
 	private static void ValidateInsertedFieldEntry(
 		JsonElement entry,
 		IReadOnlySet<string> declaredAttributes,
+		IReadOnlySet<string> properlyNestedAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
-		AppendBindingDeclarationError(descriptor, declaredAttributes, result);
+		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, result);
 		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
 	}
 
@@ -1000,7 +1338,7 @@ public static class SchemaValidationService
 	}
 
 	private static bool IsInsertOperation(JsonElement entry) {
-		if (!entry.TryGetProperty("operation", out JsonElement operation) ||
+		if (!entry.TryGetProperty(OperationPropertyName, out JsonElement operation) ||
 		    operation.ValueKind != JsonValueKind.String) {
 			return false;
 		}
@@ -1010,17 +1348,37 @@ public static class SchemaValidationService
 	private static void AppendBindingDeclarationError(
 		InsertedFieldDescriptor descriptor,
 		IReadOnlySet<string> declaredAttributes,
+		IReadOnlySet<string> properlyNestedAttributes,
 		SchemaValidationResult result) {
-		if (declaredAttributes.Contains(descriptor.BindingAttribute)) {
+		string attr = descriptor.BindingAttribute;
+		if (properlyNestedAttributes.Contains(attr)) {
+			return;
+		}
+		string canonicalEntry =
+			"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"" + attr + "\":{\"modelConfig\":{\"path\":\"<DataSource>.<Column>\"}}}}}";
+		if (declaredAttributes.Contains(attr)) {
+			// Attribute declared in flat form (no "path":[] + "attributes" nesting).
+			// The platform save accepts it, but at runtime the attribute ends up at
+			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
+			// Freedom UI runtime ignores — controls render but read and write no data.
+			result.Errors.Add(
+				"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
+				"which is declared in viewModelConfigDiff without the required nesting. " +
+				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
+				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
+				"The current flat form puts the attribute at viewModelConfig." + attr + " which the runtime ignores — " +
+				"the control will render but read and write no data. " +
+				"Use: " + canonicalEntry + ".");
 			return;
 		}
 		result.Errors.Add(
-			$"Inserted field '{descriptor.DisplayName}' (type '{descriptor.ComponentType}') binds to '${descriptor.BindingAttribute}' " +
-			$"but the body does not declare attribute '{descriptor.BindingAttribute}' in viewModelConfigDiff. " +
-			$"The control will have no data source. Add a viewModelConfigDiff entry such as " +
-			$"{{\"operation\":\"merge\",\"values\":{{\"{descriptor.BindingAttribute}\":{{\"modelConfig\":{{\"path\":\"<DataSource>.<Column>\"}}}}}}}} " +
-			$"so the control binds to the entity column. If the attribute is already provided by the parent schema, " +
-			$"use operation 'merge' for the viewConfigDiff entry instead of 'insert'.");
+			"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') has an undeclared attribute binding — " +
+			"the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
+			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
+			canonicalEntry + " so the control binds to the entity column. " +
+			"If the attribute is already provided by a parent schema or the current body, " +
+			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'. " +
+			"Rule: " + InsertedFieldBindingClause + ".");
 	}
 
 	private static void AppendLabelResourceError(
@@ -1028,7 +1386,7 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
 		SchemaValidationResult result) {
-		if (!TryGetStringProperty(descriptor.Values, "label", out string labelExpression) ||
+		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
@@ -1040,22 +1398,33 @@ public static class SchemaValidationService
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
 		result.Errors.Add(
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither registered in the 'resources' parameter nor auto-provided by a DS-bound attribute. " +
-			$"The label will render blank. Pass {{\"{resourceKey}\": \"<Display name>\"}} in 'resources', {suggestion}.");
+			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="bindingAttribute"/> is a non-empty view-model
+	/// attribute whose <c>modelConfig.path</c> is DS-bound (resolves to <c>DataSource.Column</c>).
+	/// Single definition of "DS-bound" shared by the auto-provide gate
+	/// (<see cref="IsAutoProvidedLabelResourceKey"/>), the suggestion text
+	/// (<see cref="BuildAutoProvideSuggestion"/>), and the preferred-label resolver
+	/// (<see cref="TryResolvePreferredLabelBinding"/>) so the rule the validator enforces and the
+	/// remedy it suggests cannot disagree.
+	/// </summary>
+	private static bool IsDsBoundAttribute(
+		string bindingAttribute,
+		IReadOnlyDictionary<string, string> modelPaths) =>
+		!string.IsNullOrWhiteSpace(bindingAttribute)
+		&& modelPaths.TryGetValue(bindingAttribute, out string boundPath)
+		&& boundPath.Contains('.', StringComparison.Ordinal);
 
 	private static string BuildAutoProvideSuggestion(
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (!modelPaths.TryGetValue(bindingAttribute, out string boundPath) ||
-		    !boundPath.Contains('.', StringComparison.Ordinal)) {
-			return "or declare the binding attribute with a DS-bound modelConfig.path AND set the label to '$Resources.Strings.<columnCode>' so the platform auto-provides the caption";
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
+			return "Give the control's binding attribute a DS-bound modelConfig.path and point the label at it via '$Resources.Strings.<bindingAttribute>' so the platform auto-provides the caption";
 		}
-		int lastDot = boundPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < boundPath.Length - 1
-			? boundPath[(lastDot + 1)..]
-			: boundPath;
-		return $"or change the label to '$Resources.Strings.{columnCode}' so the platform auto-provides the caption from the entity column '{columnCode}' (auto-provide is keyed by column code, not by view-model attribute name)";
+		return $"Set the label to '$Resources.Strings.{bindingAttribute}' (the control's DS-bound binding attribute) so the platform auto-provides the caption from the entity column it points to";
 	}
 
 	private readonly record struct InsertedFieldDescriptor(
@@ -1210,6 +1579,44 @@ public static class SchemaValidationService
 		return attributeNames;
 	}
 
+	/// <summary>
+	/// Collects view-model attribute names that are declared in the properly-nested form:
+	/// either under <c>viewModelConfig.attributes</c> (static) or inside a
+	/// <c>viewModelConfigDiff</c> entry that uses <c>"path":[]</c> + <c>values.attributes</c>
+	/// nesting or the older <c>"path":["attributes"]</c> form. Attributes declared in the flat
+	/// form (no <c>path</c> property, attribute directly in <c>values</c>) are intentionally
+	/// excluded because they land at <c>viewModelConfig.&lt;name&gt;</c> (root level) instead of
+	/// <c>viewModelConfig.attributes.&lt;name&gt;</c>, which the Freedom UI runtime ignores.
+	/// </summary>
+	private static HashSet<string> CollectProperlyNestedViewModelAttributes(string jsBody) {
+		// Case-EXACT (Ordinal), unlike declaredAttributes (OrdinalIgnoreCase): the Freedom UI
+		// runtime keys attributes under their literal name, so a properly-nested 'PDS_UsrX' must
+		// NOT mask a flat-form 'pds_usrx'. With OrdinalIgnoreCase the two would collide and the
+		// flat-form rejection in AppendBindingDeclarationError would be wrongly suppressed.
+		var names = new HashSet<string>(StringComparer.Ordinal);
+		// Static viewModelConfig.attributes — always nested correctly.
+		CollectDeclaredViewModelAttributesFromMarker(jsBody, SchemaViewModelConfig, false, names);
+		// Diff form: only path:[] + values.attributes AND path:["attributes"] forms.
+		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? doc)) {
+			return names;
+		}
+		using (doc) {
+			if (doc.RootElement.ValueKind != JsonValueKind.Array) {
+				return names;
+			}
+			foreach (JsonElement op in doc.RootElement.EnumerateArray()) {
+				if (TryGetDiffAttributesContainer(op, out JsonElement container, out bool isProperlyNested) &&
+				    isProperlyNested) {
+					foreach (JsonProperty attr in container.EnumerateObject()) {
+						names.Add(attr.Name);
+					}
+				}
+				// Flat / no-path entries are excluded intentionally (isProperlyNested = false).
+			}
+		}
+		return names;
+	}
+
 	private static void CollectDeclaredViewModelAttributesFromMarker(
 		string jsBody,
 		string markerName,
@@ -1321,13 +1728,14 @@ public static class SchemaValidationService
 				$"Control '{fieldDisplayName}' binds to '${bindingAttribute}' but handlers write attribute '{handlerAttribute}' through $context.set(...). " +
 				$"Bind the control to '${handlerAttribute}' or move the handler writes to '{bindingAttribute}' so the control and handler use the same declared view-model attribute.");
 		}
-		if (TryGetStringProperty(componentValues, "label", out string labelExpression) &&
+		if (TryGetStringProperty(componentValues, LabelPropertyName, out string labelExpression) &&
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
-				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is not in the provided resources — the label will render blank.");
+				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +
+				$"Rule: {InsertedFieldLabelClause}.");
 		}
 		if (!TryGetCaptionExpression(componentValues, out string captionExpression) ||
 		    !TryGetMacroResourceKey(captionExpression, out string resourceKey) ||
@@ -1349,57 +1757,54 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Resolves the canonical auto-provided label binding for a DS-bound control. Used to suggest
 	/// the preferred label in validator error/warning messages. The platform auto-provides the
-	/// caption resource keyed by the ENTITY COLUMN CODE — the last segment of the binding
-	/// attribute's <c>modelConfig.path</c> — not by the view-model attribute name itself. So
-	/// the suggestion is always <c>$Resources.Strings.&lt;columnCode&gt;</c> (for example,
-	/// <c>$Resources.Strings.UsrCompleted</c> for path <c>PDS.UsrCompleted</c>), and the
-	/// path-with-underscores form (e.g. <c>$Resources.Strings.PDS_UsrCompleted</c>) is NOT
-	/// auto-provided.
+	/// caption keyed by the VIEW-MODEL ATTRIBUTE NAME — the control's binding attribute — and
+	/// resolves the caption from the column that attribute's <c>modelConfig.path</c> points to. So
+	/// the suggestion is <c>$Resources.Strings.&lt;bindingAttribute&gt;</c> (for example,
+	/// <c>$Resources.Strings.PDS_UsrStatus</c> for a <c>PDS_UsrStatus</c> attribute bound to
+	/// <c>PDS.UsrStatus</c>). The entity column code is NOT auto-provided unless it equals the
+	/// attribute name.
 	/// </summary>
 	private static bool TryResolvePreferredLabelBinding(
 		IReadOnlyDictionary<string, string> modelPaths,
 		string bindingAttribute,
 		out string preferredLabelBinding) {
 		preferredLabelBinding = string.Empty;
-		if (string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (!IsDsBoundAttribute(bindingAttribute, modelPaths)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string modelPath) || !modelPath.Contains('.')) {
-			return false;
-		}
-		int lastDot = modelPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < modelPath.Length - 1
-			? modelPath[(lastDot + 1)..]
-			: modelPath;
-		preferredLabelBinding = $"$Resources.Strings.{columnCode}";
+		preferredLabelBinding = $"$Resources.Strings.{bindingAttribute}";
 		return true;
 	}
 
 	/// <summary>
-	/// Returns <c>true</c> when <paramref name="resourceKey"/> matches an auto-provided DS
-	/// caption resource for the control's binding attribute. The platform auto-provides
-	/// captions ONLY when the resource key equals the entity column code (the last segment
-	/// of the binding attribute's <c>modelConfig.path</c>) — e.g. <c>UsrCompleted</c> for
-	/// path <c>PDS.UsrCompleted</c>. Path-with-underscores forms like <c>PDS_UsrCompleted</c>
-	/// are NOT auto-provided even when declared as DS-bound view-model attributes, because
-	/// the platform resolves caption resources by entity-column code, not by arbitrary
-	/// view-model attribute name.
+	/// Returns <c>true</c> when <paramref name="resourceKey"/> is the auto-provided DS caption
+	/// resource for the control's binding attribute. The platform auto-provides captions keyed by
+	/// the VIEW-MODEL ATTRIBUTE NAME: the label key must equal the control's binding attribute
+	/// (<paramref name="bindingAttribute"/>), and that attribute must be DS-bound (its
+	/// <c>modelConfig.path</c> resolves to <c>DataSource.Column</c>). The caption is then resolved
+	/// from the bound column. The attribute name is arbitrary — <c>UsrStatus</c>,
+	/// <c>PDS_UsrStatus</c>, <c>Name123</c> all auto-provide when the label key equals them. The
+	/// entity column code (the last segment of the path) is NOT a valid key unless it happens to
+	/// equal the attribute name.
 	/// </summary>
 	private static bool IsAutoProvidedLabelResourceKey(
 		string resourceKey,
 		string bindingAttribute,
 		IReadOnlyDictionary<string, string> modelPaths) {
-		if (string.IsNullOrWhiteSpace(resourceKey) || string.IsNullOrWhiteSpace(bindingAttribute)) {
+		if (string.IsNullOrWhiteSpace(resourceKey)) {
 			return false;
 		}
-		if (!modelPaths.TryGetValue(bindingAttribute, out string bindingPath) || !bindingPath.Contains('.')) {
+		// The platform auto-provides the caption for a DS-bound view-model attribute under a
+		// resource key equal to the ATTRIBUTE NAME itself — e.g. label
+		// "$Resources.Strings.AccountDS_Name_xxx" for a control bound to "$AccountDS_Name_xxx".
+		// This is the only form the Freedom UI Designer emits: verified against shipped FormPage
+		// schemas, the label key always equals the control's attribute name. Auto-provide is keyed
+		// by the attribute name, NOT by the entity column code (the last path segment) — a bare
+		// column-code label is never emitted and is not auto-provided.
+		if (!string.Equals(resourceKey, bindingAttribute, StringComparison.Ordinal)) {
 			return false;
 		}
-		int lastDot = bindingPath.LastIndexOf('.');
-		string columnCode = lastDot >= 0 && lastDot < bindingPath.Length - 1
-			? bindingPath[(lastDot + 1)..]
-			: bindingPath;
-		return string.Equals(resourceKey, columnCode, StringComparison.OrdinalIgnoreCase);
+		return IsDsBoundAttribute(bindingAttribute, modelPaths);
 	}
 
 	private static bool TryGetBindingAttribute(
@@ -1433,7 +1838,7 @@ public static class SchemaValidationService
 	}
 
 	private static bool TryGetCaptionExpression(JsonElement componentValues, out string captionExpression) {
-		return TryGetStringProperty(componentValues, "label", out captionExpression)
+		return TryGetStringProperty(componentValues, LabelPropertyName, out captionExpression)
 			|| TryGetStringProperty(componentValues, "caption", out captionExpression);
 	}
 
@@ -1550,6 +1955,31 @@ public static class SchemaValidationService
 		using (viewConfigDocument) {
 			CheckInlineValidatorPlacement(viewConfigDocument.RootElement, result);
 		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Validates the shape of every <c>validators</c> binding declared on a view-model attribute
+	/// (under <c>viewModelConfig.attributes.&lt;name&gt;.validators</c> or the equivalent merge
+	/// inside <c>viewModelConfigDiff</c>). Catches anti-shapes that the other validator checks
+	/// silently skip because their helpers gate on the property already being a well-shaped object:
+	/// <list type="bullet">
+	///   <item><c>validators: [...]</c> — array instead of object map.</item>
+	///   <item><c>validators: { "required": [...] }</c> — named entry as array.</item>
+	///   <item><c>validators: { "required": "usr.NotEmpty" }</c> — named entry as bare string instead of <c>{ type: "usr.NotEmpty" }</c>.</item>
+	///   <item>entry object missing the required string <c>type</c> property.</item>
+	/// </list>
+	/// </summary>
+	public static SchemaValidationResult ValidateValidatorBindingShape(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		CheckValidatorBindingShapeInMarker(jsBody, SchemaViewModelConfig, false, result);
+		CheckValidatorBindingShapeInMarker(jsBody, SchemaViewModelConfigDiff, true, result);
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}
@@ -1987,7 +2417,12 @@ public static class SchemaValidationService
 
 	private static IEnumerable<JsonElement> EnumerateAttributesContainers(JsonElement root, bool isArray) {
 		if (!isArray) {
-			if (root.TryGetProperty(AttributesPropertyName, out JsonElement attributes)) {
+			// Guard ValueKind before TryGetProperty: System.Text.Json THROWS
+			// InvalidOperationException (it does not return false) when the element is not an
+			// object. A SCHEMA_VIEW_MODEL_CONFIG block that parses as [] / null / a string / a
+			// number would otherwise crash validation instead of being skipped cleanly.
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(AttributesPropertyName, out JsonElement attributes)) {
 				yield return attributes;
 			}
 			yield break;
@@ -1998,12 +2433,8 @@ public static class SchemaValidationService
 		}
 
 		foreach (JsonElement op in root.EnumerateArray()) {
-			if (!ShouldScanAsAttributesContainer(op)) {
-				continue;
-			}
-
-			if (op.TryGetProperty(ValuesPropertyName, out JsonElement values)) {
-				yield return values;
+			if (TryGetDiffAttributesContainer(op, out JsonElement container, out _)) {
+				yield return container;
 			}
 		}
 	}
@@ -2018,9 +2449,89 @@ public static class SchemaValidationService
 		}
 
 		using JsonElement.ArrayEnumerator segments = pathElement.EnumerateArray();
-		return segments.MoveNext() &&
-		       segments.Current.ValueKind == JsonValueKind.String &&
-		       string.Equals(segments.Current.GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
+		if (!segments.MoveNext() ||
+		    segments.Current.ValueKind != JsonValueKind.String ||
+		    !string.Equals(segments.Current.GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		// Require EXACTLY one segment. A multi-segment path like ["attributes","UsrX"] targets a
+		// sub-property of a specific attribute, so `values` is that attribute's BODY
+		// (modelConfig, validators, ...), NOT a map of attribute names. Treating it as an
+		// attributes container would collect body keys as attribute names and miss the real one.
+		return !segments.MoveNext();
+	}
+
+	/// <summary>
+	/// Returns <c>true</c> when <paramref name="operation"/> targets the root of the view-model
+	/// config — i.e. its <c>path</c> property is an empty JSON array. This is the form emitted
+	/// by the Freedom UI Designer for <c>viewModelConfigDiff</c> entries where attribute
+	/// declarations are nested under <c>values.attributes</c>.
+	/// </summary>
+	private static bool IsRootPathOperation(JsonElement operation) {
+		if (!operation.TryGetProperty("path", out JsonElement pathElement) ||
+		    pathElement.ValueKind != JsonValueKind.Array) {
+			return false;
+		}
+		using JsonElement.ArrayEnumerator segments = pathElement.EnumerateArray();
+		return !segments.MoveNext();
+	}
+
+	/// <summary>
+	/// Single shared classifier for a <c>viewModelConfigDiff</c> array entry. Resolves the JSON
+	/// element that acts as the attributes container for the entry and indicates whether that
+	/// container is in a properly-nested form (attributes land at
+	/// <c>viewModelConfig.attributes.{name}</c> at runtime) or the flat / no-path form
+	/// (attributes land at <c>viewModelConfig.{name}</c>, silently accepted on save but ignored
+	/// at runtime).
+	/// </summary>
+	/// <param name="op">A single element from the <c>viewModelConfigDiff</c> array.</param>
+	/// <param name="container">Receives the resolved attributes container when the method returns <c>true</c>.</param>
+	/// <param name="isProperlyNested">
+	/// <c>true</c> for <c>path:["attributes"]</c> and <c>path:[]</c> + <c>values.attributes</c> entries
+	/// (attributes reach <c>viewModelConfig.attributes</c>).
+	/// <c>false</c> for no-path flat entries (attributes land at <c>viewModelConfig</c> root).
+	/// </param>
+	/// <returns><c>true</c> when <paramref name="container"/> was resolved; otherwise <c>false</c>.</returns>
+	private static bool TryGetDiffAttributesContainer(
+		JsonElement op,
+		out JsonElement container,
+		out bool isProperlyNested) {
+		container = default;
+		isProperlyNested = false;
+		if (op.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		// A remove operation deletes an attribute rather than declaring one — its values must
+		// not be collected as declared/properly-nested attribute names (that would make a binding
+		// to a just-removed attribute appear valid).
+		if (op.TryGetProperty(OperationPropertyName, out JsonElement opKind) &&
+		    opKind.ValueKind == JsonValueKind.String &&
+		    string.Equals(opKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		if (!op.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+		    values.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		if (IsRootPathOperation(op)) {
+			if (values.TryGetProperty(AttributesPropertyName, out JsonElement nestedAttrs) &&
+			    nestedAttrs.ValueKind == JsonValueKind.Object) {
+				container = nestedAttrs;
+				isProperlyNested = true;
+				return true;
+			}
+			// path:[] but no attributes key — not a valid attributes container.
+			return false;
+		}
+		if (ShouldScanAsAttributesContainer(op)) {
+			container = values;
+			// A present path property means the legacy single-segment attributes form, which the
+			// runtime treats as properly nested. With no path property it is the flat form, whose
+			// attribute names land at the viewModelConfig root and are ignored by the runtime.
+			isProperlyNested = op.TryGetProperty("path", out _);
+			return true;
+		}
+		return false;
 	}
 
 	private static void ValidateValidatorBindingContractsInMarker(
@@ -2044,6 +2555,66 @@ public static class SchemaValidationService
 			isArray,
 			attributes => ScanAttributesForInvalidParamBindings(attributes, result));
 	}
+
+	private static void CheckValidatorBindingShapeInMarker(
+		string jsBody, string markerName, bool isArray, SchemaValidationResult result) {
+		ForEachMarkerAttributesContainer(
+			jsBody,
+			markerName,
+			isArray,
+			attributes => ScanAttributesForValidatorBindingShape(attributes, result));
+	}
+
+	private static void ScanAttributesForValidatorBindingShape(
+		JsonElement attributesElement, SchemaValidationResult result) {
+		if (attributesElement.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty attr in attributesElement.EnumerateObject()) {
+			CheckSingleAttributeValidatorBindingShape(attr, result);
+		}
+	}
+
+	private static void CheckSingleAttributeValidatorBindingShape(
+		JsonProperty attr, SchemaValidationResult result) {
+		if (attr.Value.ValueKind != JsonValueKind.Object ||
+			!attr.Value.TryGetProperty(ValidatorsPropertyName, out JsonElement validators)) {
+			return;
+		}
+		if (validators.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attr.Name}' has 'validators' declared as {DescribeJsonKindForValidatorError(validators.ValueKind)}; declare it as an object map keyed by validator name, e.g. \"validators\": {{ \"required\": {{ \"type\": \"usr.NotEmpty\" }} }}.");
+			return;
+		}
+		foreach (JsonProperty entry in validators.EnumerateObject()) {
+			CheckSingleValidatorEntryShape(attr.Name, entry, result);
+		}
+	}
+
+	private static void CheckSingleValidatorEntryShape(
+		string attributeName, JsonProperty entry, SchemaValidationResult result) {
+		if (entry.Value.ValueKind != JsonValueKind.Object) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is declared as {DescribeJsonKindForValidatorError(entry.Value.ValueKind)}; each named validator entry must be an object such as {{ \"type\": \"usr.NotEmpty\" }}.");
+			return;
+		}
+		if (!entry.Value.TryGetProperty(TypePropertyName, out JsonElement typeEl) ||
+			typeEl.ValueKind != JsonValueKind.String ||
+			string.IsNullOrWhiteSpace(typeEl.GetString())) {
+			result.Errors.Add(
+				$"Attribute '{attributeName}' validator '{entry.Name}' is missing a non-empty string 'type' property; declare it as {{ \"type\": \"<ValidatorType>\" }} pointing at a SCHEMA_VALIDATORS entry.");
+		}
+	}
+
+	private static string DescribeJsonKindForValidatorError(JsonValueKind kind) =>
+		kind switch {
+			JsonValueKind.Array => "an array",
+			JsonValueKind.String => "a string",
+			JsonValueKind.Number => "a number",
+			JsonValueKind.True or JsonValueKind.False => "a boolean",
+			JsonValueKind.Null => "null",
+			_ => "a non-object value"
+		};
 
 	private static void ScanAttributesForInvalidParamBindings(
 		JsonElement attributesElement, SchemaValidationResult result) {

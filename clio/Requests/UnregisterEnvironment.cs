@@ -1,8 +1,6 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
-using MediatR;
 
 namespace Clio.Requests;
 
@@ -21,10 +19,12 @@ public class UnregisterEnvironment : IExternalLink {
 /// <code>clio://UnregisterEnvironment?name=studio-dev</code>
 /// </summary>
 internal class UnregisterEnvironmentHandler(UnregAppCommand unregAppCommand)
-	: BaseExternalLinkHandler, IRequestHandler<UnregisterEnvironment> {
+	: BaseExternalLinkHandler, IExternalLinkHandler {
 	private readonly UnregAppCommand _unregAppCommand = unregAppCommand;
 
-	public Task Handle(UnregisterEnvironment request, CancellationToken cancellationToken) {
+	public Type RequestType => typeof(UnregisterEnvironment);
+
+	public Task Handle(IExternalLink request) {
 		Uri.TryCreate(request.Content, UriKind.Absolute, out _clioUri);
 
 		string environmentName = ClioParams["name"]?.Trim();
@@ -35,6 +35,6 @@ internal class UnregisterEnvironmentHandler(UnregAppCommand unregAppCommand)
 		};
 
 		_unregAppCommand.Execute(options);
-		return Unit.Task;
+		return Task.CompletedTask;
 	}
 }

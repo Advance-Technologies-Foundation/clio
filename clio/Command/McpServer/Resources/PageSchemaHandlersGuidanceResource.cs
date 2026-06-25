@@ -30,16 +30,18 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use the `raw.body` field from the `get-page` response as the editable source of truth and preserve the outer AMD module structure.
 		       - `SCHEMA_HANDLERS` must remain a JavaScript array section, not a JSON-only payload.
 		       - Handler entries may contain async functions, closures, `await next?.handle(request)`, and request-specific branching.
-		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `request.$context.executeRequest(...)`, SDK services, `sdk.Model`, or `fetch`.
+		       - Mandatory routing rule: when the handler requirement includes any data access, system setting read/write, process execution, model query, or backend/external service call, stop and read `page-schema-creatio-devkit-common` before choosing between `sdk.HandlerChainService.instance.process(...)`, SDK services, `sdk.Model`, or `fetch`.
 
 		       BUSINESS RULES FIRST — mandatory triage before authoring any handler
 		       - Before writing a handler, check whether the task can be closed with a business rule. If it can, CLOSE IT WITH A BUSINESS RULE — do NOT write a handler. A handler is only justified when no business rule covers the requirement.
 		       - Business rules are not limited to show/hide/enable/require. They can also WRITE values into columns and CLEAR columns (the `set-values` action; an empty value clears the column). This is the most common case for two interdependent fields — when changing field A should auto-fill or wipe field B, that is a business rule, not an attribute-change handler.
 		       - Do NOT mentally narrow business rules to "visibility/editability/required" and fall back to a handler for value population/clearing. Resist reaching for `crt.HandleViewModelAttributeChangeRequest` + `$context.set(...)` when a `set-values` business rule does the same job declaratively.
+		       - A business-rule condition is NOT limited to field values: it can also test the current user (CurrentUser / CurrentUserContact / CurrentUserAccount), the user's roles (CurrentUserRoles CONTAIN / NOT_CONTAIN a role), or the current date/time (CurrentDate / CurrentTime / CurrentDateTime). Such a check is a business-rule CONDITION, not handler "data access" — do NOT reach for `crt.HandleViewModelInitRequest` (or `sdk.RightsService` / `sdk.Model`) to gate a field by role, user, or date; close it with a business rule.
 
 		       Decision tree
-		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
-		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
+		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rules` or `create-entity-business-rules`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is conditional visibility, editability, or required state based on the current user's ROLE, the current user's identity, or the current DATE/TIME (e.g. "Resolved visible only for administrators", "Assignee group visible only for the Supervisor contact", "show this label only on 2026-06-09"), this is a BUSINESS RULE, not a handler. Put the system variable in the condition: CurrentUserRoles CONTAIN / NOT_CONTAIN a role id; CurrentUser / CurrentUserContact / CurrentUserAccount equal a target id; or a CurrentDate / CurrentDateTime comparison. Use `create-page-business-rules` or `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT write a `crt.HandleViewModelInitRequest` handler, and do NOT treat the role/user/date check as "data access".
+		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
@@ -61,19 +63,35 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | compose an email from current context | `crt.CreateEmailRequest` | button/menu `clicked.request` | no |
 		         | copy a prepared literal value to clipboard | `crt.CopyClipboardRequest` | button/menu `clicked.request` | no |
 		         | copy a page attribute value to clipboard | `crt.CopyInputToClipboardRequest` | button/menu `clicked.request` | no |
+		         | print the current or selected record(s) | `crt.PrintablesRequest` | button/menu `clicked.request` | no |
+		         | open the printables management page | `crt.GoToPrintablesRequest` | button/menu `clicked.request` | no |
+		         | export list data to Excel | `crt.ExportDataGridToExcelRequest` | button/menu `clicked.request` | no |
+		         | import data for an entity | `crt.ImportDataRequest` | button/menu `clicked.request` | no |
+		         | delete multiple selected records from a list | `crt.DeleteRecordsRequest` | button/menu `clicked.request` | no |
+		         | duplicate a record | `crt.CopyRecordRequest` | button/menu `clicked.request` | no |
 		         | page init, destroy, attribute-change orchestration, editor interaction, or domain-specific workflow | handler in `SCHEMA_HANDLERS` | handlers runtime | yes |
+
+		       crt.CreateRecordRequest page-resolution note
+		       - A button/menu wired to `crt.CreateRecordRequest` opens the target entity's navigation/edit page,
+		         which the runtime resolves from the entity's REGISTERED page. For a standalone detail/child
+		         entity with NO section (no registered edit page) the click throws this exact toast:
+		         "There is no page for new or existing record. System administrator must check the button settings in the Freedom UI." (even
+		         though `update-page` reported `success: true` — the break surfaces only on click in the browser).
+		         Pass an explicit `entityPageName` in `params` naming an existing FormPage schema, or register a
+		         section page (`create-app-section`). To simply ADD rows to a related list, prefer INLINE grid add
+		         (`features.editable.itemsCreation`) — no page needed; see get-guidance `related-list`.
 
 		       Request shape quick reference
 		       - Do NOT mix the declarative page-config shape with the imperative runtime-dispatch shape.
 		         | Use case | Shape | Canonical example |
 		         | --- | --- | --- |
 		         | declarative page config | `request` + `params` | `"clicked": { "request": "usr.AlertRequest", "params": { "message": "$AlertMessage" } }` |
-		         | imperative dispatch from handler code | `type` + flat payload fields + `$context` + usually `scopes` | `await request.$context.executeRequest({ type: "usr.AlertRequest", message: "Handler Chain works!", $context: request.$context, scopes: [...request.scopes] });` |
+		         | imperative dispatch from handler code | `type` + flat payload fields + `$context` + usually `scopes` | `await sdk.HandlerChainService.instance.process({ type: "usr.AlertRequest", message: "Handler Chain works!", $context: request.$context, scopes: [...request.scopes] });` |
 		       - API choice rules:
 		         | Context | Prefer | Why |
 		         | --- | --- | --- |
-		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await request.$context.executeRequest(...)` | page-body handlers already work through the live view-model context and this is the default authoring API for page edits |
-		       - Do NOT default to `sdk.HandlerChainService.instance.process(...)` in deployed page-body handlers; use `request.$context.executeRequest(...)` unless the task explicitly matches an advanced SDK pattern from `page-schema-creatio-devkit-common`.
+		         | deployed page-body handler in `SCHEMA_HANDLERS` | `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` | this is the documented `@creatio-devkit/common` dispatcher used uniformly by Creatio Academy SCHEMA_HANDLERS examples; `request.$context.executeRequest(...)` is reachable from handler code but not part of the public SDK surface |
+		       - Do NOT default to `request.$context.executeRequest(...)` in deployed page-body handlers; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })`. `executeRequest` is an internal handler-chain shortcut that may shift between minor versions; `HandlerChainService.instance.process(...)` is exported from `@creatio-devkit/common` and is the supported contract. Add `"@creatio-devkit/common"` to `SCHEMA_DEPS` and bind the import as `sdk` in `SCHEMA_ARGS`.
 
 		       Server-side compilation
 		       - Handlers live in the Freedom UI page body, which is an AMD module served at runtime. After `update-page` or `sync-pages` your changes are live.
@@ -87,6 +105,11 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Keep field validation in validators and simple value transforms in converters, not in handlers.
 		       - Read and write page state through `request.$context`.
 		       - Keep handler edits minimal and coupled: usually `SCHEMA_HANDLERS`, the triggering `viewConfigDiff` action, and `SCHEMA_DEPS` / `SCHEMA_ARGS` only when imports are actually required.
+
+		       Rules enforced by the AST lint pass (run automatically on every `update-page` / `sync-pages` web body)
+		       - Note: anti-shape detection that overlaps the existing regex content validators is handled by the regex layer with its own established wording, NOT by the lint pass. Handler-side examples already covered by the regex layer (and therefore NOT in the lint catalogue): `handlers` written as an object literal, and the forbidden handler-API patterns `request.viewModel` / `request.sender` / `request.$context.get(...)` / `request.$get(...)` / `request.$set(...)` (all five are rejected with their own Errors by `SchemaHandlerValidationService.ForbiddenHandlerApiRules`).
+		       - WARNING (reported alongside the response, write still proceeds): `request.$context.executeRequest(...)` is flagged with `handler-uses-context-execute-request`. Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` instead — `executeRequest` is reachable from handler code but is NOT part of the documented `@creatio-devkit/common` public surface, while `HandlerChainService.instance.process(...)` is the canonical SCHEMA_HANDLERS dispatcher per Creatio Academy.
+		       - Fix the underlying body to clear any finding; do not strip the offending block to silence the diagnostic.
 
 		       Page-body runtime shape
 		       - The deployed page-body handler shape is an array of objects like:
@@ -184,7 +207,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
-		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rule`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
+		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rules`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
 		       - Mirror one text field into another on attribute change:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {
@@ -228,7 +251,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		             request: "crt.SaveRecordRequest",
 		             handler: async (request, next) => {
 		               const saveResult = await next?.handle(request);
-		               await request.$context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "usr.AfterSaveRequest",
 		                 $context: request.$context,
 		                 scopes: [...request.scopes]
@@ -244,11 +267,10 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           {
 		             request: "usr.RunCustomActionRequest",
 		             handler: async (request, next) => {
-		               const { $context } = request;
-		               await $context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "crt.RunBusinessProcessRequest",
 		                 processName: "<ProcessName>",
-		                 $context,
+		                 $context: request.$context,
 		                 scopes: [...request.scopes]
 		               });
 		               const result = await next?.handle(request);
@@ -323,7 +345,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           {
 		             request: "usr.RunCustomActionRequest",
 		             handler: async (request, next) => {
-		               await request.$context.executeRequest({
+		               await sdk.HandlerChainService.instance.process({
 		                 type: "crt.RunBusinessProcessRequest",
 		                 processName: "<ProcessName>",
 		                 $context: request.$context,
@@ -339,7 +361,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Compatibility note: existing product code may also use `request.$context.attributes[...]` or direct property assignment. Keep newly generated page-body handlers on the canonical pattern above unless the task explicitly requires matching local legacy style.
 
 		       Orchestration patterns
-		       - Use `await request.$context.executeRequest(...)` when a deployed page-body handler forwards into another page-scoped request.
+		       - Use `await sdk.HandlerChainService.instance.process({ type, $context, scopes })` when a deployed page-body handler forwards into another page-scoped request. This is the canonical SCHEMA_HANDLERS dispatcher per Creatio Academy.
 		       - Use SDK/domain services such as `sdk.ProcessEngineService` when the task is direct service orchestration rather than request forwarding.
 
 		       Request selection hints
@@ -350,6 +372,12 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Use `crt.HandleViewModelAttributeChangeRequest` when one field should update dependent page state.
 		       - Use `crt.LoadDataRequest` when the handler must prepare or refresh backing collections/data.
 		       - Use `crt.CancelRecordChangesRequest` when the page must discard unsaved edits and return to the clean state.
+		       - Use `crt.PrintablesRequest` when a button should generate a printable document for the current record or selected records from a data source.
+		       - Use `crt.GoToPrintablesRequest` when a button should navigate to the printables management page.
+		       - Use `crt.ExportDataGridToExcelRequest` when a button should export list data to an Excel file.
+		       - Use `crt.ImportDataRequest` when a button should open the import wizard for a given entity.
+		       - Use `crt.DeleteRecordsRequest` for bulk deletion of multiple selected records from a list (with optional filter or recordIds).
+		       - Use `crt.CopyRecordRequest` to duplicate an existing record.
 		       - When dispatching another request imperatively from a handler, pass both `$context: request.$context` and `scopes: [...request.scopes]` unless the target request intentionally changes scope.
 		       - Use a custom `usr.*Request` only when no built-in request type matches the domain workflow.
 
@@ -380,12 +408,19 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         - `crt.OpenSidebarRequest`
 		         - `crt.CloseSidebarRequest`
 		         - `crt.GetSidebarStateRequest`
+		         - `crt.PrintablesRequest`
+		         - `crt.GoToPrintablesRequest`
+		         - `crt.ExportDataGridToExcelRequest`
+		         - `crt.ImportDataRequest`
+		         - `crt.DeleteRecordsRequest`
+		         - `crt.CopyRecordRequest`
+		         - `crt.ShowDialogRequest`
 		       - Treat this catalog as the first place to look before inventing custom `usr.*Request` names.
 		       - Prefer the exact built-in request name from this catalog when the requirement matches it directly.
 
 		       Standard handler parameter catalog
 		       - Read this catalog as the MCP-safe payload contract extracted from `creatio-ui` source.
-		       - `config` means fields you author in direct request wiring or `$context.executeRequest(...)`.
+		       - `config` means fields you author in direct request wiring or `sdk.HandlerChainService.instance.process(...)`.
 		       - `runtime` means fields the platform injects before your handler receives the request.
 		       - `none` means there are no meaningful custom fields beyond base request/context.
 		       - Core page/action requests:
@@ -398,11 +433,17 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.SaveRecordRequest` | config | `preventCardClose?`, `preventCardStateChange?`, `showSuccessMessage?`, `messageTextAfterCompletion?`, `reloadSavedRecord?`, `showErrorMessage?` | save current page/task |
 		         | `crt.DeleteRecordRequest` | config | `recordId`, `itemsAttributeName` | delete one record; source handler converts it into `crt.DeleteRecordsRequest` |
 		         | `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |
-		         | `crt.RunBusinessProcessRequest` | config | `processName` required, `processParameters`, `recordIdProcessParameterName?`, `resultParameterNames?`, `processRunType?`, `dataSourceName?`, `filters?`, `sorting?`, `parameterMappings?`, `showNotification?`, `notificationText?`, `selectionStateAttributeName?`, `saveAtProcessStart?` | `processRunType`: `ForTheSelectedPage`, `RegardlessOfThePage`, `ForTheSelectedRecords` |
+		         | `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |
 		         | `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |
 		         | `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |
 		         | `crt.CopyInputToClipboardRequest` | config | `attribute` required, `successMessageArea?` | copy the value of a page attribute |
 		         | `crt.ClosePageRequest` | config | `none` | close current page |
+		         | `crt.PrintablesRequest` | config | `dataSourceName` required, `templateId?`, `printableCaption?`, `convertInPDF?`, `filters?` | generate printable document for current or selected record(s) |
+		         | `crt.GoToPrintablesRequest` | config | `none` | open printables management page in a new tab |
+		         | `crt.ExportDataGridToExcelRequest` | config | `viewName` required, `filters?` | export list data to Excel |
+		         | `crt.ImportDataRequest` | config | `entitySchemaName` required | open import wizard for an entity |
+		         | `crt.DeleteRecordsRequest` | config | `dataSourceName` required, `filters?`, `recordIds?`, `skipConfirmation?` | delete multiple records; prefer over `crt.DeleteRecordRequest` for list-based bulk delete |
+		         | `crt.CopyRecordRequest` | config | `recordId` required, `itemsAttributeName?`, `entityName?` | duplicate a record |
 		       - Lifecycle and attribute-change requests:
 		         | Request | Kind | Params visible in handler | Notes |
 		         | --- | --- | --- | --- |
@@ -427,7 +468,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | --- | --- | --- | --- |
 		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
 		       - Minimal `dialogConfig` shape:
-		         await request.$context.executeRequest({
+		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
 		             title: "<OptionalTitle>",
@@ -467,7 +508,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT parallelize multiple `$context.set(...)` calls with `Promise.all(...)` unless order independence is proven.
 
 		       BEFORE SAVE CHECKLIST
-		       - Does the requirement truly need a handler instead of a direct built-in request, validator, or converter?
+		       - Does the requirement truly need a handler instead of a BUSINESS RULE, direct built-in request, validator, or converter?
 		       - If this handler touches data access, syssettings, processes, or backend services, did you read `page-schema-creatio-devkit-common` before choosing the implementation pattern?
 		       - Are the exact `/**SCHEMA_HANDLERS*/` markers still present around the handlers array?
 		       - Is `SCHEMA_HANDLERS` still a JavaScript array section?

@@ -47,6 +47,7 @@ public sealed class ToolContractGetToolTests {
 			because: "the bootstrap response should include the canonical contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
 				SettingsHealthTool.ToolName,
 				ApplicationGetListTool.ApplicationGetListToolName,
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
@@ -103,6 +104,38 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical execute-esq contract with its required inputs, rows/count/success output, and the get-guidance preferred flow.")]
+	public void ToolContractGet_Should_Return_ExecuteEsq_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ExecuteEsqTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "execute-esq is part of the executable clio MCP contract surface and must be discoverable by contract lookup");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ExecuteEsqTool.ToolName,
+			because: "the contract name must stay stable for callers that bootstrap from the contract tool");
+		contract.InputSchema.Required.Should().Contain("query",
+			because: "execute-esq cannot run without a SelectQuery");
+		contract.InputSchema.Required.Should().Contain("environment-name",
+			because: "execute-esq must target a registered environment");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "rows",
+			because: "a successful query returns the rows array");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "count",
+			because: "a successful query reports the number of returned rows");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "success",
+			because: "the envelope must expose the success flag");
+		contract.Description.Should().Contain("get-guidance",
+			because: "the contract should steer callers to read the esq guidance before composing a query");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical get-guidance contract so callers can retrieve guidance through a tool instead of docs URI routing.")]
 	public void ToolContractGet_Should_Return_Guidance_Get_Contract() {
 		// Arrange
@@ -155,70 +188,70 @@ public sealed class ToolContractGetToolTests {
 		result.Success.Should().BeTrue(
 			because: "tool-contract-get should expose the create-entity-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rule"],
-			because: "entity-business-rule creation requires environment package entity and rule payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "entity-schema-name", "rules"],
+			because: "entity-business-rule creation requires environment package entity and rules payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.logicalOperation",
+				validator.Field == "rules[*].condition.logicalOperation",
 			because: "the contract should validate the target architecture logicalOperation field");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.conditions[*].comparisonType",
+				validator.Field == "rules[*].condition.conditions[*].comparisonType",
 			because: "the contract should validate target-architecture comparisonType fields");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "conditional-field" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression" &&
 				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
 			because: "the contract should advertise the unary-versus-binary rightExpression rule");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
-				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Field == "rules[*].condition.conditions[*]" &&
 				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
 			because: "the contract should advertise the numeric and date/time scope of relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
 				validator.Code == "unsupported-equality-operands" &&
-				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Field == "rules[*].condition.conditions[*]" &&
 				validator.Context!.Contains("RichText or Image", StringComparison.Ordinal),
 			because: "the contract should advertise Creatio's equality limitation for rich text and image columns");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "date-time-constant" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "the contract should explicitly require timezone-aware DateTime and Time constants");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the contract should tell callers to resolve lookup condition constants with odata-read");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.actions[*].type",
+				validator.Field == "rules[*].actions[*].type",
 			because: "the contract should validate target-architecture action type fields");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.actions[*].type" &&
+				validator.Field == "rules[*].actions[*].type" &&
 				validator.Context!.Contains("set-values", StringComparison.Ordinal),
 			because: "the contract should advertise the Set values action type");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-shape" &&
-				validator.Field == "rule.actions[*].items[*]" &&
+				validator.Field == "rules[*].actions[*].items[*]" &&
 				validator.Context!.Contains("forward reference paths like LookupColumn.SourceColumn", StringComparison.Ordinal),
 			because: "the contract should advertise AttributeValue source assignments in the current set-values scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-constant" &&
-				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Field == "rules[*].actions[*].items[*].value.value" &&
 				validator.Context!.Contains("GUID string constants for Lookup targets", StringComparison.Ordinal),
 			because: "the contract should document typed constant payloads for set-values including lookup targets");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "set-values-formula" &&
-				validator.Field == "rule.actions[*].items[*].value.expression" &&
+				validator.Field == "rules[*].actions[*].items[*].value.expression" &&
 				validator.Context!.Contains("ExpressionService.svc/Validate", StringComparison.Ordinal),
 			because: "the contract should document remote formula validation after expression-schema translation");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.actions[*].items[*].value.value" &&
+				validator.Field == "rules[*].actions[*].items[*].value.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the contract should tell callers to resolve lookup set-values constants with odata-read");
 		contract.InputSchema.Validators.Should().Contain(validator =>
@@ -227,27 +260,29 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should document the current simple direct-field formula scope");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.condition.conditions[*].comparisonType" &&
+				validator.Field == "rules[*].condition.conditions[*].comparisonType" &&
 				validator.Context!.Contains("greater-than-or-equal", StringComparison.Ordinal),
 			because: "the contract should advertise the full supported comparison set");
 		contract.Defaults.Should().BeEmpty(
 			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().BeEmpty(
 			because: "the contract should avoid duplicating rejected aliases already represented by the runtime tool schema");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "exit-code",
-			because: "the output contract should advertise the command exit code that the tool actually returns");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "execution-log-messages",
-			because: "the output contract should advertise the execution log messages");
-		contract.OutputContract.Kind.Should().Be("command-execution-result",
-			because: "create-entity-business-rule returns the standard command execution result payload");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "created",
+			because: "the batch output contract advertises the created count the tool returns");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "failed",
+			because: "the batch output contract advertises the failed count");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "results",
+			because: "the batch output contract advertises the per-rule results array");
+		contract.OutputContract.Kind.Should().Be("business-rule-batch-result",
+			because: "create-entity-business-rules returns the batch result payload");
 		contract.OutputContract.SuccessField.Should().BeNull(
-			because: "command execution result payloads do not include a success field");
-		contract.OutputContract.FailureSignals.Should().Contain("exit-code != 0",
-			because: "contract-driven clients should detect command failures from the exit code");
+			because: "batch result payloads do not include a single success field");
+		contract.OutputContract.FailureSignals.Should().Contain("failed > 0",
+			because: "contract-driven clients should detect batch failures from the failed count");
 		contract.OutputContract.FailureSignals.Should().NotContain("success == false",
-			because: "create-entity-business-rule does not emit a success field");
+			because: "create-entity-business-rules does not emit a single success field");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "rule",
-			because: "tool-contract-get should not advertise a structured rule payload that create-entity-business-rule does not return");
+			because: "tool-contract-get should not advertise a structured rule payload that create-entity-business-rules does not return");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "package-u-id",
 			because: "tool-contract-get should not advertise package identifiers that the create-entity-business-rule tool does not return");
 		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "entity-schema-u-id",
@@ -282,7 +317,7 @@ public sealed class ToolContractGetToolTests {
 				}),
 			because: "the contract should advertise the non-existing-application guidance path before rule creation");
 		bool hasLookupExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -296,7 +331,7 @@ public sealed class ToolContractGetToolTests {
 		hasLookupExample.Should().BeTrue(
 			because: "the contract should document that lookup constants are passed as raw GUID strings");
 		bool hasUnaryExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -308,7 +343,7 @@ public sealed class ToolContractGetToolTests {
 		hasUnaryExample.Should().BeTrue(
 			because: "the contract should include a unary filled-in example without rightExpression");
 		bool hasRelationalExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -319,7 +354,7 @@ public sealed class ToolContractGetToolTests {
 		hasRelationalExample.Should().BeTrue(
 			because: "the contract should include a relational example for numeric or date/time comparisons");
 		bool hasBooleanExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -332,7 +367,7 @@ public sealed class ToolContractGetToolTests {
 		hasBooleanExample.Should().BeTrue(
 			because: "the contract should include a boolean constant example using a JSON boolean literal");
 		bool hasNumericExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -347,7 +382,7 @@ public sealed class ToolContractGetToolTests {
 		hasNumericExample.Should().BeTrue(
 			because: "the contract should include a numeric threshold example using a JSON numeric literal");
 		bool hasTimezoneAwareTimeExample = contract.Examples.Any(example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("condition", out object? conditionValue)
 			&& conditionValue is Dictionary<string, object?> condition
 			&& condition.TryGetValue("conditions", out object? conditionsValue)
@@ -386,11 +421,11 @@ public sealed class ToolContractGetToolTests {
 		result.Success.Should().BeTrue(
 			because: "tool-contract-get should expose the create-page-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rule"],
-			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
+			because: "page-business-rule creation requires environment package page and rules payload");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
-				validator.Field == "rule.actions[*].type" &&
+				validator.Field == "rules[*].actions[*].type" &&
 				validator.Context!.Contains("hide-element", StringComparison.Ordinal) &&
 				validator.Context.Contains("show-element", StringComparison.Ordinal) &&
 				validator.Context.Contains("make-editable", StringComparison.Ordinal) &&
@@ -400,36 +435,36 @@ public sealed class ToolContractGetToolTests {
 			because: "the page rule contract should advertise all supported page actions");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-element" &&
-				validator.Field == "rule.actions[*].items" &&
+				validator.Field == "rules[*].actions[*].items" &&
 				validator.Context!.Contains("recursive get-page bundle.viewConfig", StringComparison.Ordinal),
 			because: "the contract should direct callers to recursive page element discovery");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "page-attribute" &&
-				validator.Field == "rule.condition.conditions[*].leftExpression.path",
+				validator.Field == "rules[*].condition.conditions[*].leftExpression.path",
 			because: "page rule conditions must use declared page view-model attributes");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "conditional-field" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression" &&
 				validator.Context!.Contains("Omit or null for is-filled-in and is-not-filled-in", StringComparison.Ordinal),
 			because: "page rules share the business-rule unary-versus-binary rightExpression contract");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "comparison-family" &&
 				validator.Code == "unsupported-relational-operands" &&
-				validator.Field == "rule.condition.conditions[*]" &&
+				validator.Field == "rules[*].condition.conditions[*]" &&
 				validator.Context!.Contains("date/time left attributes", StringComparison.Ordinal),
 			because: "page rules share the numeric and date/time scope for relational comparisons");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "date-time-constant" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains("timezone suffix", StringComparison.Ordinal),
 			because: "page rules share the DateTime and Time constant timezone requirement");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "lookup-record" &&
-				validator.Field == "rule.condition.conditions[*].rightExpression.value" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "page rules should tell callers to resolve lookup condition constants with odata-read");
-		contract.OutputContract.Kind.Should().Be("command-execution-result",
-			because: "create-page-business-rule returns the standard command execution result payload");
+		contract.OutputContract.Kind.Should().Be("business-rule-batch-result",
+			because: "create-page-business-rules returns the batch result payload");
 		contract.PreferredFlow.Tools.Should().Equal(
 				new[] {
 					PageListTool.ToolName,
@@ -459,16 +494,21 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should include a make-optional page rule example");
 	}
 
+	private static Dictionary<string, object?>? FirstRule(ToolContractExample example) =>
+		example.Arguments.TryGetValue("rules", out object? value) && value is object[] { Length: > 0 } rules
+			? rules[0] as Dictionary<string, object?>
+			: null;
+
 	private static Func<ToolContractExample, bool> HasPageActionExample(string actionType) =>
 		example =>
-			example.Arguments["rule"] is Dictionary<string, object?> rule
+			FirstRule(example) is Dictionary<string, object?> rule
 			&& rule.TryGetValue("actions", out object? actionsValue)
 			&& actionsValue is object[] actions
 			&& actions.OfType<Dictionary<string, object?>>().Any(action =>
 				string.Equals(action["type"]?.ToString(), actionType, StringComparison.Ordinal));
 
 	private static bool HasSetValuesConstantExample(ToolContractExample example) {
-		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+		if (FirstRule(example) is not Dictionary<string, object?> rule
 			|| !rule.TryGetValue("actions", out object? actionsValue)
 			|| actionsValue is not object[] actions
 			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
@@ -494,7 +534,7 @@ public sealed class ToolContractGetToolTests {
 	}
 
 	private static bool HasSetValuesFormulaExample(ToolContractExample example) {
-		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+		if (FirstRule(example) is not Dictionary<string, object?> rule
 			|| !rule.TryGetValue("actions", out object? actionsValue)
 			|| actionsValue is not object[] actions
 			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
@@ -515,7 +555,7 @@ public sealed class ToolContractGetToolTests {
 	}
 
 	private static bool HasSetValuesAttributeExample(ToolContractExample example) {
-		if (example.Arguments["rule"] is not Dictionary<string, object?> rule
+		if (FirstRule(example) is not Dictionary<string, object?> rule
 			|| !rule.TryGetValue("actions", out object? actionsValue)
 			|| actionsValue is not object[] actions
 			|| actions.SingleOrDefault() is not Dictionary<string, object?> action
@@ -1107,6 +1147,10 @@ public sealed class ToolContractGetToolTests {
 			because: "canonical-main-entity-name description should guide the agent to use sync-schemas and warn against create-app-section");
 		contract.PreferredFlow.Notes.Should().Contain("create-app-section",
 			because: "the preferred-flow notes should explicitly warn against calling create-app-section for a single-section app");
+		contract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "with-mobile-pages" &&
+				defaultValue.Value == "true",
+			because: "create-app should document its mobile-enabled default explicitly so the MCP surface stays consistent with create-app-section");
 	}
 
 	[Test]
@@ -1374,5 +1418,219 @@ public sealed class ToolContractGetToolTests {
 			because: "the description must call out Binary exclusion so contract-driven clients understand why those entries are absent");
 		contract.Description.Should().Contain("excluded",
 			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical install-gate contract so an MCP-only agent can discover the cliogate remediation tool.")]
+	public void ToolContractGet_Should_Return_InstallGate_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			InstallGateTool.InstallGateToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "install-gate must be discoverable through get-tool-contract so gate-dependent flows are completable from MCP");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(InstallGateTool.InstallGateToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().ContainSingle(required => required == "environment-name",
+			because: "install-gate targets one registered environment");
+		contract.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "install-gate returns the standard command execution result payload");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				InstallGateTool.InstallGateToolName,
+				RestoreWorkspaceTool.RestoreWorkspaceToolName
+			},
+			because: "the contract should advertise installing the gate before retrying the gate-dependent flow");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes curated contracts for the deploy lifecycle tools so the most consequential tools are discoverable.")]
+	public void ToolContractGet_Should_Return_Curated_Lifecycle_Contracts() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			AssertInfrastructureTool.AssertInfrastructureToolName,
+			ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+			FindEmptyIisPortTool.FindEmptyIisPortToolName,
+			InstallerCommandTool.DeployCreatioToolName,
+			RestoreWorkspaceTool.RestoreWorkspaceToolName,
+			PushWorkspaceTool.PushWorkspaceToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "all six deploy lifecycle tools must be discoverable through get-tool-contract");
+		result.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(requestedTools,
+			because: "the curated lifecycle contract set should be retrievable as one consistent set");
+
+		ToolContractDefinition deploy = result.Tools!.Single(contract =>
+			contract.Name == InstallerCommandTool.DeployCreatioToolName);
+		deploy.InputSchema.Required.Should().Contain(["siteName", "zipFile", "sitePort"],
+			because: "deploy-creatio requires the site name, build archive, and port");
+		deploy.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "deploy-creatio returns the standard command execution result payload");
+		deploy.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				AssertInfrastructureTool.AssertInfrastructureToolName,
+				ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName,
+				FindEmptyIisPortTool.FindEmptyIisPortToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "deploy-creatio should advertise the canonical deploy preflight order");
+		deploy.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the most consequential tool must spell out its preconditions");
+
+		ToolContractDefinition restore = result.Tools!.Single(contract =>
+			contract.Name == RestoreWorkspaceTool.RestoreWorkspaceToolName);
+		restore.InputSchema.Required.Should().Contain(["environment-name", "workspace-path"],
+			because: "restore-workspace needs the environment and the local workspace path");
+		restore.Preconditions.Should().Contain(precondition =>
+			precondition.Contains("cliogate", StringComparison.Ordinal) &&
+			precondition.Contains("install-gate", StringComparison.Ordinal),
+			because: "restore-workspace should tell callers how to satisfy the cliogate prerequisite");
+
+		ToolContractDefinition assert = result.Tools!.Single(contract =>
+			contract.Name == AssertInfrastructureTool.AssertInfrastructureToolName);
+		assert.InputSchema.Properties.Should().BeEmpty(
+			because: "assert-infrastructure takes no parameters");
+		assert.OutputContract.Fields.Should().Contain(field => field.Name == "database-candidates",
+			because: "assert-infrastructure should advertise the normalized database candidates it returns");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to a schema-derived contract for a registered tool that has no curated contract instead of returning tool-not-found.")]
+	public void ToolContractGet_Should_Fall_Back_To_Schema_For_Uncurated_Registered_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a registered-but-uncurated tool should resolve through the input-schema fallback");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName,
+			because: "the fallback should return the requested tool verbatim");
+		contract.Description.Should().Contain("Auto-generated from the tool input schema",
+			because: "the fallback contract should mark itself as schema-derived so callers know it is uncurated");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(["environment-name", "workspace-path"],
+			because: "the fallback should surface the tool's real input fields from its args record");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "workspace-path"],
+			because: "the fallback should detect [Required] declared on the args constructor parameters");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Still returns tool-not-found with suggestions for a name that matches no registered tool.")]
+	public void ToolContractGet_Should_Return_NotFound_For_Unknown_Tool() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			"definitely-not-a-real-tool"
+		]));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a name that matches no curated and no registered tool must still fail");
+		result.Error!.Code.Should().Be("tool-not-found",
+			because: "the fallback must not mask genuinely unknown tool names");
+		result.Error.Suggestions.Should().NotBeNullOrEmpty(
+			because: "the error should still offer nearest-name suggestions");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical list-creatio-builds contract so an agent can discover the build-discovery tool.")]
+	public void ToolContractGet_Should_Return_ListCreatioBuilds_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ListCreatioBuildsTool.ListCreatioBuildsToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "list-creatio-builds must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ListCreatioBuildsTool.ListCreatioBuildsToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Properties.Should().BeEmpty(
+			because: "list-creatio-builds takes no parameters and reads the configured products folder");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "builds",
+			because: "the contract should advertise the discovered build archives");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "products-folder",
+			because: "the contract should advertise the resolved products folder so a stale configuration is visible");
+		contract.PreferredFlow.Tools.Should().Equal(
+			new[] {
+				ListCreatioBuildsTool.ListCreatioBuildsToolName,
+				InstallerCommandTool.DeployCreatioToolName
+			},
+			because: "build discovery should flow into deploy-creatio with the chosen archive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical get-component-info contract with composite= in the input schema, "
+		+ "composite-mode output fields, a composite example, and a synthesize anti-pattern. "
+		+ "Agents that call get-tool-contract to introspect get-component-info must see composite= "
+		+ "so they know to call composite=\"Expanded list\" instead of component-type=\"Expanded list\".")]
+	public void ToolContractGet_Should_Return_ComponentInfo_Contract_With_Composite_Parameter() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ComponentInfoTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-component-info is a canonical clio MCP tool and must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ComponentInfoTool.ToolName,
+			because: "the contract name must stay stable for clients that bootstrap from the contract tool");
+
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "composite",
+			because: "agents calling get-tool-contract must see composite= so they know the parameter exists "
+				+ "and call composite=\"Expanded list\" instead of component-type=\"Expanded list\"");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "component-type",
+			because: "the component-type parameter must remain documented alongside composite");
+		contract.InputSchema.Validators.Should().NotBeNull(
+			because: "composite and component-type are mutually exclusive and the constraint must be machine-readable");
+		contract.InputSchema.Validators!.Should().Contain(v =>
+				v.Fields != null && v.Fields.Contains("composite") && v.Fields.Contains("component-type"),
+			because: "the mutually-exclusive validator must name both fields so agents know they cannot be combined");
+
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "documentation",
+			because: "composite detail mode returns the assembly recipe in the documentation field");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "composites",
+			because: "list mode returns a composites array so agents can discover composite captions");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "caption",
+			because: "composite detail mode echoes the matched composite caption");
+
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("composite"),
+			because: "the contract must include a composite= example so agents have a concrete call to follow");
+
+		contract.AntiPatterns.Should().NotBeNull(
+			because: "an anti-pattern is required to stop agents from synthesizing the composite structure from memory");
+		contract.AntiPatterns!.Should().Contain(p =>
+				p.Why.Contains("synthesize", StringComparison.OrdinalIgnoreCase) ||
+				p.Pattern.Contains("synthesize", StringComparison.OrdinalIgnoreCase),
+			because: "the anti-pattern must explicitly warn against synthesizing instead of following the documentation field");
 	}
 }

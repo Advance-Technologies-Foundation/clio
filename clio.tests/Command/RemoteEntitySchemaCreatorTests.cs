@@ -135,6 +135,80 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema whose image/photo column is modeled as ImageLookup, auto-referencing the SysImage schema and indexed, so the generated crt.ImageInput field works.")]
+	public void Create_CreatesSchema_WithImageLookupColumn_ReferencingSysImage()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrPhoto:ImageLookup:Photo"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		JToken photoColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrPhoto");
+		photoColumn["type"]!.Value<int>().Should().Be(16,
+			because: "ImageLookup ('Image link') must persist as the platform data value type 16, not the binary Image type");
+		photoColumn["referenceSchema"]!["name"]!.Value<string>().Should().Be("SysImage",
+			because: "an ImageLookup column references the platform SysImage image-storage schema");
+		Guid.Parse(photoColumn["referenceSchema"]!["uId"]!.Value<string>()!)
+			.Should().Be(Guid.Parse("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8"),
+				because: "the server persists ReferenceSchema.UId, so clio must supply the SysImage schema UId");
+		photoColumn["indexed"]!.Value<bool>().Should().BeTrue(
+			because: "ImageLookup columns are indexed, mirroring the platform entity designer");
+	}
+
+	[Test]
+	[Description("Rejects an ImageLookup column that supplies a reference schema, because the reference is always the implicit SysImage schema (mirrors modify-entity-schema-column).")]
+	public void Create_Throws_WhenImageLookupColumnSuppliesReferenceSchema()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrPhoto:ImageLookup:Photo:Contact"]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*references the SysImage schema automatically*",
+				because: "the create path must reject a caller-supplied reference schema for ImageLookup, aligning with the modify path");
+	}
+
+	[Test]
 	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
 	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
 	{
@@ -896,6 +970,166 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			.WithMessage("*runtime schema name*does not match*",
 				because: "a name mismatch in runtime schema must still be reported as failure even when designer returns HTML");
 	}
+
+	[Test]
+	[Description("Publishes the configuration after saving the DB structure so the new schema becomes visible to lookup pickers and sys-setting reference schema lists (ENG-90403).")]
+	public void Create_ShouldPublishConfiguration_WhenSchemaIsSaved()
+	{
+		// Arrange
+		var schemaDesignerBodies = new List<string>();
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				schemaDesignerBodies.Add(body);
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		schemaDesignerBodies.Should().HaveCount(2,
+			because: "the creator must send one SchemaDesignerRequest for DDL and one for publication");
+		JObject ddlBody = JObject.Parse(schemaDesignerBodies[0]);
+		ddlBody["saveSchemaDBStructure"]!.Values<string>().Should()
+			.Contain("22222222-2222-2222-2222-222222222222",
+				because: "the first SchemaDesignerRequest must materialize the saved schema DB structure");
+		JObject publishBody = JObject.Parse(schemaDesignerBodies[1]);
+		publishBody["buildWorkspace"]!.Value<bool>().Should().BeTrue(
+			because: "legacy runtimes publish saved schemas only through a workspace build");
+		publishBody["buildChangedConfiguration"]!.Value<bool>().Should().BeTrue(
+			because: "modern runtimes publish saved schemas through an incremental configuration build plus an EntitySchemaManager refresh");
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("published")));
+	}
+
+	[Test]
+	[Description("Surfaces an actionable error when the schema is saved but configuration publication fails, so callers know the schema exists yet stays invisible to reference lists until compiled.")]
+	public void Create_ShouldThrowActionableError_WhenPublishFails()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return JObject.Parse(body)["buildWorkspace"]?.Value<bool>() == true
+					? "{\"success\":false,\"errorInfo\":{\"message\":\"Compilation failed.\"}}"
+					: "{\"success\":true}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*created and saved, but publishing the configuration failed*Compilation failed.*",
+				because: "a publish failure must explain that the schema exists but stays invisible until the configuration is built");
+	}
+
+	[Test]
+	[Description("Anchors the schema caption to the explicit --caption-culture override when provided (override > profile > en-US).")]
+	public void Create_ShouldAnchorCaptionToOverrideCulture_WhenCaptionCultureProvided()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			CaptionCulture = "uk-UA",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("uk-UA",
+			because: "an explicit --caption-culture override must anchor the generated caption to that culture");
+	}
+
+	[Test]
+	[Description("Falls back to en-US for the caption culture when no override is supplied and the profile culture cannot be resolved (regression-safe; never host CurrentCulture).")]
+	public void Create_ShouldAnchorCaptionToEnUs_WhenNoOverrideAndProfileUnresolved()
+	{
+		// Arrange — no environment is configured in the unit context, so profile resolution fails
+		// and the effective culture must degrade to en-US (parity with the previous behavior), not
+		// to the host machine's CultureInfo.CurrentCulture.
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+
+		// Act
+		using (new CultureScope("uk-UA")) {
+			_creator.Create(new CreateEntitySchemaOptions {
+				Package = "UsrPkg",
+				SchemaName = "UsrVehicle",
+				Title = "Vehicle",
+				Columns = ["Name:Text:Vehicle name"]
+			});
+		}
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("en-US",
+			because: "with no override and no resolvable profile culture the caption must anchor to en-US, not the host uk-UA locale");
+	}
+
+	private void SetupStandardSchemaClient(Action<string> captureSaveBody)
+	{
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				captureSaveBody(body);
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			return "{\"success\":true}";
+		});
+	}
+
 
 	private void SetupApplicationClient(Func<string, string, string> handler)
 	{

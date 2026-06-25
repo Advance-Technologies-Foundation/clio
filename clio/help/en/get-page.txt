@@ -17,11 +17,27 @@ DESCRIPTION
     the parent-schema hierarchy to load the editable version. This ensures that
     raw.body is always read from the package where the schema can be modified.
 
+    The response also carries an "editable" block with the editable schema's
+    SysSchema checksum captured at fetch time (best-effort). get-page writes
+    body.js, bundle.json and meta.json into .clio-pages/{schema-name}/ (anchored
+    at the workspace root, or at --output-directory). The meta.json stores the
+    checksum as a baseline so a later update-page for the same environment
+    detects modifications made outside your session automatically — there is no
+    need to pass --expected-checksum by hand. Pass the same --output-directory
+    to get-page and update-page when you keep the page files outside the
+    auto-detected workspace root.
+
 SYNOPSIS
     clio get-page [options]
 
 OPTIONS
     --schema-name                      Page schema name to read
+
+    --output-directory                 Directory that anchors the .clio-pages
+                                       output tree (body.js / bundle.json /
+                                       meta.json). Defaults to the workspace
+                                       root, or the clio home root when no
+                                       workspace is found
 
     --uri                    -u       Application uri
 

@@ -208,14 +208,16 @@ Mobile pages use the same clio MCP workflow as web pages (`create-page`, `get-pa
 
 ---
 
-## 9. App Section Creation
+## 9. App and Section Creation
 
-`create-app-section` controls mobile page generation via `--with-mobile-pages`:
+Both `create-app` and `create-app-section` control mobile page generation via `--with-mobile-pages` (CLI) / `with-mobile-pages` (MCP):
 
 | `--with-mobile-pages` | Behavior |
 |---|---|
-| `true` (default since 8.3.2) | Backend creates web pages **and** mobile pages for the section |
+| `true` (default since 8.3.2) | Backend creates web pages **and** mobile pages |
 | `false` | Web pages only (sends `clientTypeId = 195785B4-F55A-4E72-ACE3-6480B54C8FA5`) |
+
+For `create-app` the toggle applies to the main entity: `false` suppresses `{code}_MobileFormPage` and `{code}_MobileListPage`, leaving the three web pages (`{code}_FormPage`, `{code}_ListPage`, `{code}_Detail`). An explicit `client-type-id` always takes precedence over `with-mobile-pages`.
 
 Since Creatio 8.3.2, creating a new app or section automatically generates a mobile form page and a mobile list page alongside the web pages.
 

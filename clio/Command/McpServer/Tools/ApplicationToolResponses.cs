@@ -42,6 +42,13 @@ public sealed record ApplicationContextResponse(
 
 /// <summary>
 /// Structured existing-app section creation envelope returned by application section MCP tools.
+/// On classified failures (ENG-90679) the envelope additionally carries
+/// <c>error-class</c> (<c>transport</c> | <c>creatio-timeout</c> | <c>server-error</c>),
+/// <c>section-created</c> (<c>true</c> | <c>false</c> | <c>unknown</c> | <c>in-progress</c>), and
+/// <c>retry-guidance</c> so the calling agent can make a rational retry-vs-abandon decision. The
+/// <c>in-progress</c> value (ENG-91316) means the response deadline elapsed while the section was
+/// still being created server-side: the agent must poll, not retry. See
+/// <c>spec/adr/adr-create-app-section-response-deadline.md</c>.
 /// </summary>
 public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("success")] bool Success,
@@ -54,7 +61,10 @@ public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("section")] ApplicationSectionResult? Section = null,
 	[property: JsonPropertyName("entity")] ApplicationEntityResult? Entity = null,
 	[property: JsonPropertyName("pages")] IReadOnlyList<PageListItem>? Pages = null,
-	[property: JsonPropertyName("error")] string? Error = null);
+	[property: JsonPropertyName("error")] string? Error = null,
+	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
+	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
 
 /// <summary>
 /// Structured existing-app section update envelope returned by application section update MCP tools.
@@ -127,11 +137,40 @@ public sealed record ApplicationEntityResult(
 /// <summary>
 /// Structured application column item returned by the application MCP tool family.
 /// </summary>
+/// <remarks>
+/// The column vocabulary is unified with the <c>sync-schemas</c> write surfaces so the natural
+/// read-modify-write workflow round-trips without manual field translation (ENG-90313):
+/// <list type="bullet">
+/// <item><c>name</c> matches the write-side column identity.</item>
+/// <item><c>type</c> is the canonical type field (mirrors <c>data-value-type</c>, which is retained
+/// as a legacy alias and may be removed in a future major version).</item>
+/// <item><c>reference-schema-name</c> is the canonical lookup-reference field (mirrors
+/// <c>reference-schema</c>, retained as a legacy alias).</item>
+/// <item><c>required</c> exposes the column required flag accepted by the write surfaces.</item>
+/// </list>
+/// </remarks>
 public sealed record ApplicationColumnResult(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("data-value-type")] string DataValueType,
-	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema = null);
+	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema = null,
+	[property: JsonPropertyName("required")] bool Required = false) {
+
+	/// <summary>
+	/// Gets the canonical column type. Mirrors <see cref="DataValueType"/> so the read shape can be sent
+	/// verbatim to the <c>sync-schemas</c> write surfaces, which expect <c>type</c>.
+	/// </summary>
+	[JsonPropertyName("type")]
+	public string Type => DataValueType;
+
+	/// <summary>
+	/// Gets the canonical lookup reference schema name. Mirrors <see cref="ReferenceSchema"/> so the read
+	/// shape can be sent verbatim to the write surfaces, which expect <c>reference-schema-name</c>.
+	/// </summary>
+	[JsonPropertyName("reference-schema-name")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ReferenceSchemaName => ReferenceSchema;
+}
 
 /// <summary>
 /// Structured response from the <c>delete-app-section</c> MCP tool.

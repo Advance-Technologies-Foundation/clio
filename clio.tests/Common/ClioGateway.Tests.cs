@@ -195,7 +195,7 @@ public class ClioGatewayTests : BaseClioModuleTests
 		actualPackageInfo.Should().Be(expectedResult);
 	}
 	
-	[TestCase("1.0.0", "2.0.0", false, "To use this command, you need to install the cliogate package version 2.0.0 or higher.")]
+	[TestCase("1.0.0", "2.0.0", false, "To use this command, you need to install the cliogate package version 2.0.0 or higher. Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) and retry.")]
 	[TestCase("2.0.0", "1.0.0", true, null)]
 	[TestCase("2.0.0", "2.0.0", true, null)]
 	public void CheckCompatibleVersion_Should_BehaveAsExpected(string installedVersion, string requiredVersion, bool shouldNotThrow, string expectedMessage){
@@ -204,10 +204,10 @@ public class ClioGatewayTests : BaseClioModuleTests
 			_createPackageInfo(new Version(installedVersion), NetFrameworkClioPkgName)
 		]);
 		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
-	
+
 		// Act
 		Action act = () => clioGateway.CheckCompatibleVersion(requiredVersion);
-	
+
 		// Assert
 		if (shouldNotThrow) {
 			act.Should().NotThrow();
@@ -215,6 +215,99 @@ public class ClioGatewayTests : BaseClioModuleTests
 			act.Should().Throw<NotSupportedException>()
 				.WithMessage(expectedMessage);
 		}
+	}
+
+}
+
+[TestFixture(Category = "Unit")]
+[Property("Module", "Common")]
+[Description("Verifies ClioGateway delegates package lookups to IRequiredPackageChecker rather than duplicating the package-list logic.")]
+public class ClioGatewayDelegationTests : BaseClioModuleTests
+{
+
+	#region Fields: Private
+
+	private readonly IRequiredPackageChecker _requiredPackageCheckerMock
+		= Substitute.For<IRequiredPackageChecker>();
+
+	#endregion
+
+	#region Methods: Protected
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder){
+		containerBuilder.AddSingleton<IRequiredPackageChecker>(_requiredPackageCheckerMock);
+		base.AdditionalRegistrations(containerBuilder);
+	}
+
+	#endregion
+
+	[SetUp]
+	public void SetUp() => _requiredPackageCheckerMock.ClearReceivedCalls();
+
+	[Test]
+	[Description("GetInstalledVersion must delegate to IRequiredPackageChecker.GetInstalledVersion(\"cliogate\"), relying on the checker's alias map for cliogate_netcore.")]
+	public void GetInstalledVersion_ShouldDelegateToChecker_WhenCalled(){
+		// Arrange
+		PackageVersion expected = new(new Version(2, 0, 0, 42), string.Empty);
+		_requiredPackageCheckerMock.GetInstalledVersion("cliogate").Returns(expected);
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
+
+		// Act
+		PackageVersion actual = clioGateway.GetInstalledVersion();
+
+		// Assert
+		actual.Should().BeSameAs(expected,
+			because: "ClioGateway must return whatever the delegated checker reports");
+		_requiredPackageCheckerMock.Received(1).GetInstalledVersion("cliogate");
+	}
+
+	[Test]
+	[Description("IsCompatibleWith must delegate to IRequiredPackageChecker.IsCompatible(\"cliogate\", version).")]
+	public void IsCompatibleWith_ShouldDelegateToChecker_WhenCalled(){
+		// Arrange
+		_requiredPackageCheckerMock.IsCompatible("cliogate", "2.0.0.41").Returns(true);
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
+
+		// Act
+		bool actual = clioGateway.IsCompatibleWith("2.0.0.41");
+
+		// Assert
+		actual.Should().BeTrue(
+			because: "ClioGateway must return the delegated checker's compatibility result");
+		_requiredPackageCheckerMock.Received(1).IsCompatible("cliogate", "2.0.0.41");
+	}
+
+	[Test]
+	[Description("CheckCompatibleVersion must throw the exact cliogate-specific NotSupportedException message when the delegated checker reports incompatibility, preserving the public contract.")]
+	public void CheckCompatibleVersion_ShouldThrowPinnedMessage_WhenIncompatible(){
+		// Arrange
+		_requiredPackageCheckerMock.IsCompatible("cliogate", "2.0.0").Returns(false);
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
+
+		// Act
+		Action act = () => clioGateway.CheckCompatibleVersion("2.0.0");
+
+		// Assert
+		act.Should().Throw<NotSupportedException>()
+			.WithMessage(
+				"To use this command, you need to install the cliogate package version 2.0.0 or higher. " +
+				"Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) and retry.",
+				because: "the cliogate-specific message is a public contract relied on by ApplicationDownloader and get-info");
+	}
+
+	[Test]
+	[Description("CheckCompatibleVersion must not throw when the delegated checker reports compatibility.")]
+	public void CheckCompatibleVersion_ShouldNotThrow_WhenCompatible(){
+		// Arrange
+		_requiredPackageCheckerMock.IsCompatible("cliogate", "2.0.0").Returns(true);
+		IClioGateway clioGateway = Container.GetRequiredService<IClioGateway>();
+
+		// Act
+		Action act = () => clioGateway.CheckCompatibleVersion("2.0.0");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a compatible cliogate version must pass the check");
 	}
 
 }

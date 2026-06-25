@@ -5,13 +5,11 @@ using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Requests;
 using Clio.UserEnvironment;
 using CommandLine;
 using ErrorOr;
-using MediatR;
 using Error = ErrorOr.Error;
 using FileSystem = Clio.Common.FileSystem;
 using IFileSystem = Clio.Common.IFileSystem;
@@ -41,7 +39,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 	#region Fields: Private
 
 	private readonly ILogger _logger;
-	private readonly IMediator _mediator;
+	private readonly IIisScanner _iisScanner;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IFileSystem _fileSystem;
 
@@ -49,10 +47,10 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 
 	#region Constructors: Public
 
-	public CustomizeDataProtectionCommand(ILogger logger, IMediator mediator, ISettingsRepository settingsRepository,
+	public CustomizeDataProtectionCommand(ILogger logger, IIisScanner iisScanner, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem){
 		_logger = logger;
-		_mediator = mediator;
+		_iisScanner = iisScanner;
 		_settingsRepository = settingsRepository;
 		_fileSystem = fileSystem;
 	}
@@ -63,47 +61,10 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 
 	private IEnumerable<RegisteredSite> AllSites { get; set; }
 
-	/// <summary>
-	///  Gets the action to handle the completion of the request for all registered sites.
-	/// </summary>
-	/// <remarks>
-	///  This property performs the following steps:
-	///  <list type="bullet">
-	///   <item>Assigns the provided sites to the `AllSites` property.</item>
-	///  </list>
-	/// </remarks>
-	private Action<IEnumerable<RegisteredSite>> OnAllSitesRequestCompleted =>
-		sites => { AllSites = sites; };
-
 	#endregion
 
 	#region Methods: Private
 
-	/// <summary>
-	///  Executes a mediator request to retrieve all registered sites.
-	/// </summary>
-	/// <param name="callback">The callback action to handle the retrieved sites.</param>
-	/// <remarks>
-	///  This method performs the following steps:
-	///  <list type="bullet">
-	///   <item>Creates a new `AllRegisteredSitesRequest` with the provided callback.</item>
-	///   <item>Executes the request asynchronously using the mediator.</item>
-	///   <item>Configures the task to not capture the current synchronization context.</item>
-	///   <item>Waits for the task to complete and retrieves the result.</item>
-	///  </list>
-	/// </remarks>
-	private void ExecuteMediatorRequest(Action<IEnumerable<RegisteredSite>> callback){
-		AllRegisteredSitesRequest request = new() {
-			Callback = callback
-		};
-
-		Task.Run(async () => await _mediator.Send(request))
-			.ConfigureAwait(false)
-			.GetAwaiter()
-			.GetResult();
-	}
-
-	
 	/// <summary>
 	///  Retrieves the folder path for the specified environment name.
 	/// </summary>
@@ -117,7 +78,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 	///   <item>Finds the environment settings using the provided environment name.</item>
 	///   <item>Checks if the environment settings are found and valid.</item>
 	///   <item>Validates the URI of the environment.</item>
-	///   <item>Executes a mediator request to retrieve all registered sites.</item>
+	///   <item>Retrieves all registered sites from IIS.</item>
 	///   <item>Retrieves the folder path for the specified environment URI.</item>
 	///  </list>
 	/// </remarks>
@@ -133,7 +94,7 @@ public class CustomizeDataProtectionCommand : Command<CustomizeDataProtectionCom
 		if (!isEnvUri) {
 			return Error.NotFound("003", $"Environment: {envName} has an invalid Uri.");
 		}
-		ExecuteMediatorRequest(OnAllSitesRequestCompleted);
+		AllSites = _iisScanner.FindAllRegisteredCreatioSites().ToList();
 		return GetFolderPathForEnvironmentName(envUri);
 	}
 

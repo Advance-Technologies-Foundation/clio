@@ -61,6 +61,12 @@ internal sealed class SchemaDesignerRequestDto
 {
 	[JsonProperty("saveSchemaDBStructure")]
 	public List<Guid> SaveSchemaDbStructure { get; set; } = [];
+
+	[JsonProperty("buildWorkspace")]
+	public bool BuildWorkspace { get; set; }
+
+	[JsonProperty("buildChangedConfiguration")]
+	public bool BuildChangedConfiguration { get; set; }
 }
 
 internal sealed class RuntimeEntitySchemaRequestDto
@@ -94,6 +100,34 @@ internal sealed class SysSettingsSelectQueryResponse : BaseResponse
 {
 	[JsonProperty("rows")]
 	public SysSettingsSelectQueryRowDto[] Rows { get; set; } = [];
+}
+
+/// <summary>
+/// Outcome of a record-existence check against a referenced lookup schema. <see cref="Unknown"/> is the
+/// default so an unverifiable check (security denial / transport error) never blocks a write.
+/// </summary>
+internal enum LookupRecordExistence
+{
+	/// <summary>The existence check could not be performed (e.g. access denied or transport error).</summary>
+	Unknown = 0,
+
+	/// <summary>A record with the requested identifier exists in the referenced schema.</summary>
+	Exists,
+
+	/// <summary>The query succeeded but no record with the requested identifier was found.</summary>
+	NotFound
+}
+
+internal sealed class RecordIdSelectQueryResponse : BaseResponse
+{
+	[JsonProperty("rows")]
+	public RecordIdRowDto[] Rows { get; set; } = [];
+}
+
+internal sealed class RecordIdRowDto
+{
+	[JsonProperty("Id")]
+	public Guid Id { get; set; }
 }
 
 internal sealed class SysSettingsSelectQueryRowDto

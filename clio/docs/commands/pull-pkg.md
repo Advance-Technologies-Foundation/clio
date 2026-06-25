@@ -13,6 +13,14 @@ pull-pkg - download package to local file system from default a web application
 pull-pkg command can be used in CI/CD pipeline or in development
 when you need download package from a web application (website).
 
+## Prerequisites
+
+The default download path uses the core PackageInstallerService and does **not** require cliogate.
+
+The `--async` option requires the cliogate package to be installed on the target Creatio environment.
+If cliogate is not installed, an `--async` download displays an error and exits.
+Install or update cliogate with `clio install-gate -e <ENVIRONMENT_NAME>`.
+
 ## Synopsis
 
 ```bash

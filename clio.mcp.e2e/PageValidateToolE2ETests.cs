@@ -284,10 +284,10 @@ public sealed class PageValidateToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns valid: true when viewConfigDiff inserts a standard field whose binding attribute is declared in viewModelConfigDiff with a DS-bound modelConfig.path and whose label uses the column-code form auto-provided by the platform.")]
+	[Description("Returns valid: true when viewConfigDiff inserts a standard field whose binding attribute is declared in viewModelConfigDiff with a DS-bound modelConfig.path and whose label key equals that binding attribute — auto-provided by the platform under the attribute name, even when it differs from the entity column code.")]
 	[AllureTag(ToolName)]
-	[AllureName("validate-page accepts inserted field with declared binding and column-code label")]
-	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to a declared DS attribute whose name matches the entity column code, with the label rebound to $Resources.Strings.<columnCode>, and verifies that validate-page accepts the payload without resources.")]
+	[AllureName("validate-page accepts inserted field with declared binding and attribute-name label")]
+	[AllureDescription("Sends a page body that inserts a crt.Checkbox bound to a declared DS attribute (PDS_UsrCompleted, whose name differs from the entity column code UsrCompleted) with the label set to $Resources.Strings.PDS_UsrCompleted, and verifies that validate-page accepts the payload without resources because the platform auto-provides the caption under the attribute name.")]
 	public async Task PageValidateTool_Should_Accept_Inserted_Field_With_AutoProvided_Label() {
 		// Arrange
 		string bodyWithFullPayload = ValidPageBody
@@ -295,12 +295,12 @@ public sealed class PageValidateToolE2ETests {
 				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
 					"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
-					"\"label\":\"$Resources.Strings.UsrCompleted\",\"control\":\"$UsrCompleted\"}}" +
+					"\"label\":\"$Resources.Strings.PDS_UsrCompleted\",\"control\":\"$PDS_UsrCompleted\"}}" +
 					"]/**SCHEMA_VIEW_CONFIG_DIFF*/")
 			.Replace(
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
-					"{\"operation\":\"merge\",\"values\":{\"UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
+					"{\"operation\":\"merge\",\"values\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
 					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
 		await using ArrangeContext context = await ArrangeAsync();
 
@@ -312,13 +312,115 @@ public sealed class PageValidateToolE2ETests {
 
 		// Assert
 		response.Valid.Should().BeTrue(
-			because: "a self-consistent insert with the matching viewModelConfigDiff entry and an auto-provided column-code label is the canonical happy path");
+			because: "a self-consistent insert with the matching viewModelConfigDiff entry and a label keyed by the DS-bound binding attribute (auto-provided) is the canonical happy path");
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		response.Validation!.ContentOk.Should().BeTrue(
 			because: "every content-level validator should accept the self-consistent payload");
 		response.Validation.Errors.Should().BeNullOrEmpty(
 			because: "no error should be reported for the canonical happy path");
+	}
+
+	[Test]
+	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects inline placeholder literal")]
+	[AllureDescription("Sends a page body whose inserted crt.Input carries a hardcoded placeholder string and verifies that validate-page surfaces an actionable error naming the node and the placeholder property and pointing to the page-schema-resources guide.")]
+	public async Task PageValidateTool_Should_Reject_Inline_Placeholder_Literal() {
+		// Arrange
+		string bodyWithInlinePlaceholder = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
+				"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithInlinePlaceholder);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a hardcoded placeholder string is not localizable and must be rejected by the localizable-text check");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeFalse(
+			because: "the localizable-text rule is a content-level validator");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the validation result must list at least one error for the inline placeholder literal");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("EmailField") && e.Contains("placeholder") && e.Contains("page-schema-resources"),
+			because: "the diagnostic must name the node, the offending property, and point to the localization guide");
+	}
+
+	[Test]
+	[Description("validate-page rejects a body whose JavaScript syntax is invalid (the production incident shape `await X = Y`) — proves the new Acornima syntax pre-flight gate fires through the real MCP transport, not just the regex brace-counter that previously passed this body as syntax-OK.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects body with await-as-assignment-target syntax error")]
+	[AllureDescription("Sends the canonical incident body (`await request.$context.X = \"value\"`) through validate-page and verifies that the response carries valid=false with a `JavaScript syntax error at line N, column M` message — proving the pre-flight tool now matches the write-path tools' Acornima-based gate.")]
+	public async Task PageValidateTool_Should_Reject_Body_With_JavaScript_Syntax_Error() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string incidentBody =
+			"define(\"Bad_FormPage\", [], function() {\n" +
+			"    return {\n" +
+			"        handlers: [{\n" +
+			"            request: 'crt.HandleViewModelInitRequest',\n" +
+			"            handler: async function(request, next) {\n" +
+			"                await request.$context.FieldX = \"value\";\n" +
+			"                return next?.handle(request);\n" +
+			"            }\n" +
+			"        }]\n" +
+			"    };\n" +
+			"});";
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			incidentBody);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the body's `await X = Y` shape is a JavaScript syntax error; the pre-flight tool must reject it before any write tool sees it");
+		response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "the syntax gate must surface its dedicated JsSyntaxOk=false signal so callers can route to the right fix");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "an actionable failure response per the AC requires the error list to carry the syntax diagnostic");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("JavaScript syntax error", System.StringComparison.OrdinalIgnoreCase),
+			because: "the canonical syntax-gate prefix is what existing tooling and operator habits key on");
+	}
+
+	[Test]
+	[Description("validate-page rejects a body whose custom converter uses the reserved `crt.*` namespace — proves the new AST lint pass surfaces through the pre-flight tool end-to-end. The regex layer treats `crt.*` as a valid vendor prefix, so this body is the canonical proof that the lint pass adds detection beyond regex under default validation.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects converter using reserved crt.* prefix")]
+	[AllureDescription("Sends a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The regex validators accept the body (their checks explicitly skip `crt.*` keys); verifying the response carries `converter-crt-prefix-reserved` proves the AST lint pass surfaces through the validate-page MCP wire.")]
+	public async Task PageValidateTool_Should_Reject_Custom_Converter_With_Crt_Prefix() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string crtPrefixConverterBody = ValidPageBody.Replace(
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
+			"converters: /**SCHEMA_CONVERTERS*/{ \"crt.MyConverter\": function(v) { return v; } }/**SCHEMA_CONVERTERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			crtPrefixConverterBody);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the reserved `crt.*` namespace is for Creatio built-in converters; the AST lint pass must catch the custom-name usage end-to-end via the pre-flight tool");
+		response.Validation.Errors.Should().NotBeNullOrEmpty(
+			because: "the lint failure must contribute to the validation error list");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("converter-crt-prefix-reserved", System.StringComparison.OrdinalIgnoreCase),
+			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
 	}
 
 	private static async Task<PageValidateResponse> CallAsync(

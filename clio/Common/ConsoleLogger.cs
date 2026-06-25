@@ -83,18 +83,27 @@ public class ConsoleLogger : ILogger, IDisposable{
 				DebugMessage debugMessage => () => PrintDebugInternal(debugMessage.Value.ToString()),
 				var _ => throw new ArgumentOutOfRangeException()
 			};
-			action.Invoke();
+			try {
+				action.Invoke();
+			} catch (ObjectDisposedException) {
+			}
 		}
 	}
 
 	private void PrintInternal(){
 		while (!CancellationToken.IsCancellationRequested) {
 			if (!_spinnerActive) {
-				FlushQueue();
+				try {
+					FlushQueue();
+				} catch (ObjectDisposedException) {
+					// Console.Out was replaced by a test; the old writer was disposed.
+				}
 			}
 			Thread.Sleep(100);
 		}
-		FlushQueue();
+		try {
+			FlushQueue();
+		} catch (ObjectDisposedException) { }
 	}
 
 	private void PrintTableInternal(object table){

@@ -62,10 +62,34 @@ internal static class GuidanceCatalog {
 				"page-modification",
 				"Canonical MCP guidance for Freedom UI page modification: replacing-schema concept, bundle.json structure, update-page write modes, multi-app target-package-uid resolution, and container selection.",
 				PageModificationGuidanceResource.Guide),
+			["esq"] = Create(
+				"esq",
+				"Canonical MCP guidance for EntitySchemaQuery authoring: the DataService SelectQuery envelope, columns/select, expression building blocks, forward/backward reference column-path grammar, aggregations, and master enum tables.",
+				EsqGuidanceResource.Guide),
+			["esq-filters"] = Create(
+				"esq-filters",
+				"Canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.",
+				EsqFiltersGuidanceResource.Guide),
+			["indicator-widget"] = Create(
+				"indicator-widget",
+				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
+				IndicatorWidgetGuidanceResource.Guide),
+			["dashboards"] = Create(
+				"dashboards",
+				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
+				DashboardGuidanceResource.Guide),
+			["related-list"] = Create(
+				"related-list",
+				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite recipe (via get-component-info composite), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
+				RelatedListGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
 				AgentExecutionGuidanceResource.Guide),
+			["deploy-lifecycle"] = Create(
+				"deploy-lifecycle",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
+				DeployLifecycleGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
@@ -74,6 +98,10 @@ internal static class GuidanceCatalog {
 				"business-rules",
 				"Canonical MCP guidance for Freedom UI business rules: entity-level and page-level declarative condition-action rules for field/element visibility, editability, required state, and value assignment.",
 				BusinessRulesGuidanceResource.Guide),
+			["business-rule-filters"] = Create(
+				"business-rule-filters",
+				"Canonical MCP guidance for the apply-static-filter friendly filter contract: leaf comparisons, lookup values, forward paths, nested groups, backward EXISTS/NOT_EXISTS and COUNT/SUM/AVG/MIN/MAX aggregations, relative-date and current-user macros, age/birthday translation, multilingual handling, and the discovery flow.",
+				BusinessRuleFiltersGuidanceResource.Guide),
 			["mobile-page-modification"] = Create(
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
@@ -85,7 +113,27 @@ internal static class GuidanceCatalog {
 			["ui-project"] = Create(
 				"ui-project",
 				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
-				WorkspaceUiProjectGuidanceResource.Guide)
+				WorkspaceUiProjectGuidanceResource.Guide),
+			["run-process-button"] = Create(
+				"run-process-button",
+				"Canonical MCP guidance for adding a Freedom UI button that runs a business process "
+				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
+				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
+				+ "view-model-attribute-binding / current-record variants.",
+				RunProcessButtonGuidanceResource.Guide),
+			["identity-assertion"] = Create(
+				"identity-assertion",
+				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
+				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
+				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
+				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
+				IdentityAssertionGuidanceResource.Guide),
+			["server-to-server-oauth"] = Create(
+				"server-to-server-oauth",
+				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
+				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
+				+ "Creatio APIs with an Authorization: Bearer token.",
+				ServerToServerOAuthGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
