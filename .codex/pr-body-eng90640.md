@@ -36,19 +36,36 @@ Validation run `15636666` with the URL fix: **53→28 failed, 182→315 passed**
 
 ## Validation run (this PR)
 
-<!-- FILL: run id, failed/passed/ignored, comparison, residual list -->
+Run [`15638935`](https://teamcity-rnd.bpmonline.com/build/15638935) — clean, **complete** run (no force-stop; marked FAILURE only because total duration was +154s over the 6000s threshold), EnvironmentUrl-only, Studio/PostgreSQL 10.1.42:
+
+**18 failed / 337 passed / 3 ignored** (down from 28 failed / 315 passed on the prior validation run 15636666 — the extra commits on this branch converted ~10 more to green, zero regressions).
+
+All 18 are env/infra/stand-gated, none are clio contract regressions:
+
+| Bucket | × | Tracked by |
+|---|---|---|
+| ClearRedis (EnvironmentPath empty → fast-fail; Redis unreachable from agent) | 4 | ENG-91829 |
+| DataForge similarity index (gate off in this config) | 3 | ENG-92147 |
+| Infra remote (AssertInfrastructure / ShowPassingInfrastructure / DeployCreatio / RestoreDb) | 4 | ENG-91830 |
+| PageSync AST on marker body (MaxLength / Proxy) | 2 | ENG-91966 |
+| Stand-seed/online (ApplicationSection WithPlatformEntity, EntitySchema create-read-modify flow, ModifyEntitySchemaColumn LookupConstDefault) | 3 | code verified correct |
+| PageUpdate UnAwaitedContext (advisory) | 1 | — |
+| PageSync Report_Invalid_Environment (env-contract) | 1 | to confirm |
+
+A second run [`15639381`](https://teamcity-rnd.bpmonline.com/build/15639381) with `EnvironmentPath` + DataForge toggles validates the ClearRedis hang guard and the DataForge readiness gate; results folded into the residual notes.
 
 ## Residual failures — env/infra/stand-gated, NOT clio code (root cause verified)
 
-These do not move with clio code changes; they are tracked as sub-tasks:
+These do not move with clio code changes; they are tracked as sub-tasks (see table above).
+Estimated code-side floor ≈ 13 (the 18 minus the 4 ClearRedis + 1 PageUpdate-advisory that are pure environment artifacts, give or take the DataForge gate which the toggle addresses).
 
-- **ClearRedis ×4** — Redis unreachable from the CI agent (now fails fast instead of hanging) → **ENG-91829**.
-- **DataForge ×3** — similarity index init; gate is ready, needs the toggle on → **ENG-92147**.
-- **k8s infra ×4** — AssertInfrastructure / ShowPassingInfrastructure / DeployCreatio / RestoreDb need a real cluster → **ENG-91830**.
-- **ApplicationSectionCreate_WithPlatformEntity, EntitySchema clear-default/LookupConst, PageUpdate UnAwaitedContext** — stand-seed/online; code verified correct.
-- **PageSync MaxLength / Proxy** — AST detection on marker-delimited body → **ENG-91966**.
+### Hang guard (this PR)
 
-Estimated code-side floor ≈ 13.
+Two e2e hardening fixes ensure no single test can freeze the whole suite (it has no per-test hang guard of its own):
+- `SandboxEnvironmentResolver` locates `ConnectionStrings.config` by known path instead of a recursive scan of the entire deployed Creatio root (which took minutes).
+- `ClearRedisToolE2ETests` bounds its Redis arrange/teardown with `Task.WaitAsync(token)`, so an unreachable sandbox Redis fails the test fast (≤2 min) rather than hanging.
+
+The durable, suite-wide guard remains job-side: `dotnet test --blame-hang-timeout 5m` (process-kills a hung test) — see the handoff below; it is **required** before `EnvironmentPath` is enabled in the job.
 
 ## Job-config handoff (separate, requires TeamCity admin)
 

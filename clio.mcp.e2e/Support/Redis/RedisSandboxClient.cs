@@ -82,7 +82,14 @@ internal sealed class RedisSandboxClient : IAsyncDisposable {
 	}
 
 	private static async Task<ConnectionMultiplexer> ConnectAsync(ConfigurationOptions options, CancellationToken cancellationToken) {
-		Task<ConnectionMultiplexer> connectTask = ConnectionMultiplexer.ConnectAsync(options);
+		// Offload to a pool thread: ConnectionMultiplexer.ConnectAsync runs a SYNCHRONOUS prologue
+		// (endpoint/DNS resolution, socket setup) on the calling thread before it yields a Task. When
+		// the sandbox Redis host does not resolve/respond from a CI agent that prologue blocks for a
+		// long time, and because it runs before the first await neither the WhenAny/Task.Delay bound
+		// below nor a caller's WaitAsync(token) can interrupt it (there is no awaitable yet). Task.Run
+		// moves that synchronous work off the test thread so the timeout bound actually applies; a
+		// still-blocked prologue leaks on the pool thread but no longer freezes the suite.
+		Task<ConnectionMultiplexer> connectTask = Task.Run(() => ConnectionMultiplexer.ConnectAsync(options));
 		Task completed = await Task.WhenAny(connectTask, Task.Delay(Timeout.Infinite, cancellationToken));
 		if (completed != connectTask) {
 			cancellationToken.ThrowIfCancellationRequested();
