@@ -75,10 +75,10 @@ public sealed class SchemaSyncToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when sync-schemas args has the wrong type.")]
+	[Description("Returns a top-level MCP deserialize error when sync-schemas args has the wrong type.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas returns invocation error when args has invalid type")]
-	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the deserialize layer with the SDK's argument-deserialization diagnostic instead of returning a structured SchemaSyncResponse payload.")]
 	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -92,9 +92,15 @@ public sealed class SchemaSyncToolE2ETests {
 			context.CancellationTokenSource.Token);
 
 		// Assert
+		// A present-but-wrong-type `args` reaches the SDK's argument deserializer, which fails with a
+		// specific "Failed to deserialize argument 'args' ..." diagnostic — distinct from the generic
+		// "An error occurred invoking ..." surfaced when the `args` wrapper is absent entirely. Both are
+		// binding-layer failures (IsError=true, no structured payload); the deserialize message is the
+		// real contract for a type mismatch.
 		AssertInvocationFailure(
 			callResult,
-			because: "wrong-type args should fail during MCP binding before sync-schemas can produce a structured tool response");
+			because: "wrong-type args should fail during MCP argument deserialization before sync-schemas can produce a structured tool response",
+			expectedDiagnostic: "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'");
 	}
 
 	[Test]
@@ -713,7 +719,11 @@ public sealed class SchemaSyncToolE2ETests {
 		];
 	}
 
-	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) =>
+		AssertInvocationFailure(callResult, because, "An error occurred invoking 'sync-schemas'.");
+
+	private static void AssertInvocationFailure(
+		CallToolResult callResult, string because, string expectedDiagnostic) {
 		callResult.IsError.Should().BeTrue(
 			because: because);
 		callResult.StructuredContent.Should().BeNull(
@@ -721,8 +731,8 @@ public sealed class SchemaSyncToolE2ETests {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		diagnostics.Should().Contain("An error occurred invoking 'sync-schemas'.",
-			because: "the transport-level failure should surface as the generic invocation error for the tool");
+		diagnostics.Should().Contain(expectedDiagnostic,
+			because: "the transport-level failure should surface the expected MCP binding diagnostic for the tool");
 	}
 
 	[Test]

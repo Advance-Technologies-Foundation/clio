@@ -1981,6 +1981,144 @@ public class PageToolsTests
 			because: "the syntax gate must short-circuit BEFORE any remote call — the entire point of the validator is to keep broken bodies off the wire");
 	}
 
+	// A body in the legacy marker-without-key shape (`{ /**MARKER*/[]/**MARKER*/, ... }`) — an object
+	// literal whose entries have no keys. Acornima rejects it with "Unexpected token ']'" at column 139,
+	// the exact JS-syntax failure the ENG-90640 e2e contracts feed update-page. Marker INTEGRITY still
+	// passes (all required marker pairs present), so the offline content/argument validators can run on
+	// the syntax-failure path.
+	private const string SyntaxBrokenMarkerBody =
+		"define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private static PageUpdateTool BuildSyntaxFailureTool(out IApplicationClient applicationClient) {
+		applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		return new PageUpdateTool(
+			command, logger, commandResolver,
+			Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+	}
+
+	[Test]
+	[Description("ENG-90640: a body that fails the JS syntax gate but carries malformed optional-properties surfaces the specific optional-properties argument error over the generic JavaScript-syntax message.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersOptionalPropertiesError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new(
+			"UsrBadOptionalProps_FormPage", SyntaxBrokenMarkerBody, null, DryRun: true,
+			"local", null, null, null, OptionalProperties: "{not-an-array}");
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a malformed optional-properties payload must reject the call");
+		response.Error.Should().MatchRegex("(?i)optional-properties",
+			because: "the specific optional-properties argument error must win over the generic JavaScript syntax error so the operator fixes the right thing");
+		response.Error.Should().NotContain("JavaScript syntax error",
+			because: "the actionable argument error must shadow the generic parser message on the syntax-failure path");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "argument validation is offline and must precede any remote call");
+	}
+
+	[Test]
+	[Description("ENG-90640: a body that fails the JS syntax gate but carries malformed resources JSON surfaces the canonical resources argument error over the generic JavaScript-syntax message.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersResourcesError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new(
+			"UsrValidationOnly_FormPage", SyntaxBrokenMarkerBody, Resources: "{\"UsrTitle\":", DryRun: true,
+			"local", null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a malformed resources payload must reject the call");
+		response.Error.Should().Be("resources must be a valid JSON object string",
+			because: "the canonical resources argument error must win over the generic JavaScript syntax error");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "argument validation is offline and must precede any remote call");
+	}
+
+	[Test]
+	[Description("ENG-90640: a run-process button missing processName inside a body that also fails the JS syntax gate surfaces the structural processName error (offline) over the generic JavaScript-syntax message, even though marker integrity fails.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersRunProcessStructureError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		// Same shape as the e2e contract body: a run-process button with processRunType but no
+		// processName, wrapped in the legacy marker-without-key object literal (fails Acornima).
+		string runProcessBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function() { return { "
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{"
+			+ "\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\","
+			+ "\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}},\"parentName\":\"MainHeaderTop\","
+			+ "\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(
+			"UsrRunProcessValidation_FormPage", runProcessBody, null, DryRun: true,
+			"local", null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a run-process button without processName must reject the call before any remote call");
+		response.Error.Should().Contain("processName",
+			because: "the structural run-process error names the missing processName and must win over the generic syntax error");
+		response.Error.Should().Contain("RunBpButton",
+			because: "the structural run-process error names the offending button");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the structural run-process check is offline regex and must precede any remote signature call");
+	}
+
+	[Test]
+	[Description("ENG-89796/ENG-90640: a genuine JS-only syntax error with clean argument payloads and no run-process structural problem still surfaces the generic JavaScript-syntax message — the actionable-error preference does not eat the fail-fast wording.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PreservesSyntaxError_WhenNoMoreSpecificOfflineErrorExists() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		// Clean payloads, no run-process button, no environment supplied — nothing more specific than
+		// the JS syntax error can be detected offline.
+		PageUpdateArgs args = new(
+			"UsrPlain_FormPage", SyntaxBrokenMarkerBody, null, DryRun: true,
+			null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a body that cannot parse as JavaScript must never be persisted");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "with clean payloads and no offline-detectable problem the generic ENG-89796 syntax wording must be preserved");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax gate must short-circuit before any remote call");
+	}
+
 	[Test]
 	[Description("PageUpdateTool.UpdatePage rejects schemas where validator params use $Resources.Strings.X binding syntax before saving to Creatio.")]
 	public void PageUpdateTool_UpdatePage_Rejects_Schema_With_Resources_Strings_In_Validator_Params() {
