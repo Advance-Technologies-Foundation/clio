@@ -249,13 +249,14 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 	}
 
-	[Test]
-	[Description("Starts the real clio MCP server with an elicitation-capable client that never answers and verifies create-app-section (no icon-background) returns a structured response promptly instead of hanging to the client ceiling.")]
+	[TestCase(null, TestName = "ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(missing icon)")]
+	[TestCase("not-a-color", TestName = "ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(invalid icon)")]
+	[Description("Starts the real clio MCP server with an elicitation-capable client that never answers and verifies create-app-section returns a structured response promptly instead of hanging to the client ceiling. Covers both a missing icon-background (resolution skipped) and an unrecognized one (resolution must reject without eliciting).")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create does not hang when an elicitation-capable client never answers")]
-	[AllureDescription("Connects a client that advertises the elicitation capability but never answers elicitation requests, then calls create-app-section without icon-background against an unreachable environment. Verifies the tool returns a structured payload promptly rather than blocking on an unanswered elicitation until the client request ceiling.")]
-	public async Task ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers() {
+	[AllureDescription("Connects a client that advertises the elicitation capability but never answers elicitation requests, then calls create-app-section against an unreachable environment with either no icon-background or an unrecognized one. Verifies the tool returns a structured payload promptly rather than blocking on an unanswered elicitation until the client request ceiling.")]
+	public async Task ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(string? iconBackground) {
 		// Arrange — an elicitation-capable client that NEVER answers. The unreachable URI means no
 		// section can be created as a side effect: once icon resolution is bounded, the call falls
 		// through to a fast transport failure.
@@ -298,20 +299,23 @@ public sealed class ApplicationSectionToolE2ETests {
 			settings, neverAnswers, cancellationTokenSource.Token);
 
 		try {
-			// Act — no icon-background, so the create path would elicit on an elicitation-capable client.
+			// Act — a missing or unrecognized icon-background is the case that would elicit on an
+			// elicitation-capable client; verify it resolves without prompting.
 			Stopwatch stopwatch = Stopwatch.StartNew();
 			Exception captured = null!;
 			CallToolResult callResult = null!;
+			Dictionary<string, object?> sectionArgs = new() {
+				["environment-name"] = "elicit-e2e",
+				["application-code"] = "UsrElicitApp",
+				["caption"] = "Tasks"
+			};
+			if (iconBackground is not null) {
+				sectionArgs["icon-background"] = iconBackground;
+			}
 			try {
 				callResult = await session.CallToolAsync(
 					SectionCreateToolName,
-					new Dictionary<string, object?> {
-						["args"] = new Dictionary<string, object?> {
-							["environment-name"] = "elicit-e2e",
-							["application-code"] = "UsrElicitApp",
-							["caption"] = "Tasks"
-						}
-					},
+					new Dictionary<string, object?> { ["args"] = sectionArgs },
 					cancellationTokenSource.Token);
 			}
 			catch (Exception ex) {
