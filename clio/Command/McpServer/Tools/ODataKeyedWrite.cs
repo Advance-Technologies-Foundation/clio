@@ -48,13 +48,23 @@ internal static class ODataKeyedWrite {
 	}
 
 	/// <summary>
+	/// Resolves the environment-scoped application client and URL builder.
+	/// </summary>
+	internal static (IApplicationClient Client, IServiceUrlBuilder UrlBuilder) ResolveClients(
+		IToolCommandResolver commandResolver, string environmentName) {
+		EnvironmentOptions options = new() { Environment = environmentName };
+		return (
+			commandResolver.Resolve<IApplicationClient>(options),
+			commandResolver.Resolve<IServiceUrlBuilder>(options)
+		);
+	}
+
+	/// <summary>
 	/// Resolves the environment-scoped application client and builds the key-addressed OData URL.
 	/// </summary>
 	internal static (IApplicationClient client, string url) ResolveTarget(
 		IToolCommandResolver commandResolver, string environmentName, string entity, string id) {
-		EnvironmentOptions options = new() { Environment = environmentName };
-		IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-		IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+		var (client, urlBuilder) = ResolveClients(commandResolver, environmentName);
 		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
 		return (client, url);
 	}

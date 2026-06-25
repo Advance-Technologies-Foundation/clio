@@ -45,7 +45,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string url = urlBuilder.Build(path);
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			return ParseODataResponse(responseJson);
+			return ODataResponseParser.ParseODataRead(responseJson);
 		} catch (Exception ex) {
 			return ODataReadResponse.Failure(ex.Message);
 		}
@@ -137,34 +137,6 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		parts.Add($"$top={top}");
 
 		return $"?{string.Join("&", parts)}";
-	}
-
-	private static ODataReadResponse ParseODataResponse(string json) {
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return ODataReadResponse.Failure(serverError);
-			}
-
-			if (root.TryGetProperty("value", out JsonElement valueEl)) {
-				int count = valueEl.ValueKind == JsonValueKind.Array ? valueEl.GetArrayLength() : 1;
-				string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nl)
-					? nl.GetString()
-					: null;
-				return new ODataReadResponse(true, null, count, valueEl.Clone(), nextLink);
-			}
-
-			// Single-entity response (no value wrapper)
-			return new ODataReadResponse(true, null, 1, root.Clone(), null);
-		} catch (Exception ex) {
-			string preview = string.IsNullOrWhiteSpace(json) ? "<empty>" : json;
-			if (preview.Length > 500) {
-				preview = preview[..500] + "...";
-			}
-			return ODataReadResponse.Failure($"Failed to parse OData response: {ex.Message} | Response: {preview}");
-		}
 	}
 
 }
