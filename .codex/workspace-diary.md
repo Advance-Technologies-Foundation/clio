@@ -4420,3 +4420,10 @@ Decision: CreatioVersionProvider probes cliogate GetSysInfo first (SysInfo.CoreV
 Discovery: Auto-scan in BindingsModule registers both provider+checker once the concrete provider exists; no explicit registration needed. ValidateOnBuild green (full build + full suite run).
 Files: clio/Common/CreatioVersionProvider.cs, clio/BindingsModule.cs (removed exclusion ~796), clio/Program.cs (gate + TryGetCreatioVersionRequirementError + CreatioVersionRequirementExitCode=78), clio.tests/Common/CreatioVersionProviderTests.cs, clio.tests/Command/ProgramCreatioVersionGateTests.cs
 Impact: Commands can now gate on minimum Creatio platform version with a machine-readable failure class + distinct exit code.
+
+## 2026-06-26 — MCP parity for [RequiresCreatioVersion] gate (increment 4)
+Context: CLI version gate (exit 78) was done; MCP env-sensitive path needed parity with the package gate.
+Decision: Added EnforceCreatioVersionRequirements in BaseTool.InternalExecute<TCommand>, ordered version→package (mirrors CLI). Two-catch structure: CreatioVersionRequirementException→CommandExecutionResult.FromCreatioVersionRequirementError (new factory, exit 78 = Program.CreatioVersionRequirementExitCode, embeds " [{ErrorCode}]"); catch-all→FromException (-1) so malformed attribute (InvalidOperationException) is never collapsed into 78.
+Discovery: NO shipping command carries [RequiresCreatioVersion] (only test fixtures), so the real MCP process never instantiates the gate. A version-gated MCP tool must live in the production clio assembly — clio.mcp.e2e (harness) cannot inject one. Mirrors the package gate's own e2e refusal-branch gap (WorkspaceSyncToolE2ETests:119). e2e deferred to architect (option B: document gap, rely on unit tests).
+Files: clio/Command/McpServer/Tools/BaseTool.cs, clio/Command/McpServer/Tools/CommandExecutionResult.cs, clio.tests/Command/McpServer/BaseToolTests.cs
+Impact: When any real command adopts [RequiresCreatioVersion], its MCP tool is gated automatically with zero per-tool code; e2e option A (feature-toggled test tool + RuntimeDetectionStubServer→undeterminable) becomes available then.
