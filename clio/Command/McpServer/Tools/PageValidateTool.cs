@@ -44,7 +44,7 @@ public sealed class PageValidateTool(
 		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
 		// so it runs here rather than in the static content-validation pipeline. Fail-open inside.
 		SchemaValidationResult chartResult =
-			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, cancellationToken).ConfigureAwait(false);
+			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
 		if (!chartResult.IsValid) {
 			result = FoldInChartErrors(result, chartResult);
 		}
@@ -239,7 +239,11 @@ public sealed record PageValidateArgs(
 
 	[property: JsonPropertyName("resources")]
 	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
-	string? Resources = null
+	string? Resources = null,
+
+	[property: JsonPropertyName("version")]
+	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
+	string? Version = null
 );
 
 public sealed class PageValidateResponse {

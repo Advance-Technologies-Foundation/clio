@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Command;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -25,7 +26,9 @@ public sealed class PageSyncTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard) {
+	IPageBaselineGuard pageBaselineGuard,
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	ISettingsRepository? settingsRepository = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -59,16 +62,52 @@ public sealed class PageSyncTool(
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
 		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
 			server, args, pages, prePass, cancellationToken);
-		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Resolve the
-		// merged type definitions once here on the async entry, then reuse them across the synchronous
-		// per-page deterministic triage in ExecuteSyncBatch. Null when the registry is unavailable (fail-open).
-		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions =
-			await ChartWidgetValidation.ResolveTypeDefinitionsAsync(webComponentCatalog, cancellationToken).ConfigureAwait(false);
+		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
+		// target environment's platform version (probed the same way get-component-info resolves it) so the
+		// batch validates against the component set the environment actually ships, not the broader 'latest'.
+		// Resolve the merged type definitions once here on the async entry, then reuse them across the
+		// synchronous per-page deterministic triage in ExecuteSyncBatch. Skip the probe entirely when
+		// validation is disabled — the definitions would never be consumed. Null when validation is off or
+		// the registry/version is unavailable (fail-open).
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
+		if (args.Validate ?? true) {
+			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
+			chartTypeDefinitions = await ChartWidgetValidation
+				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
+		}
 		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
 		};
+	}
+
+	/// <summary>
+	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
+	/// Fail-soft: a blank environment, absent resolver dependencies (e.g. a unit test that did not supply
+	/// them), or any probe failure yields <see langword="null"/>, which <see cref="ChartWidgetValidation"/>
+	/// maps to the safe <c>latest</c> superset — version resolution must never block a save.
+	/// </summary>
+	private async Task<string?> ResolvePlatformVersionAsync(string environmentName, CancellationToken cancellationToken) {
+		if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName)) {
+			return null;
+		}
+		try {
+			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions { Environment = environmentName });
+			if (settings is null) {
+				return null;
+			}
+			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
+				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			return resolution?.ResolvedVersion;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			// Fail-soft: a bad/unreachable environment must not break a save. The catalog stays on 'latest'
+			// (ChartWidgetValidation maps null -> latest), matching get-component-info's soft degrade.
+			return null;
+		}
 	}
 
 	// Pre-pass: runs the deterministic syntax + AST-lint gates on every web

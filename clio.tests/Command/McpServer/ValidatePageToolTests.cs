@@ -3,6 +3,7 @@ using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -244,5 +245,33 @@ public sealed class ValidatePageToolTests {
 			because: "the AMD body has all required markers in correct order");
 		response.Validation.JsSyntaxOk.Should().BeTrue(
 			because: "the AMD body is syntactically valid JavaScript");
+	}
+
+	[Test]
+	[Description("Web path: scopes the registry-driven chart-widget validation to the explicit version argument.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenVersionProvided_ScopesChartCatalogToThatVersion() {
+		// Arrange
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageValidateTool tool = new(Substitute.For<IMobileComponentInfoCatalog>(), webCatalog);
+		string amdBody =
+			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageValidateArgs args = new(amdBody, null, "8.1.5");
+
+		// Act
+		await tool.ValidatePage(args);
+
+		// Assert
+		string requestedVersion = (string)webCatalog.ReceivedCalls()
+			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.GetArguments()[0];
+		requestedVersion.Should().Be("8.1.5",
+			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
 	}
 }

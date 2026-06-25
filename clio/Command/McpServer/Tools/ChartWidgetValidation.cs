@@ -21,13 +21,19 @@ internal static class ChartWidgetValidation {
 
 	private const string ChartWidgetComponentType = "crt.ChartWidget";
 
+	/// <summary>
+	/// Validates the chart-widget configuration in <paramref name="body"/> against the catalog's
+	/// merged chart type definitions. The <paramref name="requestedVersion"/> scopes the catalog to a
+	/// known platform version (see <see cref="ResolveTypeDefinitionsAsync"/> for the resolution and
+	/// latest-fallback rules); pass <see langword="null"/> to validate against <c>latest</c>.
+	/// </summary>
 	internal static async Task<SchemaValidationResult> ValidateAsync(
-		string body, IComponentInfoCatalog catalog, CancellationToken cancellationToken) {
+		string body, IComponentInfoCatalog catalog, string? requestedVersion, CancellationToken cancellationToken) {
 		if (string.IsNullOrEmpty(body) || catalog is null) {
 			return new SchemaValidationResult { IsValid = true };
 		}
 		IReadOnlyDictionary<string, JsonElement>? typeDefinitions =
-			await ResolveTypeDefinitionsAsync(catalog, cancellationToken).ConfigureAwait(false);
+			await ResolveTypeDefinitionsAsync(catalog, requestedVersion, cancellationToken).ConfigureAwait(false);
 		return SchemaValidationService.ValidateChartWidgetConfig(body, typeDefinitions);
 	}
 
@@ -35,15 +41,23 @@ internal static class ChartWidgetValidation {
 	/// Loads and merges the chart-widget type definitions once, so a batch caller (e.g. sync-pages) can
 	/// resolve them a single time on its async entry and reuse the dictionary across many synchronous
 	/// per-page validations. Returns <see langword="null"/> when the registry is unavailable (fail-open).
+	/// <para>
+	/// <paramref name="requestedVersion"/> is the platform version the catalog is scoped to — typically the
+	/// version the agent already resolved via <c>get-component-info</c>. A blank or unparseable value
+	/// degrades to <see cref="ComponentRegistryClient.LatestVersion"/>; a parseable value is normalised to
+	/// the 3-part <c>Major.Minor.Patch</c> CDN filename form. The registry client itself falls back to
+	/// <c>latest</c> when no per-version registry exists for the resolved version (404), so a
+	/// known-but-unpublished version still yields a usable (superset) catalog rather than failing.
+	/// </para>
 	/// </summary>
 	internal static async Task<IReadOnlyDictionary<string, JsonElement>?> ResolveTypeDefinitionsAsync(
-		IComponentInfoCatalog catalog, CancellationToken cancellationToken) {
+		IComponentInfoCatalog catalog, string? requestedVersion, CancellationToken cancellationToken) {
 		if (catalog is null) {
 			return null;
 		}
 		ComponentCatalogState state;
 		try {
-			state = await catalog.LoadAsync(ComponentRegistryClient.LatestVersion, cancellationToken).ConfigureAwait(false);
+			state = await catalog.LoadAsync(NormaliseRequestedVersion(requestedVersion), cancellationToken).ConfigureAwait(false);
 		} catch (ComponentRegistryUnavailableException) {
 			// Registry not reachable (offline / not yet cached) — skip, do not block the save.
 			return null;
@@ -52,6 +66,24 @@ internal static class ChartWidgetValidation {
 			return null;
 		}
 		return MergeChartTypeDefinitions(state);
+	}
+
+	/// <summary>
+	/// Resolves the catalog version the chart-widget type definitions are loaded against. A blank argument
+	/// (the common case — caller has no known version) and an unparseable value both degrade to
+	/// <see cref="ComponentRegistryClient.LatestVersion"/>; a parseable value is normalised to the 3-part
+	/// <c>Major.Minor.Patch</c> form (mirroring <c>get-component-info</c>'s explicit-version handling) so the
+	/// CDN filename is well-formed even when the caller passes a 4-part core version. Fail-open by design:
+	/// the validator must never block a save because the version string was malformed, so it leans on the
+	/// safe <c>latest</c> superset rather than rejecting.
+	/// </summary>
+	private static string NormaliseRequestedVersion(string? requestedVersion) {
+		if (string.IsNullOrWhiteSpace(requestedVersion)) {
+			return ComponentRegistryClient.LatestVersion;
+		}
+		return PlatformVersionResolver.TryNormaliseToThreePartSemver(requestedVersion, out string? threePart)
+			? threePart!
+			: ComponentRegistryClient.LatestVersion;
 	}
 
 	/// <summary>
