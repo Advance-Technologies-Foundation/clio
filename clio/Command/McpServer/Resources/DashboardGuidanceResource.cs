@@ -7,7 +7,8 @@ namespace Clio.Command.McpServer.Resources;
 /// <summary>
 /// Provides canonical AI-facing guidance for placing, sizing, grouping, and styling Freedom UI
 /// analytical widgets (metrics/indicators and charts) on dashboards, so a custom dashboard keeps the
-/// native "plain white" card look and the canonical metric-band-then-chart-grid layout.
+/// native "plain white" card look and the canonical metric-band-then-chart-grid layout, plus the
+/// the dashboard's auto-generated hidden page data source (DashboardDS) that widgets filter by via a dependencies entry.
 /// </summary>
 [McpServerResourceType]
 public sealed class DashboardGuidanceResource {
@@ -34,11 +35,11 @@ public sealed class DashboardGuidanceResource {
 		       and HOW it is styled. It does NOT own the runtime payload of any single widget — for the
 		       `crt.IndicatorWidget` generation contract (aggregate, static filter, intent -> config translation)
 		       and its exact style theme values read the dedicated `indicator-widget` guidance and call
-		       `get-component-info`. For the `crt.ChartWidget` generation contract (chart type, series,
-		       aggregation, grouping, sorting, static filter, intent -> config translation) read the dedicated
-		       `chart-widget` guidance and call `get-component-info`. For surrounding page structure, fields,
-		       containers, and accessibility/contrast defer to the general Freedom UI page guidance
-		       (`page-modification`).
+		       `get-component-info`. For surrounding page structure, fields, containers, and accessibility/contrast
+		       defer to the general Freedom UI page guidance (`page-modification`).
+
+		       It also documents one dashboard-specific structural detail found nowhere else: the auto-generated
+		       hidden page data source (`DashboardDS`) that widgets filter by — see the section below.
 
 		       ## Core rules (in priority order)
 
@@ -58,7 +59,7 @@ public sealed class DashboardGuidanceResource {
 		          decorative colors.
 		       3. Right SIZE — size by widget TYPE, not by eye (exact column counts per type are in "Widget
 		          catalog" below). Metric tiles are 1 row tall and share equal width across the band; charts are
-		          ~9 rows tall (`rowSpan`; never below 6). Every row's widget widths must sum to a full 12 columns — less than 12 leaves a
+		          ~3 rows tall. Every row's widget widths must sum to a full 12 columns — less than 12 leaves a
 		          visible gap, more than 12 wraps and breaks alignment. Composition (pie/doughnut) breakdowns come
 		          in threes.
 
@@ -68,10 +69,7 @@ public sealed class DashboardGuidanceResource {
 		       number of columns wide and a whole number of rows tall.
 
 		       - WIDTH is what you tune most — a widget's width is a slice of 12.
-		       - HEIGHT is `layoutConfig.rowSpan` (grid rows). Platform defaults: metric tile 3, chart 9, funnel 15,
-		         list/pivot 9. HARD FLOOR: a chart, list, or pivot must have `rowSpan` >= 6 — below that it renders
-		         unreadably short. Metric/gauge tiles are exempt (they stay ~3). The "rows" elsewhere in this guide
-		         are these `rowSpan` values, so "a chart ~3 rows" means the ~9-`rowSpan` default, not literally 3.
+		       - HEIGHT is measured in grid rows: a metric tile = 1 row; a standard chart ~ 3 rows.
 		       - Each row of widgets must sum to EXACTLY 12 columns.
 
 		       The only widths you normally need:
@@ -173,7 +171,7 @@ public sealed class DashboardGuidanceResource {
 		       ## Widget catalog — type, when to use, default size
 
 		       Every widget keeps the PLAIN WHITE default (see Core rules); only the rare emphasized-KPI exception
-		       differs. Sizes below are in 12-grid columns; height is ~9 `rowSpan` for every chart (floor 6) and ~3 for a
+		       differs. Sizes below are in 12-grid columns; height is ~3 rows for every chart and 1 row for a
 		       metric tile unless noted.
 
 		       Metric (indicator) — a single aggregated value with a caption and a small leading icon; the
@@ -231,6 +229,30 @@ public sealed class DashboardGuidanceResource {
 		       accessibility/contrast guidance. The exact indicator-widget `theme` / `layout.color` values are
 		       owned by the `indicator-widget` guidance.
 
+		       ## The dashboard's hidden page data source (`DashboardDS`)
+
+		       A dashboard auto-generates a HIDDEN page-level data source at runtime from the schema's
+		       `DashboardsEntitySchemaName` optional property, exposed as `DashboardDS` (scope `page`). It is NOT
+		       written in the schema body, so do NOT conclude "this dashboard has no page record source" from a
+		       static body with no `primaryDataSourceName`. Read `DashboardsEntitySchemaName` from the
+		       `optionalProperties` array in the `bundle.json` that `get-page` writes (it is NOT in the `get-page`
+		       response or `meta.json`).
+
+		       `DashboardDS` exists so a widget can be filtered by the dashboard's page data. A widget opts in by
+		       BINDING to it with a `dependencies` entry (the "Apply filter by page data" toggle) — the same
+		       declarative mechanism as record-page details (see `related-list`), with `DashboardDS` as the master
+		       instead of `PDS`. Add it for EVERY data-bound widget whenever the dashboard declares a
+		       `DashboardsEntitySchemaName`; without it the widget ignores the page data.
+
+		       The binding entry is `{ "attributePath": <col>, "relationPath": "DashboardDS.Id" }`:
+		       - `relationPath` is ALWAYS `"DashboardDS.Id"`.
+		       - `attributePath` is `"Id"` when the widget's entity EQUALS `DashboardsEntitySchemaName` (Id = Id);
+		         otherwise the widget entity's bare FK column pointing at that entity (never the `...Id` form —
+		         resolve via `get-app-info` / `get-entity-schema-properties`).
+
+		       Its placement and exact shape are widget-specific — read each widget's contract via
+		       `get-component-info`.
+
 		       ## Finish checklist
 
 		       - Metric tiles are in a top band, equal width, one row tall, 4 or 6 across (never 5).
@@ -239,9 +261,11 @@ public sealed class DashboardGuidanceResource {
 		         odd width.
 		       - No chart sits in the metric band, and no metric tile is dropped among the charts.
 		       - Every widget uses the plain white style (no stray colored cards for variety or branding).
-		       - Each chart/list/pivot meets the `rowSpan` floor (>= 6; default 9, funnel 15); metric/gauge tiles stay short (~3).
+		       - Each widget type uses its default size (metric short, 1 row; chart ~3 rows tall).
 		       - Multi-topic dashboards are split into labeled sections, each = metric band + chart row.
 		       - Titles and value colors use theme defaults (red only for overdue/negative).
+		       - If the dashboard has a `DashboardsEntitySchemaName`, every data-bound widget has a `dependencies`
+		         entry to `DashboardDS.Id` (`attributePath` = `Id` when the widget entity matches it, else its FK column).
 		       """
 	};
 
@@ -250,6 +274,6 @@ public sealed class DashboardGuidanceResource {
 	/// dashboard widgets.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboards-guidance")]
-	[Description("Returns canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.")]
+	[Description("Returns canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards, including the DashboardDS data source widgets filter by.")]
 	public ResourceContents GetGuide() => Guide;
 }
