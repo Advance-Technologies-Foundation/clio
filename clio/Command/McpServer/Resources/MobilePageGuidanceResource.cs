@@ -50,7 +50,7 @@ public sealed class MobilePageGuidanceResource {
 		       | Known limitations (fail-closed design-package resolution on writes, best-effort fallback on reads) | Applies in full |
 		       | `bundle.json` shape and `jq` recipes | Applies, with one caveat: `handlers` / `converters` / `validators` source strings are always empty (`'[]'` / `'{}'`) because mobile bodies do not author these sections |
 		       | Web `Rules for viewConfigDiff` section — every bullet EXCEPT the FormPage `DataValueType → component` mapping in the next row (i.e. `operation` / `name` / `parentName` / `propertyName` / `index`, the view-engine `visible` property, and the user-visible string → `$Resources.Strings.*` rule) | Applies in full |
-		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — pick the control from the MOBILE registry via `get-component-info schema-type: "mobile"`, which is the authoritative mobile type list |
+		       | Rules for viewConfigDiff: FormPage `DataValueType → component` mapping (web component registry) | Does NOT apply — pick the control from the MOBILE registry via `get-component-info schema-type: "mobile"`; the COMPONENT REGISTRY section below is the authoritative type list (note the canonical gotcha: Boolean → `crt.Toggle`, not `crt.Checkbox`) |
 		       | Finding a container for a new component (`parentName`) | Applies in full — same `bundle.containers` lookup; common mobile container types: `crt.Scaffold` (root), `crt.GridContainer`, `crt.FlexContainer`, `crt.TabPanel`, `crt.TabContainer`, `crt.ExpansionPanel` |
 		       | update-page write modes (`replace` / `append`) — including the "do NOT resend `raw.body`" CRITICAL warning and the `ownBodySummary.viewConfigDiffOperations > 0 → use append` rule of thumb, and the own-body `insert`-to-`merge`/`move`/`remove` downgrade warning | Applies, but mobile bodies have no handlers/converters/validators sections (those merge rules do not apply) and the append fragment is plain JSON, not AMD (see BODY FORMAT below) |
 
@@ -207,14 +207,20 @@ public sealed class MobilePageGuidanceResource {
 		       MANDATORY before inserting any component into a mobile page:
 		         get-component-info schema-type: "mobile"
 
-		       That call is the authoritative, version-accurate list of what runs on mobile — including
-		       mobile-only controls and the per-component gotchas in each component's `documentation`
-		       (e.g. a Boolean field maps to the mobile toggle, not a checkbox). Do NOT rely on a
-		       remembered or hard-coded mobile/web split: a web component `type` value is NOT
-		       automatically available on mobile, so always confirm against the catalog.
+		       Key mobile-specific types:
+		         crt.Toggle          — Use for Boolean fields (NOT crt.Checkbox — mobile designer maps Boolean → Toggle)
+		         crt.BarcodeScanner  — Barcode/QR scanner; mobile-only
+		         crt.FloatingActionButton — Floating action button (set on Scaffold.floatAction)
+		         crt.Sort            — Sort control for list pages; mobile-only
+		         crt.QuickFilterGroup — Group of quick filter chips; mobile-only
 
-		       VERIFY, DON'T DOWNGRADE. `get-component-info schema-type: "mobile"` is the authoritative
-		       source for what runs on mobile. A type
+		       NOT available in mobile (web-only):
+		         crt.DataGrid, crt.HtmlEditor, crt.PasswordInput, crt.EncryptedInput,
+		         crt.ColorPicker, crt.TagSelect, crt.MultiSelect, crt.IFrame,
+		         crt.Chat, crt.Dashboards
+
+		       VERIFY, DON'T DOWNGRADE. Neither list above is exhaustive — `get-component-info
+		       schema-type: "mobile"` is the authoritative source for what runs on mobile. A type
 		       existing on web does NOT make it web-only: if it IS in the mobile catalog it IS
 		       implemented, so use it (the inverse of the NO INVENTION rule above). When a column
 		       has a specific data type (phone, email, number, date, etc.), do NOT default it to a
@@ -318,19 +324,37 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       FIELD GROUPING IN CONTAINERS (mobile layout convention)
 		       ─────────────────────────────────────────────────────────────
-		       On mobile pages, group fields inside crt.GridContainer instances rather than placing them
-		       directly in the Scaffold — each group then renders as a distinct card-like surface that matches
-		       the native mobile design language. For the exact container styling that produces that card
-		       surface (the `color` / `borderRadius` values), fetch `get-component-info crt.GridContainer`
-		       with schema-type mobile.
+		       On mobile pages, fields MUST be grouped inside crt.GridContainer instances
+		       with the "primary" color. This gives each field group a visually distinct
+		       card-like surface that matches the native mobile design language.
+
+		       Default field container pattern:
+		         {
+		           "operation": "insert",
+		           "name": "<GroupName>Container",
+		           "values": {
+		             "type": "crt.GridContainer",
+		             "columns": "1fr",
+		             "color": "primary",
+		             "borderRadius": "medium",
+		             "padding": { "top": "medium", "right": "medium", "bottom": "medium", "left": "medium" },
+		             "items": []
+		           },
+		           "parentName": "GeneralTabContainer",
+		           "propertyName": "items",
+		           "index": 0
+		         }
 
 		       Rules:
-		         - If the page bundle already provides field-group containers (visible in the existing
-		           viewConfigDiff from `get-page`), reuse them as field parents instead of inserting new ones.
-		         - Group logically related fields together in one container; use separate containers for
-		           distinct field groups (e.g. general info, communication details, address fields).
-		         - Insert individual field components as children of these containers, NOT directly into the
-		           Scaffold items.
+		         - Always set "color": "primary" on field-group containers (not "default").
+		         - If the page bundle already provides containers with "color": "primary"
+		           (visible in the existing viewConfigDiff from `get-page`), reuse them as
+		           field parents instead of inserting new ones.
+		         - Group logically related fields together in one container.
+		         - Use separate containers for distinct field groups (e.g. general info,
+		           communication details, address fields).
+		         - Insert individual field components as children of these containers, NOT
+		           directly into the Scaffold items.
 
 		       ─────────────────────────────────────────────────────────────
 		       REQUESTS AVAILABLE ON MOBILE
