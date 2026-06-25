@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Common;
-using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
@@ -22,9 +21,7 @@ public sealed class PageUpdateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard,
-	IPlatformVersionResolverFactory? resolverFactory = null,
-	ISettingsRepository? settingsRepository = null)
+	IPageBaselineGuard pageBaselineGuard)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -126,14 +123,13 @@ public sealed class PageUpdateTool(
 			// run-process check (processName required) already runs inside ValidateBody ->
 			// ValidateWebPageBody.
 			if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
-				(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null);
+				(PageUpdateResponse contentFailure, _) = ValidateBody(options);
 				if (contentFailure != null)
 					return (contentFailure, null, null, null);
 			}
 			return (syntaxFailure, null, null, null);
 		}
-		string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options, requestedVersion);
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
 		if (validationFailure != null)
 			return (validationFailure, null, null, null);
 		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
@@ -211,41 +207,7 @@ public sealed class PageUpdateTool(
 		return combined;
 	}
 
-	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
-	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
-	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
-	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
-	/// </summary>
-	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
-		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile
-			|| resolverFactory is null || settingsRepository is null) {
-			return null;
-		}
-		try {
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions {
-				Environment = options.Environment,
-				Uri = options.Uri,
-				Login = options.Login,
-				Password = options.Password
-			});
-			if (settings is null) {
-				return null;
-			}
-			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
-				.ResolveAsync(cancellationToken).ConfigureAwait(false);
-			return resolution?.ResolvedVersion;
-		} catch (OperationCanceledException) {
-			throw;
-		} catch (Exception) {
-			// Fail-soft: a bad/unreachable environment must not break a save; the catalog stays on 'latest'.
-			return null;
-		}
-	}
-
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
-		PageUpdateOptions options, string? requestedVersion) {
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
 			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
@@ -283,20 +245,6 @@ public sealed class PageUpdateTool(
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
-		}
-		// Registry-driven chart-widget validation needs the async, version-scoped component catalog.
-		// Sync-over-async is deadlock-free here under the McpToolExecutionLock (no SynchronizationContext),
-		// the same pattern the mobile branch above uses. Fail-open inside when the registry is unavailable.
-		// requestedVersion scopes the catalog to the target environment's resolved platform version
-		// (probed the same way get-component-info resolves it); null validates against 'latest' (fail-soft).
-		SchemaValidationResult chartResult = ChartWidgetValidation
-			.ValidateAsync(options.Body, webComponentCatalog, requestedVersion, CancellationToken.None)
-			.GetAwaiter().GetResult();
-		if (!chartResult.IsValid) {
-			return (new PageUpdateResponse {
-				Success = false,
-				Error = "Validation failed: " + string.Join("; ", chartResult.Errors)
-			}, null);
 		}
 		return (null, webWarnings);
 	}
