@@ -49,19 +49,20 @@ public sealed class CreatioVersionProvider : ICreatioVersionProvider
 
 	#region Methods: Private
 
-	// Resolves the target environment's core version. Primary source is the cliogate GetSysInfo
-	// endpoint (SysInfo.CoreVersion); when that yields nothing (cliogate absent/older, or an
-	// unexpected shape) it degrades to the standard ApplicationInfoService
-	// (applicationInfo.sysValues.coreVersion), which needs only an authenticated session. Both expose
-	// the same 4-part core version, so the fallback is byte-equivalent when it runs. Returns null only
-	// when NEITHER source yields a parseable version — null is reserved for "no version at all"; a
-	// legacy fallback that produces a version returns that version.
+	// Resolves the target environment's core version. PRIMARY source is the UNGATED ApplicationInfoService
+	// (applicationInfo.sysValues.coreVersion), which needs only an authenticated session — so the version
+	// gate, which fires for EVERY user, never fails closed on a compatible stand merely because the caller
+	// lacks admin rights. The cliogate GetSysInfo endpoint (SysInfo.CoreVersion) is an admin-gated
+	// SECONDARY probe, tried only when ApplicationInfo yields nothing (defense-in-depth for a stand whose
+	// ApplicationInfo lacks the field). Both expose the same 4-part core version, so the secondary is
+	// byte-equivalent when it runs. Returns null only when NEITHER source yields a parseable version —
+	// null is reserved for "no version at all".
 	private Version Probe() {
 		IServiceUrlBuilder serviceUrlBuilder = _serviceUrlBuilderFactory.Create(_environmentSettings);
 
-		string rawVersion = TryGetSysInfoCoreVersion(serviceUrlBuilder);
+		string rawVersion = TryGetApplicationInfoCoreVersion(serviceUrlBuilder);
 		if (string.IsNullOrWhiteSpace(rawVersion)) {
-			rawVersion = TryGetApplicationInfoCoreVersion(serviceUrlBuilder);
+			rawVersion = TryGetSysInfoCoreVersion(serviceUrlBuilder);
 		}
 
 		if (string.IsNullOrWhiteSpace(rawVersion)) {
@@ -73,10 +74,10 @@ public sealed class CreatioVersionProvider : ICreatioVersionProvider
 		return Version.TryParse(rawVersion.Trim(), out Version parsed) ? parsed : null;
 	}
 
-	// cliogate GetSysInfo primary probe. Any failure class (HTTP error, timeout, connection refused,
-	// cliogate not installed → HTML/404, unexpected shape) must yield null so the caller falls through
-	// to the ApplicationInfoService fallback and, ultimately, reports an undeterminable version rather
-	// than letting a raw stack trace escape the dispatch gate.
+	// cliogate GetSysInfo SECONDARY probe (admin-gated, defense-in-depth). Any failure class (HTTP error,
+	// timeout, connection refused, cliogate not installed → HTML/404, permission denied for a non-admin,
+	// unexpected shape) must yield null so the resolver ultimately reports an undeterminable version
+	// rather than letting a raw stack trace escape the dispatch gate.
 	private string TryGetSysInfoCoreVersion(IServiceUrlBuilder serviceUrlBuilder) {
 		try {
 			string url = serviceUrlBuilder.Build(CreatioServicePaths.GetSysInfo);
@@ -90,8 +91,9 @@ public sealed class CreatioVersionProvider : ICreatioVersionProvider
 		}
 	}
 
-	// ApplicationInfoService fallback probe (no cliogate required, authenticated session only). Same
-	// soft-failure contract as the primary probe.
+	// ApplicationInfoService PRIMARY probe — ungated, needs only an authenticated session, so it works for
+	// any user (incl. non-admins and cliogate-less environments). Same soft-failure contract as the
+	// secondary probe.
 	private string TryGetApplicationInfoCoreVersion(IServiceUrlBuilder serviceUrlBuilder) {
 		try {
 			string url = serviceUrlBuilder.Build(CreatioServicePaths.GetApplicationInfo);

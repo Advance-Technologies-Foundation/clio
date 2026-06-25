@@ -23,10 +23,10 @@ public sealed class CreatioVersionProviderTests
 	#region Methods: Tests
 
 	[Test]
-	[Description("A clean cliogate GetSysInfo response with a 4-part CoreVersion is parsed verbatim into a 4-part System.Version (build/revision are NOT discarded — a version gate must keep them).")]
-	public void GetCoreVersion_ShouldReturnFourPartVersion_WhenSysInfoCoreVersionPresent() {
+	[Description("A clean ungated ApplicationInfoService response with a 4-part coreVersion is parsed verbatim into a 4-part System.Version (build/revision are NOT discarded — a version gate must keep them). ApplicationInfo is the PRIMARY source.")]
+	public void GetCoreVersion_ShouldReturnFourPartVersion_WhenApplicationInfoCoreVersionPresent() {
 		// Arrange
-		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "8.1.5.123" } }""");
+		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.1.5.123" } } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -34,18 +34,18 @@ public sealed class CreatioVersionProviderTests
 
 		// Assert
 		result.Should().Be(new Version(8, 1, 5, 123),
-			because: "the raw 4-part CoreVersion from cliogate GetSysInfo must be parsed without discarding build/revision");
+			because: "the raw 4-part coreVersion from the ungated ApplicationInfoService must be parsed without discarding build/revision");
 	}
 
 	[Test]
-	[Description("When the cliogate GetSysInfo probe yields no version the provider falls through to the legacy ApplicationInfoService and returns that version (a legacy fallback that produces a version must NOT return null).")]
-	public void GetCoreVersion_ShouldReturnVersion_WhenOnlyLegacyApplicationInfoYieldsVersion() {
-		// Arrange — cliogate GetSysInfo (GET) responds with an unusable shape; ApplicationInfo (POST) answers.
+	[Description("When the primary ungated ApplicationInfoService probe yields no version the provider falls through to the secondary cliogate GetSysInfo and returns that version (defense-in-depth: a secondary that produces a version must NOT return null).")]
+	public void GetCoreVersion_ShouldReturnVersion_WhenOnlySecondarySysInfoYieldsVersion() {
+		// Arrange — ApplicationInfo (POST) responds with an unusable shape; cliogate GetSysInfo (GET) answers.
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{ "Other": { } }""");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.3.3.3292" } } }""");
+			.Returns("""{ "applicationInfo": { } }""");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "SysInfo": { "CoreVersion": "8.3.3.3292" } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -53,18 +53,18 @@ public sealed class CreatioVersionProviderTests
 
 		// Assert
 		result.Should().Be(new Version(8, 3, 3, 3292),
-			because: "a legacy ApplicationInfoService fallback that yields a version must return that version, never null — null is reserved for no version at all");
+			because: "a secondary cliogate GetSysInfo probe that yields a version must return that version, never null — null is reserved for no version at all");
 	}
 
 	[Test]
-	[Description("When the cliogate GetSysInfo probe throws (cliogate not installed) the provider still resolves the version from the legacy ApplicationInfoService rather than reporting it undeterminable.")]
-	public void GetCoreVersion_ShouldReturnVersion_WhenSysInfoProbeThrowsButLegacyAnswers() {
+	[Description("When the primary ApplicationInfoService probe throws the provider still resolves the version from the secondary cliogate GetSysInfo rather than reporting it undeterminable.")]
+	public void GetCoreVersion_ShouldReturnVersion_WhenApplicationInfoProbeThrowsButSysInfoAnswers() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Throws(new HttpRequestException("cliogate not installed"));
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.2.0.100" } } }""");
+			.Throws(new HttpRequestException("application info unavailable"));
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "SysInfo": { "CoreVersion": "8.2.0.100" } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -72,18 +72,18 @@ public sealed class CreatioVersionProviderTests
 
 		// Assert
 		result.Should().Be(new Version(8, 2, 0, 100),
-			because: "a thrown cliogate probe must degrade to the legacy source, not surface as an undeterminable version");
+			because: "a thrown primary probe must degrade to the secondary source, not surface as an undeterminable version");
 	}
 
 	[Test]
-	[Description("When neither the cliogate GetSysInfo nor the legacy ApplicationInfoService yields a version the provider returns null (genuinely undeterminable).")]
+	[Description("When neither the primary ApplicationInfoService nor the secondary cliogate GetSysInfo yields a version the provider returns null (genuinely undeterminable).")]
 	public void GetCoreVersion_ShouldReturnNull_WhenNeitherSourceYieldsVersion() {
 		// Arrange — both probes respond but carry no usable version.
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{ "SysInfo": { } }""");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{ "applicationInfo": { } }""");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "SysInfo": { } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -99,9 +99,9 @@ public sealed class CreatioVersionProviderTests
 	public void GetCoreVersion_ShouldReturnNull_WhenBothProbesThrow() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Throws(new HttpRequestException("connection refused"));
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("connection refused"));
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Throws(new HttpRequestException("connection refused"));
 		CreatioVersionProvider provider = CreateProvider(client);
 
@@ -114,10 +114,10 @@ public sealed class CreatioVersionProviderTests
 	}
 
 	[Test]
-	[Description("A non-SemVer CoreVersion string (e.g. a custom 'dev' tag) is undeterminable and returns null rather than a silently clamped value.")]
+	[Description("A non-SemVer coreVersion string (e.g. a custom 'dev' tag) from the primary source is undeterminable and returns null rather than a silently clamped value.")]
 	public void GetCoreVersion_ShouldReturnNull_WhenCoreVersionUnparseable() {
 		// Arrange
-		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "dev" } }""");
+		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "dev" } } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -129,10 +129,10 @@ public sealed class CreatioVersionProviderTests
 	}
 
 	[Test]
-	[Description("A dev-build CoreVersion '0.0.0.0' is returned as EXACTLY new Version(0,0,0,0) (all four components), so the checker's exact-equality dev-build bypass engages and a dev stand is never gated.")]
+	[Description("A dev-build coreVersion '0.0.0.0' is returned as EXACTLY new Version(0,0,0,0) (all four components), so the checker's exact-equality dev-build bypass engages and a dev stand is never gated.")]
 	public void GetCoreVersion_ShouldReturnExactlyZeroVersion_WhenCoreVersionIsDevBuildSentinel() {
 		// Arrange
-		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "0.0.0.0" } }""");
+		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "0.0.0.0" } } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -146,25 +146,25 @@ public sealed class CreatioVersionProviderTests
 	}
 
 	[Test]
-	[Description("When the cliogate GetSysInfo probe yields a version the legacy ApplicationInfoService is never probed — GetSysInfo is the primary source.")]
-	public void GetCoreVersion_ShouldNotProbeLegacy_WhenSysInfoYieldsVersion() {
+	[Description("When the primary ungated ApplicationInfoService yields a version the secondary cliogate GetSysInfo is never probed — ApplicationInfo is the primary source, so a non-admin / cliogate-less environment incurs no failing gated call.")]
+	public void GetCoreVersion_ShouldNotProbeSysInfo_WhenApplicationInfoYieldsVersion() {
 		// Arrange
-		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "8.1.5.123" } }""");
+		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.1.5.123" } } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
 		provider.GetCoreVersion();
 
 		// Assert
-		client.DidNotReceive().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceive().ExecuteGetRequest(
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
 	[Description("The version is memoised for the lifetime of the provider: a second GetCoreVersion call does not re-probe the environment.")]
 	public void GetCoreVersion_ShouldProbeOnce_WhenCalledTwice() {
 		// Arrange
-		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "8.1.5.123" } }""");
+		IApplicationClient client = SubstitutePostResponse("""{ "applicationInfo": { "sysValues": { "coreVersion": "8.1.5.123" } } }""");
 		CreatioVersionProvider provider = CreateProvider(client);
 
 		// Act
@@ -172,16 +172,17 @@ public sealed class CreatioVersionProviderTests
 		provider.GetCoreVersion();
 
 		// Assert
-		client.Received(1).ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	#endregion
 
 	#region Methods: Private
 
-	private static IApplicationClient SubstituteGetResponse(string responseBody) {
+	private static IApplicationClient SubstitutePostResponse(string responseBody) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
 		return client;
 	}
