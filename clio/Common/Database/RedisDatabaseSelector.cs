@@ -164,10 +164,10 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	internal static ConfigurationOptions BuildConfigurationOptions(string hostname, int port, string username, string password)
 	{
 		// FAIL-FAST contract: an unreachable Redis must surface as a connection error within a few
-		// seconds, never as a multi-minute hang. AbortOnConnectFail=true makes Connect throw on a
-		// failed connect (instead of returning a multiplexer that retries forever in the background);
-		// the bounded ConnectTimeout/SyncTimeout/AsyncTimeout and single ConnectRetry cap the wait.
-		// When Redis IS reachable these bounds are generous enough not to change behavior.
+		// seconds, never as a multi-minute hang. Enabling AbortOnConnectFail makes Connect throw on a
+		// failed connect rather than returning a multiplexer that keeps retrying forever in the
+		// background, and the bounded connect, sync and async timeouts plus a single connect retry cap
+		// the wait. When Redis IS reachable these bounds are generous enough not to change behavior.
 		ConfigurationOptions configurationOptions = new()
 		{
 			AbortOnConnectFail = true,

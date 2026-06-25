@@ -29,6 +29,9 @@ public sealed class PageUpdateTool(
 
 	internal const string ToolName = "update-page";
 
+	// Prefix shared by every offline validation-failure response so the wording stays consistent.
+	private const string ValidationFailedPrefix = "Validation failed: ";
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"On successful non-dry-run saves, update-page also attempts a best-effort live Designer Presence `save` notification so active Creatio designers can be warned about outdated pages. This live notification requires forms-auth browser-session cookies (login/password-backed flow); in OAuth-only or credential-less environments the page save still succeeds and the response carries a warning when the live notification is skipped or fails. " +
@@ -180,7 +183,7 @@ public sealed class PageUpdateTool(
 		if (!runProcessStructure.IsValid) {
 			return new PageUpdateResponse {
 				Success = false,
-				Error = "Validation failed: " + string.Join("; ", runProcessStructure.Errors)
+				Error = ValidationFailedPrefix + string.Join("; ", runProcessStructure.Errors)
 			};
 		}
 		// 3. Offline content chain — only when the body is still a recognizable page (markers present
@@ -277,7 +280,7 @@ public sealed class PageUpdateTool(
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+					Error = ValidationFailedPrefix + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
 			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
@@ -288,7 +291,7 @@ public sealed class PageUpdateTool(
 			if (!mobileRunProcess.IsValid) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+					Error = ValidationFailedPrefix + string.Join("; ", mobileRunProcess.Errors)
 				}, null);
 			}
 			return (null, mobileResult.Warnings);
@@ -492,7 +495,7 @@ public sealed class PageUpdateTool(
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
-		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		string error = errors.Count > 0 ? ValidationFailedPrefix + string.Join("; ", errors) : null;
 		return (error, warnings.Count > 0 ? warnings : null);
 	}
 

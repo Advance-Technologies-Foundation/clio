@@ -184,10 +184,8 @@ public abstract class BaseTool<T>(
 	// non-serializable Value is made safe — and console rendering is untouched because the console reads
 	// from the live ConsoleLogger buffer, not this detached MCP snapshot.
 	private static IReadOnlyList<LogMessage> SanitizeForSerialization(IReadOnlyList<LogMessage> messages) {
-		foreach (LogMessage message in messages) {
-			if (message.Value is not (null or string)) {
-				message.Value = message.Value.ToString();
-			}
+		foreach (LogMessage message in messages.Where(message => message.Value is not (null or string))) {
+			message.Value = message.Value.ToString();
 		}
 		return messages;
 	}
