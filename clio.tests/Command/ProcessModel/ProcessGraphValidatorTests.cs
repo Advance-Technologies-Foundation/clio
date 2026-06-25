@@ -286,6 +286,24 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("DUP: two elements sharing an id are surfaced as an error (and the validator does not throw).")]
+	public void Validate_ShouldReturnDupError_WhenTwoElementsShareAnId() {
+		// Arrange — the activity id "a" is reused; the server does not guard this on build/modify.
+		List<ProcessGraphNode> nodes =
+			[Node("s", "startEvent"), Node("a", "activityUserTask"), Node("a", "readDataUserTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"), Seq("a", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "a",
+			because: "element ids must be unique within a process, and a duplicate must be reported rather than crash the validator");
+		result.HasErrors.Should().BeTrue(because: "a duplicate element id is a structural error");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("AC-06: a designer-accepted exclusive split (conditional + default) produces no error findings.")]
 	public void Validate_ShouldReturnNoErrors_WhenExclusiveSplitHasConditionalAndDefault() {
 		// Arrange

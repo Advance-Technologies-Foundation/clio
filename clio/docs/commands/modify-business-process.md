@@ -92,6 +92,9 @@ Apply the operations in ops.json to the process
 create-business-process - Build a business process from a declarative descriptor
 describe-process - Read an existing process and return its structured graph (inspect element ids first)
 
+Operation element `type` tokens (and their describe `buildType` / `validate-process-graph` equivalents)
+are mapped in [describe-process → Element type vocabulary](describe-process.md#element-type-vocabulary-round-trip-mapping).
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

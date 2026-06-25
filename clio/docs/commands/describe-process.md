@@ -73,6 +73,33 @@ Structured JSON:
   expression (for a formula source, the `[#…#]` expression).
 - `flows[].kind` is `sequence`, `conditional`, or `default`.
 
+## Element type vocabulary (round-trip mapping)
+
+The three process-designer commands use **different element-type tokens**, so a value read from one
+command must be translated before it is passed to another. This table is the canonical mapping for the
+element kinds the backend designer can **build** today:
+
+| Element kind | `create`/`modify` descriptor `type` (= describe `buildType`) | describe runtime `type` | `validate-process-graph` node `type` (diagram-js data-id) | Role |
+|---|---|---|---|---|
+| Start event | `startevent` | `ProcessSchemaStartEvent` | `startEvent` | Start |
+| Signal start event | `signalstart` | `ProcessSchemaStartEvent` (signal-configured) | `startEventSignal` | Start |
+| End event | `endevent` | `ProcessSchemaTerminateEvent` | `endEvent` | End |
+| User task | `usertask` (+ `userTaskName`) | `ProcessSchemaUserTask` | `userTask` (or `<schema>UserTask`, e.g. `readDataUserTask`) | Activity |
+
+Notes:
+
+- **Casing differs by command.** `create`/`modify` and describe's `buildType` use the lowercase token
+  (`startevent`); `validate-process-graph` uses the camelCase diagram-js data-id (`startEvent`). They
+  are **not** interchangeable — translate, don't copy.
+- **The validator vocabulary is a superset.** `validate-process-graph` also recognizes gateways
+  (`exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`), intermediate events
+  (`intermediateCatchEvent…` / `intermediateThrowEvent…`), and other tasks (`scriptTask`, `formulaTask`,
+  `webService`, `callActivity`) so it can pre-flight hand-authored graphs — but those element kinds are
+  **not buildable** yet by `create` / `modify` (see the flows-vs-elements caveat in the ADR). Any specific
+  `<schema>UserTask` data-id (suffix `UserTask`) validates as a user-task activity.
+- **`describe.type` is never consumable.** It is the runtime .NET class name; always round-trip through
+  `buildType`, not `type`.
+
 ## Examples
 
 ```bash

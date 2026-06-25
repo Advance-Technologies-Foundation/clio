@@ -28,7 +28,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		CheckMissingNodeFlows(edges, nodeById, findings);
 
 		(Dictionary<string, List<ProcessGraphEdge>> outgoing, Dictionary<string, List<ProcessGraphEdge>> incoming) =
-			BuildAdjacency(nodes, edges, nodeById);
+			BuildAdjacency(edges, nodeById);
 
 		List<ProcessGraphNode> startNodes = nodes.Where(n => RoleOf(n) == Role.Start).ToList();
 		CheckStartCount(startNodes, findings);
@@ -72,12 +72,13 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 	}
 
-	// Adjacency over edges with valid endpoints only.
+	// Adjacency over edges with valid endpoints only. Seeded from the de-duplicated node set (nodeById) rather than
+	// the raw node list, so a graph with duplicate ids yields the DUP finding instead of throwing here.
 	private static (Dictionary<string, List<ProcessGraphEdge>> Outgoing, Dictionary<string, List<ProcessGraphEdge>> Incoming)
-			BuildAdjacency(IReadOnlyList<ProcessGraphNode> nodes, IReadOnlyList<ProcessGraphEdge> edges,
+			BuildAdjacency(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeById) {
-		Dictionary<string, List<ProcessGraphEdge>> outgoing = nodes.ToDictionary(n => n.Id, _ => new List<ProcessGraphEdge>());
-		Dictionary<string, List<ProcessGraphEdge>> incoming = nodes.ToDictionary(n => n.Id, _ => new List<ProcessGraphEdge>());
+		Dictionary<string, List<ProcessGraphEdge>> outgoing = nodeById.Keys.ToDictionary(id => id, _ => new List<ProcessGraphEdge>());
+		Dictionary<string, List<ProcessGraphEdge>> incoming = nodeById.Keys.ToDictionary(id => id, _ => new List<ProcessGraphEdge>());
 		foreach (ProcessGraphEdge edge in edges
 				.Where(e => nodeById.ContainsKey(e.Source) && nodeById.ContainsKey(e.Target))) {
 			outgoing[edge.Source].Add(edge);

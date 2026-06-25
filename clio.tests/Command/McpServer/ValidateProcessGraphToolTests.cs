@@ -147,6 +147,41 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("DUP: two nodes sharing an id surface a duplicate-id error finding (and the call still succeeds, not throws).")]
+	public void Validate_ShouldSurfaceDupError_WhenTwoNodesShareAnId() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes =
+			[N("s", "startEvent"), N("a", "activityUserTask"), N("a", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "a"), E("a", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a duplicate id is reported as a finding, not an unhandled exception");
+		response.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == "error" && f.NodeId == "a",
+			because: "the duplicate element id must surface as a DUP error against the offending node");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC-08: a node with an unrecognized type surfaces an UNKNOWN error finding rather than being silently accepted.")]
+	public void Validate_ShouldSurfaceUnknownError_WhenNodeTypeIsUnrecognized() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("x", "totallyBogusType"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "x"), E("x", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an unknown type is reported as a finding, not an exception");
+		response.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == "error" && f.NodeId == "x",
+			because: "an unrecognized element type must surface as an UNKNOWN error against the offending node");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool carries the read-only, non-destructive, idempotent, closed-world safety flags.")]
 	public void ValidateTool_ShouldCarryReadOnlySafetyFlags_WhenInspected() {
 		// Arrange
