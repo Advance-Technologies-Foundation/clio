@@ -1150,7 +1150,53 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		act.Should().NotThrow(
 			because: "a failed OData rebuild must not undo or fail the already-published schema");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains("OData entities rebuild failed") && message.Contains("UsrVehicle")));
+			message.Contains("requesting the OData entities rebuild failed") && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[Test]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request fails with an AggregateException-wrapped transport fault, because the real HTTP client (Creatio.Client) executes via Task.Result and wraps transport/timeout faults in an AggregateException (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildThrowsAggregateException()
+	{
+		// Arrange — the real Creatio HTTP client runs the POST via Task.Result, so a transport/timeout fault on
+		// the RunODataBuild request surfaces as an AggregateException wrapping the inner HttpRequestException.
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				throw new AggregateException(
+					new System.Net.Http.HttpRequestException("Connection refused while triggering the OData build."));
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an AggregateException-wrapped transport fault on the OData rebuild must degrade to a warning, not escape and fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("requesting the OData entities rebuild failed") && message.Contains("UsrVehicle")));
 		_logger.Received().WriteInfo(Arg.Is<string>(message =>
 			message.Contains("UsrVehicle") && message.Contains("created")));
 	}

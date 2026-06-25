@@ -531,17 +531,31 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		try {
 			_entitySchemaDesignerClient.RunODataBuild(options);
 			_logger.WriteInfo($"OData entities rebuild requested for '{options.SchemaName}'.");
-		} catch (Exception odataException) when (odataException is InvalidOperationException
-				or System.Net.Http.HttpRequestException
-				or System.Net.WebException
-				or System.Threading.Tasks.TaskCanceledException
-				or Newtonsoft.Json.JsonException) {
+		} catch (Exception odataException) when (IsExpectedODataBuildFault(odataException)) {
 			// A rebuild-request failure (server error or transport/timeout/parse fault) must not undo or fail the
 			// already-published schema; surface it as a warning. Mirrors CheckRecordExists's filtered handling.
 			_logger.WriteWarning(
 				$"Schema '{options.SchemaName}' was published, but requesting the OData entities rebuild failed: " +
 				$"{odataException.Message} The schema is usable; it may not be reachable over OData until an OData build runs.");
 		}
+	}
+
+	// The underlying Creatio HTTP client (Creatio.Client.CreatioClient.ExecutePostRequest) runs the request via
+	// Task.Result, which wraps a transport/timeout fault in an AggregateException, and its retry loop re-throws
+	// that wrapper unchanged. A flat type filter would miss it and let the wrapper escape PublishSchema, making the
+	// caller treat the already-published schema as a failed publish. Unwrap recursively and treat the fault as an
+	// expected rebuild-request failure only when every inner exception is itself an expected transport/parse fault,
+	// so a genuinely unexpected failure still surfaces.
+	private static bool IsExpectedODataBuildFault(Exception exception) {
+		if (exception is AggregateException aggregate) {
+			System.Collections.ObjectModel.ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
+			return inner.Count > 0 && inner.All(IsExpectedODataBuildFault);
+		}
+		return exception is InvalidOperationException
+			or System.Net.Http.HttpRequestException
+			or System.Net.WebException
+			or System.Threading.Tasks.TaskCanceledException
+			or Newtonsoft.Json.JsonException;
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

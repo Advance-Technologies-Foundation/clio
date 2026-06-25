@@ -158,9 +158,13 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Arrange
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
 			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		int capturedMaxAttempts = -1;
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 			Arg.Any<int>())
-			.Returns("{\"success\":true}");
+			.Returns(callInfo => {
+				capturedMaxAttempts = callInfo.ArgAt<int>(3);
+				return "{\"success\":true}";
+			});
 
 		// Act
 		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions());
@@ -173,6 +177,8 @@ internal class RemoteEntitySchemaDesignerClientTests
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+		capturedMaxAttempts.Should().Be(1,
+			because: "triggering the OData build is non-idempotent — it must issue exactly one attempt with no retry so a timed-out trigger does not stack concurrent builds");
 	}
 
 	[Test]

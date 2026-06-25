@@ -158,6 +158,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		// is non-idempotent (a retry may stack concurrent OData builds), so issue exactly one attempt with no
 		// retry (maxAttempts: 1), matching PublishConfigurationChanges.
 		string url = $"{_serviceUrlBuilder.Build(WorkspaceExplorerServicePath)}/RunODataBuild";
+		// RunODataBuild takes no parameters; the server accepts an empty JSON body, so an empty object ("{}") is posted.
 		return PostToUrl<object, BaseResponse>(url, new object(), options.TimeOut, maxAttempts: 1, options.RetryDelay,
 			"RunODataBuild");
 	}
