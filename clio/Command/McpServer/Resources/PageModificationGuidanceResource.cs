@@ -173,6 +173,12 @@ public sealed class PageModificationGuidanceResource {
 		       - Never guess a container name. Use `bundle.containers` from `get-page` — a flat list of all containers discovered in `viewConfig`.
 		       - Each entry exposes: `name` (value to use as `parentName`), `type` (e.g. `crt.FlexContainer`, `crt.Grid`), `childCount` (existing siblings), `path` (ancestor chain, useful for disambiguation when the same `name` appears in multiple branches).
 		       - Pick a container whose `path` matches the visual region you want to modify and whose `childCount` > 0 for consistency (existing sibling confirms the container is usable).
+		       """
+		       // TODO(ENG-90489): the DESKTOP CentralAreaDesktopTemplate / FixedGridSlot_qwe4asds rule below is
+		       // temporary in this general guide — extract it into a dedicated desktop-page guidance resource.
+		       // https://creatio.atlassian.net/browse/ENG-90489
+		       + "\n"
+		       + """
 		       - On a DESKTOP page whose parent template is `CentralAreaDesktopTemplate`, do NOT insert into the top `Main` container — it is the template's locked frame, so widgets there render but cannot be selected, resized, or deleted in the page designer. Insert into the template's editable slot, named EXACTLY `FixedGridSlot_qwe4asds` (a `crt.GridContainer`, ~8 columns, 60px rows; a fixed template-defined name, NOT a per-page generated id — do not wildcard it). Use `parentName: "FixedGridSlot_qwe4asds"`.
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - Common Freedom UI container types: `crt.FlexContainer` (filter rows, action bars), `crt.Grid` (column layouts), `crt.TabContainer`, `crt.Expansion`.
