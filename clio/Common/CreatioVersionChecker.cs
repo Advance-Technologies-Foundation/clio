@@ -92,16 +92,32 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 			.First();
 		Version requiredVersion = ParseMinVersion(strictest.MinVersion);
 
-		Version currentVersion = _creatioVersionProvider.GetCoreVersion();
+		CreatioVersionResolution resolution = _creatioVersionProvider.Resolve();
 
-		// Fail-closed: an undeterminable version must deny execution rather than run against an unknown
-		// platform. Report the strictest floor so the user sees the real requirement.
-		if (currentVersion is null) {
-			throw new CreatioVersionRequirementException(
-				$"Could not determine the Creatio platform version of the target environment; " +
-				$"this command requires {strictest.MinVersion} or later.",
-				CreatioVersionRequirementException.VersionUndeterminableCode);
+		switch (resolution.Status) {
+			case CreatioVersionResolutionStatus.ProbeFailed:
+				// Fail-closed: the version check could not be performed because no source responded. This
+				// is a CONNECTIVITY / ACCESS failure, not an out-of-date platform — say so, and do NOT tell
+				// the user to update Creatio.
+				throw new CreatioVersionRequirementException(
+					AppendHint(
+						$"Could not perform the Creatio platform version check for the target environment " +
+						$"(it could not be reached, or access was denied). This command requires " +
+						$"{strictest.MinVersion} or later — verify connectivity and permissions, then retry.",
+						strictest.Hint),
+					CreatioVersionRequirementException.VersionCheckFailedCode);
+
+			case CreatioVersionResolutionStatus.ReachableWithoutVersion:
+				// Fail-closed: a source responded but yielded no usable version. The platform is reachable
+				// yet its version is undeterminable, so deny execution rather than run against an unknown
+				// platform. Report the strictest floor so the user sees the real requirement.
+				throw new CreatioVersionRequirementException(
+					$"Could not determine the Creatio platform version of the target environment; " +
+					$"this command requires {strictest.MinVersion} or later.",
+					CreatioVersionRequirementException.VersionUndeterminableCode);
 		}
+
+		Version currentVersion = resolution.Version;
 
 		// Dev-build bypass: a development build satisfies every requirement.
 		if (IsDevBuild(currentVersion)) {
@@ -124,12 +140,15 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 		// as EnsureRequirements classifies it — never silently reported as "not compatible".
 		Version min = ParseMinVersion(minVersion);
 
-		Version currentVersion = _creatioVersionProvider.GetCoreVersion();
-		// Undeterminable version is not compatible — but never throws (mirrors the EnsureRequirements
-		// fail-closed stance without surfacing an exception to the caller).
-		if (currentVersion is null) {
+		CreatioVersionResolution resolution = _creatioVersionProvider.Resolve();
+		// Anything other than a resolved version is not compatible — but never throws (mirrors the
+		// EnsureRequirements fail-closed stance without surfacing an exception to the caller). Both an
+		// undeterminable (ReachableWithoutVersion) and an uncheckable (ProbeFailed) environment are false.
+		if (resolution.Status != CreatioVersionResolutionStatus.Resolved) {
 			return false;
 		}
+
+		Version currentVersion = resolution.Version;
 
 		// Dev-build bypass: a development build is compatible with any requirement.
 		if (IsDevBuild(currentVersion)) {

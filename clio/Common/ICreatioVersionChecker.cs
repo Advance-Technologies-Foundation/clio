@@ -11,7 +11,8 @@ namespace Clio.Common;
 /// <c>true</c>), resolves the environment's core version through <see cref="ICreatioVersionProvider"/>,
 /// and — when a triggered requirement is unmet — throws a
 /// <see cref="CreatioVersionRequirementException"/>. A development build (<c>0.0.0</c> / <c>0.0.0.0</c>)
-/// is treated as compatible, and an undeterminable version fails closed (denies execution).
+/// is treated as compatible; a reachable environment whose version is undeterminable, and an
+/// environment whose version check could not be performed at all, both fail closed (deny execution).
 /// </remarks>
 public interface ICreatioVersionChecker
 {
@@ -27,8 +28,11 @@ public interface ICreatioVersionChecker
 	/// </param>
 	/// <exception cref="CreatioVersionRequirementException">
 	/// Thrown when a triggered requirement is not satisfied: the environment runs an older core version
-	/// (<see cref="CreatioVersionRequirementException.VersionTooOldCode"/>) or the version could not be
-	/// determined (<see cref="CreatioVersionRequirementException.VersionUndeterminableCode"/>).
+	/// (<see cref="CreatioVersionRequirementException.VersionTooOldCode"/>), a source responded but the
+	/// version could not be determined
+	/// (<see cref="CreatioVersionRequirementException.VersionUndeterminableCode"/>), or no source
+	/// responded so the check could not be performed at all
+	/// (<see cref="CreatioVersionRequirementException.VersionCheckFailedCode"/>).
 	/// </exception>
 	/// <exception cref="System.InvalidOperationException">
 	/// Thrown when a non-<c>bool</c> property carries <see cref="RequiresCreatioVersionAttribute"/>; only
@@ -52,7 +56,8 @@ public interface ICreatioVersionChecker
 	/// <returns>
 	/// <c>true</c> when the environment's core version is greater than or equal to
 	/// <paramref name="minVersion"/>, or when the environment reports a development build (<c>0.0.0</c> /
-	/// <c>0.0.0.0</c>); <c>false</c> when the version is lower than required or undeterminable.
+	/// <c>0.0.0.0</c>); <c>false</c> when the version is lower than required, undeterminable, or the
+	/// version check could not be performed at all.
 	/// </returns>
 	/// <exception cref="System.InvalidOperationException">
 	/// Thrown when <paramref name="minVersion"/> is not a valid dotted version string. A malformed floor

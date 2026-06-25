@@ -79,14 +79,18 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[TearDown]
 	public void ClearMockState() {
 		_creatioVersionProviderMock.ClearReceivedCalls();
-		_creatioVersionProviderMock.GetCoreVersion().Returns((Version)null);
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ReachableWithoutVersion());
 	}
+
+	// Builds a Resolved resolution carrying the given version, the shape the provider returns on success.
+	private static CreatioVersionResolution Resolved(Version version) =>
+		CreatioVersionResolution.Resolved(version);
 
 	[Test]
 	[Description("EnsureRequirements does not throw when the environment version is newer than the required minimum.")]
 	public void EnsureRequirements_ShouldNotThrow_WhenCurrentVersionIsNewer() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 1, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 1, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -100,7 +104,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements does not throw when the environment version equals the required minimum.")]
 	public void EnsureRequirements_ShouldNotThrow_WhenCurrentVersionIsEqual() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -114,7 +118,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements throws version-too-old when the environment version is below the required minimum.")]
 	public void EnsureRequirements_ShouldThrowVersionTooOld_WhenCurrentVersionIsOlder() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(9, 9, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(9, 9, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -130,7 +134,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements does not throw for a development build (0.0.0.0) even when a minimum is required.")]
 	public void EnsureRequirements_ShouldNotThrow_WhenCurrentVersionIsDevBuild() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(0, 0, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(0, 0, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -141,26 +145,48 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("EnsureRequirements throws version-undeterminable (fail-closed) when the environment version cannot be determined.")]
-	public void EnsureRequirements_ShouldThrowVersionUndeterminable_WhenVersionIsNull() {
+	[Description("EnsureRequirements throws version-undeterminable (fail-closed) when a source responded but produced no usable version (ReachableWithoutVersion).")]
+	public void EnsureRequirements_ShouldThrowVersionUndeterminable_WhenReachableWithoutVersion() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns((Version)null);
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ReachableWithoutVersion());
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
 		Action act = () => checker.EnsureRequirements(new ClassRequirementOptions());
 
 		// Assert
-		act.Should().Throw<CreatioVersionRequirementException>(because: "an undeterminable version must fail closed")
+		act.Should().Throw<CreatioVersionRequirementException>(because: "a reachable environment with no usable version must fail closed")
 			.Which.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionUndeterminableCode,
-				because: "an undeterminable version must report the version-undeterminable error code");
+				because: "a reachable-but-no-version environment must report the version-undeterminable error code");
+	}
+
+	[Test]
+	[Description("EnsureRequirements throws version-check-failed (fail-closed) when no source responded at all (ProbeFailed); the message hints at connectivity/access, NOT updating Creatio.")]
+	public void EnsureRequirements_ShouldThrowVersionCheckFailed_WhenProbeFailed() {
+		// Arrange
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ProbeFailed());
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		Action act = () => checker.EnsureRequirements(new ClassRequirementOptions());
+
+		// Assert
+		CreatioVersionRequirementException exception = act.Should()
+			.Throw<CreatioVersionRequirementException>(because: "an uncheckable environment must fail closed")
+			.Which;
+		exception.ErrorCode.Should().Be(CreatioVersionRequirementException.VersionCheckFailedCode,
+			because: "when no source responded the gate must report the version-check-failed error code, distinct from version-too-old and version-undeterminable");
+		exception.Message.Should().MatchEquivalentOf("*connect*",
+			because: "the check-failed message must hint at connectivity/access, the actual failure class");
+		exception.Message.Should().NotContainEquivalentOf("Update Creatio",
+			because: "a connectivity/access failure must NOT advise the user to update Creatio (that is the version-too-old wording)");
 	}
 
 	[Test]
 	[Description("EnsureRequirements appends the attribute Hint to the version-too-old message when a Hint is set.")]
 	public void EnsureRequirements_ShouldAppendHint_WhenVersionTooOldAndHintSet() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(9, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(9, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -176,7 +202,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements enforces a property-level requirement when its bool flag is true.")]
 	public void EnsureRequirements_ShouldThrow_WhenPropertyFlagTrueAndVersionTooOld() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(9, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(9, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -201,7 +227,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 		// Assert
 		act.Should().NotThrow(
 			because: "a false flag does not select the gated path, so its version requirement is not enforced");
-		_creatioVersionProviderMock.DidNotReceive().GetCoreVersion();
+		_creatioVersionProviderMock.DidNotReceive().Resolve();
 	}
 
 	[Test]
@@ -214,7 +240,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 		checker.EnsureRequirements(new NoRequirementOptions());
 
 		// Assert
-		_creatioVersionProviderMock.DidNotReceive().GetCoreVersion();
+		_creatioVersionProviderMock.DidNotReceive().Resolve();
 	}
 
 	[Test]
@@ -231,14 +257,14 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 				because: "only bool properties may carry a conditional [RequiresCreatioVersion]")
 			.WithMessage("*Target*",
 				because: "the misused property must be named so the developer can fix it");
-		_creatioVersionProviderMock.DidNotReceive().GetCoreVersion();
+		_creatioVersionProviderMock.DidNotReceive().Resolve();
 	}
 
 	[Test]
 	[Description("EnsureRequirements fails fast with InvalidOperationException when the attribute declares a malformed minimum version (developer error, not version-too-old).")]
 	public void EnsureRequirements_ShouldThrowInvalidOperation_WhenMinVersionIsMalformed() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -252,10 +278,10 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("IsCompatible returns false (does not throw) when the environment version cannot be determined.")]
-	public void IsCompatible_ShouldReturnFalse_WhenVersionIsUndeterminable() {
+	[Description("IsCompatible returns false (does not throw) when a source responded but the version is undeterminable (ReachableWithoutVersion).")]
+	public void IsCompatible_ShouldReturnFalse_WhenReachableWithoutVersion() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns((Version)null);
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ReachableWithoutVersion());
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -267,10 +293,25 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("IsCompatible returns false (does not throw) when no source responded so the version check could not be performed (ProbeFailed).")]
+	public void IsCompatible_ShouldReturnFalse_WhenProbeFailed() {
+		// Arrange
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ProbeFailed());
+		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
+
+		// Act
+		bool actual = checker.IsCompatible("10.0.0");
+
+		// Assert
+		actual.Should().BeFalse(
+			because: "an uncheckable environment is not compatible and IsCompatible must never throw");
+	}
+
+	[Test]
 	[Description("IsCompatible returns true when the environment version meets the required minimum.")]
 	public void IsCompatible_ShouldReturnTrue_WhenCurrentVersionMeetsMinimum() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -284,7 +325,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements does not throw for a 3-part development build (0.0.0) — the dev-build bypass recognises a 3-part build (Revision -1) as well as a 4-part 0.0.0.0.")]
 	public void EnsureRequirements_ShouldNotThrow_WhenCurrentVersionIsThreePartDevBuild() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(0, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(0, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -299,7 +340,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("IsCompatible throws InvalidOperationException on a malformed minVersion (developer error), exactly as EnsureRequirements classifies it — it must not silently return false.")]
 	public void IsCompatible_ShouldThrowInvalidOperation_WhenMinVersionIsMalformed() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 0, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 0, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -316,7 +357,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements enforces the STRICTEST of multiple triggered requirements: with a 10.0.0 class floor and a triggered 11.0.0 property floor on an env running 10.5, it throws version-too-old reporting 11.0.0 (the max).")]
 	public void EnsureRequirements_ShouldThrowVersionTooOldAgainstStrictest_WhenMultipleRequirementsTriggered() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns(new Version(10, 5, 0));
+		_creatioVersionProviderMock.Resolve().Returns(Resolved(new Version(10, 5, 0)));
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
@@ -337,7 +378,7 @@ public class CreatioVersionCheckerTests : BaseClioModuleTests
 	[Description("EnsureRequirements names the STRICTEST floor in the undeterminable message: with a 10.0.0 class floor and a triggered 11.0.0 property floor and an undeterminable env, the message names 11.0.0.")]
 	public void EnsureRequirements_ShouldReportStrictestInUndeterminableMessage_WhenMultipleRequirementsTriggered() {
 		// Arrange
-		_creatioVersionProviderMock.GetCoreVersion().Returns((Version)null);
+		_creatioVersionProviderMock.Resolve().Returns(CreatioVersionResolution.ReachableWithoutVersion());
 		ICreatioVersionChecker checker = Container.GetRequiredService<ICreatioVersionChecker>();
 
 		// Act
