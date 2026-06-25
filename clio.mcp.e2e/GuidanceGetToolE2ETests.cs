@@ -470,6 +470,35 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the canonical resource URI should still be visible in the tool response");
 	}
 
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the routing map that the server instructions mandate reading first")]
+	[Description("Verifies get-guidance returns the routing guide over the real stdio MCP path and that it carries the domain routing table (the table the always-on instructions now point at instead of inlining).")]
+	public async Task GuidanceGet_Should_Return_Routing_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "routing"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "routing is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/routing",
+			because: "the canonical resource URI for the routing guide should be stable");
+		response.Article.Text.Should().Contain("name=page-modification",
+			because: "the routing map must carry the domain routing table that points at the matching guides");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);

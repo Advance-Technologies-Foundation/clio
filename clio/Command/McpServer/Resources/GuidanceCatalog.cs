@@ -14,6 +14,10 @@ internal static class GuidanceCatalog {
 
 	private static IReadOnlyDictionary<string, GuidanceCatalogEntry> CreateEntries() {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
+			["routing"] = Create(
+				"routing",
+				"The canonical clio MCP routing map: a two-level, names-only table that maps a task (pages, entities, data, applications) to the get-guidance article(s) to read before acting. The server instructions mandate reading this first on any operation.",
+				RoutingGuidanceResource.Guide),
 			["app-modeling"] = Create(
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",

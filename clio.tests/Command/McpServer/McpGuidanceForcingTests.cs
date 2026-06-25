@@ -26,12 +26,15 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
 
-	private const int RouterCharCeiling = 3000;
+	// 2500 chars well below the ~1000-token client-side truncation point.
+	// Any bump here requires re-evaluating truncation safety — do not raise without checking that the new router
+	// still fits in one untruncated context window on the lowest-tier MCP client.
+	private const int RouterCharCeiling = 2500;
 
-	// Guide names referenced by the router routing table and/or the touched tool descriptions.
-	// Drift guard: every one must resolve in GuidanceCatalog.
+	// Guide names referenced by the always-on instructions (routing), the routing map, and/or the touched
+	// tool descriptions. Drift guard: every one must resolve in GuidanceCatalog.
 	private static readonly string[] ReferencedGuideNames = [
-		"page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
+		"routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
 		"app-modeling", "esq", "esq-filters", "data-bindings"
 	];
 
@@ -56,7 +59,7 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert
 		length.Should().BeLessThanOrEqualTo(RouterCharCeiling,
-			because: "the router must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens (ceiling raised to fit the merged-in product-telemetry advertisement and the two-level domain routing table, ~2.9k chars / ~0.7k tokens, still far below baseline and the truncation point)");
+			because: "the always-on instructions must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens. The routing table now lives in the lazily-loaded routing guide, so instructions carry only the truncation-surviving invariants + telemetry + the mandatory routing pointer (~2.3k chars), and the ceiling was tightened to match");
 	}
 
 	[Test]
@@ -96,7 +99,7 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Ensures every guide name referenced in the router routing table resolves in GuidanceCatalog (no dangling routes).")]
+	[Description("Ensures every get-guidance name referenced by the always-on instructions resolves in GuidanceCatalog (no dangling pointer); after the routing-table extraction this is the routing pointer.")]
 	public void Router_ShouldOnlyReferenceResolvableGuideNames_WhenParsed() {
 		// Arrange
 		string router = McpServerInstructions.Text;
@@ -106,10 +109,45 @@ public sealed class McpGuidanceForcingTests {
 
 		// Act / Assert
 		routedNames.Should().NotBeEmpty(
-			because: "the router routing table must list at least one get-guidance target");
+			because: "the instructions must point at at least one get-guidance target (the routing map)");
 		foreach (string name in routedNames) {
 			GuidanceCatalog.TryGet(name, out _).Should().BeTrue(
-				because: $"router routes to get-guidance name={name}, which must exist in GuidanceCatalog");
+				because: $"instructions reference get-guidance name={name}, which must exist in GuidanceCatalog");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The always-on instructions must mandate loading the routing map first on any operation, so the routing table being lazily loaded does not weaken the forcing function.")]
+	public void Instructions_ShouldMandateReadingRoutingGuideFirst_WhenInspected() {
+		// Arrange
+		string instructions = McpServerInstructions.Text;
+
+		// Assert
+		instructions.Should().Contain("name=routing",
+			because: "the instructions must point at the routing guide by its get-guidance name");
+		instructions.Should().Contain("FIRST",
+			because: "loading the routing map must be framed as a mandatory first step, not optional");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map (now the home of the routing table) must only route to guide names that resolve in GuidanceCatalog (no dangling routes after the extraction).")]
+	public async Task RoutingGuide_ShouldOnlyReferenceResolvableGuideNames_WhenParsed() {
+		// Arrange
+		GuidanceGetTool tool = new();
+		GuidanceGetResponse routing = await tool.GetGuidance(new GuidanceGetArgs("routing"));
+		routing.Success.Should().BeTrue(because: "routing is a registered guidance name");
+		IEnumerable<string> routedNames = Regex.Matches(routing.Article!.Text, @"name=([a-z0-9-]+)")
+			.Select(match => match.Groups[1].Value)
+			.Distinct();
+
+		// Act / Assert
+		routedNames.Should().NotBeEmpty(
+			because: "the routing map must list at least one get-guidance target");
+		foreach (string name in routedNames) {
+			GuidanceCatalog.TryGet(name, out _).Should().BeTrue(
+				because: $"the routing map routes to get-guidance name={name}, which must exist in GuidanceCatalog");
 		}
 	}
 
