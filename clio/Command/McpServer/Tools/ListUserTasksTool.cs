@@ -8,6 +8,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool that lists the user-facing user tasks (process designer palette) of a Creatio environment.
 /// </summary>
+[FeatureToggle("process-designer")]
 public class ListUserTasksTool(
 	ListUserTasksCommand command,
 	ILogger logger,

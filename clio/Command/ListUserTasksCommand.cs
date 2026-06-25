@@ -14,6 +14,7 @@ namespace Clio.Command;
 /// </summary>
 [Verb("list-user-tasks", Aliases = ["luts"],
 	HelpText = "List the user-facing user tasks available on a Creatio environment (the process designer palette)")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class ListUserTasksOptions : EnvironmentOptions { }
 
 /// <summary>

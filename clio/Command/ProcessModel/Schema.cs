@@ -24,18 +24,7 @@ public class ProcessSchemaResponse{
 			FillParameterCaption(item, jsonString, logger);
 			FillCollectionParameterCaption(item, jsonString, logger);
 			FillFlowElementCaption(item, jsonString, logger);
-			
-			
-			// var forAi = new {
-			// 	processName = item.Schema.Name,
-			// 	processDescription = item.Schema.Description?.GetValueOrDefault("en-US", string.Empty),
-			// 	processCaption = item.Schema.Caption?.GetValueOrDefault("en-US", string.Empty),
-			// 	uId= item.Schema.UId,
-			// 	processParameters = item.Schema.MetaDataSchema.Parameters
-			// 	, flowElements = item.Schema.MetaDataSchema.FlowElements
-			// };
-			// item.ForAi = JsonSerializer.Serialize(forAi, IgnoreNullOptions);
-			
+
 			IEnumerable<Guid> listOfSubProcesses = item.Schema.MetaDataSchema?.FlowElements?
 									  .Where(fe => fe.EventType == ManagerMap.EventType.SubProcess && fe.SchemaUId != Guid.Empty)
 									  .Select(fe => (Guid)fe.SchemaUId)

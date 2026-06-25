@@ -14,10 +14,14 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		IReadOnlyList<ProcessGraphNode> nodes = graph?.Nodes ?? [];
 		IReadOnlyList<ProcessGraphEdge> edges = graph?.Edges ?? [];
 
-		// A node may appear once; tolerate duplicate ids by keeping the first.
+		// A node id must be unique. Surface duplicates as an error (the server doesn't guard them on the
+		// build/modify path, where two same-id nodes break id-based flow/describe round-tripping).
 		Dictionary<string, ProcessGraphNode> nodeById = new();
 		foreach (ProcessGraphNode node in nodes) {
-			nodeById.TryAdd(node.Id, node);
+			if (!nodeById.TryAdd(node.Id, node)) {
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "DUP",
+					$"Duplicate element id '{node.Id}'. Element ids must be unique within a process.", node.Id));
+			}
 		}
 
 		CheckUnknownTypes(nodes, findings);
