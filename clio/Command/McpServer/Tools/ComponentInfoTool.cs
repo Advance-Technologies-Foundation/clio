@@ -53,16 +53,21 @@ public sealed class ComponentInfoTool(
 
 	/// <summary>
 	/// Actionable hint surfaced next to <c>compositeOnly: true</c> on a component detail
-	/// response. The component has no standalone Designer toolbar presence, so it must be
-	/// assembled as part of a composite. Composites have no <c>componentType</c> and a
-	/// component does not name its owning composite, so the hint points the agent at the
-	/// composites section of list mode (and the <c>composite="&lt;caption&gt;"</c> detail).
+	/// response. The component has no standalone Designer toolbar presence, so it should
+	/// preferentially be built via a composite that assembles it. Composites have no
+	/// <c>componentType</c> and carry no machine-readable list of their member components
+	/// (a <see cref="CompositeDefinition"/> is only <c>caption</c>/<c>description</c>/<c>docs</c>),
+	/// so clio cannot resolve the owning composite for the agent — the hint instead encodes the
+	/// decision rule: discover composites in list mode, confirm membership by reading each
+	/// candidate's recipe (<c>composite="&lt;caption&gt;"</c>), build the composite when one
+	/// assembles this component, and otherwise fall back to building the component directly.
 	/// </summary>
 	internal const string CompositeOnlyHintText =
-		"This component has no standalone Designer toolbar presence — do not insert it on its own. "
-		+ "List composites with get-component-info (list mode); if one matches this component, fetch its assembly "
-		+ "recipe with get-component-info composite=\"<caption>\" and build that instead. If no composite matches, "
-		+ "this component is not meant to be authored directly.";
+		"This component has no standalone Designer toolbar presence. First look for a composite that assembles it: "
+		+ "call get-component-info in list mode, scan the 'composites' array, and fetch each plausible candidate's "
+		+ "recipe with get-component-info composite=\"<caption>\" to confirm it uses this component. "
+		+ "If a composite assembles this component, build that composite and follow its recipe. "
+		+ "If no composite assembles it, build this component directly as a fallback.";
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
@@ -131,6 +136,14 @@ public sealed class ComponentInfoTool(
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["componentType"] = "component-type",
 		["component_type"] = "component-type",
+		// 'component-name' (plus its camelCase/snake_case spellings) is the wrong-WORD mistake an LLM
+		// reaches for when it expects the selector to be named after the component "name" rather than
+		// its "type" (observed in the field). Reject it with the same precise rename hint as the casing
+		// variants above instead of letting it fall through to the generic "Unknown args" message — the
+		// contract advertises the identical aliases (see ToolContractGetTool.BuildComponentInfo).
+		["component-name"] = "component-type",
+		["componentName"] = "component-type",
+		["component_name"] = "component-type",
 		["schemaType"] = "schema-type",
 		["schema_type"] = "schema-type",
 		["environmentName"] = "environment-name",
@@ -597,8 +610,9 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 
 	/// <summary>
 	/// Gets or sets the composite-only flag on a component detail response. <c>true</c>
-	/// means the component has no standalone Designer toolbar presence and must be built
-	/// as part of a composite (see <see cref="CompositeOnlyHint"/>); omitted otherwise.
+	/// means the component has no standalone Designer toolbar presence and should preferentially
+	/// be built via a composite that assembles it, falling back to building the component directly
+	/// when none does (see <see cref="CompositeOnlyHint"/> for the decision rule); omitted otherwise.
 	/// </summary>
 	[JsonPropertyName("compositeOnly")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
