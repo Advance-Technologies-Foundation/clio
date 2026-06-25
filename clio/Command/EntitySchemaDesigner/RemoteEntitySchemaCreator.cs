@@ -25,6 +25,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
 
+	// The distinctive fragment of the OData-rebuild-request warning. Shared with the tests so the
+	// production message and its assertions reference one source of truth and cannot drift apart.
+	internal const string ODataBuildRequestFailedWarningFragment = "requesting the OData entities rebuild failed";
+
 	private const string DefaultMaskingPattern = ".*";
 	private const string DefaultMaskingReplacement = "********";
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
@@ -535,7 +539,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			// A rebuild-request failure (server error or transport/timeout/parse fault) must not undo or fail the
 			// already-published schema; surface it as a warning. Mirrors CheckRecordExists's filtered handling.
 			_logger.WriteWarning(
-				$"Schema '{options.SchemaName}' was published, but requesting the OData entities rebuild failed: " +
+				$"Schema '{options.SchemaName}' was published, but {ODataBuildRequestFailedWarningFragment}: " +
 				$"{odataException.Message} The schema is usable; it may not be reachable over OData until an OData build runs.");
 		}
 	}

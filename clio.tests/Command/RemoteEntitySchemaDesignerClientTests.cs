@@ -166,8 +166,9 @@ internal class RemoteEntitySchemaDesignerClientTests
 				return "{\"success\":true}";
 			});
 
-		// Act
-		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions());
+		// Act — seed a non-default MaxAttempts (default is 3) so the assertion below actively distinguishes
+		// the hard-coded literal 1 from a regression that accidentally forwards options.MaxAttempts.
+		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions { MaxAttempts = 5 });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a successful RunODataBuild response must surface to the caller");
@@ -178,7 +179,7 @@ internal class RemoteEntitySchemaDesignerClientTests
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		capturedMaxAttempts.Should().Be(1,
-			because: "triggering the OData build is non-idempotent — it must issue exactly one attempt with no retry so a timed-out trigger does not stack concurrent builds");
+			because: "triggering the OData build is non-idempotent — it must issue exactly one attempt with no retry so a timed-out trigger does not stack concurrent builds, regardless of the options value (seeded to 5 here)");
 	}
 
 	[Test]

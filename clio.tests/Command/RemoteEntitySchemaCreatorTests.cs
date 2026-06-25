@@ -1150,7 +1150,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		act.Should().NotThrow(
 			because: "a failed OData rebuild must not undo or fail the already-published schema");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains("requesting the OData entities rebuild failed") && message.Contains("UsrVehicle")));
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
 		_logger.Received().WriteInfo(Arg.Is<string>(message =>
 			message.Contains("UsrVehicle") && message.Contains("created")));
 	}
@@ -1196,7 +1196,55 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		act.Should().NotThrow(
 			because: "an AggregateException-wrapped transport fault on the OData rebuild must degrade to a warning, not escape and fail the already-published schema");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains("requesting the OData entities rebuild failed") && message.Contains("UsrVehicle")));
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[TestCase(typeof(System.Net.Http.HttpRequestException))]
+	[TestCase(typeof(System.Threading.Tasks.TaskCanceledException))]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request throws a raw, unwrapped transport fault (HttpRequestException / TaskCanceledException) — the likeliest real-world failure of a compile-class trigger — because the schema is already published and usable (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildThrowsTransportFault(Type transportFaultType)
+	{
+		// Arrange — a timeout or connection fault is thrown directly out of ExecutePostRequest (not wrapped),
+		// exercising the non-aggregate branch of the production exception filter that the other failure tests
+		// (success:false → InvalidOperationException, and AggregateException-wrapped) do not cover.
+		Exception transportFault = (Exception)Activator.CreateInstance(transportFaultType)!;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				throw transportFault;
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a thrown transport fault on the OData rebuild must degrade to a warning, not escape and fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
 		_logger.Received().WriteInfo(Arg.Is<string>(message =>
 			message.Contains("UsrVehicle") && message.Contains("created")));
 	}
