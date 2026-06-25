@@ -14,15 +14,15 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		IReadOnlyList<ProcessGraphNode> nodes = graph?.Nodes ?? [];
 		IReadOnlyList<ProcessGraphEdge> edges = graph?.Edges ?? [];
 
-		// A node id must be unique. Surface duplicates as an error (the server doesn't guard them on the
-		// build/modify path, where two same-id nodes break id-based flow/describe round-tripping).
-		Dictionary<string, ProcessGraphNode> nodeById = new();
-		foreach (ProcessGraphNode node in nodes) {
-			if (!nodeById.TryAdd(node.Id, node)) {
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "DUP",
-					$"Duplicate element id '{node.Id}'. Element ids must be unique within a process.", node.Id));
-			}
-		}
+		// Group elements by id once. First occurrence wins for the lookup used downstream; any id that
+		// appears more than once is an error — the server doesn't guard duplicates on the build/modify
+		// path, where two same-id nodes break id-based flow/describe round-tripping.
+		List<IGrouping<string, ProcessGraphNode>> nodeGroups = nodes.GroupBy(node => node.Id).ToList();
+		Dictionary<string, ProcessGraphNode> nodeById = nodeGroups.ToDictionary(group => group.Key, group => group.First());
+		findings.AddRange(nodeGroups
+			.Where(group => group.Count() > 1)
+			.Select(group => new ProcessGraphFinding(ProcessGraphSeverity.Error, "DUP",
+				$"Duplicate element id '{group.Key}'. Element ids must be unique within a process.", group.Key)));
 
 		CheckUnknownTypes(nodes, findings);
 		CheckMissingNodeFlows(edges, nodeById, findings);
