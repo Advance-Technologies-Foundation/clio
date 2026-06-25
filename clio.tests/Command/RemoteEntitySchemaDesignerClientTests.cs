@@ -154,7 +154,7 @@ internal class RemoteEntitySchemaDesignerClientTests
 
 	[Test]
 	[Description("Posts to WorkspaceExplorerService.svc/RunODataBuild so a freshly published schema is rebuilt into the OData entities assembly without a manual full compile (ENG-92048).")]
-	public void RunODataBuild_PostsToWorkspaceExplorerRunODataBuild() {
+	public void RunODataBuild_ShouldPostToWorkspaceExplorerWithSingleAttempt_WhenInvoked() {
 		// Arrange
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
 			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
@@ -184,7 +184,7 @@ internal class RemoteEntitySchemaDesignerClientTests
 
 	[Test]
 	[Description("Throws an actionable error when RunODataBuild reports failure so the caller can decide how to react (the creator swallows it as a warning) (ENG-92048).")]
-	public void RunODataBuild_Throws_WhenServiceReportsFailure() {
+	public void RunODataBuild_ShouldThrow_WhenServiceReportsFailure() {
 		// Arrange
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
 			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");

@@ -546,19 +546,28 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	// The underlying Creatio HTTP client (Creatio.Client.CreatioClient.ExecutePostRequest) runs the request via
 	// Task.Result, which wraps a transport/timeout fault in an AggregateException, and its retry loop re-throws
-	// that wrapper unchanged. A flat type filter would miss it and let the wrapper escape PublishSchema, making the
-	// caller treat the already-published schema as a failed publish. Unwrap recursively and treat the fault as an
-	// expected rebuild-request failure only when every inner exception is itself an expected transport/parse fault,
-	// so a genuinely unexpected failure still surfaces.
+	// that wrapper unchanged — so the realistic faults arrive as AggregateException(HttpRequestException) or
+	// AggregateException(TaskCanceledException). A flat type filter would miss the wrapper and let it escape
+	// PublishSchema, making the caller treat the already-published schema as a failed publish. Unwrap recursively
+	// and treat the fault as an expected rebuild-request failure only when every inner exception is itself an
+	// expected transport/IO/parse fault. The leaf set is intentionally limited to those families (not a blanket
+	// catch) so a genuine programming error — NullReferenceException, ArgumentException, etc. — still surfaces.
+	// SocketException / IOException / OperationCanceledException are included as defense-in-depth for transport
+	// faults a future client change could surface unwrapped (OperationCanceledException also covers the
+	// TaskCanceledException raised on an HttpClient timeout).
 	private static bool IsExpectedODataBuildFault(Exception exception) {
 		if (exception is AggregateException aggregate) {
+			// Guard against an empty aggregate: Enumerable.All is vacuously true on an empty set, and a contentless
+			// AggregateException carries no diagnosable fault — let it surface rather than silently swallow it.
 			System.Collections.ObjectModel.ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
 			return inner.Count > 0 && inner.All(IsExpectedODataBuildFault);
 		}
 		return exception is InvalidOperationException
 			or System.Net.Http.HttpRequestException
 			or System.Net.WebException
-			or System.Threading.Tasks.TaskCanceledException
+			or System.Net.Sockets.SocketException
+			or System.IO.IOException
+			or System.OperationCanceledException
 			or Newtonsoft.Json.JsonException;
 	}
 
