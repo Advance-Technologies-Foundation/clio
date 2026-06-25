@@ -2,7 +2,6 @@ using System;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -16,15 +15,13 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ToolContractGetTool.ToolName)]
 [NonParallelizable]
-public sealed class ToolContractGetToolE2ETests {
+public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract tool is advertised by the MCP server")]
 	public async Task ToolContractGet_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -39,9 +36,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns maintenance-oriented canonical flows")]
 	public async Task ToolContractGet_Should_Return_Maintenance_Oriented_Canonical_Contracts() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -155,9 +150,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns explicit Data Forge contracts and keeps maintenance tools out of the default bootstrap set")]
 	public async Task ToolContractGet_Should_Handle_DataForge_Contract_Policy() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse defaultResponse = await CallAsync(
@@ -205,9 +198,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]
 	public async Task ToolContractGet_Should_Advertise_Settings_Health_Contract() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -236,9 +227,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns canonical entity-schema contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_Entity_Schema_Surface() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -299,9 +288,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns canonical DB-first binding contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_DbFirst_Binding_Surface() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -377,9 +364,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns canonical local binding contracts from clio")]
 	public async Task ToolContractGet_Should_Return_Canonical_Local_Binding_Surface() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -431,9 +416,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns canonical required field name for modify-entity-schema-column")]
 	public async Task ToolContractGet_Should_Return_Canonical_Required_Field_Name() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -464,9 +447,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract advertises installed application identity fields for get-app-info")]
 	public async Task ToolContractGet_Should_Advertise_Application_Info_Identity_Fields() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -501,9 +482,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("tool-contract-get advertises create-entity-business-rule validation, actual response fields, and workflow guidance")]
 	public async Task ToolContractGet_Should_Advertise_Entity_Business_Rule_Create_Contract() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -647,9 +626,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("tool-contract-get advertises create-page-business-rule validation and workflow guidance")]
 	public async Task ToolContractGet_Should_Advertise_Page_Business_Rule_Create_Contract() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -704,9 +681,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises page discovery selectors and raw body semantics")]
 	public async Task ToolContractGet_Should_Advertise_Page_List_And_Page_Get_Metadata() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		ToolContractGetResponse response = await CallAsync(
 			context.Session,
@@ -755,9 +730,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns structured unknown tool suggestions")]
 	public async Task ToolContractGet_Should_Return_Structured_Unknown_Tool_Suggestions() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -783,9 +756,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract returns field-level validation errors for blank tool names")]
 	public async Task ToolContractGet_Should_Return_Field_Level_Validation_Error() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -812,9 +783,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[Description("Returns the get-schema-name-prefix contract through the live MCP server with the correct required input and response field shape.")]
 	public async Task ToolContractGet_Should_Return_GetSchemaNamePrefix_Contract() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(
@@ -844,9 +813,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract rejects calls without the args wrapper")]
 	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -865,9 +832,7 @@ public sealed class ToolContractGetToolE2ETests {
 	[AllureName("get-tool-contract rejects calls with args of the wrong type")]
 	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -880,12 +845,6 @@ public sealed class ToolContractGetToolE2ETests {
 		// Assert
 		AssertInvocationFailure(callResult,
 			because: "MCP argument binding should reject transport envelopes whose args payload cannot bind to ToolContractGetArgs");
-	}
-
-	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(
@@ -919,12 +878,4 @@ public sealed class ToolContractGetToolE2ETests {
 				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

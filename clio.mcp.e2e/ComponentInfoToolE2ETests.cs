@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("get-component-info")]
 [NonParallelizable]
-public sealed class ComponentInfoToolE2ETests {
+public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ComponentInfoTool.ToolName;
 
 	[Test]
@@ -28,9 +28,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Verifies that get-component-info appears in the MCP server tool manifest.")]
 	public async Task ComponentInfoTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -48,9 +46,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, verifies a legacy tab search, verifies property-metadata search for bulkActions, then requests full metadata for crt.MenuItem.")]
 	public async Task ComponentInfoTool_Should_Return_List_Search_And_Detail_Metadata() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse tabListResponse = await CallComponentInfoAsync(
@@ -128,9 +124,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls get-component-info with schema-type=mobile, and verifies the response contains mobile-specific components and excludes web-only types.")]
 	public async Task ComponentInfoTool_Should_Return_Mobile_Catalog_When_SchemaType_Is_Mobile() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse mobileListResponse = await CallComponentInfoAsync(
@@ -163,9 +157,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, requests an unknown component type, and verifies that the failure stays structured and readable.")]
 	public async Task ComponentInfoTool_Should_Report_Unknown_Component_Types() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse response = await CallComponentInfoAsync(
@@ -191,9 +183,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, queries detail for crt.NumberInput (a standard field component) and crt.TabContainer (a non-field container), and verifies that the field component response carries the dataSourceBindingContract field while the container response does not.")]
 	public async Task ComponentInfoTool_Should_Surface_DataSourceBindingContract_For_Standard_Field_Components() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse fieldResponse = await CallComponentInfoAsync(
@@ -229,9 +219,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, requests detail without an environment, and verifies that a latest-fallback response carries the prose caveat, the enforced requiresVersionConfirmation flag, and a resolvedFromReason classification.")]
 	public async Task ComponentInfoTool_Should_Emit_VersionWarning_On_Latest_Fallback() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act — no environment-name / version passed. Version resolution is driven solely by
 		// per-call arguments (the ambient singleton was removed), so the server deterministically
@@ -263,9 +251,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, lists the full web catalog with no search/component-type, and verifies crt.Gallery is present in the known component list.")]
 	public async Task ComponentInfoTool_List_Mode_Should_Surface_Gallery_Without_Explicit_Search() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act — no search, no component-type: the full catalog the agent sees on a proactive sweep.
 		ComponentInfoResponse listResponse = await CallComponentInfoAsync(
@@ -292,9 +278,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, requests detail for crt.DataGrid, and verifies the selection-metadata fields the producer publishes (@whenToUse/@whenNotToUse/@synonym) reach the response.")]
 	public async Task ComponentInfoTool_Should_Surface_Selection_Metadata_On_Detail() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse response = await CallComponentInfoAsync(
@@ -322,9 +306,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and verifies that supplying both version and environment-name returns a structured mutually-exclusive error.")]
 	public async Task ComponentInfoTool_Should_Reject_Version_And_Environment_Together() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse response = await CallComponentInfoAsync(
@@ -350,9 +332,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and requests a composite by caption; verifies the arg binds and the composite branch returns a structured mode:composite envelope.")]
 	public async Task ComponentInfoTool_Should_Accept_Composite_Arg_Over_The_Wire() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act — a caption that cannot exist, so the assertion is deterministic regardless of
 		// whether the live registry has been refreshed to a payload that ships composites.
@@ -377,9 +357,7 @@ public sealed class ComponentInfoToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and verifies that supplying both composite and component-type returns a structured mutually-exclusive error.")]
 	public async Task ComponentInfoTool_Should_Reject_Composite_And_ComponentType_Together() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ComponentInfoResponse response = await CallComponentInfoAsync(
@@ -426,12 +404,13 @@ public sealed class ComponentInfoToolE2ETests {
 			// Documented Tier-0 override (see docs/commands/get-component-info.md); read every call,
 			// before the disk cache and CDN, so the spawned process serves this composite-bearing catalog.
 			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
-			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+			using CancellationTokenSource compositeCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession compositeSession = await McpServerSession.StartAsync(settings, compositeCts.Token);
 
 			// Act
 			ComponentInfoResponse response = await CallComponentInfoAsync(
-				arrangeContext.Session,
-				arrangeContext.CancellationTokenSource.Token,
+				compositeSession,
+				compositeCts.Token,
 				new Dictionary<string, object?> { ["composite"] = "E2E Composite Probe" });
 
 			// Assert — the success path the other two composite e2e tests do not cover.
@@ -472,12 +451,13 @@ public sealed class ComponentInfoToolE2ETests {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
-			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+			using CancellationTokenSource routeCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession routeSession = await McpServerSession.StartAsync(settings, routeCts.Token);
 
 			// Act — the composite CAPTION passed as component-type (NOT the composite arg).
 			ComponentInfoResponse response = await CallComponentInfoAsync(
-				arrangeContext.Session,
-				arrangeContext.CancellationTokenSource.Token,
+				routeSession,
+				routeCts.Token,
 				new Dictionary<string, object?> { ["component-type"] = "E2E Route Probe" });
 
 			// Assert — no such component, but the label names a composite, so route there.
@@ -498,12 +478,6 @@ public sealed class ComponentInfoToolE2ETests {
 		}
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<ComponentInfoResponse> CallComponentInfoAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -520,12 +494,4 @@ public sealed class ComponentInfoToolE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<ComponentInfoResponse>(callResult);
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(CreatePageBusinessRuleTool.BusinessRuleCreateToolName)]
 [NonParallelizable]
-public sealed class PageBusinessRuleToolE2ETests {
+public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreatePageBusinessRuleTool.BusinessRuleCreateToolName;
 
 	[Category("McpE2E.NoEnvironment")]
@@ -32,7 +32,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-page-business-rule exposes only page action branches.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Page_Only_Action_Runtime_Schema() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -72,7 +72,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a show-element payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_ShowElement_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-business-rule-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -108,7 +108,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-sys-value-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -144,7 +144,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-batch-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -184,7 +184,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
 		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		PageRuleTarget target = await ResolveContactPageRuleTargetAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
@@ -454,23 +454,6 @@ public sealed class PageBusinessRuleToolE2ETests {
 			["type"] = "AttributeValue",
 			["path"] = path
 		};
-
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 
 	private sealed record PageAttributeCandidate(string AttributeName, string ColumnName);
 

@@ -1,7 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -19,14 +18,14 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(GetUserCultureTool.ToolName)]
 [NonParallelizable]
-public sealed class GetUserCultureToolE2ETests {
+public sealed class GetUserCultureToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Advertises get-user-culture as a read-only, non-destructive MCP tool through the real MCP server.")]
 	[AllureTag(GetUserCultureTool.ToolName)]
 	[AllureName("get-user-culture MCP tool is advertised")]
 	public async Task GetUserCulture_Should_Be_Advertised() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -46,7 +45,7 @@ public sealed class GetUserCultureToolE2ETests {
 	[AllureName("get-user-culture MCP tool binds arguments")]
 	public async Task GetUserCulture_Should_Bind_Arguments_And_Report_Failure_For_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-culture-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -71,20 +70,4 @@ public sealed class GetUserCultureToolE2ETests {
 			because: "a failure signal must never surface a fallback culture as if it were resolved");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

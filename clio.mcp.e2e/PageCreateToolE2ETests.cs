@@ -20,7 +20,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(PageCreateTool.ToolName)]
 [NonParallelizable]
-public sealed class PageCreateToolE2ETests {
+public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageCreateTool.ToolName;
 	private const string ListTemplatesToolName = PageTemplatesListTool.ToolName;
 	private const string PackageName = "Custom";
@@ -32,7 +32,7 @@ public sealed class PageCreateToolE2ETests {
 	[AllureName("create-page and list-page-templates are advertised by the MCP server")]
 	public async Task PageCreateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -52,7 +52,7 @@ public sealed class PageCreateToolE2ETests {
 	[AllureName("create-page reports invalid environment failures")]
 	public async Task PageCreateTool_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-create-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -84,7 +84,7 @@ public sealed class PageCreateToolE2ETests {
 	[AllureName("create-page rejects malformed schema-name")]
 	public async Task PageCreateTool_Should_Reject_Invalid_Schema_Name() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -116,7 +116,7 @@ public sealed class PageCreateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -148,7 +148,7 @@ public sealed class PageCreateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string schemaName = $"UsrE2E_BlankPage_{Guid.NewGuid():N}".Substring(0, 40);
 
 		// Act
@@ -205,7 +205,7 @@ public sealed class PageCreateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string schemaName = $"UsrE2E_DupPage_{Guid.NewGuid():N}".Substring(0, 40);
 
 		// Create the page first
@@ -250,7 +250,7 @@ public sealed class PageCreateToolE2ETests {
 	[AllureName("list-page-templates reports invalid schema-type")]
 	public async Task PageTemplatesListTool_Should_Reject_Invalid_Schema_Type() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -268,14 +268,6 @@ public sealed class PageCreateToolE2ETests {
 		callResult.IsError.Should().NotBeTrue();
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("Unknown schema-type");
-	}
-
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -308,12 +300,4 @@ public sealed class PageCreateToolE2ETests {
 		}
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

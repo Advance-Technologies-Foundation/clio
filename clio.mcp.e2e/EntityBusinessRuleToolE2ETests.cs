@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(CreateEntityBusinessRuleTool.BusinessRuleCreateToolName)]
 [NonParallelizable]
-public sealed class EntityBusinessRuleToolE2ETests {
+public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreateEntityBusinessRuleTool.BusinessRuleCreateToolName;
 
 	[Category("McpE2E.NoEnvironment")]
@@ -30,7 +30,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-entity-business-rule exposes anyOf action branches for field-state actions and Set values assignments.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Polymorphic_Action_AnyOf_Runtime_Schema() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -99,7 +99,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with Set values constant formula and AttributeValue payloads and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SetValues_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-business-rule-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -135,7 +135,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-batch-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -167,7 +167,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an apply-filter payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_ApplyFilter_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-apply-filter-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -203,7 +203,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-sys-value-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -239,7 +239,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a CurrentUserRoles CONTAIN role condition and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_RoleGate_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-role-gate-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -275,7 +275,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives a readable deserialization error instead of a generic invocation failure.")]
 	public async Task BusinessRuleCreate_Should_Surface_Action_Deserialization_Error() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -317,7 +317,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		// Intentional destructive fixture: Contact in Custom is the canonical sandbox target.
 		// There is no business-rule delete action yet, so each run writes a uniquely captioned rule and verifies readback.
 		string caption = $"MCP E2E Contact entity {Guid.NewGuid():N}";
@@ -373,7 +373,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact sys-value {Guid.NewGuid():N}";
 
 		// Act
@@ -428,7 +428,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact role-gate {Guid.NewGuid():N}";
 
 		// Act
@@ -483,7 +483,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact apply-filter {Guid.NewGuid():N}";
 
 		// Act
@@ -771,20 +771,4 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			["sysValueName"] = sysValueName
 		};
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }
