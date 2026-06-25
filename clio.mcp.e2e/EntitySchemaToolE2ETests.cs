@@ -36,7 +36,7 @@ namespace Clio.Mcp.E2E;
 // unaffected and remain in place.
 [AllureFeature("entity-schema")]
 [NonParallelizable]
-public sealed class EntitySchemaToolE2ETests {
+public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 	private const string TextDefaultSettingCode = "UsrEntitySchemaE2EDefaultText";
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
@@ -775,13 +775,14 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should be reported before any schema search is executed");
 	}
 
-	private static async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
+	private async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
 		return await AllureApi.Step("Arrange sandbox MCP session for non-destructive find-entity-schema checks", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			TestConfiguration.EnsureSandboxIsConfigured(settings);
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
+			await Task.CompletedTask;
 			return new SandboxFindEntitySchemaArrangeContext(
 				settings.Sandbox.EnvironmentName!,
 				session,
@@ -789,7 +790,7 @@ public sealed class EntitySchemaToolE2ETests {
 		});
 	}
 
-	private static async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
+	private async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
 		return await AllureApi.Step("Arrange sandbox package and MCP session for entity schema tools", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -835,7 +836,7 @@ public sealed class EntitySchemaToolE2ETests {
 				"Entity schema MCP E2E default",
 				cancellationTokenSource.Token);
 
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new EntitySchemaArrangeContext(
 				rootDirectory,
 				settings.Sandbox.EnvironmentName!,
@@ -849,12 +850,13 @@ public sealed class EntitySchemaToolE2ETests {
 		});
 	}
 
-	private static async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
+	private async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
 		return await AllureApi.Step("Arrange invalid-environment MCP session for entity schema tools", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
+			await Task.CompletedTask;
 			return new InvalidEnvironmentArrangeContext(
 				$"missing-entity-schema-env-{Guid.NewGuid():N}",
 				session,
@@ -1722,13 +1724,14 @@ public sealed class EntitySchemaToolE2ETests {
 		string AddedColumnName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1736,9 +1739,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1746,9 +1749,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

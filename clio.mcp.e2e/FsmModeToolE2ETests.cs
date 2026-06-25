@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("fsm")]
-public sealed class FsmModeToolE2ETests
+public sealed class FsmModeToolE2ETests : McpContractFixtureBase
 {
 	private const string GetToolName = FsmModeTool.GetFsmModeToolName;
 	private const string SetToolName = FsmModeTool.SetFsmModeToolName;
@@ -34,7 +34,7 @@ public sealed class FsmModeToolE2ETests
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using FsmModeArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
 		CallToolResult callResult = await ActGetAsync(arrangeContext, settings.Sandbox.EnvironmentName!);
@@ -56,7 +56,7 @@ public sealed class FsmModeToolE2ETests
 	{
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		await using FsmModeArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-fsm-status-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -77,7 +77,7 @@ public sealed class FsmModeToolE2ETests
 	{
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		await using FsmModeArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-fsm-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -89,17 +89,7 @@ public sealed class FsmModeToolE2ETests
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<FsmModeArrangeContext> ArrangeAsync(McpE2ESettings settings)
-	{
-		return await AllureApi.Step("Arrange FSM MCP session", async () =>
-		{
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new FsmModeArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
-	private static async Task<CallToolResult> ActGetAsync(FsmModeArrangeContext arrangeContext, string environmentName)
+	private static async Task<CallToolResult> ActGetAsync(ArrangeContext arrangeContext, string environmentName)
 	{
 		return await AllureApi.Step("Act by invoking get-fsm-mode through MCP", async () =>
 		{
@@ -115,7 +105,7 @@ public sealed class FsmModeToolE2ETests
 	}
 
 	private static async Task<CommandExecutionActResult> ActSetAsync(
-		FsmModeArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string environmentName,
 		string mode)
 	{
@@ -218,17 +208,6 @@ public sealed class FsmModeToolE2ETests
 		combinedOutput.Should().MatchRegex(
 			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should help a human understand that the requested environment is not registered");
-	}
-
-	private sealed record FsmModeArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable
-	{
-		public async ValueTask DisposeAsync()
-		{
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CommandExecutionActResult(

@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("sync-schemas")]
 [NonParallelizable]
-public sealed class SchemaSyncToolE2ETests {
+public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = SchemaSyncTool.ToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
@@ -322,7 +322,7 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "structured default value readback should include the resolved system value guid");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
+	private async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		if (requireEnvironment && !settings.AllowDestructiveMcpTests) {
@@ -367,7 +367,7 @@ public sealed class SchemaSyncToolE2ETests {
 				cancellationTokenSource.Token);
 		}
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(
 			rootDirectory,
 			workspacePath,
@@ -927,7 +927,7 @@ public sealed class SchemaSyncToolE2ETests {
 		};
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,
 		string? EnvironmentName,
@@ -938,12 +938,12 @@ public sealed class SchemaSyncToolE2ETests {
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 }

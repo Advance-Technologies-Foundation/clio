@@ -25,7 +25,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(PageUpdateTool.ToolName)]
 [NonParallelizable]
-public sealed class PageUpdateToolE2ETests {
+public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageUpdateTool.ToolName;
 	private const string MinimalMarkerPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
@@ -43,7 +43,7 @@ public sealed class PageUpdateToolE2ETests {
 	[AllureDescription("Verifies that update-page appears in the MCP server tool manifest.")]
 	public async Task PageUpdateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -61,7 +61,7 @@ public sealed class PageUpdateToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, invokes update-page with the incident body (`await request.$context.X = Y`), and verifies that the response carries success=false, a 'JavaScript syntax error at line N, column M' message, and the 'NOT sent to Creatio' assurance — the deterministic floor of the validator must surface through the real MCP transport before any remote call is even attempted.")]
 	public async Task PageUpdateTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		// `await` cannot be an assignment target; no environment-name because the
 		// syntax gate must short-circuit before any environment resolution.
 		string nonValidBody =
@@ -108,7 +108,7 @@ public sealed class PageUpdateToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and submits a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The existing regex validators accept the body (their shape checks explicitly skip `crt.*` keys), so verifying the structured response carries `Page body lint failed` proves the AST lint pass adds detection beyond the regex layer end-to-end via the real MCP wire.")]
 	public async Task PageUpdateTool_Should_FailFast_When_Custom_Converter_Uses_Crt_Prefix() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		// Body uses the reserved `crt.*` namespace for a custom converter
 		// — only the AST lint pass catches this; the regex layer treats
 		// `crt.*` as a valid vendor prefix and the converter shape checks
@@ -156,7 +156,7 @@ public sealed class PageUpdateToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, invokes update-page with an unknown environment name in dry-run mode, and verifies that the failure remains human-readable.")]
 	public async Task PageUpdateTool_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-update-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -194,7 +194,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string unAwaitedContextBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -237,7 +237,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -281,7 +281,7 @@ public sealed class PageUpdateToolE2ETests {
 			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
 			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
 			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -318,7 +318,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string proxyBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$UsrStatusField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"values\":{\"UsrStatus\":{\"modelConfig\":{\"path\":\"PDS.UsrStatus\"}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -360,7 +360,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string handlerDrivenBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings.UsrName\",\"control\":\"$UsrNameField\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{\"attributes\":{\"UsrName\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}},\"UsrNameField\":{\"modelConfig\":{\"path\":\"PDS.UsrName\"}}}}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
@@ -404,7 +404,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bareInsertBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
 			"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
@@ -451,7 +451,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string inlinePlaceholderBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
 			"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
@@ -497,7 +497,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidHandlersBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -538,7 +538,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bodyWithValidateAlias = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -584,7 +584,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bodyWithObjectConverter = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -628,7 +628,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidHandlerApiBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
@@ -672,7 +672,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bodyWithBadConverter = MinimalMarkerPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
@@ -711,7 +711,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bodyWithBadHandler = MinimalMarkerPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
@@ -752,7 +752,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string bodyWithBadValidator = MinimalMarkerPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
@@ -792,7 +792,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -830,7 +830,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -869,7 +869,7 @@ public sealed class PageUpdateToolE2ETests {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page conflict-detection test.");
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-session-").FullName;
 		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-oob-").FullName;
@@ -939,7 +939,7 @@ public sealed class PageUpdateToolE2ETests {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping live Designer Presence save-event E2E.");
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";
 		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-presence-").FullName;
 		await using var listener = await DesignerPresenceListener.StartAsync(environmentName, savePage);
@@ -985,7 +985,7 @@ public sealed class PageUpdateToolE2ETests {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page force-overwrite test.");
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-force-session-").FullName;
 		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-force-oob-").FullName;
@@ -1083,14 +1083,6 @@ public sealed class PageUpdateToolE2ETests {
 		}
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
@@ -1115,7 +1107,7 @@ public sealed class PageUpdateToolE2ETests {
 	[AllureDescription("Verifies that update-page returns a structured validation error for a mobile body containing the 'validators' key, without reaching Creatio.")]
 	public async Task PageUpdateTool_Should_Reject_Mobile_Body_With_Validators() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string mobileBodyWithValidators = """
 			{
 			  "viewConfigDiff": [],
@@ -1154,7 +1146,7 @@ public sealed class PageUpdateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -1194,15 +1186,6 @@ public sealed class PageUpdateToolE2ETests {
 			return result.ExitCode == 0;
 		} catch (OperationCanceledException) {
 			return false;
-		}
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
 		}
 	}
 

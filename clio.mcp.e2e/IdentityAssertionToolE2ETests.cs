@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("identity-assertion")]
 [NonParallelizable]
-public sealed class IdentityAssertionToolE2ETests {
+public sealed class IdentityAssertionToolE2ETests : McpContractFixtureBase {
 
 	private static readonly string[] ExpectedToolNames = [
 		GetIdentityAssertionTool.ToolName,
@@ -38,7 +38,7 @@ public sealed class IdentityAssertionToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using IdentityArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -59,7 +59,7 @@ public sealed class IdentityAssertionToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using IdentityArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		CommandExecutionEnvelope execution = await ActCheckAuthCodeFlowAsync(
@@ -75,16 +75,8 @@ public sealed class IdentityAssertionToolE2ETests {
 				because: "the command prints the authorization-code-flow flag as a plain boolean");
 	}
 
-	private static async Task<IdentityArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange identity-assertion MCP session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new IdentityArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionEnvelope> ActCheckAuthCodeFlowAsync(
-		IdentityArrangeContext arrangeContext, string environmentName) {
+		ArrangeContext arrangeContext, string environmentName) {
 		return await AllureApi.Step("Act by invoking check-auth-code-flow through MCP", async () => {
 			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 			tools.Select(tool => tool.Name).Should().Contain(CheckAuthCodeFlowTool.ToolName,
@@ -100,15 +92,6 @@ public sealed class IdentityAssertionToolE2ETests {
 
 			return McpCommandExecutionParser.Extract(callResult);
 		});
-	}
-
-	private sealed record IdentityArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 }

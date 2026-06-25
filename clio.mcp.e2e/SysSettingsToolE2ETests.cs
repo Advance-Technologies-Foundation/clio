@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("sys-setting")]
 [NonParallelizable]
-public sealed class SysSettingsToolE2ETests {
+public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 
 	private const string GetToolName = SysSettingGetTool.GetSysSettingToolName;
 	private const string ListToolName = SysSettingsListTool.ListSysSettingsToolName;
@@ -294,7 +294,7 @@ public sealed class SysSettingsToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		bool requireReachableEnvironment,
 		bool requireDestructiveOptIn = false) {
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -306,7 +306,7 @@ public sealed class SysSettingsToolE2ETests {
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
@@ -328,13 +328,13 @@ public sealed class SysSettingsToolE2ETests {
 		return result.ExitCode == 0;
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

@@ -20,7 +20,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("data-binding")]
 [NonParallelizable]
-public sealed class DataBindingToolE2ETests {
+public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string CreateToolName = CreateDataBindingTool.CreateDataBindingToolName;
 	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
@@ -202,7 +202,7 @@ public sealed class DataBindingToolE2ETests {
 			because: "the failure should explain why offline generation is unavailable for the requested schema");
 	}
 
-	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
+	private async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = requireEnvironment
@@ -226,7 +226,7 @@ public sealed class DataBindingToolE2ETests {
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationTokenSource.Token);
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new DataBindingArrangeContext(
 			rootDirectory,
 			workspacePath,
@@ -301,12 +301,12 @@ public sealed class DataBindingToolE2ETests {
 		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

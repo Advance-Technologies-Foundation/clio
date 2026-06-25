@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("get-process-signature")]
 [NonParallelizable]
-public sealed class GetProcessSignatureToolE2ETests {
+public sealed class GetProcessSignatureToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GetProcessSignatureTool.ToolName;
 
 	[Category("McpE2E.Sandbox")]
@@ -45,7 +45,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 			Assert.Ignore($"get-process-signature MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
 
-		await using GetProcessSignatureArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		GetProcessSignatureEnvelope envelope = await ActAsync(arrangeContext, processCode!, environmentName!);
@@ -70,7 +70,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string invalidEnvironmentName = $"missing-gps-env-{Guid.NewGuid():N}";
-		await using GetProcessSignatureArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		GetProcessSignatureEnvelope envelope = await ActAsync(arrangeContext, "UsrMissingProcess", invalidEnvironmentName);
@@ -85,12 +85,6 @@ public sealed class GetProcessSignatureToolE2ETests {
 			because: "the failure should help a human understand that the requested environment is not registered");
 	}
 
-	private static async Task<GetProcessSignatureArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new GetProcessSignatureArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,
@@ -99,7 +93,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 	}
 
 	private static async Task<GetProcessSignatureEnvelope> ActAsync(
-		GetProcessSignatureArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string processName,
 		string environmentName) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -119,12 +113,4 @@ public sealed class GetProcessSignatureToolE2ETests {
 		return GetProcessSignatureResultParser.Extract(callResult);
 	}
 
-	private sealed record GetProcessSignatureArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

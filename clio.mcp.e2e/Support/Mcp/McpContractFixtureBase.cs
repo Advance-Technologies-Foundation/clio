@@ -34,6 +34,16 @@ public abstract class McpContractFixtureBase {
 	}
 
 	/// <summary>
+	/// The shared MCP server session started once for the whole fixture.
+	/// Use this from fixtures that build their own context record carrying extra
+	/// per-test fields (e.g. a resolved environment name or workspace path) instead of
+	/// the lightweight <see cref="ArrangeContext"/>; pair it with a per-test
+	/// <see cref="CancellationTokenSource"/> and do NOT dispose the session yourself —
+	/// the fixture owns its lifecycle.
+	/// </summary>
+	private protected McpServerSession Session => _session!;
+
+	/// <summary>
 	/// Returns an <see cref="ArrangeContext"/> that references the shared server and
 	/// a fresh per-test <see cref="CancellationTokenSource"/> with the given timeout.
 	/// The context does NOT stop the server when disposed.

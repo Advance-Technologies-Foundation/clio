@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ClearBrowserSessionTool.ToolName)]
 [NonParallelizable]
-public sealed class ClearBrowserSessionToolE2ETests {
+public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = ClearBrowserSessionTool.ToolName;
 
@@ -87,12 +87,12 @@ public sealed class ClearBrowserSessionToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,
 		bool requireReachableEnvironment) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
@@ -119,13 +119,13 @@ public sealed class ClearBrowserSessionToolE2ETests {
 		return result.ExitCode == 0;
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }
