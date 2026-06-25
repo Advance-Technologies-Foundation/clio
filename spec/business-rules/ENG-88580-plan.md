@@ -18,7 +18,7 @@ The task also requires updating the business-rules spec so the documented featur
   - Required args: `environment-name`, `package-name`, `entity-schema-name`, `rule-name`.
   - `rule-name` matches the stored business-rule `name` exactly, case-insensitively.
   - Output: normalized object with `name`, `caption`, `enabled`, `condition`, and `actions`.
-  - Reuse the existing nested `condition` and `actions` contract shape used by `create-entity-business-rule`.
+  - Reuse the existing nested `condition` and `actions` contract shape used by `create-entity-business-rules`.
 - Update `get-tool-contract` so both tools are discoverable with accurate args, examples, read-only flags, and error contracts.
 
 ### Business-rule read path
@@ -29,7 +29,7 @@ The task also requires updating the business-rules spec so the documented featur
 - Add a read-side mapper:
   - list mode maps directly from stored metadata/resources and does not require full rule normalization.
   - get mode converts one stored rule into the normalized agent contract.
-- Keep `create-entity-business-rule` behavior unchanged.
+- Keep `create-entity-business-rules` behavior unchanged.
 
 ### Normalization and failure rules
 

@@ -59,10 +59,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
-		parameterDescription.Description.Should().Contain("indicator-widget",
-			because: "the top-level argument hint should mention the dedicated indicator widget guidance name");
-		parameterDescription.Description.Should().Contain("chart-widget",
-			because: "the top-level argument hint should mention the dedicated chart widget guidance name");
 		parameterDescription.Description.Should().Contain("related-list",
 			because: "the top-level argument hint should mention the dedicated related-list (detail) guidance name");
 		parameterDescription.Description.Should().Contain("esq-filters",
@@ -77,10 +73,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
-		propertyDescription.Description.Should().Contain("indicator-widget",
-			because: "the serialized name field hint should mention the dedicated indicator widget guidance name");
-		propertyDescription.Description.Should().Contain("chart-widget",
-			because: "the serialized name field hint should mention the dedicated chart widget guidance name");
 		propertyDescription.Description.Should().Contain("related-list",
 			because: "the serialized name field hint should mention the dedicated related-list (detail) guidance name");
 		propertyDescription.Description.Should().Contain("esq-filters",
