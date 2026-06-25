@@ -17,8 +17,18 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end tests for the clear-redis MCP tool.
 /// </summary>
+/// <remarks>
+/// TEMPORARILY IGNORED (ENG-91829). Every test here connects to the sandbox Redis in arrange
+/// (seed a key, then assert clear-redis removed it). That Redis is not reachable from the CI
+/// agents, so these tests cannot pass there and — before the connect was bounded — they froze
+/// the whole suite. The connect is now hang-guarded (Task.Run + WaitAsync in RedisSandboxClient),
+/// but until the job either provides a reachable sandbox Redis or adds
+/// <c>dotnet test --blame-hang-timeout</c>, running them only adds noise. Re-enable once one of
+/// those is in place.
+/// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
+[Ignore("ENG-91829: clear-redis e2e needs a sandbox Redis reachable from the runner (CI agents cannot reach it); re-enable once the job provides one or adds --blame-hang-timeout.")]
 [AllureNUnit]
 [AllureFeature("clear-redis-db")]
 public sealed class ClearRedisToolE2ETests {
