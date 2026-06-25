@@ -129,6 +129,23 @@ public sealed class CreatioVersionProviderTests
 	}
 
 	[Test]
+	[Description("A dev-build CoreVersion '0.0.0.0' is returned as EXACTLY new Version(0,0,0,0) (all four components), so the checker's exact-equality dev-build bypass engages and a dev stand is never gated.")]
+	public void GetCoreVersion_ShouldReturnExactlyZeroVersion_WhenCoreVersionIsDevBuildSentinel() {
+		// Arrange
+		IApplicationClient client = SubstituteGetResponse("""{ "SysInfo": { "CoreVersion": "0.0.0.0" } }""");
+		CreatioVersionProvider provider = CreateProvider(client);
+
+		// Act
+		Version result = provider.GetCoreVersion();
+
+		// Assert
+		result.Should().Be(new Version(0, 0, 0, 0),
+			because: "the dev-build bypass is an exact 4-component Version equality; the provider must yield 0.0.0.0 verbatim, not a 3-part 0.0.0, or a dev stand would silently fail closed");
+		result.Revision.Should().Be(0,
+			because: "a 4-part 0.0.0.0 must parse with an explicit Revision component (0.0.0 would have Revision -1 and break the exact-equality bypass)");
+	}
+
+	[Test]
 	[Description("When the cliogate GetSysInfo probe yields a version the legacy ApplicationInfoService is never probed — GetSysInfo is the primary source.")]
 	public void GetCoreVersion_ShouldNotProbeLegacy_WhenSysInfoYieldsVersion() {
 		// Arrange
