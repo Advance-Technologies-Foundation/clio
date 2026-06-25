@@ -176,6 +176,15 @@ public sealed class DescribedElement {
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
 
+	/// <summary>
+	/// The descriptor <c>type</c> token to feed back into <c>create-business-process</c> / <c>modify-business-process</c>
+	/// for this element (for example <c>usertask</c>, <c>endevent</c>, <c>signalstart</c>, <c>startevent</c>) — the
+	/// round-trippable counterpart of <see cref="Type"/> (which is the non-consumable .NET class name). For a user
+	/// task this is the generic <c>usertask</c> token; the specific task is in <see cref="UserTaskName"/>.
+	/// </summary>
+	[JsonPropertyName("buildType")]
+	public string BuildType { get; set; }
+
 	/// <summary>For user-task elements: the referenced user-task schema name (for example <c>ReadDataUserTask</c>).</summary>
 	[JsonPropertyName("userTaskName")]
 	public string UserTaskName { get; set; }

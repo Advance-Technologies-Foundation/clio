@@ -42,16 +42,16 @@ Structured JSON:
   "caption": "AI PoC Read Contact",
   "schemaUId": "dd3a473e-736a-4957-bb6d-7315f6404bd6",
   "elements": [
-    { "id": "...", "name": "StartEvent1", "caption": "Start", "type": "ProcessSchemaStartEvent", "position": "60;185", "parameters": [] },
+    { "id": "...", "name": "StartEvent1", "caption": "Start", "type": "ProcessSchemaStartEvent", "buildType": "startevent", "position": "60;185", "parameters": [] },
     {
       "id": "...", "name": "task1", "caption": "Do task",
-      "type": "ProcessSchemaUserTask", "userTaskName": "ActivityUserTask", "position": "240;173",
+      "type": "ProcessSchemaUserTask", "buildType": "usertask", "userTaskName": "ActivityUserTask", "position": "240;173",
       "parameters": [
         { "name": "Recommendation", "uid": "...", "source": "Script", "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{...}]#]" },
         { "name": "Duration", "uid": "...", "source": "ConstValue", "value": "20" }
       ]
     },
-    { "id": "...", "name": "EndEvent1", "caption": "End", "type": "ProcessSchemaEndEvent", "position": "420;185", "parameters": [] }
+    { "id": "...", "name": "EndEvent1", "caption": "End", "type": "ProcessSchemaTerminateEvent", "buildType": "endevent", "position": "420;185", "parameters": [] }
   ],
   "flows": [
     { "source": "...", "target": "...", "kind": "sequence" }
@@ -63,8 +63,11 @@ Structured JSON:
 ```
 
 - `elements[].type` is the element's **runtime class name** (e.g. `ProcessSchemaUserTask`,
-  `ProcessSchemaStartEvent`); for user tasks `userTaskName` carries the specific user-task schema
-  (e.g. `ReadDataUserTask`, `ActivityUserTask`, or a custom one).
+  `ProcessSchemaStartEvent`) and is **not** consumable by build. `elements[].buildType` is the
+  **descriptor token** to feed back into `create-business-process` / `modify-business-process`
+  (e.g. `usertask`, `endevent`, `signalstart`, `startevent`) — the round-trippable counterpart of
+  `type`. For user tasks `userTaskName` carries the specific user-task schema (e.g. `ReadDataUserTask`,
+  `ActivityUserTask`, or a custom one).
 - `elements[].parameters[]` and the top-level `parameters[]` list each value-bearing parameter with its
   `source` (`None` / `ConstValue` / `Mapping` / `Script` / `SystemValue` / …) and the raw `value`
   expression (for a formula source, the `[#…#]` expression).

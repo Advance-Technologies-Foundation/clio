@@ -23,9 +23,12 @@ Provide EXACTLY ONE of --process-code / --process-uid / --process-caption.
 OUTPUT
   Structured JSON with:
     name, caption, schemaUId
-    elements   - [{ id, name, caption, type, userTaskName?, position, parameters }]
-                 type = runtime class (e.g. ProcessSchemaUserTask); userTaskName = the
-                 specific user-task schema (e.g. ActivityUserTask), incl. custom ones.
+    elements   - [{ id, name, caption, type, buildType, userTaskName?, position, parameters }]
+                 type      = runtime class (e.g. ProcessSchemaUserTask), NOT consumable by build.
+                 buildType = the descriptor token to feed back into create/modify-business-process
+                             (e.g. usertask, endevent, signalstart, startevent) — the round-trippable
+                             counterpart of type; userTaskName carries the specific user-task schema
+                             (e.g. ActivityUserTask), incl. custom ones.
     flows      - [{ source, target, kind }]  (kind: sequence | conditional | default)
     parameters - [{ name, uid, source, value }]  (process-level inputs / variables)
   Each element/process parameter carries its value source (None | ConstValue | Mapping |
