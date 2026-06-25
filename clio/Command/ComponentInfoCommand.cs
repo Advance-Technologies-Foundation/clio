@@ -241,24 +241,16 @@ public sealed class ComponentInfoCommand {
 			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
-		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
-		// Carry composites on the not-found response too, so both mode:"list" shapes
-		// (normal list and component-not-found suggestions) surface composites uniformly.
-		IReadOnlyList<CompositeDefinition> notFoundComposites =
-			ComponentInfoGrouping.FilterComposites(state.Composites, options.Search);
-		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
-			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{componentType}' was not found.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions),
-			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
-			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom,
-			ResolvedFromReason = resolvedFromReason
-		};
+		// Name/description-first resolution shared with the MCP tool: match components by
+		// name/description first, then route to composite="<caption>" when the requested label
+		// names a composite (e.g. "Expanded list") rather than leaving the agent to hand-build.
+		// Intentional behavioral change from the pre-factory path: the old code used
+		// FilterEntries(entries, options.Search) (substring filter on the --search value). The
+		// factory's fallback uses SuggestForUnknown (edit-distance on the requested component-type
+		// label + --search), which ranks by similarity to what the user typed, not by --search alone.
+		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			state.Entries, state.Composites, componentType!, options.Search,
+			state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 	}
 
 }

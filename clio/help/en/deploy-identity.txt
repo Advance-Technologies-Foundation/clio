@@ -1,0 +1,121 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    deploy-identity - Deploy IdentityService to IIS and connect it to a Creatio environment
+
+DESCRIPTION
+    Deploys IdentityService from either a standalone IdentityService.zip, a Creatio
+    distribution bundle that contains IdentityService.zip, or the IdentityService.zip found
+    under the registered environment EnvironmentPath. The command configures the
+    IdentityService appsettings from the registered Creatio environment database connection,
+    creates an IIS no-managed-code site, verifies OpenID discovery, updates Creatio
+    IdentityService system settings through the platform sys-settings endpoint, creates a
+    clio OAuth client, and stores the returned clio client credentials in the local clio
+    appsettings environment.
+
+    By default, the command always creates a fresh clio OAuth app and binds it to the
+    existing Supervisor user. It does not reuse existing OAuth apps. Use --create-tech-user
+    only when a new technical user should be created and granted the System administrators
+    role. Use --no-app to deploy IdentityService and connect Creatio without creating any
+    OAuth app.
+
+    The generated OAuth client secret is never printed. Command output shows only the
+    IdentityService URL and client id.
+
+SYNOPSIS
+    clio deploy-identity -e ENVIRONMENT [OPTIONS]
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered local Creatio environment to connect.
+
+    --zip-file FILE
+        Optional. Path to IdentityService.zip or to a Creatio distribution zip that contains
+        IdentityService.zip. When omitted, the command finds IdentityService.zip under the
+        registered environment EnvironmentPath.
+
+    --identity-site-port PORT
+        Optional. HTTP port where IdentityService will listen. When omitted, the command
+        selects the first free IIS port in range 40001-40100.
+
+    --identity-archive-path-in-bundle PATH
+        Nested IdentityService archive path when --zip-file is a Creatio distribution bundle.
+        Also used as the preferred relative path under EnvironmentPath when --zip-file is
+        omitted.
+        Default: IdentityService.zip
+
+    --identity-site-name NAME
+        IIS site and application pool name.
+        Default: <environment>-identity
+
+    --identity-path PATH
+        Target IdentityService directory.
+        Default: sibling <environment>-identity folder next to the Creatio EnvironmentPath
+
+    --overwrite
+        Replace the existing IdentityService target directory.
+        Default: false
+
+    --configuration-mode MODE
+        Creatio connection mode: db-first, rest, or db.
+        Default: db-first
+        Note: db-first currently falls back to the supported REST/sys-settings path until direct
+        DB seeding is fully proven. db mode is refused.
+
+    --client-name NAME
+        OAuth client display name created for clio.
+        Default: clio cli
+
+    --client-application-url URL
+        OAuth client application URL.
+        Default: https://github.com/Advance-Technologies-Foundation/clio.git
+
+    --client-description TEXT
+        OAuth client description.
+        Default: integration for clio cli
+
+    --no-app
+        Deploy IdentityService and connect Creatio, but do not create a clio OAuth app. The
+        command skips local clio credential persistence and the client_credentials token
+        check. Cannot be combined with --create-tech-user or --user.
+        Default: false
+
+    --create-tech-user
+        Create a new technical user for the OAuth app instead of binding the fresh app to an
+        existing user. The created user is granted the System administrators role.
+        Default: false
+
+    --user NAME
+        Existing Creatio system user used by the OAuth client.
+        Default: Supervisor
+
+EXAMPLES
+    # Deploy with defaults from the registered environment.
+    clio deploy-identity -e bank
+
+    # Deploy from a Creatio distribution bundle and an explicit port.
+    clio deploy-identity -e bank --zip-file F:\CreatioBuilds\10.0.0\build.zip --identity-site-port 40086
+
+    # Deploy from a standalone IdentityService archive and replace existing files.
+    clio deploy-identity -e bank --zip-file F:\inetpub\wwwroot\clio\bank\IdentityService.zip \
+        --identity-site-port 40086 --overwrite
+
+    # Deploy and connect IdentityService without creating a clio OAuth app.
+    clio deploy-identity -e bank --no-app
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    The command requires a registered local Creatio environment with EnvironmentPath pointing
+    to the Creatio application folder that contains ConnectionStrings.config. When --zip-file
+    is omitted, the same folder must contain IdentityService.zip either at the configured
+    --identity-archive-path-in-bundle relative path or elsewhere below EnvironmentPath.
+
+    Current deployment support is IIS on Windows. The command creates a no-managed-code app
+    pool and an HTTP site bound to the selected or automatically discovered port.
+
+    With --no-app, deployment still verifies IdentityService discovery and writes the
+    Creatio IdentityService sys-settings. It intentionally skips OAuth app creation, local
+    clio OAuth credential updates, and connect/token verification because no client exists.
