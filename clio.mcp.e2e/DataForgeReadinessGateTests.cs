@@ -157,4 +157,49 @@ public sealed class DataForgeReadinessGateTests {
 		result.Should().BeTrue(
 			because: "the readiness decision should not be brittle to the casing of the service's status string");
 	}
+
+	[Test]
+	[Description("Keeps polling when the elapsed wall-clock time is still strictly below the overall deadline.")]
+	public void OverallDeadlineReached_ShouldReturnFalse_WhenElapsedIsBelowDeadline() {
+		// Arrange
+		TimeSpan elapsed = TimeSpan.FromMinutes(2);
+		TimeSpan overallDeadline = TimeSpan.FromMinutes(6);
+
+		// Act
+		bool result = DataForgeReadinessGate.OverallDeadlineReached(elapsed, overallDeadline);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the gate must keep polling while there is still budget left before its overall wall-clock deadline");
+	}
+
+	[Test]
+	[Description("Stops polling when the elapsed wall-clock time has reached the overall deadline exactly.")]
+	public void OverallDeadlineReached_ShouldReturnTrue_WhenElapsedEqualsDeadline() {
+		// Arrange
+		TimeSpan elapsed = TimeSpan.FromMinutes(6);
+		TimeSpan overallDeadline = TimeSpan.FromMinutes(6);
+
+		// Act
+		bool result = DataForgeReadinessGate.OverallDeadlineReached(elapsed, overallDeadline);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "reaching the deadline exactly must bound the gate so the suite can never hang past it");
+	}
+
+	[Test]
+	[Description("Stops polling when the elapsed wall-clock time has exceeded the overall deadline.")]
+	public void OverallDeadlineReached_ShouldReturnTrue_WhenElapsedExceedsDeadline() {
+		// Arrange
+		TimeSpan elapsed = TimeSpan.FromMinutes(7);
+		TimeSpan overallDeadline = TimeSpan.FromMinutes(6);
+
+		// Act
+		bool result = DataForgeReadinessGate.OverallDeadlineReached(elapsed, overallDeadline);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "once the deadline is passed the gate must fail the DataForge tests gracefully rather than continue polling");
+	}
 }

@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +25,15 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// health readiness flags (<c>DataStructureReadiness</c> for tables/relations, <c>LookupsReadiness</c>
 /// for lookups) — a generic online/liveness flag is NOT enough to prove the index is queryable.
 /// The <see cref="IsIndexReady"/> predicate is pure so it can be unit-tested without a stand.
+/// <para>
+/// Every wait in the gate is bounded by wall-clock so it can NEVER hang the suite (ENG-90640): the
+/// initialize and each status poll run under their own per-call timeout (<see cref="PerCallTimeout"/>)
+/// linked to the incoming token, so a single hung MCP call is aborted rather than blocking forever;
+/// the whole gate is additionally bounded by an overall deadline (<see cref="OverallDeadline"/>) on top
+/// of the attempt cap. A timed-out or faulted individual poll is treated as "not ready yet" and the loop
+/// proceeds to the next attempt — only the overall deadline (or the incoming token) ends the gate, by
+/// failing the DataForge tests with the descriptive timeout instead of hanging.
+/// </para>
 /// </remarks>
 internal static class DataForgeReadinessGate {
 	private const string InitializeToolName = DataForgeTool.DataForgeInitializeToolName;
@@ -68,34 +79,53 @@ internal static class DataForgeReadinessGate {
 		McpServerSession session,
 		string environmentName,
 		CancellationToken cancellationToken) {
+		// Bound the entire gate by wall-clock so a hung stand can never freeze the suite (ENG-90640).
+		Stopwatch elapsedTimer = Stopwatch.StartNew();
+
 		// 1. Schedule initialization. Initialize is fire-and-forget: it returns Scheduled, never
 		//    Ready, so it only means "accepted". The readiness wait below is what gates the reads.
-		CallToolResult initializeResult = await CallDataForgeToolAsync(
+		//    The call is per-call-timeout-wrapped: a hung initialize is aborted, not blocking forever.
+		CallToolResult? initializeResult = await TryCallDataForgeToolAsync(
 			session, InitializeToolName, environmentName, cancellationToken);
-		DataForgeMaintenanceResponse? initializeResponse =
-			TryDeserialize<DataForgeMaintenanceResponse>(initializeResult);
+		DataForgeMaintenanceResponse? initializeResponse = initializeResult is null
+			? null
+			: TryDeserialize<DataForgeMaintenanceResponse>(initializeResult);
 		if (initializeResponse is null || !initializeResponse.Success) {
-			WriteToolDiagnostics(InitializeToolName, initializeResult);
+			if (initializeResult is not null) {
+				WriteToolDiagnostics(InitializeToolName, initializeResult);
+			}
+
 			Assert.Fail(
 				$"DataForge arrange could not schedule initialization on '{environmentName}': " +
-				$"dataforge-initialize did not return a successful structured payload. See test output for the full response.");
+				$"dataforge-initialize did not return a successful structured payload within {PerCallTimeout.TotalSeconds:0}s. " +
+				$"See test output for the full response.");
 		}
 
 		// 2. Poll dataforge-status until the index-ready signal flips, or the budget is exhausted.
 		//    The index build is asynchronous, so a Scheduled initialize is followed by a window in
-		//    which reads still fail; 5 min / 15 s mirrors the spec's recommended budget.
+		//    which reads still fail. Each poll is per-call-timeout-wrapped and a timed-out/faulted poll
+		//    is treated as "not ready yet" so one slow call cannot kill the gate — only the overall
+		//    deadline (or the incoming token) does. 5 min / 15 s mirrors the spec's recommended budget.
 		DataForgeStatusResponse? lastStatus = null;
 		CallToolResult? lastStatusResult = null;
 		for (int attempt = 0; attempt < ReadinessAttempts; attempt++) {
 			cancellationToken.ThrowIfCancellationRequested();
-			lastStatusResult = await CallDataForgeToolAsync(
-				session, StatusToolName, environmentName, cancellationToken);
-			lastStatus = TryDeserialize<DataForgeStatusResponse>(lastStatusResult);
-			if (IsIndexReady(lastStatus)) {
-				return;
+			if (OverallDeadlineReached(elapsedTimer.Elapsed, OverallDeadline)) {
+				break;
 			}
 
-			if (attempt < ReadinessAttempts - 1) {
+			CallToolResult? statusResult = await TryCallDataForgeToolAsync(
+				session, StatusToolName, environmentName, cancellationToken);
+			if (statusResult is not null) {
+				lastStatusResult = statusResult;
+				lastStatus = TryDeserialize<DataForgeStatusResponse>(statusResult);
+				if (IsIndexReady(lastStatus)) {
+					return;
+				}
+			}
+
+			if (attempt < ReadinessAttempts - 1 &&
+				!OverallDeadlineReached(elapsedTimer.Elapsed + ReadinessDelay, OverallDeadline)) {
 				await Task.Delay(ReadinessDelay, cancellationToken);
 			}
 		}
@@ -106,11 +136,13 @@ internal static class DataForgeReadinessGate {
 			WriteToolDiagnostics(StatusToolName, lastStatusResult);
 		}
 
-		int totalSeconds = (int)(ReadinessAttempts * ReadinessDelay.TotalSeconds);
+		int budgetSeconds = (int)System.Math.Min(
+			ReadinessAttempts * ReadinessDelay.TotalSeconds, OverallDeadline.TotalSeconds);
 		Assert.Fail(
-			$"DataForge similarity index on '{environmentName}' did not become Ready within {totalSeconds}s " +
-			$"({ReadinessAttempts} dataforge-status polls every {ReadinessDelay.TotalSeconds:0}s after " +
-			$"dataforge-initialize). Last status: success={lastStatus?.Success}, " +
+			$"DataForge similarity index on '{environmentName}' did not become Ready within {budgetSeconds}s " +
+			$"(up to {ReadinessAttempts} dataforge-status polls every {ReadinessDelay.TotalSeconds:0}s after " +
+			$"dataforge-initialize, capped by a {OverallDeadline.TotalSeconds:0}s overall deadline and a " +
+			$"{PerCallTimeout.TotalSeconds:0}s per-call timeout). Last status: success={lastStatus?.Success}, " +
 			$"status={lastStatus?.Status?.Status ?? "<none>"}, " +
 			$"data-structure-readiness={lastStatus?.Health?.DataStructureReadiness}, " +
 			$"lookups-readiness={lastStatus?.Health?.LookupsReadiness}. " +
@@ -118,7 +150,56 @@ internal static class DataForgeReadinessGate {
 	}
 
 	private const int ReadinessAttempts = 20;
-	private static readonly System.TimeSpan ReadinessDelay = System.TimeSpan.FromSeconds(15);
+	private static readonly TimeSpan ReadinessDelay = TimeSpan.FromSeconds(15);
+
+	/// <summary>Per-call wall-clock budget for a single <c>dataforge-initialize</c>/<c>dataforge-status</c> MCP call.</summary>
+	private static readonly TimeSpan PerCallTimeout = TimeSpan.FromSeconds(60);
+
+	/// <summary>Hard upper bound for the whole gate, regardless of attempt count or how individual calls behave.</summary>
+	private static readonly TimeSpan OverallDeadline = TimeSpan.FromMinutes(6);
+
+	/// <summary>
+	/// Pure "stop polling" decision: returns whether the gate's overall wall-clock deadline has been
+	/// reached, given the time already spent and the configured deadline. Extracted so the bounding
+	/// logic can be unit-tested without an MCP stand (the per-call MCP timeout itself needs a stand).
+	/// </summary>
+	/// <param name="elapsed">Wall-clock time already spent inside the gate.</param>
+	/// <param name="overallDeadline">Configured hard upper bound for the whole gate.</param>
+	/// <returns><c>true</c> when polling must stop because the deadline is reached; otherwise <c>false</c>.</returns>
+	public static bool OverallDeadlineReached(TimeSpan elapsed, TimeSpan overallDeadline) =>
+		elapsed >= overallDeadline;
+
+	/// <summary>
+	/// Invokes a DataForge tool under a per-call timeout linked to <paramref name="cancellationToken"/>.
+	/// A call that exceeds <see cref="PerCallTimeout"/> (or otherwise faults) is contained: <c>null</c>
+	/// is returned so the poll loop treats it as "not ready yet" and continues. The incoming token is
+	/// honoured: if it is cancelled the cancellation propagates so the gate ends rather than spinning.
+	/// </summary>
+	private static async Task<CallToolResult?> TryCallDataForgeToolAsync(
+		McpServerSession session,
+		string toolName,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		using CancellationTokenSource perCallCts =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		perCallCts.CancelAfter(PerCallTimeout);
+		try {
+			return await CallDataForgeToolAsync(session, toolName, environmentName, perCallCts.Token);
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// The caller's arrange token won — surface it so the gate ends instead of looping.
+			throw;
+		} catch (OperationCanceledException) {
+			// Only the per-call timeout fired: contain it as "not ready yet" and let the loop retry.
+			TestContext.Out.WriteLine(
+				$"[dataforge-readiness] tool '{toolName}' timed out after {PerCallTimeout.TotalSeconds:0}s; treating as not-ready and retrying.");
+			return null;
+		} catch (Exception ex) {
+			// A single faulted call must not kill the gate; the overall deadline still bounds total time.
+			TestContext.Out.WriteLine(
+				$"[dataforge-readiness] tool '{toolName}' faulted ({ex.GetType().Name}: {ex.Message}); treating as not-ready and retrying.");
+			return null;
+		}
+	}
 
 	private static async Task<CallToolResult> CallDataForgeToolAsync(
 		McpServerSession session,
