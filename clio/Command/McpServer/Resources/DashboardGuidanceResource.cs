@@ -34,8 +34,11 @@ public sealed class DashboardGuidanceResource {
 		       and HOW it is styled. It does NOT own the runtime payload of any single widget — for the
 		       `crt.IndicatorWidget` generation contract (aggregate, static filter, intent -> config translation)
 		       and its exact style theme values read the dedicated `indicator-widget` guidance and call
-		       `get-component-info`. For surrounding page structure, fields, containers, and accessibility/contrast
-		       defer to the general Freedom UI page guidance (`page-modification` and the UI guidelines).
+		       `get-component-info`. For the `crt.ChartWidget` generation contract (chart type, series,
+		       aggregation, grouping, sorting, static filter, intent -> config translation) read the dedicated
+		       `chart-widget` guidance and call `get-component-info`. For surrounding page structure, fields,
+		       containers, and accessibility/contrast defer to the general Freedom UI page guidance
+		       (`page-modification` and the UI guidelines).
 
 		       ## Core rules (in priority order)
 
@@ -55,7 +58,7 @@ public sealed class DashboardGuidanceResource {
 		          decorative colors.
 		       3. Right SIZE — size by widget TYPE, not by eye (exact column counts per type are in "Widget
 		          catalog" below). Metric tiles are 1 row tall and share equal width across the band; charts are
-		          ~3 rows tall. Every row's widget widths must sum to a full 12 columns — less than 12 leaves a
+		          ~9 rows tall (`rowSpan`; never below 6). Every row's widget widths must sum to a full 12 columns — less than 12 leaves a
 		          visible gap, more than 12 wraps and breaks alignment. Composition (pie/doughnut) breakdowns come
 		          in threes.
 
@@ -65,7 +68,10 @@ public sealed class DashboardGuidanceResource {
 		       number of columns wide and a whole number of rows tall.
 
 		       - WIDTH is what you tune most — a widget's width is a slice of 12.
-		       - HEIGHT is measured in grid rows: a metric tile = 1 row; a standard chart ~ 3 rows.
+		       - HEIGHT is `layoutConfig.rowSpan` (grid rows). Platform defaults: metric tile 3, chart 9, funnel 15,
+		         list/pivot 9. HARD FLOOR: a chart, list, or pivot must have `rowSpan` >= 6 — below that it renders
+		         unreadably short. Metric/gauge tiles are exempt (they stay ~3). The "rows" elsewhere in this guide
+		         are these `rowSpan` values, so "a chart ~3 rows" means the ~9-`rowSpan` default, not literally 3.
 		       - Each row of widgets must sum to EXACTLY 12 columns.
 
 		       The only widths you normally need:
@@ -167,7 +173,7 @@ public sealed class DashboardGuidanceResource {
 		       ## Widget catalog — type, when to use, default size
 
 		       Every widget keeps the PLAIN WHITE default (see Core rules); only the rare emphasized-KPI exception
-		       differs. Sizes below are in 12-grid columns; height is ~3 rows for every chart and 1 row for a
+		       differs. Sizes below are in 12-grid columns; height is ~9 `rowSpan` for every chart (floor 6) and ~3 for a
 		       metric tile unless noted.
 
 		       Metric (indicator) — a single aggregated value with a caption and a small leading icon; the
@@ -233,7 +239,7 @@ public sealed class DashboardGuidanceResource {
 		         odd width.
 		       - No chart sits in the metric band, and no metric tile is dropped among the charts.
 		       - Every widget uses the plain white style (no stray colored cards for variety or branding).
-		       - Each widget type uses its default size (metric short, 1 row; chart ~3 rows tall).
+		       - Each chart/list/pivot meets the `rowSpan` floor (>= 6; default 9, funnel 15); metric/gauge tiles stay short (~3).
 		       - Multi-topic dashboards are split into labeled sections, each = metric band + chart row.
 		       - Titles and value colors use theme defaults (red only for overdue/negative).
 		       """

@@ -83,6 +83,34 @@ public sealed class PageValidateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Accepts an explicit version argument and still validates a well-formed body — proves the version arg flows end-to-end through the real MCP transport into the registry-driven chart-widget validation path.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts an explicit version argument")]
+	[AllureDescription("Sends a valid Freedom UI page body with an explicit version through the real MCP server and verifies the call is accepted (not a protocol error) and validation still passes.")]
+	public async Task PageValidateTool_Should_Accept_Explicit_Version_Argument() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["body"] = ValidPageBody,
+					["version"] = "8.3.3"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an explicit version must be accepted and bound by the tool, not rejected as a protocol-level error");
+		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+		response.Valid.Should().BeTrue(
+			because: "a well-formed body validates whether the chart-widget catalog is scoped to the version or falls back to latest");
+	}
+
+	[Test]
 	[Description("Returns valid: false with a VendorPrefix error when a converter key in SCHEMA_CONVERTERS is missing the required dot.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects converter key without dot")]

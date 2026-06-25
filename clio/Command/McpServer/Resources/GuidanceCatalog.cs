@@ -74,6 +74,10 @@ internal static class GuidanceCatalog {
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
 				IndicatorWidgetGuidanceResource.Guide),
+			["chart-widget"] = Create(
+				"chart-widget",
+				"Canonical MCP guidance for Freedom UI chart widgets: Copilot-intent to runtime payload translation, chart-type selection (bar/column, doughnut/pie, line/spline), series and aggregation rules, and static filter authoring.",
+				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
 				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
