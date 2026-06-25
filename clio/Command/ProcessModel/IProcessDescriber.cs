@@ -59,7 +59,7 @@ public sealed class ServerProcessDescriber(
 		}
 
 		string body = new JsonObject { ["request"] = requestObject.Value }.ToJsonString();
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcessSchema);
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess);
 		string responseBody;
 		try {
 			responseBody = applicationClient.ExecutePostRequest(url, body, 10_000, 3, 1);

@@ -172,7 +172,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Reads an existing process as a structured graph via the ProcessDesignService package.
 		/// </summary>
-		DescribeProcessSchema = 51,
+		DescribeProcess = 51,
 
 		/// <summary>
 		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
@@ -241,7 +241,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
-		{KnownRoute.DescribeProcessSchema, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 	};
 
