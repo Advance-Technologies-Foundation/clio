@@ -71,8 +71,24 @@ public interface IApplicationSectionCreateService {
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Section creation request payload.</param>
+	/// <param name="insertTimeoutMsOverride">
+	/// Optional override (in milliseconds) for the section-insert budget. When the call runs behind
+	/// an MCP response deadline that continues the work in the background, the caller passes a
+	/// generous budget so the insert is not aborted at the default 90 s and the section actually
+	/// commits server-side (ENG-91316). When <see langword="null"/> the budget falls back to
+	/// <c>CLIO_CREATE_SECTION_TIMEOUT_SECONDS</c> or the 90 s default.
+	/// </param>
+	/// <param name="readbackTimeoutMsOverride">
+	/// Optional per-request override (in milliseconds) for the post-insert success readback. When the
+	/// call runs behind an MCP response deadline that continues the work in the background, the caller
+	/// passes a finite budget so a wedged readback (one Creatio accepts but never answers) cannot hold a
+	/// thread-pool worker and HTTP connection for the life of the long-lived server process (ENG-91316).
+	/// When <see langword="null"/> (the synchronous CLI path) the readback keeps its
+	/// <see cref="Timeout.Infinite"/> default; non-positive values fall through to that default too.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
-	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request);
+	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
 }
 
 /// <summary>
@@ -113,10 +129,12 @@ public sealed class ApplicationSectionCreateService(
 	// clients never send a progressToken, so no beat is emitted at all). These budgets bound the insert
 	// call (90 s) and the post-timeout recovery readback (30 s) — the dominant slow span on the
 	// not-visible timeout path that is the actual repro — so clio answers well under the observed 180 s
-	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert,
-	// the success-path readback (Timeout.Infinite), and the 15-attempt poll loop have no cumulative
-	// deadline (residual ENG-91316). CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients /
-	// large stands extend the insert budget.
+	// ceiling there. They do NOT bound the end-to-end response: the preparation reads before the insert
+	// and the 15-attempt poll loop have no cumulative deadline. The background/MCP path additionally
+	// bounds each success-path readback HTTP call (readbackTimeoutMsOverride) so a wedged readback cannot
+	// hold a thread + connection for the life of the long-lived server process (ENG-91316); the
+	// synchronous CLI path keeps the patient Timeout.Infinite readback default.
+	// CLIO_CREATE_SECTION_TIMEOUT_SECONDS still lets patient clients / large stands extend the insert budget.
 	private const int DefaultInsertTimeoutMs = 90_000;
 	private const int VerificationTimeoutMs = 30_000;
 
@@ -162,7 +180,8 @@ public sealed class ApplicationSectionCreateService(
 	};
 
 	/// <inheritdoc />
-	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request) {
+	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -224,7 +243,7 @@ public sealed class ApplicationSectionCreateService(
 			throw BuildPreparationFailure(request, preparationFailureClass.Value, exception);
 		}
 		logger.BeginSpinner($"Creating section '{resolvedRequest.Caption}' ({resolvedRequest.SectionCode})...");
-		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds();
+		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds(insertTimeoutMsOverride);
 		string responseBody;
 		try {
 			responseBody = client.ExecutePostRequest(
@@ -256,7 +275,17 @@ public sealed class ApplicationSectionCreateService(
 		EnsureInsertSucceeded(responseBody, resolvedRequest);
 		logger.EndSpinner(true);
 
-		return LoadCreatedSection(environmentName, beforeInfo, resolvedRequest, client, environmentSettings, effectiveCultureName);
+		// The CLI path leaves readbackTimeoutMsOverride null and keeps the patient Timeout.Infinite
+		// default; the MCP/background path passes a finite per-request budget so a wedged readback
+		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
+		return LoadCreatedSection(
+			environmentName,
+			beforeInfo,
+			resolvedRequest,
+			client,
+			environmentSettings,
+			effectiveCultureName,
+			ResolveReadbackTimeout(readbackTimeoutMsOverride));
 	}
 
 	private static void ValidateRequest(ApplicationSectionCreateRequest request) {
@@ -469,7 +498,13 @@ public sealed class ApplicationSectionCreateService(
 		}
 	}
 
-	private static int ResolveInsertTimeoutMilliseconds() {
+	private static int ResolveInsertTimeoutMilliseconds(int? insertTimeoutMsOverride = null) {
+		// An explicit override (the MCP background path) wins over the env var and the default: the
+		// response deadline guards the client, so the insert may run long enough to commit the section.
+		if (insertTimeoutMsOverride is > 0) {
+			return insertTimeoutMsOverride.Value;
+		}
+
 		string? raw = Environment.GetEnvironmentVariable(InsertTimeoutEnvironmentVariable);
 		if (int.TryParse(raw, System.Globalization.NumberStyles.Integer,
 				System.Globalization.CultureInfo.InvariantCulture, out int seconds) && seconds > 0) {
@@ -478,6 +513,12 @@ public sealed class ApplicationSectionCreateService(
 
 		return DefaultInsertTimeoutMs;
 	}
+
+	private static int ResolveReadbackTimeout(int? readbackTimeoutMsOverride) =>
+		// A positive override (the MCP background path) bounds each readback HTTP call so a wedged
+		// readback cannot park a thread/connection forever; the CLI path passes null and keeps the
+		// patient Timeout.Infinite default. The 'is > 0' guard also rejects 0/-1 as a safety net.
+		readbackTimeoutMsOverride is > 0 ? readbackTimeoutMsOverride.Value : Timeout.Infinite;
 
 	/// <summary>
 	/// Classifies a failed ApplicationSection insert into transport / creatio-timeout / server-error,
