@@ -443,6 +443,103 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("Name-first resolution (CLI parity with the MCP tool): a component-type that names a COMPOSITE caption ('Expanded list') is not a dead end — the not-found response routes to composite=\"<caption>\" and surfaces the matched composite, instead of leaving the agent to hand-build the detail.")]
+	public async Task Unknown_ComponentType_Matching_Composite_Caption_Routes_To_Composite() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "Expanded list" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'Expanded list' is not a component type, so the lookup fails");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("Expanded list",
+			because: "the routing message must name the matched composite");
+		parsed.Error.Should().Contain("composite=",
+			because: "the CLI must route to the composite-discovery path, mirroring the MCP tool");
+		parsed.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
+			because: "the matched composite is surfaced so the caller can fetch its assembly recipe");
+	}
+
+	[Test]
+	[Description("CLI parity with ComponentInfoTool_Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions: a component-type that matches neither a component nor a composite falls back to closest-type suggestions (exit 1, no composite route). Covers the FilterEntries -> shared SuggestForUnknown behavioral delta on the CLI not-found path.")]
+	public async Task Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.TotallyMadeUp" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "a type matching neither a component nor a composite is a lookup failure");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("crt.TotallyMadeUp", because: "the failure must echo the missing type");
+		parsed.Error.Should().NotContain("composite=",
+			because: "no composite matches, so the CLI must not fabricate a composite route");
+		parsed.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
+	[Test]
+	[Description("CLI parity, branch 1 (hasComponentMatch): a component-type that substring-matches a component's name/description but is not an exact type and matches no composite surfaces those components with the 'by name/description' message — not the composite route, not the distance fallback.")]
+	public async Task Unknown_ComponentType_Matching_Component_By_Description_Surfaces_Name_Matches() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// "widget" substring-matches crt.NextSteps ("Next steps widget.") in the composite registry,
+		// but is not an exact type and matches no composite caption.
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "widget" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'widget' is not an exact component type");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("by name/description",
+			because: "the CLI name-match branch must use its own wording, mirroring the MCP tool");
+		parsed.Error.Should().NotContain("composite=", because: "'widget' matches no composite");
+		parsed.Error.Should().NotContain("closest known type", because: "a name match must not degrade to the distance branch");
+		parsed.Items!.Select(item => item.ComponentType).Should().Contain("crt.NextSteps",
+			because: "the component whose description contains the query is surfaced");
+	}
+
+	[Test]
+	[Description("CLI parity for multi-composite routing (RC-C5): when a query matches multiple composites by description, the routing response surfaces all matched composite captions in the error and Items is empty. Pins the multi-match branch for the CLI surface.")]
+	public async Task Unknown_ComponentType_Matching_Multiple_Composites_Routes_With_All_Captions() {
+		using CapturedLogger logger = new();
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(CompositeRegistry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0);
+
+		// "Expansion panel" substring-matches both composites by description but matches no component.
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "Expansion panel" }, CancellationToken.None);
+
+		exit.Should().Be(1, because: "'Expansion panel' is not a component type");
+		ComponentInfoResponse parsed = ParseJson(logger.Captured);
+		parsed.Success.Should().BeFalse();
+		parsed.Error.Should().Contain("composite=",
+			because: "the query matches composites by description, triggering the routing directive");
+		parsed.Error.Should().Contain("'Next steps'",
+			because: "every matched composite caption must be listed in the error");
+		parsed.Error.Should().Contain("'Expanded list'",
+			because: "every matched composite caption must be listed in the error");
+		parsed.Composites!.Count.Should().Be(2,
+			because: "both matched composites are surfaced on the routing branch");
+		parsed.Items.Should().BeNullOrEmpty(
+			because: "the routing branch must not populate component suggestions");
+	}
+
+	[Test]
 	[Description("--composite with an unknown caption + --pretty surfaces the actionable not-found message (with known captions) and exits 1 — it is NOT silently empty. Render prints 'Error: <message>' for any unsuccessful response before AppendComposite early-returns, so the JSON path's known-captions hint reaches the pretty surface too.")]
 	public async Task Pretty_Output_Surfaces_Composite_NotFound_Message() {
 		using CapturedLogger logger = new();
