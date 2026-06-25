@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -244,6 +245,97 @@ public sealed class ApplicationSectionToolE2ETests {
 			}
 
 			stallListener.Stop();
+			TryDeleteDirectory(tempHome);
+		}
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server with an elicitation-capable client that never answers and verifies create-app-section (no icon-background) returns a structured response promptly instead of hanging to the client ceiling.")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create does not hang when an elicitation-capable client never answers")]
+	[AllureDescription("Connects a client that advertises the elicitation capability but never answers elicitation requests, then calls create-app-section without icon-background against an unreachable environment. Verifies the tool returns a structured payload promptly rather than blocking on an unanswered elicitation until the client request ceiling.")]
+	public async Task ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers() {
+		// Arrange — an elicitation-capable client that NEVER answers. The unreachable URI means no
+		// section can be created as a side effect: once icon resolution is bounded, the call falls
+		// through to a fast transport failure.
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-elicit-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "2";
+		TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "elicit-e2e",
+			  "Environments": {
+			    "elicit-e2e": {
+			      "Uri": "http://127.0.0.1:9",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+
+		// Never answer the elicitation: block until the request token is cancelled (the test's
+		// safety-net cancellation), mirroring a client that silently drops the prompt.
+		Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>> neverAnswers =
+			async (_, handlerToken) => {
+				await Task.Delay(Timeout.InfiniteTimeSpan, handlerToken);
+				return new ElicitResult();
+			};
+
+		// Safety net well below the ~180s client ceiling: if the call hangs in an unbounded
+		// elicitation it trips this token, and the timing assertion below fails loudly.
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromSeconds(30));
+		McpServerSession session = await McpServerSession.StartAsync(
+			settings, neverAnswers, cancellationTokenSource.Token);
+
+		try {
+			// Act — no icon-background, so the create path would elicit on an elicitation-capable client.
+			Stopwatch stopwatch = Stopwatch.StartNew();
+			Exception captured = null!;
+			CallToolResult callResult = null!;
+			try {
+				callResult = await session.CallToolAsync(
+					SectionCreateToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = "elicit-e2e",
+							["application-code"] = "UsrElicitApp",
+							["caption"] = "Tasks"
+						}
+					},
+					cancellationTokenSource.Token);
+			}
+			catch (Exception ex) {
+				captured = ex;
+			}
+			stopwatch.Stop();
+
+			// Assert
+			captured.Should().BeNull(
+				because: "an unanswered elicitation must not make create-app-section hang to the client ceiling; "
+					+ $"the call must return a structured response. Elapsed: {stopwatch.Elapsed}. Exception: {captured}");
+			stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(25),
+				because: "icon resolution runs before the backend call and must be bounded well below the ~180s client ceiling");
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+			callResult.IsError.Should().NotBeTrue(
+				because: "a bounded create-app-section failure must stay a structured payload, never a -32001 MCP invocation error");
+			response.Success.Should().BeFalse(
+				because: "the section cannot be created against an unreachable environment");
+		}
+		finally {
+			// Dispose in order: stop the clio process, restore the settings file (still under
+			// tempHome), then delete tempHome. Deleting first would break the settings restore.
+			await session.DisposeAsync();
+			settingsOverride.Dispose();
 			TryDeleteDirectory(tempHome);
 		}
 	}
