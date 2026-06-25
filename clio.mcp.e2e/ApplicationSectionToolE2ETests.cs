@@ -449,6 +449,7 @@ public sealed class ApplicationSectionToolE2ETests {
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a section reusing the platform Case entity in a known installed application and verifies the structured read-back data. Covers ENG-88782: Creatio stores Code = EntitySchemaName for platform entity sections; the readback must match by entity schema name, not the caption-derived code sent in the INSERT.")]
+	[Ignore("ENG-91829: requires a seeded/writable platform-entity section readback on the deployed stand; stand-content gated.")]
 	public async Task ApplicationSectionCreate_WithPlatformEntity_Should_Return_Structured_Readback_Data() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();

@@ -58,6 +58,7 @@ public sealed class DeployCreatioToolE2ETests
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio reaches the real command path")]
 	[AllureDescription("Uses the real clio MCP server to call deploy-creatio with an invalid zip path and verifies that the result is a real command failure rather than the removed scheduled-maintenance response.")]
+	[Ignore("ENG-91830: requires a reachable Kubernetes cluster / clio-infrastructure not available on CI agents.")]
 	public async Task DeployCreatio_Should_Not_Return_Scheduled_Maintenance_Response()
 	{
 		// Arrange

@@ -55,6 +55,7 @@ public sealed class RestoreDbToolE2ETests {
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]
 	[AllureDescription("Uses the real clio MCP server to call restore-db-to-local-server with a missing backup path and verifies that the failure remains human-readable while still returning a temp database-operation log artifact path.")]
+	[Ignore("ENG-91830: requires reachable Kubernetes/DB infrastructure not available on CI agents.")]
 	public async Task RestoreDb_Should_Return_Log_File_Path_On_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
