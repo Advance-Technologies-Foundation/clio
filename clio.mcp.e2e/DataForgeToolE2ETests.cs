@@ -118,7 +118,8 @@ public sealed class DataForgeToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -148,7 +149,8 @@ public sealed class DataForgeToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -178,7 +180,8 @@ public sealed class DataForgeToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -422,6 +425,26 @@ public sealed class DataForgeToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = args
 			},
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	/// <summary>
+	/// Shared arrange step for the similarity-search reads (find-tables, find-lookups, get-relations):
+	/// on a freshly-deployed stand the similarity index is not built, so these reads return
+	/// <c>Success=false</c> until <c>dataforge-initialize</c> has run and the index is ready
+	/// (ENG-92147, Step 2A). When <c>McpE2E:DataForge:InitializeAndWait</c> is off this is a no-op,
+	/// keeping non-DataForge runs and already-warm stands unaffected and the destructive initialize opt-in.
+	/// </summary>
+	private static async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
+		if (!settings.DataForge.InitializeAndWait) {
+			return;
+		}
+
+		arrangeContext.EnvironmentName.Should().NotBeNullOrWhiteSpace(
+			because: "the DataForge readiness arrange needs a reachable sandbox environment to initialize the similarity index against");
+		await DataForgeReadinessGate.EnsureIndexReadyAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName!,
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
