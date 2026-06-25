@@ -1437,6 +1437,39 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Rejects adding a lookup column whose Const default points at a record missing from the referenced schema, before the schema is saved (DRAFT-AC-06).")]
+	public void ModifyColumn_Throws_WhenAddLookupConstDefaultRecordMissing() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		Guid missingRecordId = Guid.Parse("00000000-0000-0000-0000-0000000000aa");
+		_designerClient
+			.CheckRecordExists("Contact", missingRecordId, Arg.Any<RemoteCommandOptions>())
+			.Returns(LookupRecordExistence.NotFound);
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrOwner",
+			Type = "Lookup",
+			Title = "Owner",
+			ReferenceSchemaName = "Contact",
+			DefaultValueSource = "Const",
+			DefaultValue = missingRecordId.ToString("D")
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not found in referenced schema*",
+				because: "an added lookup column must validate its Const default against the referenced schema before saving, which requires the reference schema to be resolved before ApplyDefaultValue runs (DRAFT-AC-06)");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Allows masked flag for Password alias and maps the column to SecureText runtime type.")]
 	public void ModifyColumn_AddsPasswordColumn_WithMaskedFlag() {
 		// Arrange
