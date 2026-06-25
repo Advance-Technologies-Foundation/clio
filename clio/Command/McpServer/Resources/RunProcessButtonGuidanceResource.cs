@@ -62,9 +62,9 @@ public sealed class RunProcessButtonGuidanceResource {
 			       - The `clicked` config is `{ request: 'crt.RunBusinessProcessRequest', params: {...} }`.
 			       - Caption must be a localizable binding — pass the key via the `resources` parameter.
 
-			       Build the button itself from `get-component-info crt.Button` (its `type`, `caption`,
-			       `color`, etc.) — the only run-process-specific part is the button's `clicked` config (the
-			       variants below). Insert it with `update-page` (mode `append`) into the chosen `parentName`,
+			       Build the button from `get-component-info crt.Button`; wire the run-process request into its
+			       `clicked` binding using one of the variants below. Insert it with `update-page` (mode `append`)
+			       into the chosen `parentName`,
 			       leaving `handlers: []` — no custom handler. See `page-modification` for the body envelope and
 			       the insert op (`operation` / `name` / `parentName` / `propertyName` / `index`).
 
